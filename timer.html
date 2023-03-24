@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Task Progress Timer</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto&display=swap">
+    <style>
+        body {
+            background-color: #f7f7f7;
+            font-family: 'Roboto', sans-serif;
+            color: #333;
+        }
+            .container {
+        width: 100%;
+        max-width: 800px;
+        height: auto;
+        margin: 40px auto;
+        padding: 20px;
+        background-color: #fff;
+        box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.1);
+        border-radius: 10px;
+    }
+
+    h1 {
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .form {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        margin-bottom: 20px;
+    }
+
+    .form-group {
+        flex: 0 0 calc(25% - 10px);
+        margin-bottom: 1.5rem;
+    }
+
+    label {
+        display: block;
+        margin-bottom: 5px;
+    }
+
+    input {
+        width: 100%;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+    }
+
+    a.start-btn {
+        display: inline-block;
+        padding: 10px 15px;
+        background-color: #007bff;
+        color: #fff;
+        text-align: center;
+        border-radius: 5px;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    a.start-btn:hover {
+        background-color: #0056b3;
+    }
+
+    .progress-container {
+        display: none;
+    }
+
+    .progress {
+        width: 100%;
+        height: 20px;
+        border-radius: 10px;
+        background-color: #eee;
+        margin: 20px 0;
+    }
+
+    .bar {
+        height: 100%;
+        border-radius: 10px;
+        background-color: #007bff;
+        width: 0%;
+        transition: width 1s ease-in-out;
+    }
+
+    .status {
+        display: flex;
+        justify-content: space-between;
+        flex-wrap: wrap;
+    }
+
+    .status-item {
+        flex: 0 0 calc(25% - 10px);
+        text-align: center;
+        font-size: 1.25rem;
+        margin-bottom: 10px;
+    }
+
+    #current-page {
+        font-size: 2rem;
+        font-weight: bold;
+    }
+</style>
+</head>
+<body>
+    <div class="container">
+        <h1>Task Progress Timer</h1>
+        <div id="input-panel">
+            <form class="form">
+                <div class="form-group">
+                    <label for="task">Task:</label>
+                    <input type="text" id="task">
+                </div>
+                <div class="form-group">
+                    <label for="start-page">Start Page:</label>
+                    <input type="number" id="start-page">
+                </div>
+                <div class="form-group">
+                    <label for="end-page">End Page:</label>
+                    <input type="number" id="end-page">
+                </div>
+                <div class="form-group">
+                    <label for="time">Time (minutes):</label>
+                    <input type="number" id="time">
+                </div>
+                <a href="#" class="start-btn" onclick="startTask()">Start</a>
+</form>
+</div>
+<div class="progress-container" id="progress-container">
+<div class="progress">
+<div class="bar"></div>
+</div>
+<div class="status">
+<div class="status-item">
+<div id="current-page">0</div>
+<span>Current Page</span>
+</div>
+<div class="status-item">
+<div id="elapsed-time">0m 0s</div>
+<span>Elapsed Time</span>
+</div>
+<div class="status-item">
+<div id="time-remaining">0m 0s</div>
+<span>Time Remaining</span>
+</div>
+<div class="status-item">
+<div id="pages-remaining">0</div>
+<span>Pages Remaining</span>
+</div>
+</div>
+</div>
+</div>
+<script>
+var task, startPage, endPage, time, bar;
+var start, intervalId;
+        function startTask() {
+        task = document.getElementById("task").value;
+        startPage = parseInt(document.getElementById("start-page").value);
+        endPage = parseInt(document.getElementById("end-page").value);
+        time = parseInt(document.getElementById("time").value);
+        bar = document.querySelector(".bar");
+
+        start = Date.now();
+        intervalId = setInterval(updateStatus, 1000);
+
+        document.querySelector(".start-btn").style.display = "none";
+        document.querySelector("#task").disabled = true;
+        document.querySelector("#start-page").disabled = true;
+        document.querySelector("#end-page").disabled = true;
+        document.querySelector("#time").disabled = true;
+
+        document.getElementById("input-panel").style.display = "none";
+        document.getElementById("progress-container").style.display = "block";
+    }
+
+    function updateStatus() {
+        var elapsed = Date.now() - start;
+        var progress = elapsed / (time * 60 * 1000);
+
+        var currentPage = Math.round(startPage + (endPage - startPage) * progress);
+        var remainingPages = endPage - currentPage;
+        var remainingTime = (time * 60 * 1000) - elapsed;
+        bar.style.width = Math.min(progress * 100, 100) + "%";
+
+        document.querySelector("#current-page").textContent = currentPage;
+        document.querySelector("#pages-remaining").textContent = remainingPages;
+        document.querySelector("#time-remaining").textContent = formatTime(remainingTime);
+        document.querySelector("#elapsed-time").textContent = formatTime(elapsed);
+
+        if (remainingTime <= 0) {
+            clearInterval(intervalId);
+            var blinkIntervalId = setInterval(function() {
+                var currentPageElement = document.querySelector('#current-page');
+                currentPageElement.style.color = currentPageElement.style.color == 'red' ? '#333' : 'red';
+            }, 500);
+
+            setTimeout(function() {
+                clearInterval(blinkIntervalId);
+                document.querySelector('#current-page').style.color = '#333';
+                alert("Time's up!");
+                resetTimer();
+            }, 3000);
+        }
+    }
+
+    function formatTime(ms) {
+        var minutes = Math.floor(ms / (60 * 1000));
+        var seconds = Math.floor((ms - minutes * 60 * 1000) / 1000);
+        return minutes + "m " + seconds + "s";
+    }
+
+    function resetTimer() {
+        clearInterval(intervalId);
+        document.querySelector(".start-btn").style.display = "inline-block";
+        document.querySelector("#task").disabled = false;
+        document.querySelector("#start-page").disabled = false;
+
+document.querySelector("#end-page").disabled = false;
+document.querySelector("#time").disabled = false;
+document.querySelector("#input-panel").style.display = "block";
+document.querySelector("#progress-container").style.display = "none";
+        document.querySelector(".bar").style.width = "0%";
+        document.querySelector("#current-page").textContent = "0";
+        document.querySelector("#pages-remaining").textContent = "0";
+        document.querySelector("#time-remaining").textContent = "0m 0s";
+        document.querySelector("#elapsed-time").textContent = "0m 0s";
+    }
+</script>
+</body>
+</html>
+
+
+
+
+
