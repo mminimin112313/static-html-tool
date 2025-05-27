@@ -1,0 +1,1163 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Text Anonymizer App Enhanced v4.1 (Clipboard Fix & Help)</title>
+<style>
+:root{
+  --bg:#fafafa;--fg:#222;--accent:#2563eb;--border:#e5e7eb;--glass:rgba(255,255,255,.75);
+}
+html,body{height:100%}
+body{margin:0;display:flex;flex-direction:column;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+
+/* ── 버튼 패널 ── */
+#buttonPanel{
+  position:fixed;top:0;left:0;right:0;z-index:1000;
+  display:flex;gap:.4rem;justify-content:center;
+  padding:.45rem .8rem;
+  backdrop-filter:blur(12px);background:var(--glass);border-bottom:1px solid rgba(0,0,0,.08);
+  flex-wrap: wrap;
+}
+#buttonPanel button, #buttonPanel .file-input-wrapper {
+  flex:1 1 100px;
+  padding:.45rem 0;font-size:.85rem;font-weight:600;background:var(--accent);color:#fff;
+  border:none;border-radius:9999px;box-shadow:0 2px 6px rgba(0,0,0,.12);transition:transform .15s;
+  cursor: pointer; text-align: center; line-height: 1.5;
+  margin-bottom: .2rem;
+}
+#buttonPanel button:hover, #buttonPanel .file-input-wrapper:hover {transform:translateY(-2px)}
+.file-input-wrapper input[type="file"] { display: none; }
+
+/* ── 메인 ── */
+#mainContainer{
+  flex:1;display:flex;gap:1rem;padding:calc(80px + 1rem) 1rem 1rem; /* 버튼 패널 높이 따라 유동적으로 */
+  overflow:hidden
+}
+@media(max-width:768px){
+  #mainContainer{ padding-top: calc(120px + 1rem); /* 모바일에서 버튼 패널 2줄될 경우 */}
+}
+
+#textDisplayArea{
+  flex:3;min-height:0;padding:1rem;border:1px solid var(--border);border-radius:.75rem;background:#fff;
+  overflow:auto;white-space:pre-wrap;line-height:1.6; user-select: text;
+}
+#navigatorArea{
+  flex:1;min-width:260px;border:1px solid var(--border);border-radius:.75rem;background:#fff;overflow:auto;padding:.5rem;
+  display: flex; flex-direction: column;
+}
+#directAddContainer {
+  display: flex; gap: 0.5rem; padding: 0.3rem; border-bottom: 1px solid var(--border); margin-bottom: 0.5rem;
+}
+#directAddInput {
+  flex-grow: 1; padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: .4rem; font-size: 0.85rem;
+}
+#directAddButton {
+  padding: 0.4rem 0.7rem; font-size: 0.9rem; background: var(--accent); color: #fff; border: none; border-radius: .4rem; cursor: pointer;
+}
+#directAddButton:hover { background: #1e4bb1; }
+
+.nav-list { flex-grow: 1; overflow-y: auto; }
+.nav-item{display:flex;align-items:center;gap:.5rem;padding:.35rem .6rem;border-radius:.5rem;cursor:pointer;user-select:none}
+.nav-item:hover{background:rgba(0 0 0/.05)}
+.nav-txt{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; font-size: 0.85rem;}
+.nav-item button{background:none;border:none;font-size:.8rem;cursor:pointer;color:#ef4444; padding: 0.2rem 0.4rem;}
+
+/* ── 모달 & 팝업 ── */
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:.75rem;padding:1.2rem 1.5rem;z-index:999;box-shadow:0 4px 16px rgba(0 0 0/.18); width: 80vw; max-width: 600px;}
+.modal h3 { margin-top: 0; margin-bottom: 1rem; font-size: 1.1rem; color: var(--accent);}
+.modal textarea{width:100%;box-sizing:border-box;height:38vh;padding:.5rem;resize:vertical; border:1px solid var(--border); border-radius: .5rem; margin-bottom: 0.8rem;}
+.modal input[type="text"]{width:100%;box-sizing:border-box;padding:.5rem; border:1px solid var(--border); border-radius: .5rem; margin-bottom: 0.8rem;}
+.modal-actions { text-align:right; margin-top:.8rem; display: flex; gap: 0.5rem; justify-content: flex-end;}
+.modal-actions button { padding: .5rem 1rem; font-size: .9rem; border-radius: .5rem; border: none; cursor: pointer; }
+.modal-actions button.primary { background-color: var(--accent); color: white; }
+.modal-actions button.secondary { background-color: #e5e7eb; color: var(--fg); }
+
+.popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:rgba(255,255,255,.9);backdrop-filter:blur(6px);border:1px solid var(--border);border-radius:.6rem; padding:.55rem .9rem; display:flex;gap:.8rem;}
+.popup button{background:none;border:none;font-size:20px;line-height:1;cursor:pointer;user-select:none;opacity:.85}
+.popup button:hover{opacity:1}
+.hidden{display:none!important}
+.dimmed::before{content:"";position:fixed;inset:0;background:rgba(0 0 0/.45);z-index:998}
+mark[data-original]{padding:.1rem .15rem;border-radius:.25rem;color:#fff;cursor:pointer;}
+mark[data-original]:hover { filter: brightness(1.1); }
+
+#toast{position:fixed;bottom:2rem;left:50%;transform:translateX(-50%);padding:.65rem 1rem;background:#333;color:#fff;border-radius:.5rem;font-size:.875rem;opacity:0;pointer-events:none;transition:opacity .3s;z-index:1100}
+#toast.show{opacity:.92}
+
+/* 추천 모달 스타일 */
+#suggestionModalContent { max-height: 60vh; overflow-y: auto; margin-bottom: 1rem; }
+.suggestion-item { display: flex; align-items: center; padding: 0.4rem 0; border-bottom: 1px solid #eee; }
+.suggestion-item:last-child { border-bottom: none; }
+.suggestion-item input[type="checkbox"] { margin-right: 0.8rem; transform: scale(1.1); }
+.suggestion-item label { flex-grow: 1; font-size: 0.9rem; word-break: break-all; }
+.suggestion-item .suggestion-type { font-size: 0.75rem; color: #777; margin-left: 0.5rem; background-color: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 0.2rem; white-space: nowrap;}
+
+/* 삭제 확인 모달 내 텍스트 스타일 */
+#modal-delete-mark p { margin-bottom: 1rem; word-break: break-all; }
+#modal-delete-mark strong { color: var(--accent); }
+
+/* 도움말 모달 스타일 */
+#helpModalContent { max-height: 60vh; overflow-y: auto; font-size: 0.9rem; line-height: 1.7; }
+#helpModalContent h4 { margin-top: 1.2rem; margin-bottom: 0.5rem; color: var(--accent); font-size: 1rem;}
+#helpModalContent p { margin-bottom: 0.6rem; }
+#helpModalContent ul { padding-left: 1.5rem; margin-bottom: 0.8rem;}
+#helpModalContent li { margin-bottom: 0.3rem; }
+#helpModalContent code { background-color: #f0f0f0; padding: 0.1rem 0.3rem; border-radius: 0.2rem; font-size: 0.85rem;}
+
+/* 흔들림 애니메이션 */
+@keyframes shake-animation-kf {
+  10%, 90% { transform: translate3d(-1px, 0, 0); }
+  20%, 80% { transform: translate3d(2px, 0, 0); }
+  30%, 50%, 70% { transform: translate3d(-3px, 0, 0); }
+  40%, 60% { transform: translate3d(3px, 0, 0); }
+}
+.shake-animation {
+  animation: shake-animation-kf 0.6s cubic-bezier(.36,.07,.19,.97) both;
+}
+
+/* ── 모바일 ── */
+@media(max-width:768px){
+  body{font-size:15px}
+  #buttonPanel button, #buttonPanel .file-input-wrapper { flex: 1 1 calc(50% - .4rem); font-size: .8rem; }
+  #mainContainer{flex-direction:column;gap:.6rem;padding:calc(120px + .8rem) .6rem .6rem}
+  #navigatorArea{position:fixed;left:0;right:0;bottom:0;height:40vh;border-radius:.75rem .75rem 0 0;box-shadow:0 -4px 12px rgba(0 0 0/.12);transform:translateY(100%);transition:transform .25s ease;pointer-events:none}
+  #navigatorArea.open{transform:translateY(0);pointer-events:auto}
+  #navToggle{display:block}
+  .modal{width:90vw; max-width: 90vw;}
+  .modal textarea{height:45vh}
+  .popup button{font-size:24px}
+}
+#navToggle{
+  display:none;
+  position:fixed;right:1rem;bottom:1rem;
+  width:50px;height:50px;border:none;border-radius:50%;
+  background:var(--accent);color:#fff;font-size:1.3rem;
+  box-shadow:0 3px 8px rgba(0 0 0/.18);cursor:pointer;z-index:900;
+}
+@media(max-width:768px){ #navToggle{ display:block; } }
+</style>
+</head>
+
+<body>
+<div id="buttonPanel">
+  <button id="btn-input">텍스트 입력</button>
+  <button id="btn-suggest">추천 받기</button>
+  <button id="btn-convert">변환 & 복사</button>
+  <button id="btn-recover">원본 복구</button>
+  <button id="btn-reset">전체 초기화</button>
+  <label class="file-input-wrapper">
+    목록 불러오기
+    <input type="file" id="btn-load-list" accept=".json">
+  </label>
+  <button id="btn-save-list">목록 저장</button>
+  <button id="btn-help">도움말</button>
+</div>
+
+<div id="mainContainer">
+  <div id="textDisplayArea" tabindex="0"></div>
+  <div id="navigatorArea">
+    <div id="directAddContainer">
+        <input type="text" id="directAddInput" placeholder="직접 추가할 단어 입력...">
+        <button id="directAddButton" title="목록에 직접 추가">+</button>
+    </div>
+    <div class="nav-list"></div>
+  </div>
+</div>
+
+<button id="navToggle" title="목록 보기/숨기기">📋</button>
+
+<div id="modal-input" class="modal hidden">
+  <h3>텍스트 입력</h3>
+  <textarea id="ta-input" placeholder="여기에 익명화할 텍스트를 입력하세요..."></textarea>
+  <div class="modal-actions">
+    <button id="submit-input" class="primary">제출</button>
+    <button class="secondary modal-close-btn" data-modal-id="modal-input">취소</button>
+  </div>
+</div>
+
+<div id="modal-recover" class="modal hidden">
+  <h3>원본 텍스트 복구</h3>
+  <textarea id="ta-recover" placeholder="익명화된 텍스트를 여기에 붙여넣으세요..."></textarea>
+  <div class="modal-actions">
+    <button id="submit-recover" class="primary">복구 & 복사</button>
+    <button class="secondary modal-close-btn" data-modal-id="modal-recover">취소</button>
+  </div>
+</div>
+
+<div id="modal-edit" class="modal hidden">
+  <h3>치환쌍 편집</h3>
+  <input id="edit-orig" style="width:100%;margin-bottom:.6rem" placeholder="원본 문자열" readonly>
+  <input id="edit-repl" style="width:100%" placeholder="치환될 문자열">
+  <div class="modal-actions">
+    <button id="save-edit" class="primary">저장</button>
+    <button class="secondary modal-close-btn" data-modal-id="modal-edit">취소</button>
+  </div>
+</div>
+
+<div id="modal-suggestions" class="modal hidden">
+  <h3>익명화 추천</h3>
+  <div id="suggestionModalContent">
+    <p>분석 중...</p>
+  </div>
+  <div class="modal-actions">
+    <button id="add-selected-suggestions" class="primary">선택 항목 추가</button>
+    <button class="secondary modal-close-btn" data-modal-id="modal-suggestions">닫기</button>
+  </div>
+</div>
+
+<div id="modal-delete-mark" class="modal hidden">
+  <h3>익명화 항목 삭제</h3>
+  <p>정말로 '<strong id="delete-mark-original-text"></strong>' (으)로 치환된 항목 <strong id="delete-mark-replacement-text" style="color: var(--fg); font-weight:normal;"></strong> 을(를) 목록에서 삭제하시겠습니까?</p>
+  <div class="modal-actions">
+    <button id="confirm-delete-mark" class="primary" style="background-color: #ef4444;">삭제</button>
+    <button class="secondary modal-close-btn" data-modal-id="modal-delete-mark">취소</button>
+  </div>
+</div>
+
+<div id="modal-help" class="modal hidden">
+  <h3>도움말</h3>
+  <div id="helpModalContent">
+    <h4>기본 사용법</h4>
+    <p>1. <strong>텍스트 입력:</strong> 상단의 '텍스트 입력' 버튼을 클릭하여 익명화할 원본 텍스트를 입력합니다.</p>
+    <p>2. <strong>항목 추가:</strong></p>
+    <ul>
+      <li><strong>텍스트 드래그 선택:</strong> 입력된 텍스트 영역에서 익명화할 단어나 구문을 마우스로 드래그하여 선택합니다. 나타나는 팝업에서 ✨(자동 생성) 또는 ✍️(직접 입력)을 선택하여 치환 규칙을 추가합니다.</li>
+      <li><strong>추천 받기:</strong> '추천 받기' 버튼을 누르면 텍스트를 분석하여 개인정보(이름, 전화번호, 이메일, 주민번호 등)나 반복되는 단어를 추천해줍니다. 원하는 항목을 선택하여 목록에 추가할 수 있습니다.</li>
+      <li><strong>직접 추가:</strong> 우측 패널 상단의 입력창에 직접 단어를 입력하고 '+' 버튼을 눌러 목록에 추가합니다. 치환될 값은 자동으로 생성됩니다.</li>
+    </ul>
+    <p>3. <strong>변환 & 복사:</strong> '변환 & 복사' 버튼을 클릭하면 등록된 치환 규칙에 따라 텍스트가 익명화되어 클립보드에 복사됩니다.</p>
+
+    <h4>치환 목록 관리 (우측 패널)</h4>
+    <ul>
+      <li><strong>항목 클릭:</strong> 목록의 항목을 클릭하면 해당 항목의 <code>치환될 문자열</code>이 클립보드에 복사됩니다.</li>
+      <li><strong>항목 길게 클릭 (터치 길게 누르기):</strong> 목록의 항목을 길게 클릭(PC)하거나 길게 누르면(모바일) 해당 항목의 <code>치환될 문자열</code>을 직접 수정할 수 있는 편집창이 나타납니다.</li>
+      <li><strong>항목 삭제 (✖️ 버튼):</strong> 각 항목 옆의 ✖️ 버튼을 눌러 목록에서 삭제할 수 있습니다.</li>
+      <li><strong>표시된 텍스트의 마크 클릭:</strong> 원본 텍스트 영역에서 이미 익명화 표시(색상 배경)된 부분을 클릭하면 해당 항목을 목록에서 바로 삭제할 수 있는 확인창이 나타납니다.</li>
+    </ul>
+
+    <h4>부가 기능</h4>
+    <ul>
+      <li><strong>원본 복구:</strong> '원본 복구' 버튼을 클릭 후, 이전에 익명화했던 텍스트를 붙여넣으면 원래 내용으로 복구하여 클립보드에 복사해줍니다. (단, 복구 시점의 치환 목록을 기준으로 합니다.)</li>
+      <li><strong>전체 초기화:</strong> 모든 원본 텍스트와 치환 목록을 삭제합니다. (주의: 되돌릴 수 없습니다.)</li>
+      <li><strong>목록 불러오기/저장:</strong> 현재 치환 목록을 JSON 파일 형태로 저장하거나, 저장된 목록 파일을 불러올 수 있습니다.</li>
+      <li><strong>모바일 목록 토글:</strong> 모바일 화면에서는 우측 하단의 📋 버튼으로 치환 목록 패널을 열고 닫을 수 있습니다.</li>
+    </ul>
+    <h4>팁</h4>
+    <ul>
+        <li>치환 규칙은 <strong>공백을 제거한 글자 수가 짧은 순</strong>으로, 글자 수가 같다면 <strong>원문 길이가 짧은 순</strong>으로 적용됩니다. 예를 들어 "홍길동"과 "홍길동 팀장"이 모두 목록에 있다면, "홍길동"이 먼저 처리된 후 "홍길동 팀장"의 남은 부분(예: " 팀장")이 처리될 수 있습니다. 이를 고려하여 항목을 등록하세요.</li>
+        <li>'추천 받기'는 완벽하지 않을 수 있습니다. 중요한 개인정보는 직접 확인하고 추가/삭제하는 것이 좋습니다.</li>
+    </ul>
+  </div>
+  <div class="modal-actions">
+    <button class="secondary modal-close-btn" data-modal-id="modal-help">닫기</button>
+  </div>
+</div>
+
+
+<div id="selectionPopup" class="popup hidden"><button id="btn-auto" title="자동 생성 (랜덤)">✨</button><button id="btn-manual" title="직접 입력">✍️</button></div>
+<div id="toast"></div>
+
+<script>
+(function(){
+  'use strict';
+
+  const $ = s => document.querySelector(s);
+  const $$ = s => document.querySelectorAll(s);
+
+  const DATA_KEY = 'anonymizerAppData_v4.1'; // Updated version key
+  const PALETTE = ['#FF6B6B','#4D96FF','#FFD93D','#6BCB77','#845EC2','#FF9671','#00C9A7','#B0A8B9','#FFC75F','#0081CF',
+    '#F9F871','#FF8066','#2A9D8F','#E76F51','#A56CC1','#00B8A9','#F64C72','#6C5B7B','#F9C74F','#118AB2',
+    '#EF476F','#06D6A0','#FFD166','#073B4C','#8D99AE','#FFB627','#06AED5','#A4036F','#048BA8','#FF7C43',
+    '#5F0F40','#9A031E','#FCDC4D','#23CE6B','#3A0CA3','#7209B7','#4361EE','#4CC9F0','#F72585','#B5179E',
+    '#FC5185','#3FC1C9','#364F6B','#43AA8B','#90BE6D','#F9844A','#F94144','#577590','#277DA1','#4D908E',
+    '#F3722C','#F8961E','#00B4D8','#0077B6','#023E8A','#03045E','#F48C06','#D00000','#6A040F','#370617',
+    '#9D0208','#DC2F02','#E85D04','#FAA307','#FFBA08','#003049','#D62828','#F77F00','#FCBF49','#EAE2B7',
+    '#70C1B3','#B2DBBF','#FDFFFC','#FFB6B9','#FAE3D9','#BBDED6','#8AC6D1','#CDB4DB','#FFC8DD','#FFAFCC',
+    '#B5E48C','#99D98C','#76C893','#52B69A','#34A0A4','#00C49A','#FFCD56','#4E79A7','#A0CBE8','#F28E2B',
+    '#E15759','#76B7B2','#59A14F','#EDC948','#B07AA1','#FF9DA7'];
+
+  let state = loadState();
+  let currentSelectionRange = null;
+  let longPressTimer = null;
+  let longPressTargetItem = null;
+  let currentMarkToDelete = { original: null, element: null };
+
+  // --- DOM Elements ---
+  const textDisplayArea = $('#textDisplayArea');
+  const navigatorUiList = $('#navigatorArea .nav-list');
+  const selectionPopup = $('#selectionPopup');
+  const navToggle = $('#navToggle');
+  const directAddInput = $('#directAddInput');
+  const toastElement = $('#toast');
+
+  const inputModal = { element: $('#modal-input'), textarea: $('#ta-input'), submitButton: $('#submit-input') };
+  const recoverModal = { element: $('#modal-recover'), textarea: $('#ta-recover'), submitButton: $('#submit-recover') };
+  const editModal = { element: $('#modal-edit'), originalInput: $('#edit-orig'), replacementInput: $('#edit-repl'), saveButton: $('#save-edit') };
+  const suggestionsModal = { element: $('#modal-suggestions'), contentArea: $('#suggestionModalContent'), addSelectedButton: $('#add-selected-suggestions') };
+  const deleteMarkModal = {
+    element: $('#modal-delete-mark'),
+    originalTextSpan: $('#delete-mark-original-text'),
+    replacementTextSpan: $('#delete-mark-replacement-text'),
+    confirmButton: $('#confirm-delete-mark')
+  };
+  const helpModal = { element: $('#modal-help') };
+
+
+  // --- State Management ---
+  function getDefaultState() {
+    return { originalText: '', mappings: {}, anonymizedText: '' };
+  }
+
+  function loadState() {
+    try {
+      const storedState = localStorage.getItem(DATA_KEY);
+      if (storedState) {
+        const parsed = JSON.parse(storedState);
+        if (parsed && typeof parsed.mappings === 'object' && !Array.isArray(parsed.mappings)) {
+          return { ...getDefaultState(), ...parsed };
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load state:", error);
+    }
+    return getDefaultState();
+  }
+
+  function saveState() {
+    try {
+      localStorage.setItem(DATA_KEY, JSON.stringify(state));
+    } catch (error) {
+      console.error("Failed to save state:", error);
+      showToast("로컬 스토리지 저장에 실패했습니다. 공간이 부족할 수 있습니다.");
+    }
+  }
+
+  function resetState() {
+    if (confirm("정말로 모든 데이터 (입력된 텍스트, 치환 목록)를 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
+      state = getDefaultState();
+      saveState();
+      renderAll();
+      showToast("애플리케이션이 초기화되었습니다.");
+    }
+  }
+
+  // --- Utility Functions ---
+  function escapeRegExp(string) {
+    return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+
+  function generateRandomString(length) {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  function showToast(msg, duration = 2800){ // Using user's default duration
+    const t = toastElement; // Already cached as toastElement
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), duration);
+  }
+
+  // --- Clipboard Functions (User Provided Logic Adapted) ---
+  async function copyToClipboard(text, successMessage) {
+    if (typeof text !== 'string') {
+        console.error('copyToClipboard: text to copy must be a string. Received:', text);
+        showToast('복사할 내용이 올바르지 않습니다.');
+        return;
+    }
+    try {
+      await navigator.clipboard.writeText(text);
+      if (successMessage) showToast(successMessage);
+    } catch (err) {
+      console.warn('navigator.clipboard.writeText failed, trying fallback:', err);
+      fallbackCopy(text, successMessage);
+    }
+  }
+
+  function fallbackCopy(text, successMessage) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '-9999px'; // Ensure it's off-screen
+    document.body.appendChild(ta);
+    ta.select();
+    ta.focus(); // Ensure focus for execCommand
+
+    try {
+      const successful = document.execCommand('copy');
+      if (successful) {
+        if (successMessage) showToast(successMessage + ' (Fallback)');
+      } else {
+        showToast('클립보드 복사에 실패했습니다. (Fallback)');
+      }
+    } catch (err) {
+      console.error('Fallback copy exception:', err);
+      showToast('클립보드 복사 중 오류 발생. (Fallback)');
+    }
+    document.body.removeChild(ta);
+  }
+
+  function normalizeMappingKey(originalString) {
+    if (typeof originalString !== 'string') return '';
+    return originalString.replace(/\s+/g, ' ').trim();
+  }
+
+  // --- UI Rendering ---
+  function renderAll() {
+    renderTextDisplay();
+    renderNavigator();
+  }
+
+  function createRegexForMatching(keyFromMappings) {
+    const coreChars = keyFromMappings.replace(/\s+/g, "").split('');
+    if (coreChars.length === 0) return new RegExp(escapeRegExp(keyFromMappings), 'g');
+
+    if (keyFromMappings.indexOf(' ') === -1) {
+        return new RegExp(escapeRegExp(keyFromMappings), 'g');
+    }
+    const refinedPatternString = coreChars.map(escapeRegExp).join('\\s*');
+    return new RegExp(refinedPatternString, 'g');
+  }
+
+  function getSortedMappings(forReplacement = true) {
+    return Object.entries(state.mappings).sort((a, b) => {
+        const keyA = a[0];
+        const keyB = b[0];
+
+        if (forReplacement) {
+            const coreLengthA = keyA.replace(/\s+/g, "").length;
+            const coreLengthB = keyB.replace(/\s+/g, "").length;
+
+            if (coreLengthA !== coreLengthB) {
+                return coreLengthA - coreLengthB;
+            }
+            return keyA.length - keyB.length;
+        } else {
+            return b[1].replacement.length - a[1].replacement.length;
+        }
+    });
+  }
+
+  function renderTextDisplay() {
+    if (!textDisplayArea) return;
+    if (!state.originalText) {
+      textDisplayArea.innerHTML = '<p style="color:#aaa; text-align:center; margin-top: 2rem;">익명화할 텍스트를 입력해주세요.</p>';
+      return;
+    }
+
+    let highlightedText = state.originalText;
+    const sortedMappings = getSortedMappings(true);
+
+    for (const [originalKey, { replacement, color }] of sortedMappings) {
+      const regex = createRegexForMatching(originalKey);
+      try {
+        highlightedText = highlightedText.replace(regex, (match) => {
+          return `<mark style="background:${color};color:#fff" data-original="${originalKey.replace(/"/g, '&quot;')}" data-repl="${replacement.replace(/"/g, '&quot;')}">${match}</mark>`;
+        });
+      } catch (e) {
+        console.warn(`Error creating/using RegExp for highlighting: key="${originalKey}"`, e);
+      }
+    }
+    textDisplayArea.innerHTML = highlightedText;
+  }
+
+  function renderNavigator() {
+    if (!navigatorUiList) return;
+    navigatorUiList.innerHTML = '';
+
+    const displaySortedMappings = Object.entries(state.mappings)
+        .sort((a,b) => a[0].localeCompare(b[0]));
+
+    displaySortedMappings.forEach(([originalKey, { replacement, color }]) => {
+        const item = document.createElement('div');
+        item.className = 'nav-item';
+        item.style.background = `${color}22`;
+        item.dataset.key = originalKey;
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'nav-txt';
+        textSpan.textContent = originalKey;
+        textSpan.title = `${originalKey} → ${replacement}`;
+
+        const deleteButton = document.createElement('button');
+        deleteButton.dataset.del = originalKey;
+        deleteButton.title = '삭제';
+        deleteButton.textContent = '✖';
+
+        item.appendChild(textSpan);
+        item.appendChild(deleteButton);
+        navigatorUiList.appendChild(item);
+      });
+  }
+
+  // --- Modal Handling ---
+  function openModal(modal) {
+    if (!modal || !modal.element) return;
+    modal.element.classList.remove('hidden');
+    document.body.classList.add('dimmed');
+
+    if (modal === inputModal && state.originalText) {
+      modal.textarea.value = state.originalText;
+    }
+    if (modal === recoverModal) {
+        modal.textarea.value = '';
+    }
+  }
+
+  function closeModal(modalOrSelector) {
+    const modalElement = typeof modalOrSelector === 'string' ? $(modalOrSelector) : modalOrSelector.element;
+    if (modalElement) {
+      modalElement.classList.add('hidden');
+    }
+    const anyModalOpen = Array.from($$('.modal')).some(m => !m.classList.contains('hidden'));
+    if (!anyModalOpen) {
+      document.body.classList.remove('dimmed');
+    }
+  }
+
+  // --- Core Functionality ---
+  function generateUniqueReplacement(baseName = "항목", length = 5) {
+    let replacement;
+    let attempts = 0;
+    do {
+      replacement = `[${baseName}_${generateRandomString(length + Math.floor(attempts / 5))}]`;
+      attempts++;
+    } while (Object.values(state.mappings).some(m => m.replacement === replacement) && attempts < 50);
+
+    if (attempts >= 50) {
+        replacement = `[${baseName}_${Date.now().toString().slice(-6)}]`;
+    }
+    return replacement;
+  }
+
+  function addNewMapping(originalString, replacement, color, type = "일반") {
+    if (!originalString || typeof originalString !== 'string' || !originalString.trim()) {
+      showToast("원본 문자열은 비워둘 수 없습니다.");
+      return false;
+    }
+    const keyForStorage = originalString.trim();
+
+    if (state.mappings[keyForStorage]) {
+      showToast(`'${keyForStorage}'은(는) 이미 등록된 항목입니다.`);
+      return false;
+    }
+
+    let finalReplacement = replacement;
+    if (!finalReplacement || typeof finalReplacement !== 'string' || !finalReplacement.trim()) {
+      let baseName = type === "일반" ? "항목" : type;
+      if (type.includes("이름")) baseName = "이름";
+      else if (type.includes("연락처") || type.includes("전화")) baseName = "연락처";
+      else if (type.includes("주민")) baseName = "주민번호";
+      else if (type.includes("이메일")) baseName = "이메일";
+      else if (type.includes("반복")) baseName = "반복항목";
+      else if (type.includes("선택")) baseName = "선택";
+      else if (type.includes("직접추가")) baseName = "항목";
+      finalReplacement = generateUniqueReplacement(baseName, Math.max(3, Math.min(8, keyForStorage.replace(/\s+/g,"").length)));
+    }
+
+    state.mappings[keyForStorage] = {
+      replacement: finalReplacement,
+      color: color || PALETTE[Object.keys(state.mappings).length % PALETTE.length]
+    };
+    return true;
+  }
+
+  function handleSubmitInput() {
+    const text = inputModal.textarea.value;
+    if (!text.trim()) {
+      showToast("입력된 텍스트가 없습니다.");
+      return;
+    }
+    state.originalText = text;
+    state.anonymizedText = '';
+    saveState();
+    renderAll();
+    closeModal(inputModal);
+    showToast("텍스트가 입력되었습니다.");
+  }
+
+  function handleConvertAndCopy() {
+    if (!state.originalText) {
+      showToast('먼저 텍스트를 입력해주세요.');
+      return;
+    }
+    if (Object.keys(state.mappings).length === 0) {
+        showToast('등록된 치환 목록이 없습니다. 변환할 내용이 없습니다.');
+        if (confirm("원본 텍스트를 그대로 복사하시겠습니까?")) {
+            copyToClipboard(state.originalText, "원본 텍스트가 복사되었습니다.");
+        }
+        return;
+    }
+
+    let outputText = state.originalText;
+    const sortedMappings = getSortedMappings(true);
+
+    for (const [originalKey, { replacement }] of sortedMappings) {
+      const regex = createRegexForMatching(originalKey);
+      try {
+        outputText = outputText.replace(regex, replacement);
+      } catch (e) {
+        console.warn(`Error creating/using RegExp for replacement: key="${originalKey}"`, e);
+      }
+    }
+    state.anonymizedText = outputText;
+    saveState();
+    copyToClipboard(outputText, "변환된 텍스트가 클립보드에 복사되었습니다.");
+  }
+
+  function handleSubmitRecover() {
+    const anonymizedInput = recoverModal.textarea.value;
+    if (!anonymizedInput.trim()) {
+      showToast("복구할 텍스트를 입력해주세요.");
+      return;
+    }
+    if (Object.keys(state.mappings).length === 0) {
+        showToast('치환 목록이 비어있어 복구가 불가능합니다.');
+        return;
+    }
+
+    let recoveredText = anonymizedInput;
+    const recoverySortedMappings = getSortedMappings(false);
+
+    for (const [originalKey, { replacement }] of recoverySortedMappings) {
+        const replacementRegex = new RegExp(escapeRegExp(replacement), 'g');
+        recoveredText = recoveredText.replace(replacementRegex, originalKey);
+    }
+
+    state.originalText = recoveredText;
+    saveState();
+    renderAll();
+    copyToClipboard(recoveredText, "복구된 텍스트가 클립보드에 복사되었습니다.");
+    closeModal(recoverModal);
+  }
+
+  function handleDirectAdd() {
+    const textToAdd = directAddInput.value;
+    if (!textToAdd.trim()) {
+      showToast("추가할 내용을 입력해주세요.");
+      return;
+    }
+    const keyForStorage = textToAdd.trim();
+
+    if (state.mappings[keyForStorage]) {
+      showToast(`'${keyForStorage}'은(는) 이미 목록에 있습니다.`);
+      return;
+    }
+
+    if (addNewMapping(textToAdd, null, null, "직접추가")) {
+      saveState();
+      renderAll();
+      showToast(`'${keyForStorage}' 항목이 추가되었습니다.`);
+      directAddInput.value = '';
+      directAddInput.focus();
+    }
+  }
+
+  function handleSaveEditedMapping() {
+    const originalKeyInEditor = editModal.originalInput.value;
+    const newReplacement = editModal.replacementInput.value.trim();
+
+    if (!newReplacement) {
+      showToast("치환될 문자열을 입력해주세요.");
+      return;
+    }
+    if (state.mappings[originalKeyInEditor]) {
+      state.mappings[originalKeyInEditor].replacement = newReplacement;
+      saveState();
+      renderAll();
+      closeModal(editModal);
+      showToast("치환 정보가 업데이트되었습니다.");
+    } else {
+      showToast("오류: 편집할 항목을 찾을 수 없습니다.");
+    }
+  }
+
+  // --- Text Selection & Popup ---
+  function handleTextSelectionOnDisplay(event) {
+    const selection = window.getSelection();
+    const selectedText = selection.toString();
+
+    const clickedMark = event.target.closest('mark[data-original]');
+    if (clickedMark) {
+        selectionPopup.classList.add('hidden');
+        currentSelectionRange = null;
+
+        const original = clickedMark.dataset.original;
+        // Ensure the key exists before trying to access its properties
+        if (original && state.mappings[original]) {
+            currentMarkToDelete = { original: original, element: clickedMark };
+            deleteMarkModal.originalTextSpan.textContent = original;
+            deleteMarkModal.replacementTextSpan.textContent = `(${state.mappings[original].replacement})`;
+
+            clickedMark.classList.add('shake-animation');
+            setTimeout(() => clickedMark.classList.remove('shake-animation'), 700);
+
+            openModal(deleteMarkModal);
+        } else if (original) {
+             console.warn("Clicked mark's original key not found in mappings:", original);
+             showToast("해당 항목을 찾을 수 없습니다. 목록을 확인해주세요.");
+        }
+        return;
+    }
+
+    if (selectedText.trim().length > 0 && textDisplayArea.contains(selection.anchorNode)) {
+      currentSelectionRange = selection.getRangeAt(0);
+      const rect = currentSelectionRange.getBoundingClientRect();
+
+      selectionPopup.style.top = `${rect.bottom + window.scrollY + 5}px`;
+      selectionPopup.style.left = `${rect.left + window.scrollX + rect.width / 2 - selectionPopup.offsetWidth / 2}px`;
+      selectionPopup.classList.remove('hidden');
+    } else {
+      if (!selectionPopup.contains(event.target)) {
+          selectionPopup.classList.add('hidden');
+          currentSelectionRange = null;
+      }
+    }
+  }
+
+  function registerSelection(mode) {
+    if (!currentSelectionRange) return;
+    const selectedText = currentSelectionRange.toString();
+    if (!selectedText.trim()) {
+      showToast("선택된 텍스트가 없습니다.");
+      selectionPopup.classList.add('hidden');
+      return;
+    }
+    const keyForStorage = selectedText.trim();
+
+    if (state.mappings[keyForStorage]) {
+      showToast(`'${keyForStorage}'은(는) 이미 등록된 항목입니다.`);
+      selectionPopup.classList.add('hidden');
+      return;
+    }
+
+    let replacementText;
+    if (mode === 'auto') {
+      replacementText = null;
+    } else {
+      const promptText = keyForStorage.replace(/\s+/g, "_").substring(0,10);
+      replacementText = prompt(`'${selectedText}'을(를) 치환할 문자열을 입력하세요:`, `[${promptText}_직접]`);
+      if (replacementText === null) {
+        selectionPopup.classList.add('hidden');
+        currentSelectionRange = null;
+        return;
+      }
+      if (replacementText.trim() === "") {
+        showToast("치환될 문자열은 비워둘 수 없습니다.");
+        selectionPopup.classList.add('hidden');
+        currentSelectionRange = null;
+        return;
+      }
+    }
+
+    if (addNewMapping(selectedText, replacementText, null, "선택")) {
+      saveState();
+      renderAll();
+      showToast(`'${keyForStorage}' → '${state.mappings[keyForStorage].replacement}' 추가됨`);
+    }
+    selectionPopup.classList.add('hidden');
+    currentSelectionRange = null;
+    if (window.getSelection()) window.getSelection().removeAllRanges();
+  }
+
+  // --- Suggestion Engine ---
+  function cleanKoreanNameCandidate(text) {
+    if (!text || typeof text !== 'string') return "";
+    let cleaned = text.trim();
+
+    const suffixesToRemove = [
+        "씨", "님", "님은", "님께서는", "기자", "팀장", "부장", "과장", "대리", "사원", "인턴",
+        "연구원", "교수", "학생", "선생", "대표", "이사", "실장", "주임", "반장", "사장", "회장",
+        "옹", "군", "양",
+        "은", "는", "이", "가", "을", "를", "에게", "께서", "께", "의", "과", "와",
+        "으로", "로", "부터", "까지", "만", "도"
+    ];
+
+    for (const suffix of suffixesToRemove) {
+        if (cleaned.endsWith(suffix)) {
+            const temp = cleaned.substring(0, cleaned.length - suffix.length).trim();
+            if (temp.length >= (commonSurnames.includes(temp.charAt(0)) && temp.length === 1 ? 1 : 2) && temp.length > 0) {
+                 cleaned = temp;
+            }
+        }
+    }
+    cleaned = cleaned.replace(/[.,!?]$/, "").trim();
+    return cleaned;
+  }
+
+  const commonSurnames = ['김', '이', '박', '최', '정', '강', '조', '윤', '장', '임', '한', '오', '서', '신', '권', '황', '안', '송', '류', '전', '홍', '고', '문', '양', '손', '배', '백', '허', '유', '남', '심', '노', '하', '곽', '성', '차', '주', '우', '구', '나'];
+
+  function generateSuggestions(text) {
+    let suggestions = [];
+    const existingNormalizedKeys = new Set(Object.keys(state.mappings).map(k => normalizeMappingKey(k)));
+    const foundSuggestions = new Map();
+
+    const patterns = [
+      { regex: /\b(?:\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01]))\s*-\s*[1-4]\d{6}\b/g, type: '주민번호' },
+      { regex: /\b01[016789](?:-|\s*-\s*)\d{3,4}(?:-|\s*-\s*)\d{4}\b/g, type: '전화번호' },
+      { regex: /\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/g, type: '이메일' },
+      { regex: /\b(?:[가-힣]{1,2}\s)?[가-힣]{2,4}\b/g, type: '이름(일반)', isName: true },
+      { regex: new RegExp(`\\b(?:${commonSurnames.join('|')})[가-힣]{1,2}\\b`, 'g'), type: '이름(성씨기반)', isName: true },
+      { regex: /[가-힣]{2,4}\s*(?:씨|님|님은|님께서는|기자|팀장|부장|과장|대리|사원|인턴|연구원|교수|학생|선생|대표|이사|실장|주임|반장|사장|회장|옹|군|양)\b/g, type: '이름(호칭)', isName: true, trimSuffix: true},
+    ];
+
+    patterns.forEach(p => {
+      let match;
+      while ((match = p.regex.exec(text)) !== null) {
+        let matchedText = match[0];
+        let type = p.type;
+
+        if (p.isName) {
+            let cleanedName = matchedText;
+            if (p.trimSuffix) {
+                 cleanedName = cleanedName.replace(/\s*(?:씨|님|님은|님께서는|기자|팀장|부장|과장|대리|사원|인턴|연구원|교수|학생|선생|대표|이사|실장|주임|반장|사장|회장|옹|군|양)\b/g, '').trim();
+            }
+            cleanedName = cleanKoreanNameCandidate(cleanedName);
+
+            if (cleanedName.length < 2 || (cleanedName.length === 2 && !commonSurnames.includes(cleanedName[0])) ) continue;
+            if (cleanedName.length > 5) continue;
+            if (!/^[가-힣\s]+$/.test(cleanedName)) continue;
+
+            matchedText = cleanedName;
+        }
+
+        const normalizedMatch = normalizeMappingKey(matchedText);
+        if (!normalizedMatch || normalizedMatch.length < (p.type === '이메일' ? 5 : 2)) continue;
+        if (existingNormalizedKeys.has(normalizedMatch)) continue;
+
+        if (foundSuggestions.has(normalizedMatch)) {
+          foundSuggestions.get(normalizedMatch).count++;
+        } else {
+          foundSuggestions.set(normalizedMatch, { text: matchedText, type: type, count: 1 });
+        }
+      }
+    });
+
+    const hangulWordCounts = new Map();
+    const hangulRegex = /[가-힣]+/g;
+    let hangulMatch;
+    while((hangulMatch = hangulRegex.exec(text)) !== null) {
+        const word = hangulMatch[0];
+        if (word.length >= 2 && word.length <= 10 && /^[가-힣]+$/.test(word)) {
+            hangulWordCounts.set(word, (hangulWordCounts.get(word) || 0) + 1);
+        }
+    }
+
+    hangulWordCounts.forEach((count, word) => {
+        if (count >= 3) {
+            const normalizedWord = normalizeMappingKey(word);
+            if (!existingNormalizedKeys.has(normalizedWord) && !foundSuggestions.has(normalizedWord)) {
+                if (word.length === 1 && "은는이가을를도만과와로의".includes(word)) return;
+                foundSuggestions.set(normalizedWord, { text: word, type: '반복(한글)', count: count });
+            }
+        }
+    });
+
+    suggestions = Array.from(foundSuggestions.values());
+
+    suggestions.sort((a, b) => {
+      const piiOrder = {'주민번호':1, '전화번호':2, '이메일':3};
+      const typeOrderA = piiOrder[a.type] || (a.type.startsWith('이름') ? 4 : (a.type.startsWith('반복') ? 5 : 6));
+      const typeOrderB = piiOrder[b.type] || (b.type.startsWith('이름') ? 4 : (b.type.startsWith('반복') ? 5 : 6));
+
+      if (typeOrderA !== typeOrderB) return typeOrderA - typeOrderB;
+      if (b.count !== a.count) return b.count - a.count;
+      return b.text.replace(/\s+/g,"").length - a.text.replace(/\s+/g,"").length;
+    });
+
+    return suggestions.slice(0, 70);
+  }
+
+  function openSuggestionModal() {
+    if (!state.originalText) {
+      showToast("추천을 받으려면 먼저 텍스트를 입력해주세요.");
+      return;
+    }
+    openModal(suggestionsModal);
+    suggestionsModal.contentArea.innerHTML = '<p>텍스트 분석 중... 잠시만 기다려주세요.</p>';
+
+    setTimeout(() => {
+      const suggestions = generateSuggestions(state.originalText);
+      if (suggestions.length === 0) {
+        suggestionsModal.contentArea.innerHTML = '<p>자동으로 추천할 만한 항목을 찾지 못했습니다. 직접 추가 기능을 이용해보세요.</p>';
+        return;
+      }
+      suggestionsModal.contentArea.innerHTML = suggestions.map((s, index) => `
+        <div class="suggestion-item">
+          <input type="checkbox" id="suggestion-${index}" value="${s.text.replace(/"/g, '&quot;')}" data-type="${s.type}" checked>
+          <label for="suggestion-${index}">${s.text}</label>
+          <span class="suggestion-type">${s.type} (${s.count}회)</span>
+        </div>
+      `).join('');
+    }, 100);
+  }
+
+  function handleAddSelectedSuggestions() {
+    const checkboxes = $$('#suggestionModalContent input[type="checkbox"]:checked');
+    let addedCount = 0;
+    checkboxes.forEach(cb => {
+      const textToAnonymize = cb.value;
+      const type = cb.dataset.type;
+      if (addNewMapping(textToAnonymize, null, null, type)) {
+        addedCount++;
+      }
+    });
+
+    if (addedCount > 0) {
+      saveState();
+      renderAll();
+      showToast(`${addedCount}개의 추천 항목이 목록에 추가되었습니다.`);
+    } else {
+      showToast("선택된 항목이 없거나, 이미 목록에 존재하거나, 추가할 수 없는 항목입니다.");
+    }
+    closeModal(suggestionsModal);
+  }
+
+  // --- File Operations (Save/Load Mappings) ---
+  function saveMappingsList() {
+    if (Object.keys(state.mappings).length === 0) {
+      showToast("저장할 치환 목록이 없습니다.");
+      return;
+    }
+    try {
+      const mappingsJson = JSON.stringify(state.mappings, null, 2);
+      const blob = new Blob([mappingsJson], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `anonymizer_mappings_${new Date().toISOString().slice(0,10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast("치환 목록이 파일로 저장되었습니다.");
+    } catch (error) {
+      console.error("Error saving mappings list:", error);
+      showToast("목록 저장 중 오류 발생.");
+    }
+  }
+
+  function loadMappingsList(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const loadedData = JSON.parse(e.target.result);
+        if (typeof loadedData !== 'object' || loadedData === null || Array.isArray(loadedData)) {
+          throw new Error("잘못된 파일 형식입니다. JSON 객체여야 합니다.");
+        }
+
+        let mergedCount = 0, overwrittenCount = 0, invalidCount = 0;
+        for (const [original, mapData] of Object.entries(loadedData)) {
+          if (mapData && typeof mapData.replacement === 'string' && typeof mapData.color === 'string') {
+            const keyForStorage = original.trim();
+            if (!keyForStorage) {
+                invalidCount++;
+                continue;
+            }
+            if (state.mappings[keyForStorage]) overwrittenCount++;
+            else mergedCount++;
+            state.mappings[keyForStorage] = {
+                replacement: mapData.replacement,
+                color: mapData.color
+            };
+          } else {
+            console.warn(`Skipping invalid mapping data for key: ${original}`);
+            invalidCount++;
+          }
+        }
+        saveState();
+        renderAll();
+        let message = `목록 불러오기 완료: ${mergedCount}개 추가, ${overwrittenCount}개 덮어씀.`;
+        if (invalidCount > 0) message += ` (${invalidCount}개 항목은 형식이 올바르지 않아 건너뜀)`;
+        showToast(message);
+      } catch (error) {
+        showToast(`파일 읽기 오류: ${error.message}`);
+        console.error("Error loading mappings list:", error);
+      } finally {
+        event.target.value = null;
+      }
+    };
+    reader.onerror = () => {
+        showToast("파일을 읽는 중 오류가 발생했습니다.");
+        event.target.value = null;
+    };
+    reader.readAsText(file);
+  }
+
+  // --- Event Listener Setup ---
+  function setupEventListeners() {
+    $('#btn-input').addEventListener('click', () => openModal(inputModal));
+    $('#btn-suggest').addEventListener('click', openSuggestionModal);
+    $('#btn-convert').addEventListener('click', handleConvertAndCopy);
+    $('#btn-recover').addEventListener('click', () => openModal(recoverModal));
+    $('#btn-reset').addEventListener('click', resetState);
+    $('#btn-save-list').addEventListener('click', saveMappingsList);
+    $('#btn-load-list').addEventListener('change', loadMappingsList);
+    $('#btn-help').addEventListener('click', () => openModal(helpModal)); // 도움말 버튼
+
+    inputModal.submitButton.addEventListener('click', handleSubmitInput);
+    recoverModal.submitButton.addEventListener('click', handleSubmitRecover);
+    editModal.saveButton.addEventListener('click', handleSaveEditedMapping);
+    suggestionsModal.addSelectedButton.addEventListener('click', handleAddSelectedSuggestions);
+
+    deleteMarkModal.confirmButton.addEventListener('click', () => {
+        if (currentMarkToDelete.original && state.mappings[currentMarkToDelete.original]) {
+            delete state.mappings[currentMarkToDelete.original];
+            saveState();
+            renderAll();
+            showToast(`'${currentMarkToDelete.original}' 항목이 목록에서 삭제되었습니다.`);
+            closeModal(deleteMarkModal);
+            currentMarkToDelete = { original: null, element: null };
+        } else {
+            showToast("삭제할 항목을 찾지 못했습니다. 다시 시도해주세요.");
+            closeModal(deleteMarkModal);
+        }
+    });
+
+    $$('.modal-close-btn').forEach(btn => {
+      btn.addEventListener('click', () => closeModal(`#${btn.dataset.modalId}`));
+    });
+
+    $('#directAddButton').addEventListener('click', handleDirectAdd);
+    directAddInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') handleDirectAdd();
+    });
+
+    $('#btn-auto').addEventListener('click', () => registerSelection('auto'));
+    $('#btn-manual').addEventListener('click', () => registerSelection('manual'));
+
+    textDisplayArea.addEventListener('click', handleTextSelectionOnDisplay);
+    textDisplayArea.addEventListener('touchend', (e) => { // For mobile tap to trigger selection logic
+        setTimeout(() => handleTextSelectionOnDisplay(e), 50);
+    });
+
+
+    navigatorUiList.addEventListener('click', (e) => {
+      if (longPressTimer) { // Clear long press if a click happens
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+        longPressTargetItem = null;
+      }
+
+      const deleteButton = e.target.closest('button[data-del]');
+      if (deleteButton) {
+        const keyToDelete = deleteButton.dataset.del;
+        if (confirm(`'${keyToDelete}' 항목을 목록에서 삭제하시겠습니까?`)) {
+          if (state.mappings[keyToDelete]) {
+            delete state.mappings[keyToDelete];
+            saveState();
+            renderAll();
+            showToast(`'${keyToDelete}' 항목이 삭제되었습니다.`);
+          }
+        }
+        return; // Stop propagation to navItem click
+      }
+
+      const navItem = e.target.closest('.nav-item');
+      if (navItem) {
+        const key = navItem.dataset.key;
+        if (state.mappings[key]) {
+          copyToClipboard(state.mappings[key].replacement, `'${state.mappings[key].replacement}' 복사 완료`);
+        }
+      }
+    });
+
+    navigatorUiList.addEventListener('pointerdown', (e) => {
+      const navItem = e.target.closest('.nav-item');
+      if (!navItem || e.target.closest('button[data-del]')) return; // Don't trigger for delete button or non-item area
+
+      longPressTargetItem = navItem;
+      longPressTimer = setTimeout(() => {
+        if (!longPressTargetItem) return; // Target might have changed or pointerup occurred
+
+        const keyToEdit = longPressTargetItem.dataset.key;
+        if (state.mappings[keyToEdit]) {
+          editModal.originalInput.value = keyToEdit;
+          editModal.replacementInput.value = state.mappings[keyToEdit].replacement;
+          editModal.replacementInput.focus();
+          openModal(editModal);
+        } else {
+          console.warn("Long press target key not found in state:", keyToEdit);
+        }
+        longPressTimer = null;
+        longPressTargetItem = null;
+      }, 700); // 700ms for long press
+    });
+
+    const clearLongPress = () => {
+      if (longPressTimer) clearTimeout(longPressTimer);
+      longPressTimer = null;
+      longPressTargetItem = null;
+    };
+    navigatorUiList.addEventListener('pointerup', clearLongPress);
+    navigatorUiList.addEventListener('pointerleave', clearLongPress); // Clear if pointer leaves the list area
+    navigatorUiList.addEventListener('contextmenu', (e) => { // Prevent context menu on long press
+        if(e.target.closest('.nav-item')) e.preventDefault();
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!selectionPopup.classList.contains('hidden') &&
+          !selectionPopup.contains(e.target) &&
+          !textDisplayArea.contains(e.target)) {
+          if(window.getSelection().toString() === ''){ // Only hide if no text is actively selected
+            selectionPopup.classList.add('hidden');
+            currentSelectionRange = null;
+          }
+      }
+    });
+
+    document.addEventListener('selectionchange', () => {
+        if (window.getSelection().toString().trim() === '' && !selectionPopup.classList.contains('hidden')) {
+            // If an element within the popup is focused (like an input, if we add one later), don't hide
+            if (!selectionPopup.contains(document.activeElement)) {
+              selectionPopup.classList.add('hidden');
+              currentSelectionRange = null;
+            }
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        $$('.modal:not(.hidden)').forEach(m => closeModal({element: m}));
+        if (!selectionPopup.classList.contains('hidden')) {
+          selectionPopup.classList.add('hidden');
+          currentSelectionRange = null;
+        }
+      }
+    });
+
+    if (navToggle) {
+      navToggle.addEventListener('click', () => {
+        $('#navigatorArea').classList.toggle('open');
+        navToggle.textContent = $('#navigatorArea').classList.contains('open') ? '✕' : '📋';
+      });
+    }
+  }
+
+  // --- Initialization ---
+  function initializeApp() {
+    renderAll();
+    setupEventListeners();
+    showToast("앱 V4.1 로드 완료! (클립보드 개선, 도움말 추가)");
+    console.log("Substitution order for overlapping strings: SHORTER core strings (no spaces) are processed first, then by original length.");
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initializeApp);
+  } else {
+    initializeApp();
+  }
+
+})();
+</script>
+</body>
+</html>
