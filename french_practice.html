@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orateur v3.2 - Stable</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4a69bd; --secondary-color: #6a89cc; --success-color: #38ada9;
+            --danger-color: #e55039; --background-color: #f8f9fa; --surface-color: #ffffff;
+            --text-color: #343a40; --text-light-color: #868e96; --border-color: #dee2e6;
+            --shadow: 0 4px 6px rgba(0, 0, 0, .05);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif; background-color: var(--background-color); color: var(--text-color);
+            overflow: hidden; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+        }
+        .app-container { display: flex; height: 100vh; }
+        .sidebar {
+            width: 280px; background-color: var(--surface-color); border-right: 1px solid var(--border-color);
+            padding: 1rem; transition: transform .3s ease-in-out; flex-shrink: 0;
+            display: flex; flex-direction: column; gap: 1.5rem;
+        }
+        .main-content { flex-grow: 1; display: flex; flex-direction: column; }
+        .app-header {
+            padding: 1rem 1.5rem; background-color: var(--surface-color); border-bottom: 1px solid var(--border-color);
+            display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+        }
+        .view { height: 100%; overflow-y: auto; }
+        .practice-area { padding: 2rem; display: grid; place-items: center; text-align: center; }
+        .practice-wrapper { display: flex; flex-direction: column; gap: 2rem; align-items: center; width: 100%; max-width: 600px; }
+        #current-phrase { font-size: 2.5rem; font-weight: 500; line-height: 1.4; }
+        .controls { display: flex; gap: 1rem; flex-wrap: wrap; justify-content: center; }
+        .btn {
+            padding: .8rem 1.5rem; border: none; background-color: var(--primary-color); color: white;
+            border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: 500;
+            transition: all .2s ease; box-shadow: var(--shadow);
+        }
+        .btn:disabled { background-color: #adb5bd; cursor: not-allowed; box-shadow: none; }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); background-color: var(--secondary-color); }
+        .btn:active:not(:disabled) { transform: translateY(0); box-shadow: none; }
+        .btn-modal-item { background-color: #f1f3f5; color: var(--text-color); width: 100%; text-align: left; box-shadow: none; }
+        .btn-modal-item:hover:not(:disabled) { background-color: #e9ecef; color: var(--text-color); transform: none; }
+        .is-hidden { display: none !important; }
+        #history-list, #record-board-list { list-style: none; padding: 0; display: flex; flex-direction: column; gap: .75rem; }
+        .history-item, .record-item {
+            cursor: pointer; padding: .75rem 1rem; border-radius: 8px;
+            border: 1px solid var(--border-color); transition: all .2s ease;
+        }
+        .history-item:hover, .record-item:hover { border-color: var(--primary-color); box-shadow: var(--shadow); transform: translateY(-2px); }
+        .record-board-area-title { font-size: 1.8rem; font-weight: 700; margin-bottom: 1.5rem; padding-bottom: .5rem; border-bottom: 1px solid var(--border-color); }
+        #record-board-area { padding: 2rem 2.5rem; }
+        .record-item { display: flex; justify-content: space-between; align-items: center; background-color: var(--surface-color); }
+        .record-info { display: flex; flex-direction: column; gap: .25rem; }
+        .record-info .phrase { font-weight: 500; }
+        .record-info .timestamp { font-size: .8rem; color: var(--text-light-color); }
+        .record-item-controls { display: flex; gap: .5rem; }
+        .icon-btn {
+            font-size: 1.5rem; background: 0 0; border: none; color: var(--text-light-color);
+            cursor: pointer; width: 40px; height: 40px; border-radius: 50%;
+            display: grid; place-items: center; transition: all .2s ease;
+        }
+        .icon-btn:hover { background-color: #e9ecef; color: var(--primary-color); }
+        .phrase-nav { display: flex; justify-content: space-between; align-items: center; width: 100%; margin-top: 1rem; }
+        .nav-btn { background-color: var(--surface-color); border: 1px solid var(--border-color); color: var(--text-color); box-shadow: none; }
+        .hamburger-menu { display: none; font-size: 1.5rem; cursor: pointer; padding: .5rem; }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; gap: 1rem }
+        .modal-title { font-size: 1.5rem; font-weight: 700; flex-grow: 1; }
+        .modal-back-btn { background: none; border: none; font-size: 1.2rem; cursor: pointer; color: var(--text-light-color); font-weight: bold; padding: .5rem; }
+        .modal-close-btn { border: none; background: 0 0; font-size: 1.8rem; cursor: pointer; color: var(--text-light-color); }
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed; top: 0; left: 0; height: 100%; z-index: 1000;
+                transform: translateX(-100%); box-shadow: 2px 0 15px rgba(0, 0, 0, .1);
+            }
+            .sidebar.is-active { transform: translateX(0); }
+            .hamburger-menu { display: block; }
+            #current-phrase { font-size: 1.8rem; }
+            .app-header { padding: .75rem 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <aside class="sidebar" id="sidebar">
+            <div><h3>학습 메뉴</h3><button class="btn" id="show-practice-view-btn" style="width:100%;margin-top:.5rem">연습하기</button><button class="btn" id="show-record-board-btn" style="width:100%;margin-top:.5rem">녹음 기록판</button></div>
+            <div><h3>최근 학습</h3><ul id="history-list"></ul></div>
+        </aside>
+        <div class="main-content">
+            <header class="app-header"><div class="hamburger-menu" id="hamburger">☰</div><h1 class="app-title" style="font-weight:700">Orateur</h1><button class="btn" id="open-modal-btn">레슨 선택...</button></header>
+            <div class="view" id="practice-area"><div class="practice-wrapper"><h2 id="current-phrase">레슨을 선택해주세요.</h2><div class="controls"><button class="btn" id="tts-btn">Écouter</button><button class="btn" id="record-btn">Enregistrer</button><button class="btn is-hidden" id="playback-btn">내 녹음 듣기</button></div><p id="status-display">상태: 대기 중</p><div class="phrase-nav is-hidden" id="phrase-nav-container"><button class="btn nav-btn" id="prev-phrase-btn">&lt; 이전</button><span id="phrase-counter"></span><button class="btn nav-btn" id="next-phrase-btn">다음 &gt;</button></div></div></div>
+            <div class="view is-hidden" id="record-board-area"><h2 class="record-board-area-title">나의 녹음 기록</h2><ul id="record-board-list"></ul></div>
+        </div>
+        <div class="modal-overlay is-hidden" id="lesson-modal"><div class="modal-content" style="background-color:var(--surface-color);padding:1.5rem;border-radius:12px;width:90%;max-width:500px;display:flex;flex-direction:column;gap:1rem; box-shadow:0 10px 25px rgba(0,0,0,.1);"><div class="modal-header" id="modal-header"><button class="modal-back-btn is-hidden" id="modal-back-btn">&lt; 뒤로</button><h3 class="modal-title" id="modal-title">카테고리 선택</h3><button class="modal-close-btn" id="modal-close-btn">&times;</button></div><div id="modal-body"></div></div></div>
+    </div>
+    <script>
+        const LESSON_DATA = [
+    // =========== Category 1: Fondamentaux (기초) ===========
+    { category: "Fondamentaux (기초)", lessons: [
+        { title: "Leçon 1: Salutations Essentielles", phrases: ["Bonjour", "Bonsoir", "Salut", "Au revoir", "À bientôt", "À plus tard", "Bonne journée", "Bonne soirée"] },
+        { title: "Leçon 2: Formules de Politesse", phrases: ["S'il vous plaît", "Merci", "Merci beaucoup", "De rien", "Je vous en prie", "Excusez-moi", "Pardon", "Avec plaisir"] },
+        { title: "Leçon 3: Phrases de Base", phrases: ["Oui", "Non", "Je ne sais pas", "Je ne comprends pas", "Comment ?", "Quoi ?", "Pourquoi ?", "Parce que"] },
+        { title: "Leçon 4: L'alphabet (A-M)", phrases: ["A, ah", "B, bé", "C, cé", "D, dé", "E, euh", "F, effe", "G, gé", "H, hache", "I, i", "J, ji", "K, ka", "L, elle", "M, emme"] },
+        { title: "Leçon 5: L'alphabet (N-Z)", phrases: ["N, enne", "O, o", "P, pé", "Q, qu", "R, erre", "S, esse", "T, té", "U, u", "V, vé", "W, double vé", "X, ixe", "Y, i grec", "Z, zède"] }
+    ]},
+    // =========== Category 2: Voyelles Orales (구강 모음) ===========
+    { category: "Voyelles Orales (구강 모음)", lessons: [
+        { title: "Leçon 6: Le son [a] - 'a'", phrases: ["Papa", "Salade", "Table", "Chat", "Ami", "Madame", "Place", "Face", "Sac", "La"] },
+        { title: "Leçon 7: Le son [i] - 'i', 'y'", phrases: ["Midi", "Lit", "Livre", "Dix", "Style", "Avis", "Finir", "Difficile", "Chic", "Typique"] },
+        { title: "Leçon 8: Le son [u] - 'ou'", phrases: ["Bonjour", "Vous", "Nous", "Soupe", "Jour", "Amour", "Pour", "Cours", "Toujours", "Bouche"] },
+        { title: "Leçon 9: Le son [y] - 'u'", phrases: ["Tu", "Salut", "Rue", "Mur", "Musique", "Jupe", "Sucre", "Bus", "Une", "Dur"] },
+        { title: "Leçon 10: Le son [e] - 'é', 'er', 'ez'", phrases: ["Café", "Été", "Télé", "Parler", "Manger", "Nez", "Vous avez", "Et", "Cahier", "Boulanger"] },
+        { title: "Leçon 11: Le son [ɛ] - 'è', 'ê', 'ei', 'ai'", phrases: ["Mère", "Père", "Fête", "Fenêtre", "Treize", "Neige", "Lait", "Fraise", "Reine", "Anglais"] },
+        { title: "Leçon 12: Le son [o] - 'o' (fermé), 'au', 'eau'", phrases: ["Moto", "Chaud", "Eau", "Beau", "Château", "Tableau", "Cadeau", "Aussi", "Zéro", "Rose"] },
+        { title: "Leçon 13: Le son [ɔ] - 'o' (ouvert)", phrases: ["Porte", "Mort", "Fort", "Pomme", "Homme", "Mode", "école", "Sol", "Robe", "Choc"] },
+        { title: "Leçon 14: Le son [ø] - 'eu' (fermé), 'œu'", phrases: ["Deux", "Feu", "Jeu", "Pneu", "Vœu", "Bleu", "Peu", "Nœud", "Heureux", "Il pleut"] },
+        { title: "Leçon 15: Le son [œ] - 'eu' (ouvert), 'œu', 'ue'", phrases: ["Heure", "Seul", "Cœur", "Sœur", "Œil", "Orgueil", "Fleur", "Neuf", "Jeune", "Professeur"] },
+        { title: "Leçon 16: Le 'e' muet (ou caduc)", phrases: ["Petite", "Samedi", "Boulangerie", "Fenêtre", "Justement", "Leçon", "Cheval", "Regarder", "Appeler", "Sous le pont"] }
+    ]},
+    // =========== Category 3: Voyelles Nasales (비모음) ===========
+    { category: "Voyelles Nasales (비모음)", lessons: [
+        { title: "Leçon 17: Le son [ɑ̃] - 'an', 'en'", phrases: ["Maman", "Enfant", "Temps", "Chambre", "France", "Danser", "Grand", "Vent", "Attendre", "Ensemble"] },
+        { title: "Leçon 18: Le son [ɔ̃] - 'on'", phrases: ["Bonbon", "Maison", "Pont", "Monde", "Garçon", "Long", "Son", "Mouton", "Cochon", "Non"] },
+        { title: "Leçon 19: Le son [ɛ̃] - 'in', 'im', 'ain', 'ein'", phrases: ["Matin", "Pain", "Vin", "Plein", "Main", "Impossible", "Train", "Teint", "Magasin", "Jardin"] },
+        { title: "Leçon 20: Le son [œ̃] - 'un', 'um'", phrases: ["Un", "Lundi", "Parfum", "Chacun", "Brun", "Emprunter", "Aucun", "Commun", "Humble", "Jungle"] }
+    ]},
+    // =========== Category 4: Semi-voyelles (반모음) ===========
+    { category: "Semi-voyelles (반모음)", lessons: [
+        { title: "Leçon 21: Le son [j] - 'y', 'ill'", phrases: ["Famille", "Fille", "Billet", "Travail", "Yeux", "Payer", "Réveil", "Conseil", "Merveilleux", "Feuille"] },
+        { title: "Leçon 22: Le son [w] - 'oi', 'ou' + voyelle", phrases: ["Moi", "Toi", "Soir", "Boire", "Poisson", "Oui", "Ouest", "Louis", "Étoile", "Voiture"] },
+        { title: "Leçon 23: Le son [ɥ] - 'u' + voyelle", phrases: ["Huit", "Nuit", "Lui", "Suite", "Fruit", "Pluie", "Cuisine", "Depuis", "Aujourd'hui", "Je suis"] }
+    ]},
+    // =========== Category 5: Consonnes - Sons Uniques (독특한 자음 소리) ===========
+    { category: "Consonnes - Sons Uniques (독특한 자음 소리)", lessons: [
+        { title: "Leçon 24: Le 'R' français", phrases: ["Rue", "Train", "Très", "Regarder", "Arbre", "Bonjour", "Prendre", "France", "Croissant", "Grave"] },
+        { title: "Leçon 25: Le son [ʒ] - 'j', 'g(e/i)'", phrases: ["Je", "Manger", "Fromage", "Jardin", "Rouge", "Voyage", "Girafe", "Général", "Page", "Magie"] },
+        { title: "Leçon 26: Le son [ʃ] - 'ch'", phrases: ["Chat", "Chien", "Chercher", "Chocolat", "Machine", "Chance", "Chambre", "Gauche", "Marché", "Bouche"] },
+        { title: "Leçon 27: Le son [ɲ] - 'gn'", phrases: ["Montagne", "Campagne", "Champagne", "Mignon", "Champignon", "Gagner", "Signer", "Peigne", "Oignon", "Magnifique"] }
+    ]},
+    // =========== Category 6: Consonnes - Distinctions Fines (미세한 자음 구분) ===========
+    { category: "Consonnes - Distinctions Fines (미세한 자음 구분)", lessons: [
+        { title: "Leçon 28: Le 'C' doux [s] et dur [k]", phrases: ["Cinéma", "Garçon", "Ceci", "France", "Café", "Classe", "Couteau", "Avec", "Crayon", "Déçu"] },
+        { title: "Leçon 29: Le 'G' doux [ʒ] et dur [g]", phrases: ["Gâteau", "Guide", "Girafe", "Général", "Voyage", "Gare", "Grand", "Dialogue", "Manger", "Longue"] },
+        { title: "Leçon 30: [s] vs [z]", phrases: ["Poisson", "Poison", "Coussin", "Cousin", "Dessert", "Désert", "Base", "Basse", "Maison", "Masson"] },
+        { title: "Leçon 31: [p] vs [b]", phrases: ["Pont", "Bon", "Père", "Verre", "Pain", "Bain", "Poisson", "Boisson", "Partir", "Barbe"] },
+        { title: "Leçon 32: [t] vs [d]", phrases: ["Tente", "Dente", "Très", "Dreux", "Tard", "Dard", "Tout", "Doux", "Tante", "Dent"] },
+        { title: "Leçon 33: [k] vs [g]", phrases: ["Quand", "Gand", "Classe", "Glace", "Cap", "Gaffe", "Sac", "Bague", "Parc", "Bargue"] },
+        { title: "Leçon 34: [f] vs [v]", phrases: ["Faim", "Vin", "Face", "Vase", "Fleuve", "Veuf", "Fille", "Ville", "Fête", "Verte"] },
+        { title: "Leçon 35: Consonnes finales muettes", phrases: ["Petit", "Grand", "Chaud", "Froid", "Trop", "Beaucoup", "Temps", "Long", "Paris", "Blanc"] },
+        { title: "Leçon 36: Consonnes finales prononcées", phrases: ["Sac", "Chef", "Sel", "Sud", "Bus", "Avec", "Fix", "Cap", "Fil", "Mars"] }
+    ]},
+    // =========== Category 7: Groupes Consonantiques (자음군) ===========
+    { category: "Groupes Consonantiques (자음군)", lessons: [
+        { title: "Leçon 37: Clusters avec 'l' (pl, bl, fl...)", phrases: ["Plage", "Blanc", "Fleur", "Classe", "Glace", "Table", "Simple", "Problème", "Atlas", "Souple"] },
+        { title: "Leçon 38: Clusters avec 'r' (pr, br, fr...)", phrases: ["Prix", "Bruit", "France", "Train", "Drame", "Croire", "Grand", "Autre", "Lettre", "Sucre"] },
+        { title: "Leçon 39: Clusters à 3 consonnes", phrases: ["Strict", "Scribe", "Structure", "Spectre", "Sculpture", "Expression", "Obstacle", "Apprendre", "Constructif"] },
+        { title: "Leçon 40: Le son [gz] - 'x'", phrases: ["Exemple", "Exercice", "Examen", "Exister", "Exactement", "Exagérer", "Exotique"] }
+    ]},
+    // =========== Category 8: Phénomènes de la Parole (음성 현상) ===========
+    { category: "Phénomènes de la Parole (음성 현상)", lessons: [
+        { title: "Leçon 41: Liaison obligatoire en [z]", phrases: ["Les amis", "Vous avez", "Mes enfants", "Chez eux", "Deux ans", "Dans un", "Sans elle", "Aux États-Unis"] },
+        { title: "Leçon 42: Liaison obligatoire en [t]", phrases: ["Est-il là ?", "Quand on part", "Comment allez-vous ?", "C'est un bon film", "Un petit ami", "Tout à l'heure"] },
+        { title: "Leçon 43: Liaison obligatoire en [n]", phrases: ["Un an", "Mon enfant", "En avion", "Bien être", "On a faim", "Aucun effort", "Bon appétit"] },
+        { title: "Leçon 44: Liaison interdite", phrases: ["Les haricots", "Et alors ?", "Des héros", "Un oui franc", "J'aime et je déteste", "Les enfants mangent et jouent"] },
+        { title: "Leçon 45: Liaison facultative", phrases: ["Je suis étudiant", "C'est assez intéressant", "Trop aimable", "Pas encore", "Mais oui"] },
+        { title: "Leçon 46: Enchaînement consonantique", phrases: ["Il part", "Avec elle", "Pour aller", "Neuf heures", "Une grande table", "Sud-est"] },
+        { title: "Leçon 47: Enchaînement vocalique", phrases: ["Tu as quel âge ?", "Il a été malade", "J'ai eu une idée", "Où est le livre ?", "Si elle vient"] }
+    ]},
+    // =========== Category 9: Paires Minimales (최소 대립쌍) ===========
+    { category: "Paires Minimales (최소 대립쌍)", lessons: [
+        { title: "Leçon 48: [i] vs [y] (i/u)", phrases: ["Lit / Lu", "Rire / Rue", "Midi / Mur", "Dix / Dur", "Vie / Vu"] },
+        { title: "Leçon 49: [e] vs [ɛ] (é/è)", phrases: ["Pré / Près", "Parlé / Parlait", "Des / Dès", "Manger / Mangeais", "Et / Est"] },
+        { title: "Leçon 50: [o] vs [ɔ] (o fermé/ouvert)", phrases: ["Haut / Hotte", "Saule / Sol", "Pôle / Paul", "Cote / Cotte", "Nôtre / Notre"] },
+        { title: "Leçon 51: [ø] vs [œ] (eu fermé/ouvert)", phrases: ["Jeûne / Jeune", "Vœu / Veuf", "Nœud / Neuf", "Ceux / Seul", "Peu / Peur"] },
+        { title: "Leçon 52: [a] vs [ɑ̃] (a/an)", phrases: ["La / Lent", "Chat / Champ", "Pas / Pan", "Rat / Rang", "Bas / Banc"] },
+        { title: "Leçon 53: [o] vs [ɔ̃] (o/on)", phrases: ["Beau / Bon", "Sot / Son", "Pot / Pont", "Mot / Mon", "Lot / Long"] },
+        { title: "Leçon 54: [ɛ] vs [ɛ̃] (è/in)", phrases: ["Fait / Faim", "Lait / Lain", "Sait / Saint", "Secret / Scrin", "Clair / Crain"] },
+        { title: "Leçon 55: [ə] vs [œ] (e/eu)", phrases: ["Le / Leur", "De / Dehors", "Me / Meurt", "Se / Sœur", "Ce / Cœur"] },
+        { title: "Leçon 56: [ɑ̃] vs [ɔ̃] (an/on)", phrases: ["Vent / Vont", "Tant / Tond", "Quand / Qu'on", "Blanc / Blond", "Champ / Chon"] },
+        { title: "Leçon 57: [ɛ̃] vs [ɑ̃] (in/an)", phrases: ["Vin / Vent", "Pain / Pan", "Main / Ment", "Teint / Tant", "Plein / Plan"] },
+        { title: "Leçon 58: [ɛ̃] vs [ɔ̃] (in/on)", phrases: ["Pin / Pont", "Lin / Long", "Quinze / Qu'onze", "Mince / Monce", "Singe / Songe"] },
+        { title: "Leçon 59: [y] vs [u] (u/ou)", phrases: ["Dessus / Dessous", "Puce / Pousse", "Rue / Roue", "Jus / Joue", "Tu / Tout"] },
+        { title: "Leçon 60: [s] vs [ʃ] (s/ch)", phrases: ["Sait / Sait", "Son / Chon", "Sale / Châle", "Serre / Cher", "Si / Chie"] },
+        { title: "Leçon 61: [z] vs [ʒ] (z/j)", phrases: ["Zéro / Géraud", "Vase / Vage", "Buse / Bouge", "Rose / Rouge", "Caser / Cager"] },
+        { title: "Leçon 62: [l] vs [ʁ] (l/r)", phrases: ["Lent / Rent", "Loi / Roi", "La / Rat", "Loup / Roux", "Lait / Raie"] },
+        { title: "Leçon 63: [b] vs [v]", phrases: ["Bas / Va", "Bain / Vin", "Beau / Veau", "Bille / Ville", "Boi / Vois"] },
+        { title: "Leçon 64: [wa] vs [wɛ̃] (oi/oin)", phrases: ["Loi / Loin", "Point / Poing", "Soir / Soin", "Foire / Foin", "Trois / Troin"] },
+        { title: "Leçon 65: [j] vs [ɲ] (ill/gn)", phrases: ["Paille / pagne", "Bille / Bigne", "Fille / Vigne"] },
+        { title: "Leçon 66: [bu] vs [by]", phrases: ["Boue / Bu", "Bouche / Bûche", "Bout / But", "Cours / Cure"] }
+    ]},
+    // =========== Category 10: Rythme et Intonation (리듬과 억양) ===========
+    { category: "Rythme et Intonation (리듬과 억양)", lessons: [
+        { title: "Leçon 67: Groupe rythmique (simple)", phrases: ["Le petit chat", "est sur le toit.", "Le petit chat est sur le toit.", "Mon ami", "est très gentil.", "Mon ami est très gentil."] },
+        { title: "Leçon 68: Intonation déclarative (descendante)", phrases: ["Je vais à l'école.", "Il fait beau aujourd'hui.", "Nous mangeons une pomme.", "Elle travaille à Paris.", "Le livre est sur la table."] },
+        { title: "Leçon 69: Intonation interrogative (montante)", phrases: ["Tu viens ce soir ?", "Vous êtes prêt ?", "Elle aime le chocolat ?", "Il a un frère ?", "C'est votre voiture ?"] },
+        { title: "Leçon 70: Interrogation avec 'est-ce que'", phrases: ["Est-ce que tu viens ce soir ?", "Est-ce que vous êtes prêt ?", "Est-ce qu'elle aime le chocolat ?", "Est-ce qu'il a un frère ?"] },
+        { title: "Leçon 71: Interrogation avec inversion", phrases: ["Viens-tu ce soir ?", "Êtes-vous prêt ?", "Aime-t-elle le chocolat ?", "A-t-il un frère ?", "Est-ce votre voiture ?"] },
+        { title: "Leçon 72: Interrogation avec mot interrogatif", phrases: ["Où allez-vous ?", "Quand partez-vous ?", "Comment vous appelez-vous ?", "Pourquoi pleures-tu ?", "Qui est là ?"] },
+        { title: "Leçon 73: Intonation exclamative", phrases: ["Quelle belle surprise !", "Comme c'est intéressant !", "C'est incroyable !", "J'en ai marre !", "Attention !"] },
+        { title: "Leçon 74: Mise en relief (C'est... que)", phrases: ["C'est toi que j'ai vu.", "C'est à Paris que j'habite.", "C'est ce livre que je veux.", "C'est demain qu'il part.", "C'est pour ça que je suis en retard."] },
+        { title: "Leçon 75: Phrase longue (1)", phrases: ["Je pense que le film que nous avons vu hier soir était vraiment exceptionnel."] },
+        { title: "Leçon 76: Phrase longue (2)", phrases: ["Si vous avez le temps, pourriez-vous m'aider à porter ces boîtes, s'il vous plaît ?"] },
+        { title: "Leçon 77: Phrase longue (3)", phrases: ["Bien que le temps soit mauvais, nous avons décidé de sortir pour nous promener un peu."] },
+        { title: "Leçon 78: Phrase longue (4)", phrases: ["N'oubliez pas d'acheter du pain en rentrant du travail ce soir."] },
+        { title: "Leçon 79: Phrase longue (5)", phrases: ["L'étudiant qui a posé la question la plus pertinente a reçu les félicitations du professeur."] },
+        { title: "Leçon 80: L'accent tonique", phrases: ["J'haBITE à PaRIS.", "C'est fanTAS-TIQUE !", "Je ne comPRENDS pas.", "C'est très imporTANT."] }
+    ]},
+    // =========== Category 11: Pratique Intégrée (통합 연습) ===========
+    { category: "Pratique Intégrée (통합 연습)", lessons: [
+        { title: "Leçon 81: Au téléphone", phrases: ["Allô ? Je voudrais parler à Monsieur Dubois.", "Ne quittez pas, je vous le passe.", "C'est de la part de qui ?", "Pourriez-vous rappeler plus tard ?", "Laissez un message après le bip."] },
+        { title: "Leçon 82: Décrire une personne", phrases: ["Il est grand avec les cheveux bruns.", "Elle a les yeux bleus et porte des lunettes.", "C'est quelqu'un de très sympathique et d'ouvert.", "Son style vestimentaire est assez classique."] },
+        { title: "Leçon 83: Raconter sa journée", phrases: ["Ce matin, je me suis levé tôt.", "Ensuite, j'ai pris mon petit-déjeuner.", "Je suis allé au travail en métro.", "J'ai eu une réunion importante.", "Ce soir, je vais me reposer."] },
+        { title: "Leçon 84: Donner son opinion", phrases: ["À mon avis, c'est une bonne idée.", "Je pense que tu as raison.", "Je ne suis pas d'accord avec toi.", "Pour moi, le plus important, c'est la santé.", "Je crois qu'il va pleuvoir."] },
+        { title: "Leçon 85: Parler de ses passions", phrases: ["J'adore écouter de la musique.", "Ma passion, c'est la photographie.", "Je suis un grand fan de cinéma.", "Le week-end, j'aime faire de la randonnée.", "Je joue du piano depuis dix ans."] },
+        { title: "Leçon 86: Chez le médecin", phrases: ["Bonjour docteur, je ne me sens pas bien.", "J'ai mal à la tête et j'ai de la fièvre.", "Depuis quand avez-vous ces symptômes ?", "Vous avez besoin de repos.", "Voici une ordonnance."] },
+        { title: "Leçon 87: Faire des courses", phrases: ["Bonjour, je voudrais un kilo de tomates.", "Il me faut aussi une bouteille de lait.", "Vous payez par carte ou en espèces ?", "Avez-vous la carte de fidélité ?", "Merci, bonne journée."] },
+        { title: "Leçon 88: Proverbe 1", phrases: ["Petit à petit, l'oiseau fait son nid."] },
+        { title: "Leçon 89: Proverbe 2", phrases: ["Il ne faut pas vendre la peau de l'ours avant de l'avoir tué."] },
+        { title: "Leçon 90: Proverbe 3", phrases: ["Après la pluie, le beau temps."] },
+        { title: "Leçon 91: Citation 1 (Saint-Exupéry)", phrases: ["On ne voit bien qu'avec le cœur. L'essentiel est invisible pour les yeux."] },
+        { title: "Leçon 92: Citation 2 (Camus)", phrases: ["Au milieu de l'hiver, j'ai découvert en moi un invincible été."] },
+        { title: "Leçon 93: Lecture de poésie 1 (Verlaine)", phrases: ["Les sanglots longs des violons de l'automne blessent mon cœur d'une langueur monotone."] },
+        { title: "Leçon 94: Lecture de poésie 2 (Rimbaud)", phrases: ["C'est un trou de verdure où chante une rivière, accrochant follement aux herbes des haillons d'argent."] },
+        { title: "Leçon 95: Lecture de poésie 3 (Baudelaire)", phrases: ["La Nature est un temple où de vivants piliers laissent parfois sortir de confuses paroles."] },
+        { title: "Leçon 96: Virelangue 4", phrases: ["Trois tortues tristes trottaient sur trois toits très étroits."] },
+        { title: "Leçon 97: Virelangue 5", phrases: ["Je veux et j'exige d'exquises excuses."] },
+        { title: "Leçon 98: Virelangue 6", phrases: ["Panier, piano. Piano, panier."] },
+        { title: "Leçon 99: Phrases complexes (Subjonctif)", phrases: ["Il faut que j'y aille.", "Je doute qu'il vienne.", "Je veux que tu sois heureux.", "C'est dommage qu'il pleuve."] },
+        { title: "Leçon 100: Phrases complexes (Conditionnel)", phrases: ["Si j'avais su, je serais venu.", "J'aimerais beaucoup visiter la France.", "Pourriez-vous m'indiquer le chemin ?", "On dirait qu'il va faire beau."] }
+    ]}
+];
+
+        class IndexedDBManager {
+            constructor(dbName, storeName) { this.dbName = dbName; this.storeName = storeName; this.db = null; }
+            async init() { return new Promise((resolve, reject) => { const request = indexedDB.open(this.dbName, 1); request.onerror = () => reject("IndexedDB failed to open."); request.onsuccess = (event) => { this.db = event.target.result; resolve(); }; request.onupgradeneeded = (event) => { const db = event.target.result; if (!db.objectStoreNames.contains(this.storeName)) { db.createObjectStore(this.storeName, { keyPath: 'id', autoIncrement: true }); } }; }); }
+            async addRecording(record) { return new Promise((resolve, reject) => { const transaction = this.db.transaction([this.storeName], 'readwrite'); const store = transaction.objectStore(this.storeName); const request = store.add(record); request.onsuccess = resolve; request.onerror = () => reject("Failed to save recording."); }); }
+            async getAllRecordings() { return new Promise((resolve, reject) => { const transaction = this.db.transaction([this.storeName], 'readonly'); const store = transaction.objectStore(this.storeName); const request = store.getAll(); request.onsuccess = () => resolve(request.result.reverse()); request.onerror = () => reject("Failed to load recordings."); }); }
+            async getRecording(id) { return new Promise((resolve, reject) => { const transaction = this.db.transaction([this.storeName], 'readonly'); const store = transaction.objectStore(this.storeName); const request = store.get(id); request.onsuccess = () => resolve(request.result); request.onerror = () => reject("Failed to get recording."); }); }
+        }
+
+        class App {
+            constructor() {
+                this.dataManager = new DataManager(LESSON_DATA);
+                this.ttsManager = new TTSManager();
+                this.recordManager = new RecordManager();
+                this.lessonHistoryManager = new LocalStorageManager("orateur_lesson_history");
+                this.dbManager = new IndexedDBManager("OrateurDB", "recordings");
+                this.uiController = new UIController();
+                this.currentLesson = null;
+                this.currentPhraseIndex = 0;
+                this.currentPhraseAudio = null;
+            }
+            async run() {
+                try {
+                    await this.dbManager.init();
+                    this.uiController.renderHistory(this.lessonHistoryManager.getHistory());
+                    this.uiController.bindEvents(this.getEventHandlers());
+                    this.updateUI();
+                } catch (error) { console.error("Application failed to start:", error); this.uiController.updateStatus("앱 초기화에 실패했습니다. 브라우저를 확인해주세요.", "error"); }
+            }
+            getEventHandlers() {
+                return {
+                    showPracticeView: () => this.uiController.showView('practice'),
+                    showRecordBoard: async () => { this.uiController.showView('record-board'); const records = await this.dbManager.getAllRecordings(); this.uiController.renderRecordBoard(records); },
+                    playHistoryRecord: (id) => this.handlePlayHistoryRecord(id),
+                    playHistoryTTS: (phrase) => this.ttsManager.speak(phrase),
+                    showCategoryView: () => this.uiController.renderCategories(this.dataManager.getCategories()),
+                    openModal: () => { this.uiController.renderCategories(this.dataManager.getCategories()); this.uiController.toggleModal(true); },
+                    selectCategory: (category) => this.uiController.renderLessons(this.dataManager.getLessonsForCategory(category), category),
+                    selectLesson: (category, title) => { this.startLesson(category, title); this.uiController.toggleModal(false); },
+                    selectHistory: (dataset) => { this.startLesson(dataset.category, dataset.title); if (this.uiController.isSidebarActive()) { this.uiController.toggleSidebar(); } },
+                    nextPhrase: () => this.changePhrase(1),
+                    prevPhrase: () => this.changePhrase(-1),
+                    playTTS: () => this.handleTTS(),
+                    toggleRecording: () => this.handleRecording(),
+                    playCurrentAudio: () => this.handlePlayCurrentAudio(),
+                    toggleSidebar: () => this.uiController.toggleSidebar(),
+                    closeModal: () => this.uiController.toggleModal(false),
+                };
+            }
+            startLesson(category, title) { this.currentLesson = { category, title, phrases: this.dataManager.getPhrases(category, title) }; this.currentPhraseIndex = 0; this.lessonHistoryManager.addHistory({ category, title }); this.uiController.renderHistory(this.lessonHistoryManager.getHistory()); this.setCurrentPhrase(); }
+            changePhrase(direction) { const newIndex = this.currentPhraseIndex + direction; if (this.currentLesson && newIndex >= 0 && newIndex < this.currentLesson.phrases.length) { this.currentPhraseIndex = newIndex; this.setCurrentPhrase(); } }
+            setCurrentPhrase() { this.currentPhraseAudio = null; this.updateUI(); }
+            async handleTTS() { if (this.currentLesson) { await this.ttsManager.speak(this.currentLesson.phrases[this.currentPhraseIndex]); } }
+            async handleRecording() {
+                if (this.recordManager.isRecording()) {
+                    const audioBlob = await this.recordManager.stopRecording();
+                    if (audioBlob) {
+                        this.currentPhraseAudio = audioBlob;
+                        await this.dbManager.addRecording({ lessonTitle: this.currentLesson.title, phrase: this.currentLesson.phrases[this.currentPhraseIndex], audioBlob: audioBlob, timestamp: new Date().toISOString(), });
+                        this.uiController.updateStatus("녹음이 저장되었습니다.");
+                    }
+                } else {
+                    try { this.currentPhraseAudio = null; await this.recordManager.startRecording(); this.uiController.updateStatus("녹음 중..."); } catch (error) { this.uiController.updateStatus("마이크를 사용할 수 없습니다.", "error"); }
+                }
+                this.updateUI();
+            }
+            handlePlayCurrentAudio() { if (this.currentPhraseAudio) { new Audio(URL.createObjectURL(this.currentPhraseAudio)).play(); } }
+            async handlePlayHistoryRecord(id) { try { const record = await this.dbManager.getRecording(id); if (record && record.audioBlob) { new Audio(URL.createObjectURL(record.audioBlob)).play(); } } catch (error) { console.error("Error playing recording:", error); this.uiController.updateStatus("녹음 재생에 실패했습니다.", "error"); } }
+            updateUI() { const phrase = this.currentLesson ? this.currentLesson.phrases[this.currentPhraseIndex] : "레슨을 선택해주세요."; const isLessonActive = !!this.currentLesson; const isRecording = this.recordManager.isRecording(); this.uiController.updatePhrase(phrase); this.uiController.updateButtonStates({ tts: isLessonActive && !isRecording, record: isLessonActive, playback: isLessonActive && !isRecording && !!this.currentPhraseAudio, }); this.uiController.updateRecordButton(isRecording); this.uiController.toggleNavigationVisibility(isLessonActive); if (isLessonActive) { this.uiController.updateNavigation(this.currentPhraseIndex, this.currentLesson.phrases.length); } }
+        }
+
+        class UIController {
+            constructor() {
+                const elementIds = ["practice-area", "record-board-area", "record-board-list", "sidebar", "hamburger", "lesson-modal", "modal-header", "modal-back-btn", "modal-title", "modal-body", "modal-close-btn", "current-phrase", "status-display", "tts-btn", "record-btn", "playback-btn", "phrase-nav-container", "prev-phrase-btn", "next-phrase-btn", "phrase-counter", "history-list", "show-practice-view-btn", "show-record-board-btn", "open-modal-btn"];
+                for (const id of elementIds) {
+                    const element = document.getElementById(id);
+                    if (!element) { throw new Error(`CRITICAL ERROR: UI Element with ID "${id}" not found in HTML.`); }
+                    const propName = id.replace(/-(\w)/g, (_, letter) => letter.toUpperCase());
+                    this[propName] = element;
+                }
+            }
+            bindEvents(handlers) {
+                this.showPracticeViewBtn.addEventListener("click", handlers.showPracticeView);
+                this.showRecordBoardBtn.addEventListener("click", handlers.showRecordBoard);
+                this.openModalBtn.addEventListener("click", handlers.openModal);
+                
+                this.recordBoardList.addEventListener("click", (event) => {
+                    const button = event.target.closest(".icon-btn");
+                    if (!button) return;
+                    const item = button.closest(".record-item");
+                    if (!item) return;
+                    const recordId = parseInt(item.dataset.id, 10);
+                    const phrase = item.dataset.phrase;
+                    if (button.classList.contains("play-tts-btn")) { handlers.playHistoryTTS(phrase); }
+                    else if (button.classList.contains("play-record-btn")) { handlers.playHistoryRecord(recordId); }
+                });
+                
+                this.hamburger.addEventListener("click", handlers.toggleSidebar);
+                this.modalCloseBtn.addEventListener("click", handlers.closeModal);
+                this.modalBackBtn.addEventListener("click", handlers.showCategoryView);
+                this.prevPhraseBtn.addEventListener("click", handlers.prevPhrase);
+                this.nextPhraseBtn.addEventListener("click", handlers.nextPhrase);
+                this.ttsBtn.addEventListener("click", handlers.playTTS);
+                this.recordBtn.addEventListener("click", handlers.toggleRecording);
+                this.playbackBtn.addEventListener("click", handlers.playCurrentAudio);
+                
+                document.querySelector(".main-content").addEventListener("click", () => { if (this.isSidebarActive()) { handlers.toggleSidebar(); } });
+                this.lessonModal.addEventListener("click", (event) => { if (event.target === this.lessonModal) { handlers.closeModal(); } });
+                
+                this.modalBody.addEventListener("click", (event) => {
+                    const button = event.target.closest(".btn");
+                    if (button) {
+                        const { type, category, title } = button.dataset;
+                        if (type === 'category') { handlers.selectCategory(category); }
+                        else if (type === 'lesson') { handlers.selectLesson(category, title); }
+                    }
+                });
+                
+                this.historyList.addEventListener("click", (event) => { const item = event.target.closest(".history-item"); if (item) { handlers.selectHistory(item.dataset); } });
+            }
+            showView(viewName) { this.practiceArea.classList.toggle("is-hidden", viewName !== 'practice'); this.recordBoardArea.classList.toggle("is-hidden", viewName !== 'record-board'); }
+            renderRecordBoard(records) { this.recordBoardList.innerHTML = records.map(record => `<li class="record-item" data-id="${record.id}" data-phrase="${record.phrase}"><div class="record-info"><span class="phrase">"${record.phrase}"</span><span class="timestamp">${new Date(record.timestamp).toLocaleString("ko-KR")}</span></div><div class="record-item-controls"><button class="icon-btn play-tts-btn" title="원문 듣기"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" height="24" width="24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg></button><button class="icon-btn play-record-btn" title="내 녹음 듣기"><svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" height="24" width="24"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg></button></div></li>`).join(""); }
+            updatePhrase(phrase) { this.currentPhrase.textContent = phrase; }
+            updateStatus(text, type = "info") { this.statusDisplay.textContent = text; this.statusDisplay.style.color = type === "error" ? "var(--danger-color)" : "var(--text-light-color)"; }
+            updateButtonStates({ tts, record, playback }) { this.ttsBtn.disabled = !tts; this.recordBtn.disabled = !record; this.playbackBtn.classList.toggle("is-hidden", !playback); }
+            updateRecordButton(isRecording) { this.recordBtn.innerHTML = isRecording ? '<div style="display:flex;align-items:center;gap:.5rem;"><div style="width:10px;height:10px;background-color:white;border-radius:50%;animation:pulse 1.5s infinite;"></div>Arrêter</div>' : 'Enregistrer'; this.recordBtn.style.backgroundColor = isRecording ? "var(--danger-color)" : ""; if (!document.querySelector("style#pulse-animation")) { const style = document.createElement('style'); style.id = 'pulse-animation'; style.innerHTML = `@keyframes pulse{0%{opacity:1}50%{opacity:.2}100%{opacity:1}}`; document.head.appendChild(style); } }
+            updateNavigation(index, total) { this.phraseCounter.textContent = `${index + 1} / ${total}`; this.prevPhraseBtn.disabled = index === 0; this.nextPhraseBtn.disabled = index === total - 1; }
+            toggleNavigationVisibility(show) { this.phraseNavContainer.classList.toggle("is-hidden", !show); }
+            renderHistory(history) { this.historyList.innerHTML = history.map(item => `<li class="history-item" data-category="${item.category}" data-title="${item.title}">${item.title}</li>`).join(""); }
+            renderCategories(categories) { this.modalTitle.textContent = "카테고리 선택"; this.modalBackBtn.classList.add("is-hidden"); this.modalBody.innerHTML = categories.map(category => `<button class="btn btn-modal-item" data-type="category" data-category="${category}">${category}</button>`).join(""); }
+            renderLessons(lessons, categoryName) { this.modalTitle.textContent = categoryName; this.modalBackBtn.classList.remove("is-hidden"); this.modalBody.innerHTML = lessons.map(lesson => `<button class="btn btn-modal-item" data-type="lesson" data-category="${categoryName}" data-title="${lesson.title}">${lesson.title}</button>`).join(""); }
+            toggleModal(show) { this.lessonModal.classList.toggle("is-hidden", !show); }
+            toggleSidebar() { this.sidebar.classList.toggle("is-active"); }
+            isSidebarActive() { return this.sidebar.classList.contains("is-active"); }
+        }
+
+        class RecordManager{constructor(){this._isRecording=!1,this.mediaRecorder=null,this.audioChunks=[]}isRecording(){return this._isRecording}async startRecording(){const t=await navigator.mediaDevices.getUserMedia({audio:!0});this._isRecording=!0,this.mediaRecorder=new MediaRecorder(t,{mimeType:"audio/webm"}),this.mediaRecorder.ondataavailable=t=>this.audioChunks.push(t.data),this.mediaRecorder.start()}stopRecording(){return new Promise(t=>{this.mediaRecorder.onstop=()=>{const e=new Blob(this.audioChunks,{type:"audio/webm"});this.audioChunks=[],this._isRecording=!1,this.mediaRecorder.stream.getTracks().forEach(t=>t.stop()),t(e)},"recording"===this.mediaRecorder.state&&this.mediaRecorder.stop()})}}
+        class DataManager{constructor(t){this._allData=t}getCategories(){return this._allData.map(t=>t.category)}getLessonsForCategory(t){const e=this._allData.find(e=>e.category===t);return e?e.lessons:[]}getPhrases(t,e){const s=this._allData.find(s=>s.category===t)?.lessons.find(t=>t.title===e);return s?s.phrases:[]}}
+        class LocalStorageManager{constructor(t){this.storageKey=t}getHistory(){return JSON.parse(localStorage.getItem(this.storageKey))||[]}addHistory(t){let e=this.getHistory().filter(e=>e.title!==t.title);e.unshift(t),e.length>15&&e.pop(),localStorage.setItem(this.storageKey,JSON.stringify(e))}}
+        class TTSManager{constructor(){this.synth=window.speechSynthesis;this.utterance=new SpeechSynthesisUtterance;this.utterance.lang="fr-FR";this.utterance.rate=.9}speak(t){return new Promise(e=>{this.utterance.text=t,this.utterance.onend=e,this.synth.cancel(),this.synth.speak(this.utterance)})}}
+        
+        document.addEventListener("DOMContentLoaded", () => {
+            new App().run();
+        });
+    </script>
+</body>
+</html>
