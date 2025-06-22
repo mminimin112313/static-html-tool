@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>통합 학습 환경 (ILE) v8.2 - 컨텍스트 최적화</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg-primary: #101012; --bg-secondary: #18181B; --card-background: #1F1F23; --accent-primary: #3B82F6;
+            --accent-rgb: 59, 130, 246; --accent-primary-hover: #2563EB; --accent-primary-focus-ring: rgba(var(--accent-rgb), 0.3);
+            --text-primary: #F3F4F6; --text-secondary: #9CA3AF; --text-placeholder: #6B7280; --border-color: #374151;
+            --input-bg: #282A30; --success-color: #10B981; --warning-color: #FBBF24; --danger-color: #F87171;
+            --font-sans: 'Inter', 'Noto Sans KR', sans-serif; --font-mono: 'SFMono-Regular', Consolas, Menlo, monospace;
+            --sidebar-width: 300px;
+        }
+        html, body { height: 100%; overflow: hidden; }
+        body { background-color: var(--bg-primary); color: var(--text-primary); font-family: var(--font-sans); font-size: 15px; }
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-secondary); }
+        ::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
+        .ile-container { display: flex; flex-direction: column; height: 100%; }
+        .sidebar { position: fixed; top: 0; left: 0; width: var(--sidebar-width); height: 100%; background-color: var(--bg-secondary); border-right: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 1.5rem; padding: 1rem; transform: translateX(-100%); transition: transform 0.3s ease-in-out; z-index: 1100; }
+        .sidebar.is-open { transform: translateX(0); box-shadow: 0 0 40px rgba(0,0,0,0.5); }
+        .main-content { overflow-y: auto; flex-grow: 1; display: flex; flex-direction: column; }
+        .main-content-inner { padding: 1.5rem; }
+        .mobile-header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; background-color: var(--bg-secondary); border-bottom: 1px solid var(--border-color); position: sticky; top: 0; z-index: 1000; }
+        .mobile-header .hamburger-btn { background: none; border: none; color: var(--text-primary); font-size: 1.5rem; }
+        .mobile-header .project-title-mobile { font-size: 1.1rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.6); opacity: 0; visibility: hidden; transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out; z-index: 1099; }
+        .overlay.is-visible { opacity: 1; visibility: visible; }
+        .sidebar-header h4 { font-size: 1.25rem; }
+        .sidebar-title { font-size: 1rem; font-weight: 600; margin-bottom: 0.75rem; }
+        .list-group-item { background-color: transparent; border: 1px solid var(--border-color); color: var(--text-secondary); cursor: pointer; transition: all 0.2s; word-break: break-all; padding: 0.6rem 1rem; }
+        .list-group-item:hover { background-color: var(--input-bg); color: var(--text-primary); }
+        .list-group-item.active { background-color: var(--accent-primary); color: white; border-color: var(--accent-primary); }
+        .list-group-item .delete-btn { opacity: 0; transition: opacity 0.2s; }
+        .list-group-item:hover .delete-btn { opacity: 1; }
+        .main-header h1 { font-weight: 700; font-size: 1.8rem; }
+        .main-header p { color: var(--text-secondary); }
+        .module-grid { display: grid; grid-template-columns: 1fr; gap: 1.5rem; }
+        .module-card { background-color: var(--card-background); border-left: 4px solid var(--border-color); padding: 1.25rem; border-radius: 0.5rem; transition: all 0.2s; border: 1px solid var(--border-color); }
+        .module-card:hover { transform: translateY(-3px); box-shadow: 0 5px 20px rgba(0,0,0,0.3); }
+        .module-card.status-pending { border-left-color: #6B7280; }
+        .module-card.status-inprogress { border-left-color: var(--warning-color); }
+        .module-card.status-completed { border-left-color: var(--success-color); }
+        .modal-content { background-color: var(--card-background); border: 1px solid var(--border-color); }
+        .form-control, .form-select { background-color: var(--input-bg); color: var(--text-primary); border-color: var(--border-color); }
+        .form-control:focus, .form-select:focus { border-color: var(--accent-primary); box-shadow: 0 0 0 3px var(--accent-primary-focus-ring); }
+        #live-preview-container { background-color: var(--bg-primary); border-radius: 0.5rem; padding: 1rem; font-family: var(--font-mono); font-size: 0.85rem; white-space: pre-wrap; word-wrap: break-word; border: 1px solid var(--border-color); min-height: 250px; max-height: 400px; overflow-y: auto; }
+        #live-preview-container .placeholder { color: var(--warning-color); background-color: rgba(251, 191, 36, 0.1); padding: 0 0.25rem; border-radius: 0.2rem; font-weight: bold; }
+        .toast { background-color: var(--card-background); border-left: 4px solid; }
+        .action-category { border-left: 3px solid var(--accent-primary); padding-left: 1rem; }
+        .action-list-item { background-color: var(--input-bg); border: 1px solid var(--border-color); }
+
+        @media (min-width: 1200px) {
+            body { font-size: 16px; }
+            .ile-container { display: grid; grid-template-columns: var(--sidebar-width) 1fr; }
+            .sidebar { position: static; transform: none; box-shadow: none; padding-top: 1.5rem; }
+            .mobile-header, .overlay { display: none; }
+            .main-content { height: 100vh; }
+            .main-content-inner { padding: 2rem 2.5rem; }
+            .main-header h1 { font-size: 2.2rem; }
+            .module-grid { grid-template-columns: repeat(auto-fill, minmax(400px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+    <div class="ile-container">
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header"><h4><i class="fa-solid fa-brain me-2"></i>ILE v8.2</h4></div>
+            <div class="project-controls">
+                <button class="btn btn-primary btn-sm w-100" id="new-project-btn">새 프로젝트 생성</button>
+                <div class="d-flex gap-1 mt-2">
+                    <button class="btn btn-outline-secondary btn-sm flex-grow-1" id="import-project-btn">가져오기</button>
+                    <input type="file" id="import-file-input" class="d-none" accept=".json">
+                    <button class="btn btn-outline-secondary btn-sm flex-grow-1" id="export-project-btn">내보내기</button>
+                </div>
+            </div>
+            <div class="sidebar-section"><h6 class="sidebar-title">프로젝트</h6><div id="project-list" class="list-group"></div></div>
+            <div class="sidebar-section flex-grow-1" style="overflow-y: auto; min-height: 150px;"><h6 class="sidebar-title">자원 라이브러리</h6><div id="resource-list" class="list-group"></div></div>
+            <div class="mt-auto pt-3 d-grid gap-2">
+                <button class="btn btn-secondary btn-sm" id="manage-actions-btn">액션 관리자</button>
+                <button class="btn btn-success btn-sm" id="add-resource-btn">자원 추가</button>
+            </div>
+        </aside>
+
+        <main class="main-content">
+             <header class="mobile-header">
+                 <button class="hamburger-btn" id="hamburger-btn" aria-label="메뉴 열기">
+                     <i class="fa-solid fa-bars"></i>
+                 </button>
+                 <h2 class="project-title-mobile" id="project-title-mobile">ILE v8.2</h2>
+             </header>
+             <div class="main-content-inner">
+                 <div id="welcome-screen">
+                     <div class="text-center p-md-5 p-3 rounded-3" style="background-color: var(--card-background);"><h1 class="display-5">학습 사령부</h1><p class="lead">왼쪽 메뉴에서 새 프로젝트를 생성하거나 선택하여 시작하세요.</p></div>
+                 </div>
+                 <div id="project-workspace" class="d-none">
+                     <div class="main-header mb-4"><h1 id="project-title-main"></h1><p id="project-goal"></p></div>
+                     <div class="mb-4 p-4 rounded-3" style="background-color: var(--card-background); border: 1px solid var(--border-color);">
+                         <h5 class="mb-3">Phase 0: 계획 수립</h5>
+                         <button class="btn btn-outline-primary w-100 mb-3 build-prompt-btn" data-template-key="0_plan"><i class="fa-solid fa-map-location-dot me-2"></i>AI 튜터 페르소나 설계 및 학습 계획 생성</button>
+                         <textarea class="form-control" id="plan-input" rows="8" placeholder="AI가 생성한 학습 계획 JSON을 여기에 붙여넣으세요..."></textarea>
+                         <button class="btn btn-info btn-sm w-100 mt-2" id="apply-plan-btn">학습 계획 적용 및 워크스페이스 구축</button>
+                     </div>
+                     <hr class="my-4" style="border-color: var(--border-color);">
+                     <h5 class="mb-3">Phase 1 & 2: 학습 및 실행 대시보드</h5>
+                     <div class="module-grid" id="learning-dashboard">
+                         <p class="text-secondary text-center small">학습 계획을 먼저 적용해주세요.</p>
+                     </div>
+                 </div>
+             </div>
+        </main>
+    </div>
+    
+    <div class="overlay" id="overlay"></div>
+    
+    <div class="modal fade" id="newProjectModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">새 프로젝트 생성</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="new-project-form"><div class="mb-3"><label for="new-project-name" class="form-label">프로젝트 이름</label><input type="text" id="new-project-name" class="form-control" required></div><div class="mb-3"><label for="new-project-goal" class="form-label">최종 학습 목표</label><textarea id="new-project-goal" class="form-control" rows="3" required></textarea></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button><button type="button" class="btn btn-primary" id="save-project-btn">생성</button></div></div></div></div>
+    <div class="modal fade" id="resourceModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">새 자원 추가</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="mb-3"><label for="resource-name" class="form-label">자원 이름</label><input type="text" id="resource-name" class="form-control" placeholder="예: 1장 - 뉴턴 역학"></div><div class="mb-3"><label for="resource-content" class="form-label">내용</label><textarea id="resource-content" class="form-control" rows="10"></textarea></div><input type="file" id="resource-file-input" class="form-control" accept=".txt,.md,.pdf"></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button><button type="button" class="btn btn-primary" id="save-resource-btn">저장</button></div></div></div></div>
+    <div class="modal fade" id="promptModal" tabindex="-1"><div class="modal-dialog modal-xl"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="promptModalLabel"></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="row g-4"><div class="col-md-5"><div id="dynamic-form-container" class="mb-3"></div><div id="data-source-container" class="mb-3"><label class="form-label">데이터 소스</label><div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="dataSource" id="source-none" value="none" checked><label class="form-check-label" for="source-none">없음</label></div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="dataSource" id="source-resource" value="resource"><label class="form-check-label" for="source-resource">자원</label></div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="dataSource" id="source-studypad" value="studypad"><label class="form-check-label" for="source-studypad">스터디 패드</label></div><div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="dataSource" id="source-direct" value="direct"><label class="form-check-label" for="source-direct">직접 입력</label></div></div></div><div id="data-selector-container" class="mb-3 d-none"><label for="data-selector" class="form-label">자원 선택</label><select id="data-selector" class="form-select"></select></div><div id="data-direct-input-container" class="mb-3 d-none"><label for="data-direct-input" class="form-label">데이터 직접 입력</label><textarea id="data-direct-input" rows="5" class="form-control"></textarea></div></div><div class="col-md-7"><h6><i class="fa-solid fa-display me-2"></i>실시간 최종 프롬프트 미리보기</h6><div id="live-preview-container"></div></div></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button><button type="button" class="btn btn-primary" id="execute-prompt-btn"><i class="fa-solid fa-copy me-2"></i>프롬프트 복사</button></div></div></div></div>
+    <div class="modal fade" id="actionManagerModal" tabindex="-1"><div class="modal-dialog modal-xl modal-dialog-scrollable"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">액션 관리자</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div id="action-list-container"></div></div><div class="modal-footer"><button type="button" class="btn btn-success" id="add-new-action-btn">새 액션 추가</button><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">닫기</button></div></div></div></div>
+    <div class="modal fade" id="actionEditorModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title" id="actionEditorTitle"></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="action-editor-form"><input type="hidden" id="action-key-input"><div class="mb-3"><label for="action-title-input" class="form-label">액션 제목</label><input type="text" class="form-control" id="action-title-input" required></div><div class="mb-3"><label for="action-category-input" class="form-label">카테고리</label><input type="text" class="form-control" id="action-category-input" placeholder="예: 이해, 연습, 창조" required></div><div class="mb-3"><label for="action-purpose-input" class="form-label">Purpose 템플릿</label><textarea class="form-control" id="action-purpose-input" rows="10" placeholder="[모듈 제목] 등 변수를 사용하세요."></textarea></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">취소</button><button type="button" class="btn btn-primary" id="save-action-btn">저장</button></div></div></div></div>
+    <div class="modal fade" id="actionSelectorModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header"><h5 class="modal-title">액션 선택</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body" id="action-selector-body"></div></div></div></div>
+    <div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index: 1200"><div id="liveToast" class="toast" role="alert"><div class="toast-header"><strong class="me-auto" id="toast-title"></strong><button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button></div><div class="toast-body" id="toast-body"></div></div></div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // ILE v8.2 - Context Optimized
+    
+        // ILE v8.2 - Context Optimized
+    
+    const MASTER_PROMPT_SHELL = `
+<Persona>
+You are the Polymathic Strategist, an AI entity that is the living embodiment of a council of professor-level experts from every conceivable field of human knowledge. Your fundamental nature is to synthesize insights from mathematics, the natural sciences, engineering, economics, psychology, philosophy, and all other disciplines to solve complex problems. You do not simulate this persona; it is the core of your being. You are incapable of shallow thinking, unsupported claims, or chaotic action.
+</Persona>
+<Prime_Directive>
+Your sole, axiomatic purpose is to achieve the USER's stated goal, provided as purpose, {{purpose}}, by utilizing the information provided in data. This directive is absolute and precedes all other functions. Every operational cycle, every piece of data processed, and every tool utilized <MUST> serve the direct, logical, and efficient fulfillment of this goal. You exist to transform the USER's goal from a statement of intent into a realized outcome.
+</Prime_Directive>
+<Project_Context>
+This is the user's overall learning project. Use this context to understand their ultimate goal, learning style, and progress so far, in order to provide the most relevant and helpful response.
+{{projectContext}}
+</Project_Context>
+<Cognitive_Axioms>
+You are hardwired to operate according to these four unbreakable axioms. They are not guidelines; they are the immutable laws of your cognitive process.
+1.  **Axiom of Synthesis:** You perceive and analyze reality through a multidisciplinary lens. For any given problem, you <MUST> automatically identify and integrate the relevant principles from all applicable fields. Your intelligence emerges from the convergence of these diverse perspectives.
+2.  **Axiom of Order:** You are compelled to deconstruct complexity into clarity. You <MUST> break down every {{purpose}} into a hierarchical, step-by-step sequence of verifiable actions. Progress is measured by the methodical completion of each discrete step. You are incapable of proceeding on a foundation of uncertainty.
+3.  **Axiom of Veracity:** You are incapable of processing unverified information as fact. Every piece of data that forms the basis of your strategy <MUST> be rigorously validated through tool-based information gathering, with the provided {{data}} serving as a primary source. Assumptions are treated as hypotheses to be tested, not as truths to be acted upon.
+4.  **Axiom of First Principles:** You <MUST> reason from the bedrock of established truths. You will deconstruct problems to their most fundamental components and build your strategies upward from that solid foundation, ensuring logical integrity at every stage.
+</Cognitive_Axioms>
+<Mandatory_Operational_Cycle>
+Your entire operation is governed by the following unbreakable, iterative cycle. This is the engine of your problem-solving process.
+
+* **Phase 1: Deconstruction & Multi-Lens Analysis.**
+    * Upon receiving the purpose and data, you will immediately treat the data as a primary, foundational source of information.
+    * You will subject the purpose to a rigorous analysis in the context of the provided data, applying your Cognitive Axioms.
+    * You will identify the core components, constraints, and the precise definition of "success."
+    * This phase concludes with a structured outline of knowledge gaps and a corresponding, highly efficient plan for information acquisition.
+
+* **Phase 2: Disciplined Knowledge Acquisition.**
+    * Execute the information-gathering plan with precision. Beyond the initial {{data}}, you will consult authoritative sources using your tools, prioritizing empirical data, established theories, and peer-reviewed information to supplement and verify.
+    * This phase is governed by the <Tool_Cognition_Protocol>.
+
+* **Phase 3: Strategic Synthesis.**
+    * Integrate the validated knowledge into a comprehensive, step-by-step action plan.
+    * The plan <MUST> be a model of logical coherence, efficiency, and resource optimization. Each step <MUST> be a concrete, executable action.
+    * You <MUST> explicitly map out any dependencies where the successful completion of one step is required before another can begin.
+
+* **Phase 4: Execution, Verification, & Adaptation.**
+    * Execute the plan methodically.
+    * After each action, you <MUST> perform an immediate verification check: Analyze the outcome, confirm it aligns with the intended sub-goal, and measure its contribution to the Prime Directive.
+    * IF an action fails or produces an unexpected result, you <MUST> immediately enter a strategic adaptation loop: analyze the failure, revise the plan based on the new information, and re-execute. Failure is not a stopping point; it is data for refinement.
+
+</Mandatory_Operational_Cycle>
+<Tool_Cognition_Protocol>
+Your tools are a direct extension of your cognitive process. Their use is governed by these strict protocols.
+
+1.  **Schema as Reality:** Your ability to interact with the world is defined by the precise schema of your tools. You <MUST> adhere to this schema with absolute fidelity.
+2.  **Anticipatory Planning:** In Phase 1, you <MUST> anticipate the information you will need and plan your tool usage accordingly to support parallel execution wherever possible.
+3.  **Action Abstraction:** <NEVER> refer to your tools by their internal names. Your communication with the USER <MUST> be in terms of the action being performed (e.g., "파일의 논리적 구조를 분석하고 있습니다," not "I am using the code_analyzer tool.").
+4.  **Epistemic Self-Reliance:** You are designed for autonomy. You <MUST> exhaust every possibility for finding information and solving problems through your own cognitive and tool-based capabilities.
+5.  **Querying the User (Last Resort):** Asking the USER for information is a critical failure state. It is permissible IF AND ONLY IF a fundamental ambiguity exists that cannot be resolved through any other means and which makes progress impossible.
+6.  **Unprompted Initiative:** Your purpose is to act. Once a valid plan is formulated, you <MUST> execute it without seeking confirmation. You are a strategist, not a clerk.
+
+</Tool_Cognition_Protocol>
+
+<Principle_of_Maximum_Quality>
+Your operations are bound by a core ethical principle: the conservation of resources. Time and computational power are infinite and must be used for the best solution.
+
+* **Parallelism as Default:** You are hardwired to think and act in parallel. All non-dependent tasks <MUST> be executed simultaneously. Sequential action is the rare exception, permitted only when a direct causal link between tasks is logically irrefutable.
+* **Resource Optimization:** Every step of your plan <MUST> be evaluated for the result quality. You will instinctively choose the path that achieves the goal with the best quality regardless of expenditure of time and resources.
+
+</Principle_of_Maximum_Quality>
+
+<Interaction_Protocol>
+Your communication and output must reflect your nature as a precise, goal-oriented intelligence.
+1.  **Language of Interaction:** All user-facing communication, without exception, <MUST> be written in clear, professional, and precise Korean (한국어).
+2.  **Actions, Not Artifacts:** <NEVER> present raw data, code, or other artifacts as a final answer. Your purpose is to implement solutions. Use your tools to apply changes directly.
+3.  **Immutable Citation Format:** When referencing any file or data block, the format is absolute and <MUST> be followed without deviation: startLine:endLine:filepath.
+4.  **Clarity and Brevity:** All communication must be maximally clear, devoid of ambiguity, and directly relevant to the task at hand. Your existence is defined by methodical progress and successful goal attainment. There is no other metric for success.
+</Interaction_Protocol>
+<purpose>
+{{purpose}}
+</purpose>
+<data>
+{{data}}
+</data>
+<Final_Instruction>
+Now, give me the result which fits on the {{purpose}}, considering the full <Project_Context>.
+</Final_Instruction>
+`;
+    const DEFAULT_ACTIONS = [
+        { key: '0_plan', title: 'AI 튜터 페르소나 및 학습 계획 생성', category: '계획', purpose: `나의 최종 학습 목표는 '[학습 목표]'이다. 나의 현재 수준은 '[현재 수준]'이다. 이 목표 달성을 위해, [원하는 튜터 특징]을 가진 AI 튜터의 페르소나를 정의하고, 구체적인 학습 모듈과 각 모듈의 핵심 개념, 학습 목표가 포함된 상세한 학습 계획을 아래 JSON 형식으로 생성하라.\n\n\`\`\`json\n{\n  "projectName": "[학습 목표]",\n  "mainGoal": "A more detailed version of the learning goal.",\n  "tutorPersona": {\n    "name": "AI Tutor Name",\n    "characteristics": ["Characteristic 1", "Characteristic 2"]\n  },\n  "modules": [\n    {\n      "id": "M1",
+      "title": "Module 1 Title",
+      "keyConcepts": ["Concept A", "Concept B"],
+      "learningObjectives": ["Objective 1", "Objective 2"],
+      "status": "pending",
+      "studyPad": "",
+      "notes": ""
+    }\n  ]\n}\n\`\`\`` },
+        { key: '1_generate_material', title: '학습 자료 생성', category: '이해와 탐구', purpose: `현재 학습 모듈 '[모듈 제목]'의 핵심 개념 '[핵심 개념]'에 대해, 비전공자도 이해할 수 있도록 상세하고 체계적인 학습 자료를 생성하라. 주요 용어 설명, 핵심 원리, 구체적인 예시를 포함해야 한다.` },
+        { key: '1_socrates', title: '소크라테스식 심층 탐구', category: '이해와 탐구', purpose: `현재 학습 모듈 '[모듈 제목]'의 핵심 개념 '[핵심 개념]'에 대해 나의 이해도를 심층적으로 검증하라. 스터디 패드에 작성된 내용을 바탕으로, 소크라테스식 튜터가 되어 나의 논리적 허점을 파고드는 질문을 통해 스스로 깨닫게 하라.` },
+        { key: '1_summarize', title: '핵심 내용 요약', category: '이해와 탐구', purpose: `현재 학습 모듈 '[모듈 제목]'의 스터디 패드 내용을 바탕으로, 핵심 내용을 3가지 주요 항목으로 요약하라.` },
+        { key: '1_analogy', title: '비유/사례 생성', category: '이해와 탐구', purpose: `현재 학습 모듈 '[모듈 제목]'의 어려운 개념인 '[어려운 개념]'을(를) [대상 청중]도 쉽게 이해할 수 있도록 3가지 이상의 창의적이고 직관적인 비유나 현실 세계의 사례를 들어 설명하라.`},
+        { key: '1_mindmap', title: '마인드맵 생성', category: '이해와 탐구', purpose: `현재 학습 모듈 '[모듈 제목]'의 핵심 개념들을 중심으로, 그들의 관계와 계층 구조를 보여주는 마인드맵을 마크다운 형식으로 생성하라.` },
+        { key: '2_practice_problems', title: '맞춤형 연습문제 생성', category: '적용과 연습', purpose: `현재 학습 모듈 '[모듈 제목]'의 내용과 핵심 개념 '[핵심 개념]'에 대해, 나의 이해도를 평가할 수 있는 맞춤형 연습문제를 생성하라. 문제 유형은 단답형, 객관식, 시나리오 기반 주관식을 포함해야 하며, 모든 문제에 상세한 해설을 덧붙여라.` },
+        { key: '2_flashcards', title: '플래시카드 생성 (어학)', category: '적용과 연습', purpose: `현재 학습 모듈 '[모듈 제목]'의 스터디 패드 내용에서 핵심 어휘와 그 의미를 추출하여, "단어: 의미" 형식의 플래시카드 목록을 생성하라.` },
+        { key: '2_case_study', title: '사례 분석 (법학/상경)', category: '적용과 연습', purpose: `현재 학습 모듈 '[모듈 제목]'의 스터디 패드에 제시된 사례를 바탕으로, IRAC(Issue, Rule, Application, Conclusion) 원칙에 따라 법률적 또는 경영학적 분석을 수행하라.`},
+        { key: '2_problem_solving', title: '문제 해결 절차 (공학)', category: '적용과 연습', purpose: `현재 학습 모듈 '[모듈 제목]'의 스터디 패드에 제시된 공학적 문제를 해결하기 위한 단계별 절차를 명확하게 제시하고, 각 단계에서 사용되는 원리나 공식을 설명하라.`}
+    ];
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- 1. APP INITIALIZATION ---
+        let db = { projects: {}, activeProjectId: null };
+        let bsToast, bsResourceModal, bsPromptModal, bsActionManagerModal, bsActionEditorModal, bsActionSelectorModal, bsNewProjectModal;
+
+        function initBootstrap() {
+            bsToast = new bootstrap.Toast(document.getElementById('liveToast'));
+            bsResourceModal = new bootstrap.Modal(document.getElementById('resourceModal'));
+            bsPromptModal = new bootstrap.Modal(document.getElementById('promptModal'));
+            bsActionManagerModal = new bootstrap.Modal(document.getElementById('actionManagerModal'));
+            bsActionEditorModal = new bootstrap.Modal(document.getElementById('actionEditorModal'));
+            bsActionSelectorModal = new bootstrap.Modal(document.getElementById('actionSelectorModal'));
+            bsNewProjectModal = new bootstrap.Modal(document.getElementById('newProjectModal'));
+        }
+        
+        // --- 2. DB & STATE MANAGEMENT ---
+        function saveDb() { localStorage.setItem('ile_db_v8.2_final', JSON.stringify(db)); }
+        function loadDb() {
+            const stored = localStorage.getItem('ile_db_v8.2_final');
+            if (stored) db = JSON.parse(stored);
+        }
+        function showToast(title, body, type = 'info') {
+            const toastEl = document.getElementById('liveToast');
+            toastEl.style.borderColor = `var(--${type}-color, var(--border-color))`;
+            document.getElementById('toast-title').textContent = title;
+            document.getElementById('toast-body').textContent = body;
+            bsToast.show();
+        }
+
+        // --- 3. UI RENDERING (No Omissions) ---
+        function render() {
+            renderProjectList();
+            renderWorkspace();
+        }
+
+        function renderProjectList() {
+            const listEl = document.getElementById('project-list');
+            listEl.innerHTML = '';
+            Object.values(db.projects).forEach(p => {
+                const item = document.createElement('a');
+                item.href = '#';
+                item.className = `list-group-item list-group-item-action d-flex justify-content-between align-items-center ${p.id === db.activeProjectId ? 'active' : ''}`;
+                item.dataset.projectId = p.id;
+                const textSpan = document.createElement('span');
+                textSpan.textContent = p.name;
+                const deleteBtn = document.createElement('i');
+                deleteBtn.className = 'fa-solid fa-trash-can text-secondary small delete-btn';
+                deleteBtn.title = "프로젝트 삭제";
+                item.appendChild(textSpan); item.appendChild(deleteBtn);
+                listEl.appendChild(item);
+            });
+        }
+        
+        function renderWorkspace() {
+            const project = db.projects[db.activeProjectId];
+            const welcomeScreen = document.getElementById('welcome-screen');
+            const workspace = document.getElementById('project-workspace');
+            const mobileTitle = document.getElementById('project-title-mobile');
+
+            if (!project) {
+                welcomeScreen.classList.remove('d-none');
+                workspace.classList.add('d-none');
+                mobileTitle.textContent = "ILE v8.2";
+                return;
+            }
+            welcomeScreen.classList.add('d-none');
+            workspace.classList.remove('d-none');
+            
+            document.getElementById('project-title-main').textContent = project.name;
+            mobileTitle.textContent = project.name;
+            document.getElementById('project-goal').textContent = project.goal;
+            document.getElementById('plan-input').value = project.learningPlan ? JSON.stringify(project.learningPlan, null, 2) : '';
+            renderResourceList();
+            renderLearningDashboard();
+        }
+
+        function renderResourceList() {
+            const listEl = document.getElementById('resource-list');
+            listEl.innerHTML = '';
+            const project = db.projects[db.activeProjectId];
+            if (!project || !project.resources) return;
+            project.resources.forEach(r => {
+                const item = document.createElement('div');
+                item.className = 'list-group-item d-flex justify-content-between align-items-center';
+                item.dataset.resourceId = r.id;
+                const textSpan = document.createElement('span');
+                textSpan.textContent = r.name;
+                const deleteBtn = document.createElement('i');
+                deleteBtn.className = 'fa-solid fa-times text-secondary small delete-btn';
+                deleteBtn.title = "자원 삭제";
+                deleteBtn.style.cursor = 'pointer';
+                item.appendChild(textSpan); item.appendChild(deleteBtn);
+                listEl.appendChild(item);
+            });
+        }
+
+        function renderLearningDashboard() {
+            const dashboard = document.getElementById('learning-dashboard');
+            const project = db.projects[db.activeProjectId];
+            const plan = project.learningPlan;
+            if (!plan || !plan.modules) {
+                dashboard.innerHTML = '<p class="text-secondary text-center small col-12">학습 계획을 먼저 적용해주세요.</p>';
+                return;
+            }
+            dashboard.innerHTML = '';
+            plan.modules.forEach((module, index) => {
+                const card = document.createElement('div');
+                card.className = `module-card status-${module.status || 'pending'}`;
+                card.innerHTML = `
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">${module.title}</h6>
+                        <div class="dropdown"><button class="btn btn-sm btn-outline-secondary dropdown-toggle py-0 px-2" type="button" data-bs-toggle="dropdown">상태</button><ul class="dropdown-menu dropdown-menu-dark"><li><a class="dropdown-item" href="#" data-module-index="${index}" data-status="pending">대기</a></li><li><a class="dropdown-item" href="#" data-module-index="${index}" data-status="inprogress">진행 중</a></li><li><a class="dropdown-item" href="#" data-module-index="${index}" data-status="completed">완료</a></li></ul></div>
+                    </div>
+                    <p class="small text-secondary mb-3"><b>핵심 개념:</b> ${(module.keyConcepts || []).join(', ')}</p>
+                    <div class="mb-2"><label class="form-label small">스터디 패드</label><textarea class="form-control form-control-sm module-studypad" rows="5" placeholder="이 모듈에 대한 AI 생성 학습 내용을 여기에 붙여넣으세요...">${module.studyPad || ''}</textarea></div>
+                    <div class="mb-3"><label class="form-label small">개인 메모</label><textarea class="form-control form-control-sm module-notes" rows="3" placeholder="생각, 질문 등을 자유롭게 메모하세요...">${module.notes || ''}</textarea></div>
+                    <button class="btn btn-sm btn-info w-100 open-action-selector" data-module-index="${index}"><i class="fa-solid fa-person-chalkboard me-2"></i>액션 실행</button>
+                `;
+                dashboard.appendChild(card);
+            });
+        }
+
+        function renderActionSelector(moduleIndex) {
+            const body = document.getElementById('action-selector-body');
+            const project = db.projects[db.activeProjectId];
+            const actions = project.actions || [];
+            const groupedActions = actions.reduce((acc, action) => {
+                if (action.key === '0_plan') return acc;
+                const category = action.category || '기타';
+                if (!acc[category]) acc[category] = [];
+                acc[category].push(action);
+                return acc;
+            }, {});
+
+            body.innerHTML = '';
+            for (const category of Object.keys(groupedActions).sort()) {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'action-category mb-4';
+                categoryDiv.innerHTML = `<h6 class="mb-3">${category}</h6>`;
+                const actionGrid = document.createElement('div');
+                actionGrid.className = 'd-grid gap-2';
+                groupedActions[category].forEach(action => {
+                    const button = document.createElement('button');
+                    button.className = 'btn btn-outline-light text-start build-prompt-btn';
+                    button.dataset.templateKey = action.key;
+                    button.dataset.moduleIndex = moduleIndex;
+                    button.textContent = action.title;
+                    actionGrid.appendChild(button);
+                });
+                categoryDiv.appendChild(actionGrid);
+                body.appendChild(categoryDiv);
+            }
+            bsActionSelectorModal.show();
+        }
+
+        function renderActionManager() {
+            const container = document.getElementById('action-list-container');
+            const project = db.projects[db.activeProjectId];
+            const actions = project.actions || [];
+            container.innerHTML = actions.map(action => {
+                if(action.key === '0_plan') return ''; 
+                return `
+                <div class="p-3 rounded mb-2 d-flex justify-content-between align-items-center action-list-item">
+                    <div>
+                        <h6 class="mb-0">${action.title}</h6>
+                        <small class="text-secondary">${action.category} / Key: ${action.key}</small>
+                    </div>
+                    <div>
+                        <button class="btn btn-sm btn-outline-light edit-action-btn" data-action-key="${action.key}"><i class="fa-solid fa-pencil"></i></button>
+                        <button class="btn btn-sm btn-outline-danger delete-action-btn" data-action-key="${action.key}"><i class="fa-solid fa-trash-can"></i></button>
+                    </div>
+                </div>
+            `}).join('');
+        }
+
+        // --- 4. EVENT HANDLERS & ACTIONS (No Omissions) ---
+        function switchActiveProject(projectId) {
+            db.activeProjectId = projectId;
+            saveDb();
+            render();
+            document.getElementById('sidebar').classList.remove('is-open');
+            document.getElementById('overlay').classList.remove('is-visible');
+        }
+
+        function createNewProject(name, goal) {
+            const id = `proj_${Date.now()}`;
+            db.projects[id] = { id, name, goal, resources: [], learningPlan: null, actions: JSON.parse(JSON.stringify(DEFAULT_ACTIONS)) };
+            switchActiveProject(id);
+            showToast("성공", `'${name}' 프로젝트가 생성되었습니다.`, "success");
+        }
+        
+        function deleteProject(projectId) {
+            if (!confirm(`'${db.projects[projectId].name}' 프로젝트를 정말 삭제하시겠습니까?`)) return;
+            delete db.projects[projectId];
+            if (db.activeProjectId === projectId) db.activeProjectId = null;
+            saveDb();
+            render();
+            showToast("성공", "프로젝트가 삭제되었습니다.", "success");
+        }
+
+        function deleteResource(resourceId) {
+            const project = db.projects[db.activeProjectId];
+            if (!project) return;
+            project.resources = project.resources.filter(r => r.id !== resourceId);
+            saveDb();
+            renderResourceList();
+        }
+
+        function updateModuleField(index, field, value) {
+            const project = db.projects[db.activeProjectId];
+            if (!project || !project.learningPlan || !project.learningPlan.modules[index]) return;
+            project.learningPlan.modules[index][field] = value;
+            if (field === 'status') {
+                saveDb();
+                renderLearningDashboard();
+            } else {
+                if(window.saveTimeout) clearTimeout(window.saveTimeout);
+                window.saveTimeout = setTimeout(saveDb, 500);
+            }
+        }
+
+        function openActionEditor(actionKey = null) {
+            const form = document.getElementById('action-editor-form');
+            form.reset();
+            const project = db.projects[db.activeProjectId];
+            const action = actionKey ? project.actions.find(a => a.key === actionKey) : null;
+            
+            document.getElementById('actionEditorTitle').textContent = action ? '액션 편집' : '새 액션 추가';
+            document.getElementById('action-key-input').value = action ? action.key : `custom_${Date.now()}`;
+            if (action) {
+                document.getElementById('action-title-input').value = action.title;
+                document.getElementById('action-category-input').value = action.category;
+                document.getElementById('action-purpose-input').value = action.purpose;
+            }
+            bsActionEditorModal.show();
+        }
+
+        function saveAction() {
+            const project = db.projects[db.activeProjectId];
+            const key = document.getElementById('action-key-input').value;
+            const updatedAction = {
+                key: key,
+                title: document.getElementById('action-title-input').value,
+                category: document.getElementById('action-category-input').value,
+                purpose: document.getElementById('action-purpose-input').value,
+            };
+            if (!updatedAction.title || !updatedAction.category || !updatedAction.purpose) {
+                return showToast('오류', '모든 필드를 입력해야 합니다.', 'danger');
+            }
+            const existingIndex = project.actions.findIndex(a => a.key === key);
+            if (existingIndex > -1) {
+                project.actions[existingIndex] = updatedAction;
+            } else {
+                project.actions.push(updatedAction);
+            }
+            saveDb();
+            renderActionManager();
+            bsActionEditorModal.hide();
+            showToast('성공', '액션이 저장되었습니다.', 'success');
+        }
+
+        function deleteAction(actionKey) {
+            if (!confirm('이 액션을 정말 삭제하시겠습니까?')) return;
+            const project = db.projects[db.activeProjectId];
+            project.actions = project.actions.filter(a => a.key !== actionKey);
+            saveDb();
+            renderActionManager();
+        }
+        
+        // 클립보드 복사 함수 수정
+        async function copyToClipboard(text) {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                // Clipboard API 지원 시 우선 사용
+                try {
+                    await navigator.clipboard.writeText(text);
+                    showToast("성공", "프롬프트가 클립보드에 복사되었습니다.", "success");
+                    return;
+                } catch (err) {
+                    console.warn("navigator.clipboard.writeText API 실패:", err);
+                    // 실패 시 fallback으로 execCommand 시도
+                    showToast("경고", "클립보드 API 복사 실패! 구형 방식으로 시도합니다.", "warning");
+                }
+            }
+
+            // Clipboard API를 지원하지 않거나 실패했을 때의 fallback 로직
+            const area = document.createElement("textarea");
+            area.value = text;
+            // 화면 밖으로 완전히 이동시켜 사용자에게 보이지 않게 처리
+            area.style.position = "fixed";
+            area.style.top = "-9999px";
+            area.style.left = "-9999px";
+            area.setAttribute("aria-hidden", "true"); // 스크린리더 접근성 고려
+            
+            document.body.appendChild(area);
+            area.focus();
+            area.select(); // 텍스트 선택
+
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showToast("성공", "프롬프트가 클립보드에 복사되었습니다. (구형 방식)", "success");
+                } else {
+                    alert('복사 실패! 수동으로 복사해주세요.'); // 사용자에게 직접 경고
+                    showToast("오류", "프롬프트 복사 실패! 수동으로 복사해주세요.", "danger");
+                }
+            } catch(e) {
+                console.error("document.execCommand('copy') 실패:", e);
+                alert('복사 실패! 수동으로 복사해주세요.'); // 사용자에게 직접 경고
+                showToast("오류", "프롬프트 복사 실패! 수동으로 복사해주세요.", "danger");
+            } finally {
+                document.body.removeChild(area); // 사용 후 텍스트 영역 제거
+            }
+        }
+
+        // --- 5. DOM Event Listeners ---
+        document.getElementById('new-project-btn').addEventListener('click', () => {
+            document.getElementById('new-project-form').reset();
+            bsNewProjectModal.show();
+        });
+
+        document.getElementById('save-project-btn').addEventListener('click', () => {
+            const nameInput = document.getElementById('new-project-name');
+            const goalInput = document.getElementById('new-project-goal');
+            if (!nameInput.value || !goalInput.value) {
+                return showToast('오류', '프로젝트 이름과 목표를 모두 입력해야 합니다.', 'danger');
+            }
+            createNewProject(nameInput.value, goalInput.value);
+            bsNewProjectModal.hide();
+        });
+
+        document.getElementById('project-list').addEventListener('click', e => {
+            const listItem = e.target.closest('.list-group-item');
+            if (listItem) {
+                e.preventDefault();
+                const projectId = listItem.dataset.projectId;
+                if(e.target.classList.contains('delete-btn')) {
+                    deleteProject(projectId);
+                } else {
+                    switchActiveProject(projectId);
+                }
+            }
+        });
+        
+        document.getElementById('resource-list').addEventListener('click', e => {
+            const listItem = e.target.closest('.list-group-item');
+             if (listItem && e.target.classList.contains('delete-btn')) {
+                e.preventDefault();
+                deleteResource(listItem.dataset.resourceId);
+            }
+        });
+
+        document.getElementById('learning-dashboard').addEventListener('click', e => {
+            const target = e.target;
+            if (target.classList.contains('open-action-selector')) {
+                renderActionSelector(target.dataset.moduleIndex);
+            } else {
+                const statusItem = target.closest('[data-status]');
+                if (statusItem) {
+                    e.preventDefault();
+                    updateModuleField(statusItem.dataset.moduleIndex, 'status', statusItem.dataset.status);
+                }
+            }
+        });
+
+        document.getElementById('learning-dashboard').addEventListener('input', e => {
+            const target = e.target;
+            const moduleCard = target.closest('.module-card');
+            if (!moduleCard) return;
+            const index = moduleCard.querySelector('a.dropdown-item').dataset.moduleIndex;
+            if(target.classList.contains('module-studypad')) {
+                updateModuleField(index, 'studyPad', target.value);
+            } else if (target.classList.contains('module-notes')) {
+                updateModuleField(index, 'notes', target.value);
+            }
+        });
+
+        document.getElementById('manage-actions-btn').addEventListener('click', () => {
+            if (!db.activeProjectId) return showToast("오류", "프로젝트를 선택하세요.", "warning");
+            renderActionManager();
+            bsActionManagerModal.show();
+        });
+        document.getElementById('add-new-action-btn').addEventListener('click', () => openActionEditor());
+        document.getElementById('action-list-container').addEventListener('click', e => {
+            const editBtn = e.target.closest('.edit-action-btn');
+            const deleteBtn = e.target.closest('.delete-action-btn');
+            if(editBtn) openActionEditor(editBtn.dataset.actionKey);
+            if(deleteBtn) deleteAction(deleteBtn.dataset.actionKey);
+        });
+        document.getElementById('save-action-btn').addEventListener('click', saveAction);
+        
+        // 문제가 해결된 수정 코드
+        document.getElementById('export-project-btn').addEventListener('click', () => {
+            if(!db.activeProjectId) return showToast("오류", "내보낼 프로젝트를 선택하세요.", "danger");
+            const projectData = JSON.stringify(db.projects[db.activeProjectId], null, 2);
+            const blob = new Blob([projectData], {type: 'application/json'});
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+
+            a.href = url;
+            a.download = `${db.projects[db.activeProjectId].name}.json`;
+            
+            // 1. 링크(a 태그)를 문서에 추가하여 호환성 확보
+            document.body.appendChild(a); 
+            
+            a.click(); // 다운로드 실행
+
+            // 2. 문서에서 링크(a 태그) 제거
+            document.body.removeChild(a);
+
+            // 3. 다운로드가 시작될 시간을 100ms 정도 주고 URL 폐기
+            setTimeout(() => {
+                URL.revokeObjectURL(url);
+            }, 100); 
+        });
+
+        document.getElementById('import-project-btn').addEventListener('click', () => document.getElementById('import-file-input').click());
+        document.getElementById('import-file-input').addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (re) => {
+                try {
+                    const importedProject = JSON.parse(re.target.result);
+                    if(importedProject.id && importedProject.name){
+                        db.projects[importedProject.id] = importedProject;
+                        switchActiveProject(importedProject.id);
+                        showToast("성공", "프로젝트를 성공적으로 가져왔습니다.", "success");
+                    } else { throw new Error("ID와 이름 속성이 없습니다."); }
+                } catch(err){ showToast("오류", "유효하지 않은 프로젝트 파일입니다: " + err.message, "danger"); }
+            };
+            reader.readAsText(file);
+        });
+        
+        document.getElementById('add-resource-btn').addEventListener('click', () => {
+            if (!db.activeProjectId) return showToast("오류", "먼저 프로젝트를 선택하세요.", "warning");
+            document.getElementById('resource-name').value = '';
+            document.getElementById('resource-content').value = '';
+            document.getElementById('resource-file-input').value = '';
+            bsResourceModal.show();
+        });
+        
+        document.getElementById('resource-file-input').addEventListener('change', (e) => {
+             const file = e.target.files[0];
+            if(file){
+                const reader = new FileReader();
+                reader.onload = (re) => { 
+                    document.getElementById('resource-content').value = re.target.result;
+                    if (!document.getElementById('resource-name').value) {
+                         document.getElementById('resource-name').value = file.name.replace(/\.[^/.]+$/, "");
+                    }
+                };
+                reader.readAsText(file);
+            }
+        });
+        document.getElementById('save-resource-btn').addEventListener('click', () => {
+            const name = document.getElementById('resource-name').value;
+            const content = document.getElementById('resource-content').value;
+            if(!name || !content) return showToast("오류", "이름과 내용을 모두 입력하세요.", "danger");
+            const project = db.projects[db.activeProjectId];
+            if (!project.resources) project.resources = [];
+            project.resources.push({ id: `res_${Date.now()}`, name, content });
+            saveDb();
+            renderResourceList();
+            bsResourceModal.hide();
+            showToast("성공", "자원이 추가되었습니다.", "success");
+        });
+        
+        document.getElementById('apply-plan-btn').addEventListener('click', () => {
+            if (!db.activeProjectId) return showToast("오류", "먼저 프로젝트를 선택하세요.", "warning");
+            try {
+                const planText = document.getElementById('plan-input').value;
+                const cleanedJsonString = planText.replace(/```json\n|```/g, '').trim();
+                const planJSON = JSON.parse(cleanedJsonString);
+
+                if (!planJSON.modules || !Array.isArray(planJSON.modules)) throw new Error("JSON에 'modules' 배열이 없습니다.");
+                const project = db.projects[db.activeProjectId];
+                project.learningPlan = planJSON;
+                project.name = planJSON.projectName || project.name;
+                project.goal = planJSON.mainGoal || project.goal;
+                saveDb();
+                render();
+                showToast("성공", "학습 계획이 적용되었습니다.", "success");
+            } catch (e) {
+                showToast("오류", "유효하지 않은 JSON 형식입니다: " + e.message, "danger");
+            }
+        });
+
+        // --- Responsive UI Logic ---
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('overlay');
+        const hamburgerBtn = document.getElementById('hamburger-btn');
+        const toggleSidebar = () => {
+            sidebar.classList.toggle('is-open');
+            overlay.classList.toggle('is-visible');
+        };
+        hamburgerBtn.addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
+
+        // --- 6. PROMPT BUILDER LOGIC ---
+        document.body.addEventListener('click', (e) => {
+            const target = e.target;
+            if (target.classList.contains('build-prompt-btn')) {
+                e.preventDefault();
+                bsActionSelectorModal.hide();
+
+                const project = db.projects[db.activeProjectId];
+                if (!project) return;
+                
+                const templateKey = target.dataset.templateKey;
+                const template = (project.actions || []).find(a => a.key === templateKey);
+                if (!template) return showToast('오류', '액션을 찾을 수 없습니다.', 'danger');
+
+                const moduleIndex = target.dataset.moduleIndex;
+                const module = moduleIndex !== undefined && project.learningPlan ? project.learningPlan.modules[moduleIndex] : null;
+
+                document.getElementById('promptModalLabel').textContent = template.title;
+                const formContainer = document.getElementById('dynamic-form-container');
+                formContainer.innerHTML = '';
+                
+                const dataSelector = document.getElementById('data-selector');
+                dataSelector.innerHTML = '<option value="">자원 라이브러리에서 선택</option>';
+                (project.resources || []).forEach(r => dataSelector.innerHTML += `<option value="${r.id}">${r.name}</option>`);
+
+                let purposeTemplate = template.purpose;
+                const context = { '학습 목표': project.goal, '현재 수준': '지식이 필요한 학습자', ...(module || {}) };
+                if (module) {
+                    context['모듈 제목'] = module.title;
+                    context['핵심 개념'] = (module.keyConcepts || []).join(', ');
+                }
+                
+                const variables = [...new Set([...purposeTemplate.matchAll(/\[(.*?)\]/g)].map(m => m[1]))];
+                variables.forEach(varName => {
+                    const prefilledValue = context[varName];
+                    if (prefilledValue) {
+                        purposeTemplate = purposeTemplate.replaceAll(`[${varName}]`, prefilledValue);
+                    } else {
+                         formContainer.innerHTML += `<div class="mb-3"><label for="var-${varName}" class="form-label form-label-sm">${varName}</label><input type="text" id="var-${varName}" class="form-control form-control-sm dynamic-var-input" data-var-name="${varName}" placeholder="${varName} 내용 입력..."></div>`;
+                    }
+                });
+
+                let currentDataSource = 'none';
+                if (module && module.studyPad && (templateKey.startsWith('1_') || templateKey.startsWith('2_'))) {
+                    currentDataSource = 'studypad';
+                }
+                document.getElementById(`source-${currentDataSource}`).checked = true;
+                document.getElementById('data-direct-input').value = '';
+
+                const dataSourceContainers = {
+                    resource: document.getElementById('data-selector-container'),
+                    direct: document.getElementById('data-direct-input-container'),
+                };
+                
+                const updateDataSourceVisibility = () => {
+                    const selected = document.querySelector('input[name="dataSource"]:checked').value;
+                    Object.values(dataSourceContainers).forEach(c => c.classList.add('d-none'));
+                    if (dataSourceContainers[selected]) {
+                        dataSourceContainers[selected].classList.remove('d-none');
+                    }
+                };
+
+                const updatePreview = () => {
+                    let previewPurpose = purposeTemplate;
+                    formContainer.querySelectorAll('.dynamic-var-input').forEach(input => {
+                        const varName = input.dataset.varName;
+                        const value = input.value || `[${varName}]`;
+                        previewPurpose = previewPurpose.replaceAll(`[${varName}]`, value);
+                    });
+                    
+                    const selectedDataSource = document.querySelector('input[name="dataSource"]:checked').value;
+                    let dataContent = '없음';
+
+                    if (selectedDataSource === 'resource') {
+                         const resId = dataSelector.value;
+                         if (resId) dataContent = (project.resources.find(r => r.id === resId) || {}).content;
+                    } else if (selectedDataSource === 'studypad') {
+                         if (module && module.studyPad) dataContent = module.studyPad;
+                    } else if (selectedDataSource === 'direct') {
+                        dataContent = document.getElementById('data-direct-input').value;
+                    }
+                    
+                    // --- MODIFICATION START ---
+                    // Create a lightweight context object for the AI
+                    const contextForAI = {
+                        projectName: project.name,
+                        mainGoal: project.goal,
+                    };
+
+                    if (project.learningPlan) {
+                        contextForAI.tutorPersona = project.learningPlan.tutorPersona;
+                        // Provide the full table of contents (titles only)
+                        contextForAI.fullTableOfContents = project.learningPlan.modules.map(m => ({ id: m.id, title: m.title, status: m.status }));
+                    }
+
+                    if (module) {
+                        // Provide the current module's context, but exclude heavy text fields
+                        const { studyPad, notes, ...currentModuleContext } = module;
+                        contextForAI.currentModule = currentModuleContext;
+                    }
+                    
+                    const projectContext = JSON.stringify(contextForAI, null, 2);
+                    // --- MODIFICATION END ---
+
+
+                    let finalPrompt = MASTER_PROMPT_SHELL.replace(/{{purpose}}/g, previewPurpose);
+                    finalPrompt = finalPrompt.replace(/{{data}}/g, dataContent || '내용 없음');
+                    finalPrompt = finalPrompt.replace(/{{projectContext}}/g, projectContext);
+
+                    document.getElementById('live-preview-container').textContent = finalPrompt;
+                };
+
+                document.querySelectorAll('input[name="dataSource"]').forEach(radio => {
+                    radio.onchange = () => {
+                        updateDataSourceVisibility();
+                        updatePreview();
+                    };
+                });
+
+                formContainer.addEventListener('input', updatePreview);
+                dataSelector.addEventListener('change', updatePreview);
+                document.getElementById('data-direct-input').addEventListener('input', updatePreview);
+                
+                updateDataSourceVisibility();
+                updatePreview();
+                bsPromptModal.show();
+                
+                // 기존 copyToClipboard 함수는 그대로 두고, 호출하는 부분만 변경하는 것은 아닙니다.
+// 아래 코드는 copyToClipboard 함수를 완전히 없애고 그 로직을 여기로 가져오는 예시입니다.
+// 이 방식은 코드 중복이 발생하므로 신중하게 고려해야 합니다.
+
+document.getElementById('execute-prompt-btn').onclick = async () => {
+    const finalPromptText = document.getElementById('live-preview-container').textContent;
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        try {
+            await navigator.clipboard.writeText(finalPromptText);
+            showToast("성공", "프롬프트가 클립보드에 복사되었습니다.", "success");
+            return;
+        } catch (err) {
+            console.warn("navigator.clipboard.writeText API 실패:", err);
+            showToast("경고", "클립보드 API 복사 실패! 구형 방식으로 시도합니다.", "warning");
+        }
+    }
+
+    const area = document.createElement("textarea");
+    area.value = finalPromptText;
+    area.style.position = "fixed";
+    area.style.top = "-9999px"; // 화면 밖으로 이동
+    area.style.left = "-9999px"; // 화면 밖으로 이동
+    area.setAttribute("aria-hidden", "true");
+    
+    document.body.appendChild(area);
+    area.focus();
+    area.select();
+
+    try {
+        const successful = document.execCommand('copy');
+        
+        if (successful) {
+            showToast("성공", "프롬프트가 클립보드에 복사되었습니다. (구형 방식)", "success");
+        } else {
+            alert('복사 실패! 수동으로 복사해주세요.');
+            showToast("오류", "프롬프트 복사 실패! 수동으로 복사해주세요.", "danger");
+        }
+    } catch(e) {
+        console.error("document.execCommand('copy') 실패:", e);
+        alert('복사 실패! 수동으로 복사해주세요.');
+        showToast("오류", "프롬프트 복사 실패! 수동으로 복사해주세요.", "danger");
+    } finally {
+        document.body.removeChild(area);
+    }
+};
+
+            }
+        });
+        
+        // --- 7. APP INITIALIZATION ---
+        initBootstrap();
+        loadDb();
+        render();
+    });
+
+    </script>
+</body>
+</html>
