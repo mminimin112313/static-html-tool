@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>카드형 칸반 임무 체계</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .kanban-column {
+            min-height: 400px;
+            display: flex;
+            flex-direction: column;
+        }
+        .task-card {
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+        .task-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease-out;
+            overflow-y: auto; /* Ensure scrollability for small screens */
+            padding: 1rem;
+        }
+        .modal-content {
+            background-color: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            max-width: 90%;
+            max-height: 90%;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            animation: slideInUp 0.3s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        @keyframes slideInUp {
+            from { transform: translateY(50px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .toast {
+            position: fixed;
+            bottom: 1rem;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            color: white;
+            font-weight: bold;
+            z-index: 1001;
+            animation: toastFadeIn 0.3s ease-out, toastFadeOut 0.5s ease-out 2.5s forwards;
+        }
+        .toast.success { background-color: #22c55e; } /* green-500 */
+        .toast.error { background-color: #ef4444; }   /* red-500 */
+        .toast.info { background-color: #3b82f6; }    /* blue-500 */
+
+        @keyframes toastFadeIn {
+            from { opacity: 0; transform: translateX(-50%) translateY(20px); }
+            to { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+        @keyframes toastFadeOut {
+            to { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 font-sans antialiased text-gray-800">
+    <!-- Firebase SDKs -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        // Google 로그인 관련 모듈 추가
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, onSnapshot, query, addDoc, updateDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase 관련 전역 변수들이 정의되어 있지 않을 경우를 대비하여 기본값을 설정합니다.
+        // Canvas 환경에서 실행되지 않을 경우, 여기에 직접 Firebase 구성 정보를 입력해야 합니다.
+        // 1. Firebase 프로젝트를 생성하고 웹 앱을 추가한 후 'firebaseConfig' 객체를 여기에 붙여넣으세요.
+        // 2. Firestore 데이터베이스와 Google 인증을 활성화하세요. (중요: Firebase 콘솔에서 "Authentication" -> "Sign-in method" 탭에서 Google 로그인 공급자를 활성화해야 합니다.)
+        // 3. Firestore 규칙을 이전에 제공된 규칙으로 업데이트하세요.
+        // **** 중요: 로컬에서 개발 시, Firebase 콘솔의 Authentication -> Settings 탭에서
+        //            'Authorized domains'에 'localhost' (및 '127.0.0.1' 필요 시)를 반드시 추가해야 합니다. ****
+        window.firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyBhdnR6FVsIyX4ZqmhWs4kGpJJ1XTeTUtc",
+            authDomain: "mykanban-1b1d8.firebaseapp.com",
+            projectId: "mykanban-1b1d8",
+            storageBucket: "mykanban-1b1d8.firebasestorage.app",
+            messagingSenderId: "883153186548",
+            appId: "1:883153186548:web:30b213362194ab2fd178a1",
+            // measurementId: "G-5GXC1KK383" // 이 앱에서는 사용되지 않으므로 제거하거나 주석 처리해도 무방.
+        };
+        // projectId를 appId로 사용합니다.
+        window.appId = typeof __app_id !== 'undefined' ? __app_id : window.firebaseConfig.projectId;
+        window.initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null; // 로컬에서는 이 토큰을 사용하지 않습니다.
+
+        // Firebase 초기화 (앱 로드 시 한 번만 실행)
+        try {
+            window.firebaseApp = initializeApp(window.firebaseConfig);
+            window.db = getFirestore(window.firebaseApp);
+            window.auth = getAuth(window.firebaseApp);
+        } catch (e) {
+            console.error("Firebase 초기화 중 오류가 발생했습니다. 설정이 올바른지 확인해주세요:", e);
+            document.getElementById('loading-overlay').innerHTML = `
+                <div class="flex flex-col items-center p-6 bg-white rounded-xl shadow-lg text-center">
+                    <p class="text-red-600 font-bold text-lg mb-2">오류: Firebase 초기화 실패</p>
+                    <p class="text-gray-700 text-md">콘솔 로그를 확인하여 Firebase 설정이 올바른지 확인해주세요.</p>
+                    <p class="text-gray-500 text-sm mt-2">(API 키 또는 프로젝트 ID 누락 등)</p>
+                </div>
+            `;
+        }
+
+        // 전역 범위에 Firebase 함수들을 노출합니다.
+        window.getAuth = getAuth;
+        window.GoogleAuthProvider = GoogleAuthProvider;
+        window.signInWithPopup = signInWithPopup;
+        window.signOut = signOut;
+        window.onAuthStateChanged = onAuthStateChanged;
+        window.getFirestore = getFirestore;
+        window.collection = collection;
+        window.doc = doc;
+        window.setDoc = setDoc;
+        window.getDoc = getDoc;
+        window.onSnapshot = onSnapshot;
+        window.query = query;
+        window.addDoc = addDoc;
+        window.updateDoc = updateDoc;
+        window.deleteDoc = deleteDoc;
+    </script>
+
+    <div id="loading-overlay" class="fixed inset-0 bg-gray-200 bg-opacity-75 flex items-center justify-center z-[2000]">
+        <div class="flex flex-col items-center p-6 bg-white rounded-xl shadow-lg">
+            <svg class="animate-spin h-8 w-8 text-blue-600 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="text-gray-700 text-lg">인증 및 데이터 로딩 중...</p>
+        </div>
+    </div>
+
+    <div class="min-h-screen p-4">
+        <div class="max-w-7xl mx-auto">
+            <!-- Header with Title and Settings -->
+            <header class="flex justify-between items-center mb-8 p-4 rounded-xl shadow-lg bg-white">
+                <h1 class="text-4xl font-extrabold text-blue-800">
+                    카드형 칸반 임무 체계 🚀
+                </h1>
+                <div class="flex items-center space-x-4">
+                    <!-- Google 로그인/로그아웃 버튼이 이제 설정 모달로 이동했습니다. -->
+                    <button id="settings-button" class="text-gray-600 hover:text-blue-800 text-3xl transition duration-200">
+                        <i class="fas fa-bars"></i> <!-- Hamburger icon for settings -->
+                    </button>
+                </div>
+            </header>
+
+            <p id="user-id-display" class="text-center text-sm text-gray-500 mb-4"></p>
+
+            <!-- 새 카드 추가 섹션 -->
+            <div class="bg-white p-6 rounded-xl shadow-xl mb-8 border border-blue-200">
+                <h2 class="text-2xl font-semibold text-blue-700 mb-4">새로운 임무 추가</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                    <input
+                        type="text"
+                        id="new-card-title"
+                        placeholder="임무 제목 (예: 팀 회의 준비)"
+                        class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg"
+                    />
+                    <textarea
+                        id="new-card-description"
+                        placeholder="상세 설명 (선택 사항, 1000자 제한)"
+                        rows="2"
+                        maxlength="1000"
+                        class="p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg resize-y"
+                    ></textarea>
+                </div>
+                <button
+                    id="add-card-button"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-xl"
+                >
+                    임무 카드 추가
+                </button>
+            </div>
+
+            <!-- 칸반 보드 섹션 -->
+            <div id="kanban-board" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <!-- Columns will be rendered here by JavaScript -->
+            </div>
+
+            <!-- 전체 프로젝트 AI 보고서 섹션 -->
+            <div class="bg-white p-6 rounded-xl shadow-xl mt-8 border border-green-200">
+                <h2 class="text-2xl font-semibold text-green-700 mb-4 flex items-center">
+                    <i class="fas fa-brain mr-3"></i> 전체 프로젝트 AI 보고서
+                </h2>
+                <button
+                    id="overall-ai-report-button"
+                    class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-xl flex items-center justify-center"
+                >
+                    <span id="overall-ai-report-loading-text">AI 보고서 생성</span>
+                    <svg id="overall-ai-report-loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+                <div id="overall-ai-report-content" class="mt-4 p-4 bg-green-50 rounded-lg border border-green-200 hidden">
+                    <pre class="whitespace-pre-wrap font-mono text-gray-800 text-sm leading-relaxed"></pre>
+                    <p id="overall-ai-report-error" class="text-red-500 text-sm mt-2 hidden"></p>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- Modals (Initially hidden) -->
+    <div id="task-detail-modal" class="modal hidden">
+        <div class="modal-content w-full max-w-2xl">
+            <!-- Modal content will be dynamically rendered here -->
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal hidden">
+        <div class="modal-content w-full max-w-3xl">
+            <!-- Settings content will be dynamically rendered here -->
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container" class="fixed bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center space-y-2 z-[1001]"></div>
+
+    <script>
+        // Global state variables
+        let currentUserId = null;
+        let isAuthReady = false;
+        let tasks = []; // Array of all tasks
+        let currentSettings = {
+            gemini_api_key: '', // Gemini API Key
+            // 모든 프롬프트에 'interaction language : korean' 추가
+            ai_checklist_prompt: "interaction language : korean\nGenerate a detailed task checklist and execution steps for the task: '{taskTitle}'. Provide the response only as a JSON object with a single key 'checklist' which is an array of strings. Each string should be a step. Do not include any other text or explanation. Example: {\"checklist\": [\"Step 1: Get started\", \"Step 2: Finish up\"]}",
+            ai_advice_prompt: "interaction language : korean\nGiven the following task details and history, provide concise advice or a helpful notification for the user. Focus on actionable insights or next steps. Provide the response only as a JSON object with a single key 'advice' which is a string. Do not include any other text or explanation. Task Details:\\n{taskDetails}\\n\\nTask History:\\n{historyDetails}\\n\\nExample: {\"advice\": \"Consider breaking down complex steps into smaller actions for better progress tracking.\"}",
+            ai_overall_report_prompt: "interaction language : korean\nGiven the following user information, global AI requirements, and a list of all tasks across different Kanban columns, provide a concise summary of the project status, identify the most critical next steps, and offer strategic advice. Provide the response only as a JSON object with keys 'summary' (string), 'recommendedActions' (array of strings), and 'strategicAdvice' (string). Do not include any other text or explanation.\n\nUser Information:\\n{userInfo}\n\nGlobal AI Requirements:\\n{globalAIRequirements}\n\nAll Tasks (Title, Description, Checklist, Status, History):\\n{allTasksDetails}\n\nExample: {\"summary\": \"Project is at a critical juncture.\", \"recommendedActions\": [\"Prioritize 'Fix login bug'\", \"Review 'Marketing campaign' progress\"], \"strategicAdvice\": \"Focus on immediate blockers before planning new features.\"}",
+            ai_general_assistant_prompt: "interaction language : korean\nYou are a highly capable AI assistant for a Kanban task management system. Your goal is to help the user manage their tasks efficiently and provide insightful assistance based on their specific commands. Analyze the provided task details, user information, global AI requirements, and your past interactions. Respond concisely and directly to the user's command. If a specific action is requested (e.g., 'generate X steps'), try to fulfill it. If a question is asked, answer it. If you cannot fulfill the request or need more information, clearly state so.\n\nUser Information:\\n{userInfo}\n\nGlobal AI Requirements:\\n{globalAIRequirements}\n\nCurrent Task Details:\\n{taskDetails}\n\nTask History:\\n{historyDetails}\n\nUser Command:\\n{userCommand}\n\nProvide the response only as a JSON object with a single key 'response' which is a string. Do not include any other text or explanation outside the 'response' key.",
+            user_info: {
+                name: '',
+                role: '',
+                goals: ''
+            },
+            global_ai_requirements: ''
+        };
+
+        const kanbanColumns = [
+            { id: 'todo', title: '할 일' },
+            { id: 'in-progress', title: '진행 중' },
+            { id: 'review', title: '검토' },
+            { id: 'done', title: '완료' },
+        ];
+
+        // DOM elements
+        const loadingOverlay = document.getElementById('loading-overlay');
+        const userIdDisplay = document.getElementById('user-id-display');
+        // Google 로그인/로그아웃 버튼은 이제 설정 모달 내에 생성되므로 여기서 직접 참조하지 않습니다.
+        const newCardTitleInput = document.getElementById('new-card-title');
+        const newCardDescriptionInput = document.getElementById('new-card-description');
+        const addCardButton = document.getElementById('add-card-button');
+        const kanbanBoard = document.getElementById('kanban-board');
+        const taskDetailModal = document.getElementById('task-detail-modal');
+        const taskDetailModalContent = taskDetailModal.querySelector('.modal-content');
+        const settingsButton = document.getElementById('settings-button');
+        const settingsModal = document.getElementById('settings-modal');
+        const settingsModalContent = settingsModal.querySelector('.modal-content');
+        const overallAIReportButton = document.getElementById('overall-ai-report-button');
+        const overallAIReportLoadingText = document.getElementById('overall-ai-report-loading-text');
+        const overallAIReportLoadingSpinner = document.getElementById('overall-ai-report-loading-spinner');
+        const overallAIReportContent = document.getElementById('overall-ai-report-content');
+        const overallAIReportError = document.getElementById('overall-ai-report-error');
+        const toastContainer = document.getElementById('toast-container');
+
+        // Firestore references (will be set after Firebase init)
+        let tasksCollectionRef;
+        let settingsDocRef;
+
+        // --- Utility Functions ---
+
+        /**
+         * Shows a toast notification.
+         * @param {string} message - The message to display.
+         * @param {'success' | 'error' | 'info'} type - Type of toast.
+         */
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            toastContainer.appendChild(toast);
+
+            // Remove toast after a delay
+            setTimeout(() => {
+                toast.remove();
+            }, 3000); // 3 seconds
+        }
+
+        /**
+         * Debounce function to limit function call frequency.
+         * @param {function} func - The function to debounce.
+         * @param {number} delay - The delay in milliseconds.
+         */
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+
+        /**
+         * Helper function to add a history entry to a task.
+         * @param {object} task - The task object to update.
+         * @param {string} event - The event description.
+         * @returns {object} - The updated task object with new history.
+         */
+        function addHistoryEntry(task, event) {
+            const newHistory = task.history ? [...task.history] : [];
+            newHistory.push({ timestamp: Date.now(), event: event });
+            return { ...task, history: newHistory };
+        }
+
+        /**
+         * HTML sanitization helper to prevent XSS.
+         * @param {string} text - The input text.
+         * @returns {string} - Sanitized text.
+         */
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.appendChild(document.createTextNode(text));
+            return div.innerHTML;
+        }
+
+        // --- Core Render Functions ---
+
+        /**
+         * Renders the entire Kanban board and its cards.
+         */
+        function renderKanbanBoard() {
+            kanbanBoard.innerHTML = ''; // Clear existing board
+
+            // Group tasks by columnId
+            const columnsWithTasks = kanbanColumns.map(col => ({
+                ...col,
+                tasks: tasks.filter(task => task.columnId === col.id).sort((a, b) => a.createdAt - b.createdAt)
+            }));
+
+            columnsWithTasks.forEach(column => {
+                const columnDiv = document.createElement('div');
+                columnDiv.className = 'kanban-column bg-blue-50 p-5 rounded-xl shadow-lg border border-blue-300';
+                columnDiv.innerHTML = `
+                    <h2 class="text-2xl font-bold text-blue-800 mb-5 border-b-2 border-blue-400 pb-3">
+                        ${escapeHtml(column.title)} (${column.tasks.length})
+                    </h2>
+                    <div class="flex-grow space-y-4">
+                        ${column.tasks.length === 0 ? `<p class="text-gray-500 text-center py-4">카드가 없습니다.</p>` : ''}
+                    </div>
+                `;
+                const tasksContainer = columnDiv.querySelector('.flex-grow.space-y-4');
+
+                column.tasks.forEach(task => {
+                    const cardDiv = document.createElement('div');
+                    cardDiv.id = `task-card-${task.id}`;
+                    cardDiv.className = 'task-card bg-white p-4 rounded-lg shadow-md border border-gray-200';
+                    cardDiv.innerHTML = `
+                        <h3 class="text-lg font-semibold text-gray-900 mb-2">${escapeHtml(task.title)}</h3>
+                        ${task.description ? `<p class="text-sm text-gray-600 mb-3 line-clamp-2">${escapeHtml(task.description)}</p>` : ''}
+                        <button class="ai-assist-checklist-button w-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold py-2 px-4 rounded-md shadow-sm transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center mb-3" data-task-id="${task.id}" data-task-title="${escapeHtml(task.title)}">
+                            AI 보조 (체크리스트 생성)
+                        </button>
+                    `;
+                    cardDiv.addEventListener('click', () => openDetailModal(task, column.id));
+                    tasksContainer.appendChild(cardDiv);
+                });
+                kanbanBoard.appendChild(columnDiv);
+            });
+
+            // Attach event listeners for AI assist buttons after rendering
+            document.querySelectorAll('.ai-assist-checklist-button').forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    e.stopPropagation(); // Prevent opening detail modal
+                    const taskId = e.target.dataset.taskId;
+                    const taskTitle = e.target.dataset.taskTitle;
+                    e.target.disabled = true; // Disable button during AI call
+                    e.target.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 생성 중...`;
+                    await handleAIAssistChecklist(taskId, taskTitle);
+                    e.target.disabled = false; // Re-enable button
+                    e.target.innerHTML = 'AI 보조 (체크리스트 생성)';
+                });
+            });
+        }
+
+        /**
+         * Renders the task detail modal.
+         * @param {object} task - The task object.
+         * @param {string} currentColumnId - The ID of the column the task is currently in.
+         */
+        function renderTaskDetailModal(task, currentColumnId) {
+            taskDetailModalContent.innerHTML = `
+                <div class="flex justify-between items-center mb-4 border-b pb-3">
+                    <input
+                        type="text"
+                        id="modal-task-title"
+                        value="${escapeHtml(task.title)}"
+                        class="text-3xl font-bold text-blue-800 w-full bg-transparent border-none focus:ring-0 focus:outline-none"
+                    />
+                    <button id="modal-close-button" class="text-gray-500 hover:text-gray-700 text-4xl leading-none font-light">
+                        &times;
+                    </button>
+                </div>
+
+                <div class="mb-6">
+                    <h4 class="text-xl font-semibold text-gray-700 mb-2">상세 설명</h4>
+                    <textarea
+                        id="modal-task-description"
+                        rows="4"
+                        maxlength="1000"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg resize-y"
+                        placeholder="상세 설명 추가..."
+                    >${escapeHtml(task.description || '')}</textarea>
+                </div>
+
+                <div class="mb-6">
+                    <h4 class="text-xl font-semibold text-gray-700 mb-2">체크리스트</h4>
+                    <div id="modal-checklist-items" class="space-y-2">
+                        ${task.checklist && task.checklist.length > 0 ?
+                            task.checklist.map((item, index) => `
+                                <div class="flex items-center text-lg text-gray-800 group">
+                                    <input type="checkbox" id="checklist-item-${index}" class="mr-3 h-5 w-5 rounded text-blue-600 focus:ring-blue-500" ${item.completed ? 'checked' : ''}>
+                                    <input type="text" value="${escapeHtml(item.text)}" class="flex-grow bg-transparent border-none focus:outline-none focus:ring-0 ${item.completed ? 'line-through text-gray-500' : ''}" data-index="${index}">
+                                    <button class="delete-checklist-item-button text-red-500 hover:text-red-700 ml-2 text-xl opacity-0 group-hover:opacity-100 transition-opacity" data-index="${index}">&times;</button>
+                                </div>
+                            `).join('')
+                            : `<p class="text-gray-500">체크리스트가 없습니다.</p>`
+                        }
+                    </div>
+                    <div class="flex items-center mt-3">
+                        <input type="text" id="add-checklist-item-input" class="flex-grow p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-md" placeholder="새 체크리스트 항목 추가">
+                        <button id="add-checklist-item-button" class="ml-2 bg-blue-500 hover:bg-blue-600 text-white text-md font-bold py-2 px-4 rounded-lg shadow-sm transition duration-200">추가</button>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    <h4 class="text-xl font-semibold text-gray-700 mb-2">메모</h4>
+                    <textarea
+                        id="modal-task-memo"
+                        rows="3"
+                        maxlength="1000"
+                        class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg resize-y"
+                        placeholder="메모 추가..."
+                    >${escapeHtml(task.memo || '')}</textarea>
+                </div>
+
+                <!-- AI 비서 (대화형) -->
+                <div class="mb-6 border-t pt-4 border-gray-200">
+                    <h4 class="text-xl font-semibold text-blue-700 mb-2 flex items-center"><i class="fas fa-robot mr-2"></i> AI 비서</h4>
+                    <textarea id="ai-assistant-command-input" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg resize-y mb-3" placeholder="AI에게 명령하거나 질문하세요 (예: 이 임무의 다음 단계 3가지 생성해줘)."></textarea>
+                    <button id="send-ai-command-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-lg flex items-center justify-center">
+                        <span id="send-ai-command-loading-text">AI에게 명령</span>
+                        <svg id="send-ai-command-loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </button>
+                    <p id="ai-assistant-error" class="text-red-500 text-sm mt-2 hidden"></p>
+                </div>
+
+                <div class="mb-6 border-t pt-4 border-gray-200 max-h-48 overflow-y-auto">
+                    <h4 class="text-xl font-semibold text-gray-700 mb-2">임무 기록</h4>
+                    <ul class="space-y-1 text-sm text-gray-600">
+                        ${task.history && task.history.length > 0 ?
+                            task.history.slice().reverse().map(entry => `
+                                <li class="border-b border-gray-100 py-1 last:border-b-0">
+                                    <span class="font-mono text-gray-500 text-xs mr-2">[${new Date(entry.timestamp).toLocaleString()}]</span>
+                                    ${escapeHtml(entry.event)}
+                                </li>
+                            `).join('')
+                            : `<p class="text-gray-500">기록된 이력이 없습니다.</p>`
+                        }
+                    </ul>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-gray-200 flex flex-wrap gap-2 justify-center">
+                    ${kanbanColumns.map(col => `
+                        ${col.id !== currentColumnId ? `
+                            <button class="move-card-button bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded-lg transition duration-200" data-target-column="${col.id}">
+                                ${escapeHtml(col.title)}으로 이동
+                            </button>
+                        ` : ''}
+                    `).join('')}
+                </div>
+            `;
+
+            // Attach event listeners for modal elements
+            document.getElementById('modal-close-button').addEventListener('click', closeDetailModal);
+
+            const modalTaskTitleInput = document.getElementById('modal-task-title');
+            const modalTaskDescriptionInput = document.getElementById('modal-task-description');
+            const modalTaskMemoInput = document.getElementById('modal-task-memo');
+
+            modalTaskTitleInput.addEventListener('input', debounce((e) => updateTaskField(task.id, 'title', e.target.value), 500));
+            modalTaskDescriptionInput.addEventListener('input', debounce((e) => updateTaskField(task.id, 'description', e.target.value), 500));
+            modalTaskMemoInput.addEventListener('input', debounce((e) => updateTaskField(task.id, 'memo', e.target.value), 500));
+
+            // Checklist event listeners
+            document.querySelectorAll('#modal-checklist-items input[type="checkbox"]').forEach(checkbox => {
+                checkbox.addEventListener('change', (e) => {
+                    const index = parseInt(e.target.id.split('-')[2]);
+                    toggleChecklistItem(task.id, index);
+                });
+            });
+            document.querySelectorAll('#modal-checklist-items input[type="text"]').forEach(input => {
+                input.addEventListener('input', debounce((e) => {
+                    const index = parseInt(e.target.dataset.index);
+                    editChecklistItem(task.id, index, e.target.value);
+                }, 500));
+            });
+            document.querySelectorAll('.delete-checklist-item-button').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const index = parseInt(e.target.dataset.index);
+                    deleteChecklistItem(task.id, index);
+                });
+            });
+            document.getElementById('add-checklist-item-button').addEventListener('click', () => {
+                const input = document.getElementById('add-checklist-item-input');
+                if (input.value.trim()) {
+                    addChecklistItem(task.id, input.value.trim());
+                    input.value = '';
+                }
+            });
+
+            // AI Assistant Send Command button
+            document.getElementById('send-ai-command-button').addEventListener('click', async () => {
+                const commandInput = document.getElementById('ai-assistant-command-input');
+                const command = commandInput.value.trim();
+                if (!command) {
+                    showToast("AI에게 명령할 내용을 입력해주세요.", "info");
+                    return;
+                }
+
+                const btn = document.getElementById('send-ai-command-button');
+                const loadingText = document.getElementById('send-ai-command-loading-text');
+                const spinner = document.getElementById('send-ai-command-loading-spinner');
+                const errorDisplay = document.getElementById('ai-assistant-error');
+
+                btn.disabled = true;
+                loadingText.textContent = '처리 중...';
+                spinner.classList.remove('hidden');
+                errorDisplay.classList.add('hidden');
+
+                await handleAIAssistGeneralCommand(task.id, command);
+
+                btn.disabled = false;
+                loadingText.textContent = 'AI에게 명령';
+                spinner.classList.add('hidden');
+                commandInput.value = ''; // Clear input after sending command
+            });
+
+
+            // Move card buttons
+            document.querySelectorAll('.move-card-button').forEach(button => {
+                button.addEventListener('click', (e) => {
+                    const targetColumnId = e.target.dataset.targetColumn;
+                    moveCard(task.id, targetColumnId);
+                    closeDetailModal();
+                });
+            });
+        }
+
+        /**
+         * Renders the settings modal.
+         */
+        function renderSettingsModal() {
+            // 사용자 로그인 상태에 따라 버튼 표시 여부 결정
+            const isUserLoggedIn = currentUserId !== null;
+            const userEmail = window.auth.currentUser ? window.auth.currentUser.email : '';
+
+            settingsModalContent.innerHTML = `
+                <div class="flex justify-between items-center mb-4 border-b pb-3">
+                    <h2 class="text-3xl font-bold text-blue-800">설정</h2>
+                    <button id="settings-modal-close-button" class="text-gray-500 hover:text-gray-700 text-4xl leading-none font-light">
+                        &times;
+                    </button>
+                </div>
+
+                <div class="space-y-6">
+                    <!-- 계정 정보 및 로그인/로그아웃 버튼 -->
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <h3 class="text-xl font-semibold text-gray-700 mb-3 flex items-center"><i class="fas fa-user-circle mr-2"></i> 계정</h3>
+                        <p class="text-md text-gray-800 mb-3">
+                            ${isUserLoggedIn ? `로그인됨: <span class="font-bold">${escapeHtml(userEmail || '알 수 없음')}</span>` : '로그인되지 않음'}
+                        </p>
+                        <div class="flex flex-wrap gap-3">
+                            <button id="google-signin-button-modal" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200 flex items-center ${isUserLoggedIn ? 'hidden' : ''}">
+                                <i class="fab fa-google mr-2"></i> Google 로그인
+                            </button>
+                            <button id="google-signout-button-modal" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200 flex items-center ${isUserLoggedIn ? '' : 'hidden'}">
+                                <i class="fas fa-sign-out-alt mr-2"></i> 로그아웃
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Gemini API Key 설정 -->
+                    <div class="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                        <h3 class="text-xl font-semibold text-yellow-700 mb-3 flex items-center"><i class="fas fa-key mr-2"></i> Gemini API 키 설정</h3>
+                        <p class="text-sm text-gray-700 mb-2">로컬에서 AI 기능을 사용하려면 <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-blue-600 hover:underline">Google AI Studio</a>에서 Gemini API 키를 발급받아 여기에 입력하세요.</p>
+                        <input type="text" id="gemini-api-key" value="${escapeHtml(currentSettings.gemini_api_key)}" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-yellow-400" placeholder="여기에 Gemini API 키를 입력하세요">
+                    </div>
+
+                    <!-- 사용자 정보 설정 -->
+                    <div class="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                        <h3 class="text-xl font-semibold text-blue-700 mb-3">사용자 정보</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label for="user-info-name" class="block text-gray-700 text-sm font-bold mb-1">이름:</label>
+                                <input type="text" id="user-info-name" value="${escapeHtml(currentSettings.user_info.name)}" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            </div>
+                            <div>
+                                <label for="user-info-role" class="block text-gray-700 text-sm font-bold mb-1">역할:</label>
+                                <input type="text" id="user-info-role" value="${escapeHtml(currentSettings.user_info.role)}" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400">
+                            </div>
+                            <div class="md:col-span-2">
+                                <label for="user-info-goals" class="block text-gray-700 text-sm font-bold mb-1">주요 목표:</label>
+                                <textarea id="user-info-goals" rows="3" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y">${escapeHtml(currentSettings.user_info.goals)}</textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- AI 요구사항 설정 -->
+                    <div class="p-4 bg-green-50 rounded-lg border border-green-200">
+                        <h3 class="text-xl font-semibold text-green-700 mb-3">AI에 대한 전역 요구사항 (비서 기능 강화)</h3>
+                        <textarea id="global-ai-requirements" rows="5" class="w-full p-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y" placeholder="AI가 모든 프로젝트에 대해 고려해야 할 특별 지침이나 원칙을 여기에 입력하세요. 예: '항상 효율성을 최우선으로 고려하고, 인지 과부하를 줄이는 방향으로 조언해줘.'">${escapeHtml(currentSettings.global_ai_requirements)}</textarea>
+                    </div>
+
+                    <!-- AI 프롬프트 설정 -->
+                    <div class="p-4 bg-purple-50 rounded-lg border border-purple-200">
+                        <h3 class="text-xl font-semibold text-purple-700 mb-3">AI 프롬프트 설정 (고급)</h3>
+                        <p class="text-sm text-gray-600 mb-4">프롬프트는 JSON 형식으로 응답하도록 구성되어야 합니다. '{taskTitle}', '{taskDetails}', '{historyDetails}', '{userInfo}', '{globalAIRequirements}', '{allTasksDetails}', '{userCommand}' 등의 플레이스홀더를 사용할 수 있습니다.</p>
+                        <div class="space-y-4">
+                            <div>
+                                <label for="ai-checklist-prompt" class="block text-gray-700 text-sm font-bold mb-1">체크리스트 생성 프롬프트:</label>
+                                <textarea id="ai-checklist-prompt" rows="5" class="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y">${escapeHtml(currentSettings.ai_checklist_prompt)}</textarea>
+                            </div>
+                            <div>
+                                <label for="ai-advice-prompt" class="block text-gray-700 text-sm font-bold mb-1">조언/알림 생성 프롬프트:</label>
+                                <textarea id="ai-advice-prompt" rows="5" class="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y">${escapeHtml(currentSettings.ai_advice_prompt)}</textarea>
+                            </div>
+                            <div>
+                                <label for="ai-overall-report-prompt" class="block text-gray-700 text-sm font-bold mb-1">전체 프로젝트 보고서 프롬프트:</label>
+                                <textarea id="ai-overall-report-prompt" rows="5" class="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y">${escapeHtml(currentSettings.ai_overall_report_prompt)}</textarea>
+                            </div>
+                            <div>
+                                <label for="ai-general-assistant-prompt" class="block text-gray-700 text-sm font-bold mb-1">일반 AI 비서 프롬프트:</label>
+                                <textarea id="ai-general-assistant-prompt" rows="5" class="w-full p-2 border border-gray-300 rounded-lg font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y">${escapeHtml(currentSettings.ai_general_assistant_prompt)}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-gray-200 flex justify-end">
+                    <button id="save-settings-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200">
+                        설정 저장
+                    </button>
+                </div>
+            `;
+
+            // Attach event listeners for settings modal elements
+            document.getElementById('settings-modal-close-button').addEventListener('click', closeSettingsModal);
+
+            const saveSettingsButton = document.getElementById('save-settings-button');
+            saveSettingsButton.addEventListener('click', saveSettings);
+
+            // Google 로그인/로그아웃 버튼에 이벤트 리스너 연결
+            const googleSigninButtonModal = document.getElementById('google-signin-button-modal');
+            const googleSignoutButtonModal = document.getElementById('google-signout-button-modal');
+            if (googleSigninButtonModal) googleSigninButtonModal.addEventListener('click', handleGoogleSignIn);
+            if (googleSignoutButtonModal) googleSignoutButtonModal.addEventListener('click', handleSignOut);
+
+            // Debounced updates for settings inputs
+            document.getElementById('gemini-api-key').addEventListener('input', debounce((e) => currentSettings.gemini_api_key = e.target.value, 300));
+            document.getElementById('user-info-name').addEventListener('input', debounce((e) => currentSettings.user_info.name = e.target.value, 300));
+            document.getElementById('user-info-role').addEventListener('input', debounce((e) => currentSettings.user_info.role = e.target.value, 300));
+            document.getElementById('user-info-goals').addEventListener('input', debounce((e) => currentSettings.user_info.goals = e.target.value, 300));
+            document.getElementById('global-ai-requirements').addEventListener('input', debounce((e) => currentSettings.global_ai_requirements = e.target.value, 300));
+            document.getElementById('ai-checklist-prompt').addEventListener('input', debounce((e) => currentSettings.ai_checklist_prompt = e.target.value, 300));
+            document.getElementById('ai-advice-prompt').addEventListener('input', debounce((e) => currentSettings.ai_advice_prompt = e.target.value, 300));
+            document.getElementById('ai-overall-report-prompt').addEventListener('input', debounce((e) => currentSettings.ai_overall_report_prompt = e.target.value, 300));
+            document.getElementById('ai-general-assistant-prompt').addEventListener('input', debounce((e) => currentSettings.ai_general_assistant_prompt = e.target.value, 300));
+        }
+
+        // --- Modal Control Functions ---
+
+        function openDetailModal(task, columnId) {
+            renderTaskDetailModal(task, columnId);
+            taskDetailModal.classList.remove('hidden');
+        }
+
+        function closeDetailModal() {
+            taskDetailModal.classList.add('hidden');
+        }
+
+        function openSettingsModal() {
+            renderSettingsModal(); // 모달을 열 때마다 내용을 새로 렌더링하여 로그인 상태 반영
+            settingsModal.classList.remove('hidden');
+        }
+
+        function closeSettingsModal() {
+            settingsModal.classList.add('hidden');
+        }
+
+        // --- Firebase Authentication & Firestore Interactions ---
+
+        /**
+         * Handles Google Sign-In.
+         */
+        async function handleGoogleSignIn() {
+            try {
+                const provider = new window.GoogleAuthProvider();
+                await window.signInWithPopup(window.auth, provider);
+                showToast("Google 로그인 성공!", "success");
+                // onAuthStateChanged 리스너가 사용자 상태를 처리하고 UI를 업데이트할 것입니다.
+                closeSettingsModal(); // 로그인 성공 시 설정 모달 닫기
+            } catch (error) {
+                console.error("Google 로그인 오류:", error);
+                let errorMessage = `Google 로그인 실패: ${error.message}`;
+                if (error.code === 'auth/popup-closed-by-user') {
+                    errorMessage = "로그인 팝업이 닫혔습니다.";
+                } else if (error.code === 'auth/unauthorized-domain') {
+                    errorMessage = "Firebase 콘솔에서 'Authorized domains'에 현재 도메인(localhost)을 추가해야 합니다.";
+                }
+                showToast(errorMessage, "error");
+            }
+        }
+
+        /**
+         * Handles user sign-out.
+         */
+        async function handleSignOut() {
+            try {
+                await window.signOut(window.auth);
+                showToast("로그아웃 되었습니다.", "info");
+                // onAuthStateChanged 리스너가 사용자 상태를 처리하고 UI를 업데이트할 것입니다.
+                closeSettingsModal(); // 로그아웃 성공 시 설정 모달 닫기
+            } catch (error) {
+                console.error("로그아웃 오류:", error);
+                showToast(`로그아웃 실패: ${error.message}`, "error");
+            }
+        }
+
+        /**
+         * Initializes Firebase and sets up authentication listener and data snapshot listener.
+         */
+        async function initializeAppAndFirestore() {
+            try {
+                if (!window.auth || !window.db) {
+                    return; // Firebase 초기화 실패는 이미 처리됨
+                }
+
+                // onAuthStateChanged 리스너는 Firebase 인증 상태가 변경될 때마다 호출됩니다.
+                // Google 로그인, 로그아웃, 페이지 로드 시 기존 세션 복원 등 모든 경우를 처리합니다.
+                window.onAuthStateChanged(window.auth, async (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        userIdDisplay.textContent = `현재 사용자 ID: ${currentUserId}`;
+                        console.log("Authenticated with user ID:", currentUserId);
+
+                        tasksCollectionRef = window.collection(window.db, `artifacts/${window.appId}/users/${currentUserId}/tasks`);
+                        settingsDocRef = window.doc(window.db, `artifacts/${window.appId}/users/${currentUserId}/settings`, 'user_settings');
+
+                        // Set up real-time listener for tasks
+                        window.onSnapshot(window.query(tasksCollectionRef), (snapshot) => {
+                            tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                            renderKanbanBoard(); // Re-render board on data change
+                        }, (error) => {
+                            console.error("Error fetching tasks from Firestore:", error);
+                            showToast("임무 데이터를 불러오는 데 실패했습니다.", "error");
+                        });
+
+                        // Load settings (로그인 시 사용자별 설정 로드)
+                        await loadSettings();
+                        // Google 로그인 시 사용자 이름을 user_info.name에 자동으로 채워넣기
+                        if (user.displayName && !currentSettings.user_info.name) {
+                            currentSettings.user_info.name = user.displayName;
+                            await saveSettings(); // 설정 저장
+                        }
+
+
+                    } else {
+                        console.log("No user is signed in.");
+                        currentUserId = null;
+                        userIdDisplay.textContent = '로그인되지 않음';
+
+                        // 로그인되지 않은 상태에서 데이터 및 설정 초기화
+                        tasks = []; // 데이터 지우기
+                        currentSettings.user_info = { name: '', role: '', goals: '' }; // 사용자 정보 초기화
+                        currentSettings.global_ai_requirements = ''; // 전역 AI 요구사항 초기화
+                        // AI Key는 유지 (사용자가 직접 설정한 값)
+                        renderKanbanBoard(); // 보드 비우기
+                    }
+                    isAuthReady = true;
+                    loadingOverlay.classList.add('hidden'); // Hide loading overlay once auth is ready
+                    addCardButton.disabled = !currentUserId; // Enable/disable add card button based on auth
+                    overallAIReportButton.disabled = !currentUserId; // Enable/disable AI report button
+
+                    // 모달이 열려 있다면, 로그인 상태 변화를 반영하여 업데이트 (로그인/로그아웃 버튼 표시 상태 변경 등)
+                    if (!settingsModal.classList.contains('hidden')) {
+                         renderSettingsModal();
+                    }
+                });
+
+            }
+            catch (error) {
+                console.error("Firebase 인증 초기화 중 오류:", error);
+                showToast(`인증 초기화 중 오류 발생: ${error.message}`, "error");
+                isAuthReady = true;
+                loadingOverlay.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Adds a new card to Firestore.
+         */
+        async function handleAddCard() {
+            if (!currentUserId || newCardTitleInput.value.trim() === '') {
+                showToast("임무 제목을 입력하고 로그인해야 합니다.", "error");
+                return;
+            }
+
+            const newTask = {
+                title: newCardTitleInput.value.trim(),
+                description: newCardDescriptionInput.value.trim().substring(0, 1000), // 1000자 제한
+                columnId: 'todo',
+                checklist: [],
+                memo: '',
+                history: [{ timestamp: Date.now(), event: '카드 생성됨' }],
+                createdAt: Date.now() // For sorting
+            };
+
+            try {
+                await window.addDoc(tasksCollectionRef, newTask);
+                showToast("새 임무가 추가되었습니다!", "success");
+                newCardTitleInput.value = '';
+                newCardDescriptionInput.value = '';
+            } catch (e) {
+                console.error("Error adding document: ", e);
+                showToast("임무 추가 중 오류 발생.", "error");
+            }
+        }
+
+        /**
+         * Updates a field of a task in Firestore.
+         * @param {string} taskId - The ID of the task.
+         * @param {string} field - The field name (e.g., 'title', 'description', 'memo').
+         * @param {any} value - The new value for the field.
+         */
+        async function updateTaskField(taskId, field, value) {
+            if (!currentUserId) return;
+            const taskToUpdate = tasks.find(t => t.id === taskId);
+            if (!taskToUpdate) return;
+
+            const updatedTaskWithHistory = addHistoryEntry(taskToUpdate, `${field} 업데이트`);
+            // Apply 1000 char limit to description and memo
+            if (field === 'description' || field === 'memo') {
+                value = value.substring(0, 1000);
+            }
+
+            try {
+                await window.updateDoc(window.doc(tasksCollectionRef, taskId), {
+                    [field]: value,
+                    history: updatedTaskWithHistory.history
+                });
+                // showToast(`${taskToUpdate.title} 임무 ${field} 업데이트됨`, "success"); // Too many toasts for debounced updates
+            } catch (e) {
+                console.error(`Error updating task ${field}: `, e);
+                showToast(`${taskToUpdate.title} 임무 ${field} 업데이트 실패.`, "error");
+            }
+        }
+
+        /**
+         * Moves a card to a different column in Firestore.
+         * @param {string} taskId - The ID of the task to move.
+         * @param {string} targetColumnId - The ID of the target column.
+         */
+        async function moveCard(taskId, targetColumnId) {
+            if (!currentUserId) return;
+            const taskToMove = tasks.find(t => t.id === taskId);
+            if (!taskToMove) return;
+
+            const updatedTaskWithHistory = addHistoryEntry(taskToMove, `${taskToMove.columnId}에서 ${targetColumnId}로 이동`);
+
+            try {
+                await window.updateDoc(window.doc(tasksCollectionRef, taskId), {
+                    columnId: targetColumnId,
+                    history: updatedTaskWithHistory.history
+                });
+                showToast(`${taskToMove.title}이(가) ${targetColumnId}로 이동되었습니다.`, "success");
+            } catch (e) {
+                console.error("Error moving card: ", e);
+                showToast("카드 이동 실패.", "error");
+            }
+        }
+
+        /**
+         * Toggles the completion status of a checklist item in Firestore.
+         * @param {string} taskId - The ID of the task.
+         * @param {number} itemIndex - The index of the checklist item.
+         */
+        async function toggleChecklistItem(taskId, itemIndex) {
+            if (!currentUserId) return;
+            const taskToUpdate = tasks.find(t => t.id === taskId);
+            if (!taskToUpdate || !taskToUpdate.checklist) return;
+
+            const updatedChecklist = [...taskToUpdate.checklist];
+            updatedChecklist[itemIndex] = {
+                ...updatedChecklist[itemIndex],
+                completed: !updatedChecklist[itemIndex].completed
+            };
+
+            const event = `체크리스트 '${updatedChecklist[itemIndex].text}' ${updatedChecklist[itemIndex].completed ? '완료' : '미완료'} 변경`;
+            const updatedTaskWithHistory = addHistoryEntry(taskToUpdate, event);
+
+            try {
+                await window.updateDoc(window.doc(tasksCollectionRef, taskId), {
+                    checklist: updatedChecklist,
+                    history: updatedTaskWithHistory.history
+                });
+                showToast("체크리스트 상태 변경됨", "success");
+            } catch (e) {
+                console.error("Error toggling checklist item: ", e);
+                showToast("체크리스트 상태 변경 실패.", "error");
+            }
+        }
+
+        /**
+         * Adds a new checklist item to a task in Firestore.
+         * @param {string} taskId - The ID of the task.
+         * @param {string} itemText - The text of the new checklist item.
+         */
+        async function addChecklistItem(taskId, itemText) {
+            if (!currentUserId || !itemText.trim()) return;
+            const taskToUpdate = tasks.find(t => t.id === taskId);
+            if (!taskToUpdate) return;
+
+            const newChecklist = [...taskToUpdate.checklist || [], { text: itemText.trim(), completed: false }];
+            const updatedTaskWithHistory = addHistoryEntry(taskToUpdate, `체크리스트 항목 추가: '${itemText}'`);
+
+            try {
+                await window.updateDoc(window.doc(tasksCollectionRef, taskId), {
+                    checklist: newChecklist,
+                    history: updatedTaskWithHistory.history
+                });
+                showToast("체크리스트 항목 추가됨", "success");
+            } catch (e) {
+                console.error("Error adding checklist item: ", e);
+                showToast("체크리스트 항목 추가 실패.", "error");
+            }
+        }
+
+        /**
+         * Deletes a checklist item from a task in Firestore.
+         * @param {string} taskId - The ID of the task.
+         * @param {number} itemIndex - The index of the checklist item to delete.
+         */
+        async function deleteChecklistItem(taskId, itemIndex) {
+            if (!currentUserId) return;
+            const taskToUpdate = tasks.find(t => t.id === taskId);
+            if (!taskToUpdate || !taskToUpdate.checklist) return;
+
+            const deletedItemText = taskToUpdate.checklist[itemIndex].text;
+            const newChecklist = taskToUpdate.checklist.filter((_, idx) => idx !== itemIndex);
+            const updatedTaskWithHistory = addHistoryEntry(taskToUpdate, `체크리스트 항목 삭제: '${deletedItemText}'`);
+
+            try {
+                await window.updateDoc(window.doc(tasksCollectionRef, taskId), {
+                    checklist: newChecklist,
+                    history: updatedTaskWithHistory.history
+                });
+                showToast("체크리스트 항목 삭제됨", "success");
+            } catch (e) {
+                console.error("Error deleting checklist item: ", e);
+                showToast("체크리스트 항목 삭제 실패.", "error");
+            }
+        }
+
+        /**
+         * Edits the text of a checklist item in Firestore.
+         * @param {string} taskId - The ID of the task.
+         * @param {number} itemIndex - The index of the checklist item to edit.
+         * @param {string} newText - The new text for the checklist item.
+         */
+        async function editChecklistItem(taskId, itemIndex, newText) {
+            if (!currentUserId || !newText.trim()) return;
+            const taskToUpdate = tasks.find(t => t.id === taskId);
+            if (!taskToUpdate || !taskToUpdate.checklist) return;
+
+            const originalText = taskToUpdate.checklist[itemIndex].text;
+            const updatedChecklist = [...taskToUpdate.checklist];
+            updatedChecklist[itemIndex] = {
+                ...updatedChecklist[itemIndex],
+                text: newText.trim()
+            };
+            const updatedTaskWithHistory = addHistoryEntry(taskToUpdate, `체크리스트 항목 '${originalText}'를 '${newText}'로 수정`);
+
+            try {
+                await window.updateDoc(window.doc(tasksCollectionRef, taskId), {
+                    checklist: updatedChecklist,
+                    history: updatedTaskWithHistory.history
+                });
+                // showToast("체크리스트 항목 수정됨", "success"); // Too many toasts for debounced updates
+            } catch (e) {
+                console.error("Error editing checklist item: ", e);
+                showToast("체크리스트 항목 수정 실패.", "error");
+            }
+        }
+
+        /**
+         * Loads user settings from Firestore.
+         */
+        async function loadSettings() {
+            if (!currentUserId) return;
+            try {
+                const docSnap = await window.getDoc(settingsDocRef);
+                if (docSnap.exists()) {
+                    // 기존 currentSettings에 저장된 프롬프트 기본값은 유지하고, Firebase에서 불러온 값으로 덮어씌움
+                    currentSettings = {
+                        ...currentSettings,
+                        ...docSnap.data()
+                    };
+                    console.log("Settings loaded:", currentSettings);
+                } else {
+                    console.log("No settings document found, using default settings and saving them.");
+                    // 새 사용자이거나 설정 문서가 없으면 기본 설정을 저장
+                    await window.setDoc(settingsDocRef, currentSettings);
+                }
+            } catch (e) {
+                console.error("Error loading settings: ", e);
+                showToast("설정 불러오기 실패.", "error");
+            }
+        }
+
+        /**
+         * Saves user settings to Firestore.
+         */
+        async function saveSettings() {
+            if (!currentUserId) return;
+            try {
+                await window.setDoc(settingsDocRef, currentSettings);
+                showToast("설정이 저장되었습니다!", "success");
+                closeSettingsModal();
+            } catch (e) {
+                console.error("Error saving settings: ", e);
+                showToast("설정 저장 실패.", "error");
+            }
+        }
+
+        // --- AI API Interactions ---
+
+        /**
+         * Generic function to call Gemini API.
+         * @param {string} prompt - The text prompt for the AI.
+         * @param {object} responseSchema - JSON schema for the expected response.
+         * @returns {Promise<object>} - Parsed JSON response from AI.
+         */
+        async function callGeminiAPI(prompt, responseSchema) {
+            const apiKey = currentSettings.gemini_api_key;
+            if (!apiKey) {
+                throw new Error("Gemini API 키가 설정되지 않았습니다. 설정에서 API 키를 입력해주세요.");
+            }
+
+            const payload = {
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema,
+                },
+            };
+
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            const response = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                let errorData;
+                try {
+                    errorData = await response.json();
+                } catch (e) {
+                    errorData = { error: { message: `응답을 JSON으로 파싱할 수 없습니다. 상태: ${response.status}` } };
+                }
+                const errorMessage = errorData.error ? errorData.error.message : '알 수 없는 오류';
+                throw new Error(`API 오류: ${response.status} ${response.statusText} - ${errorMessage}`);
+            }
+
+            const result = await response.json();
+
+            if (result.candidates && result.candidates.length > 0 &&
+                result.candidates[0].content && result.candidates[0].content.parts &&
+                result.candidates[0].content.parts.length > 0) {
+                const jsonString = result.candidates[0].content.parts[0].text;
+                return JSON.parse(jsonString);
+            } else {
+                throw new Error("AI 응답이 올바른 형식이 아닙니다.");
+            }
+        }
+
+        /**
+         * Calls AI to generate a checklist for a task.
+         * @param {string} taskId - The ID of the task.
+         * @param {string} taskTitle - The title of the task.
+         */
+        async function handleAIAssistChecklist(taskId, taskTitle) {
+            if (!currentUserId) {
+                showToast("로그인 후 AI 보조 기능을 사용할 수 있습니다.", "error");
+                return;
+            }
+            try {
+                // 프롬프트에 'interaction language : korean'이 이미 포함되어 있습니다.
+                const prompt = currentSettings.ai_checklist_prompt.replace('{taskTitle}', taskTitle);
+                const responseSchema = {
+                    type: "OBJECT",
+                    properties: {
+                        "checklist": { type: "ARRAY", items: { type: "STRING" } }
+                    },
+                    required: ["checklist"],
+                };
+
+                const parsedJson = await callGeminiAPI(prompt, responseSchema);
+
+                if (parsedJson && parsedJson.checklist && Array.isArray(parsedJson.checklist)) {
+                    const newChecklistItems = parsedJson.checklist.map(item => ({ text: item, completed: false }));
+
+                    const taskRef = window.doc(tasksCollectionRef, taskId);
+                    const currentTaskSnapshot = await window.getDoc(taskRef);
+                    if (currentTaskSnapshot.exists()) {
+                        const currentTaskData = currentTaskSnapshot.data();
+                        const updatedChecklist = [...currentTaskData.checklist || [], ...newChecklistItems];
+                        const updatedTaskWithHistory = addHistoryEntry(currentTaskData, 'AI가 체크리스트 추가');
+                        await window.updateDoc(taskRef, {
+                            checklist: updatedChecklist,
+                            history: updatedTaskWithHistory.history,
+                        });
+                        showToast("AI 체크리스트가 성공적으로 추가되었습니다!", "success");
+                    }
+                } else {
+                    showToast("AI 응답 형식이 올바르지 않습니다. (체크리스트)", "error");
+                }
+            } catch (error) {
+                console.error('AI Assist Checklist Error:', error);
+                showToast(`AI 보조 중 오류 발생: ${error.message}`, "error");
+            }
+        }
+
+        /**
+         * Calls AI for a general command/question on a specific task.
+         * @param {string} taskId - The ID of the task.
+         * @param {string} userCommand - The user's command/question to the AI.
+         */
+        async function handleAIAssistGeneralCommand(taskId, userCommand) {
+            if (!currentUserId) {
+                showToast("로그인 후 AI 비서 기능을 사용할 수 있습니다.", "error");
+                return;
+            }
+            const taskToInteract = tasks.find(t => t.id === taskId);
+            if (!taskToInteract) return;
+
+            const aiAssistantErrorDisplay = document.getElementById('ai-assistant-error');
+            aiAssistantErrorDisplay.classList.add('hidden'); // Hide previous error
+
+            try {
+                const taskDetails = `Title: ${taskToInteract.title}\nDescription: ${taskToInteract.description || 'N/A'}\nMemo: ${taskToInteract.memo || 'N/A'}\nChecklist: ${taskToInteract.checklist.map(item => item.text).join(', ')}\nStatus: ${kanbanColumns.find(col => col.id === taskToInteract.columnId)?.title || '알 수 없음'}`;
+                const historyDetails = taskToInteract.history.map(entry => `${new Date(entry.timestamp).toLocaleString()}: ${entry.event}`).join('\n');
+                const userInfoDetails = `Name: ${currentSettings.user_info.name}\nRole: ${currentSettings.user_info.role}\nGoals: ${currentSettings.user_info.goals}`;
+                const globalAIRequirements = currentSettings.global_ai_requirements;
+
+                // 프롬프트에 'interaction language : korean'이 이미 포함되어 있습니다.
+                const prompt = currentSettings.ai_general_assistant_prompt
+                    .replace('{userInfo}', userInfoDetails)
+                    .replace('{globalAIRequirements}', globalAIRequirements)
+                    .replace('{taskDetails}', taskDetails)
+                    .replace('{historyDetails}', historyDetails)
+                    .replace('{userCommand}', userCommand);
+
+                const responseSchema = {
+                    type: "OBJECT",
+                    properties: { "response": { type: "STRING" } },
+                    required: ["response"],
+                };
+
+                const parsedJson = await callGeminiAPI(prompt, responseSchema);
+
+                if (parsedJson && parsedJson.response) {
+                    const aiResponseText = parsedJson.response;
+                    const taskRef = window.doc(tasksCollectionRef, taskId);
+                    const updatedTaskWithHistory = addHistoryEntry(taskToInteract, `사용자: ${userCommand}\nAI 비서: ${aiResponseText}`);
+                    await window.updateDoc(taskRef, {
+                        history: updatedTaskWithHistory.history,
+                    });
+                    showToast("AI 비서 응답이 기록되었습니다!", "success");
+                    // 모달 UI를 업데이트하여 최신 기록을 보여줍니다.
+                    openDetailModal(updatedTaskWithHistory, taskToInteract.columnId);
+                } else {
+                    showToast("AI 비서 응답 형식이 올바르지 않습니다.", "error");
+                    aiAssistantErrorDisplay.textContent = "AI 응답 형식이 올바르지 않습니다.";
+                    aiAssistantErrorDisplay.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('AI Assistant Command Error:', error);
+                aiAssistantErrorDisplay.textContent = `AI 비서 오류: ${error.message}`;
+                aiAssistantErrorDisplay.classList.remove('hidden');
+                showToast(`AI 비서 오류: ${error.message}`, "error");
+            }
+        }
+
+
+        /**
+         * Calls AI to generate an overall project report.
+         */
+        async function handleOverallAIReport() {
+            if (!currentUserId) {
+                showToast("로그인 후 전체 프로젝트 보고서 기능을 사용할 수 있습니다.", "error");
+                return;
+            }
+
+            const btn = overallAIReportButton;
+            const loadingText = overallAIReportLoadingText;
+            const spinner = overallAIReportLoadingSpinner;
+            const contentDiv = overallAIReportContent;
+            const errorDisplay = overallAIReportError;
+
+            btn.disabled = true;
+            loadingText.textContent = '보고서 생성 중...';
+            spinner.classList.remove('hidden');
+            contentDiv.classList.add('hidden');
+            errorDisplay.classList.add('hidden');
+
+            try {
+                const userInfoDetails = `Name: ${currentSettings.user_info.name}\nRole: ${currentSettings.user_info.role}\nGoals: ${currentSettings.user_info.goals}`;
+                const globalAIRequirements = currentSettings.global_ai_requirements;
+                const allTasksDetails = tasks.map(task => {
+                    const checklistInfo = task.checklist && task.checklist.length > 0
+                        ? `Checklist: ${task.checklist.map(item => `${item.text} (${item.completed ? '완료' : '미완료'})`).join(', ')}`
+                        : 'No checklist.';
+                    const historyInfo = task.history && task.history.length > 0
+                        ? `History: ${task.history.map(entry => `${new Date(entry.timestamp).toLocaleDateString()}: ${entry.event}`).join('; ')}`
+                        : 'No history.';
+                    return `Task Title: ${task.title}\nDescription: ${task.description}\nStatus: ${kanbanColumns.find(col => col.id === task.columnId)?.title || task.columnId}\n${checklistInfo}\n${historyInfo}\n---`;
+                }).join('\n');
+
+                // 프롬프트에 'interaction language : korean'이 이미 포함되어 있습니다.
+                const prompt = currentSettings.ai_overall_report_prompt
+                    .replace('{userInfo}', userInfoDetails)
+                    .replace('{globalAIRequirements}', globalAIRequirements)
+                    .replace('{allTasksDetails}', allTasksDetails);
+
+                const responseSchema = {
+                    type: "OBJECT",
+                    properties: {
+                        "summary": { type: "STRING" },
+                        "recommendedActions": { type: "ARRAY", items: { type: "STRING" } },
+                        "strategicAdvice": { type: "STRING" }
+                    },
+                    required: ["summary", "recommendedActions", "strategicAdvice"],
+                };
+
+                const parsedJson = await callGeminiAPI(prompt, responseSchema);
+
+                if (parsedJson && parsedJson.summary && parsedJson.recommendedActions && parsedJson.strategicAdvice) {
+                    let reportContent = `요약:\n${parsedJson.summary}\n\n추천 활동:\n`;
+                    parsedJson.recommendedActions.forEach((action, index) => {
+                        reportContent += `${index + 1}. ${action}\n`;
+                    });
+                    reportContent += `\n전략적 조언:\n${parsedJson.strategicAdvice}`;
+                    contentDiv.querySelector('pre').textContent = reportContent;
+                    contentDiv.classList.remove('hidden');
+                    showToast("AI 보고서가 생성되었습니다!", "success");
+                } else {
+                    errorDisplay.textContent = "AI 응답 형식이 올바르지 않습니다. (보고서)";
+                    errorDisplay.classList.remove('hidden');
+                    showToast("AI 보고서 생성 실패 (형식 오류).", "error");
+                }
+            } catch (error) {
+                console.error('Overall AI Report Error:', error);
+                errorDisplay.textContent = `AI 보고서 생성 중 오류 발생: ${error.message}`;
+                errorDisplay.classList.remove('hidden');
+                showToast(`AI 보고서 생성 중 오류 발생: ${error.message}`, "error");
+            } finally {
+                btn.disabled = false;
+                loadingText.textContent = 'AI 보고서 생성';
+                spinner.classList.add('hidden');
+            }
+        }
+
+
+        // --- Event Listeners Initialization ---
+
+        window.onload = async () => {
+            // Firebase 초기화 전에 auth와 db 객체가 유효한지 확인합니다.
+            // 초기화 실패 시에는 initializeAppAndFirestore 호출을 건너뛰도록 합니다.
+            if (window.firebaseApp && window.db && window.auth) {
+                await initializeAppAndFirestore();
+            } else {
+                console.error("Firebase is not properly initialized. Cannot proceed with app functions.");
+                // 로딩 오버레이는 Firebase 초기화 실패 메시지를 표시하고 있으므로 그대로 유지
+                return; // Firebase 초기화 실패 시 나머지 로직 실행 중단
+            }
+
+            // settingsButton은 항상 존재하며 클릭 시 모달을 렌더링하고 열도록 합니다.
+            settingsButton.addEventListener('click', openSettingsModal);
+
+            // 나머지 핵심 이벤트 리스너
+            addCardButton.addEventListener('click', handleAddCard);
+            overallAIReportButton.addEventListener('click', handleOverallAIReport);
+
+            // Close modal on backdrop click
+            taskDetailModal.addEventListener('click', (e) => {
+                if (e.target === taskDetailModal) closeDetailModal();
+            });
+            settingsModal.addEventListener('click', (e) => {
+                if (e.target === settingsModal) closeSettingsModal();
+            });
+        };
+    </script>
+</body>
+</html>
