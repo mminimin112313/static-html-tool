@@ -88,6 +88,12 @@
             to { opacity: 0; transform: translateX(-50%) translateY(-20px); }
         }
         /* 체크리스트 항목 텍스트 스타일 (줄 바꿈 및 완료 시 색상 변경) */
+        .checklist-item-container {
+            display: flex;
+            align-items: center;
+            position: relative; /* 스와이프 삭제 X 아이콘 위치를 위해 */
+            overflow: hidden; /* X 아이콘 숨기기 */
+        }
         .checklist-item-text-input {
             white-space: normal; /* 기본 줄 바꿈 허용 */
             word-break: break-word; /* 긴 단어가 잘리지 않고 줄 바꿈 되도록 */
@@ -95,10 +101,61 @@
             background-color: transparent; /* 배경 투명 */
             border: none; /* 테두리 제거 */
             outline: none; /* 포커스 아웃라인 제거 */
+            padding: 0.25rem 0.5rem; /* 약간의 패딩으로 텍스트와 경계선 간격 확보 */
         }
         .checklist-item-text-input.completed {
             color: #9ca3af; /* gray-400 */
             text-decoration: line-through;
+        }
+        .delete-icon-wrapper {
+            position: absolute;
+            right: 0;
+            top: 0;
+            bottom: 0;
+            width: 0; /* 초기에는 숨김 */
+            background-color: #ef4444; /* red-500 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: width 0.1s ease-out; /* 너비 변화 애니메이션 */
+            pointer-events: none; /* 기본적으로는 클릭 불가 */
+        }
+        .delete-icon-wrapper.visible {
+            width: 3rem; /* X 아이콘이 보일 너비 */
+            pointer-events: auto; /* 클릭 가능 */
+        }
+        .delete-icon-wrapper i {
+            color: white;
+        }
+
+        /* 챗봇 모달 고유 스타일 */
+        #ai-chatbot-modal .modal-content {
+            max-width: 40rem; /* 챗봇 모달 너비 조정 */
+            min-height: 50vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #chatbot-messages {
+            flex-grow: 1;
+            overflow-y: auto;
+            border: 1px solid #e2e8f0; /* gray-200 */
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background-color: #f8fafc; /* gray-50 */
+        }
+        .chatbot-message {
+            margin-bottom: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+        }
+        .chatbot-message.user {
+            background-color: #bfdbfe; /* blue-200 */
+            align-self: flex-end; /* 오른쪽 정렬 */
+        }
+        .chatbot-message.ai {
+            background-color: #e0e7ff; /* indigo-100 */
+            align-self: flex-start; /* 왼쪽 정렬 */
         }
     </style>
 </head>
@@ -253,6 +310,28 @@
         </div>
     </div>
 
+    <div id="ai-chatbot-modal" class="modal hidden">
+        <div class="modal-content w-full max-w-2xl" id="chatbot-modal-content">
+            <div class="flex justify-between items-center mb-4 border-b pb-3">
+                <h2 class="text-3xl font-bold text-blue-800 flex items-center"><i class="fas fa-comments mr-2"></i> AI 비서 채팅</h2>
+                <button id="chatbot-close-button" class="text-gray-500 hover:text-gray-700 text-4xl leading-none font-light">
+                    &times;
+                </button>
+            </div>
+            <div id="chatbot-messages" class="flex-grow flex flex-col space-y-3">
+                <!-- Chat messages will be dynamically added here -->
+            </div>
+            <div class="flex mt-4">
+                <input type="text" id="chatbot-input" placeholder="AI에게 질문하거나 명령하세요 (예: 추가 업무 3가지 제안). 500자 제한." maxlength="500" class="flex-grow p-3 border border-gray-300 rounded-l-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg">
+                <button id="chatbot-send-button" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-r-lg shadow-md transition duration-200">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+            <p id="chatbot-error" class="text-red-500 text-sm mt-2 hidden"></p>
+        </div>
+    </div>
+
+
     <div id="settings-modal" class="modal hidden">
         <div class="modal-content w-full max-w-3xl">
             <!-- Settings content will be dynamically rendered here -->
@@ -286,7 +365,7 @@
             ai_checklist_prompt: "interaction language : korean\nGenerate a detailed task checklist and execution steps for the task: '{taskTitle}'. Provide the response only as a JSON object with a single key 'checklist' which is an array of strings. Each string should be a step. Do not include any other text or explanation. Example: {\"checklist\": [\"Step 1: Get started\", \"Step 2: Finish up\"]}",
             ai_advice_prompt: "interaction language : korean\nGiven the following task details and history, provide concise advice or a helpful notification for the user. Focus on actionable insights or next steps. Provide the response only as a JSON object with a single key 'advice' which is a string. Do not include any other text or explanation. Task Details:\\n{taskDetails}\\n\\nTask History:\\n{historyDetails}\\n\\nExample: {\"advice\": \"Consider breaking down complex steps into smaller actions for better progress tracking.\"}",
             ai_overall_report_prompt: "interaction language : korean\nGiven the following user information, global AI requirements, and a list of all tasks across different Kanban columns, provide a concise summary of the project status, identify the most critical next steps, and offer strategic advice. Provide the response only as a JSON object with keys 'summary' (string), 'recommendedActions' (array of strings), and 'strategicAdvice' (string). Do not include any other text or explanation.\n\nUser Information:\\n{userInfo}\n\nGlobal AI Requirements:\\n{globalAIRequirements}\n\nAll Tasks (Title, Description, Checklist, Status, History):\\n{allTasksDetails}\n\nExample: {\"summary\": \"Project is at a critical juncture.\", \"recommendedActions\": [\"Prioritize 'Fix login bug'\", \"Review 'Marketing campaign' progress\"], \"strategicAdvice\": \"Focus on immediate blockers before planning new features.\"}",
-            ai_general_assistant_prompt: "interaction language : korean\nYou are a highly capable AI assistant for a Kanban task management system. Your goal is to help the user manage their tasks efficiently and provide insightful assistance based on their specific commands. Analyze the provided task details, user information, global AI requirements, and your past interactions. Respond concisely and directly to the user's command. If a specific action is requested (e.g., 'generate X steps'), try to fulfill it. If a question is asked, answer it. If you cannot fulfill the request or need more information, clearly state so.\n\nUser Information:\\n{userInfo}\n\nGlobal AI Requirements:\\n{globalAIRequirements}\n\nCurrent Task Details:\\n{taskDetails}\n\nTask History:\\n{historyDetails}\n\nUser Command:\\n{userCommand}\n\nProvide the response only as a JSON object with a single key 'response' which is a string. Do not include any other text or explanation outside the 'response' key.",
+            ai_general_assistant_prompt: "interaction language : korean\nYou are a highly capable AI assistant for a Kanban task management system. Your goal is to help the user manage their tasks efficiently and provide insightful assistance based on their specific commands. Analyze the provided task details, user information, global AI requirements, and your past interactions. Respond concisely and directly to the user's command. If a specific action is requested (e.g., 'generate X steps'), try to fulfill it. If a question is asked, answer it. If you cannot fulfill the request or need more information, clearly state so. For 'add task' or 'add checklist item' type commands, please respond with a JSON object like: {\"action\": \"add_checklist_items\", \"items\": [\"New item 1\", \"New item 2\"]}. For other commands or questions, respond with: {\"response\": \"Your text response here\"}. Do not include any other text or explanation outside the JSON. Be aware of the 500 character limit for user input and keep your responses concise.",
             user_info: {
                 name: '',
                 role: '',
@@ -311,6 +390,14 @@
         const kanbanBoard = document.getElementById('kanban-board');
         const taskDetailModal = document.getElementById('task-detail-modal');
         const taskDetailModalContent = taskDetailModal.querySelector('.modal-content');
+        const aiChatbotModal = document.getElementById('ai-chatbot-modal');
+        const chatbotMessages = document.getElementById('chatbot-messages');
+        const chatbotInput = document.getElementById('chatbot-input');
+        const chatbotSendButton = document.getElementById('chatbot-send-button');
+        const chatbotErrorDisplay = document.getElementById('chatbot-error');
+        const chatbotCloseButton = document.getElementById('chatbot-close-button');
+
+
         const settingsButton = document.getElementById('settings-button');
         const settingsModal = document.getElementById('settings-modal');
         const settingsModalContent = settingsModal.querySelector('.modal-content');
@@ -327,6 +414,9 @@
         // Firestore references (will be set after Firebase init)
         let tasksCollectionRef;
         let settingsDocRef;
+
+        // 현재 AI 챗봇 모달이 열려 있는 임무의 ID (챗봇 대화 기록을 해당 임무의 기록으로 저장하기 위함)
+        let currentChatbotTaskId = null;
 
         // --- Utility Functions ---
 
@@ -547,10 +637,14 @@
                     <div id="modal-checklist-items" class="space-y-2">
                         ${task.checklist && task.checklist.length > 0 ?
                             task.checklist.map((item, index) => `
-                                <div class="flex items-center text-lg text-gray-800 group">
+                                <div class="flex items-center text-lg text-gray-800 group checklist-item-container" 
+                                     data-index="${index}" 
+                                     data-item-id="${task.id}-${index}">
                                     <input type="checkbox" id="checklist-item-${index}" class="mr-3 h-5 w-5 rounded text-blue-600 focus:ring-blue-500" ${item.completed ? 'checked' : ''}>
                                     <input type="text" value="${escapeHtml(item.text)}" class="flex-grow ${item.completed ? 'checklist-item-text-input completed' : 'checklist-item-text-input'}" data-index="${index}">
-                                    <button class="delete-checklist-item-button text-red-500 hover:text-red-700 ml-2 text-xl opacity-0 group-hover:opacity-100 transition-opacity" data-index="${index}">&times;</button>
+                                    <div class="delete-icon-wrapper" data-index="${index}">
+                                        <i class="fas fa-times"></i>
+                                    </div>
                                 </div>
                             `).join('')
                             : `<p class="text-gray-500">체크리스트가 없습니다.</p>`
@@ -573,13 +667,12 @@
                     >${escapeHtml(task.memo || '')}</textarea>
                 </div>
 
-                <!-- AI 비서 (대화형) -->
+                <!-- AI 비서 버튼 (챗봇 모달 열기) -->
                 <div class="mb-6 border-t pt-4 border-gray-200">
                     <h4 class="text-xl font-semibold text-blue-700 mb-2 flex items-center"><i class="fas fa-robot mr-2"></i> AI 비서</h4>
-                    <textarea id="ai-assistant-command-input" rows="3" maxlength="500" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg resize-y mb-3" placeholder="AI에게 명령하거나 질문하세요 (예: 이 임무의 다음 단계 3가지 생성해줘)."></textarea>
-                    <button id="send-ai-command-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-lg flex items-center justify-center">
-                        <span id="send-ai-command-loading-text">AI에게 명령</span>
-                        <svg id="send-ai-command-loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <button id="open-ai-chatbot-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-lg flex items-center justify-center">
+                        <span id="open-ai-chatbot-text">AI 비서와 대화</span>
+                        <svg id="open-ai-chatbot-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     </button>
                     <p id="ai-assistant-error" class="text-red-500 text-sm mt-2 hidden"></p>
                 </div>
@@ -624,26 +717,108 @@
             modalTaskDescriptionInput.addEventListener('input', debounce((e) => updateTaskField(task.id, 'description', e.target.value), 500));
             modalTaskMemoInput.addEventListener('input', debounce((e) => updateTaskField(task.id, 'memo', e.target.value), 500));
 
-            // Checklist event listeners
-            document.querySelectorAll('#modal-checklist-items input[type="checkbox"]').forEach(checkbox => {
+            // Checklist event listeners (스와이프 기능 포함)
+            document.querySelectorAll('#modal-checklist-items .checklist-item-container').forEach(container => {
+                const checkbox = container.querySelector('input[type="checkbox"]');
+                const textInput = container.querySelector('input[type="text"]');
+                const deleteIconWrapper = container.querySelector('.delete-icon-wrapper');
+                const index = parseInt(container.dataset.index);
+
+                // 터치 스와이프 변수
+                let startX = 0;
+                let currentX = 0;
+                let isSwiping = false;
+
+                // 체크박스 토글 (기존 기능)
                 checkbox.addEventListener('change', (e) => {
-                    const index = parseInt(e.target.id.split('-')[2]);
+                    e.stopPropagation(); // 스와이프 감지와 겹치지 않도록
                     toggleChecklistItem(task.id, index);
                 });
-            });
-            document.querySelectorAll('#modal-checklist-items input[type="text"]').forEach(input => {
-                input.addEventListener('input', debounce((e) => {
-                    const index = parseInt(e.target.dataset.index);
+
+                // 텍스트 수정 (기존 기능)
+                textInput.addEventListener('input', debounce((e) => {
                     editChecklistItem(task.id, index, e.target.value);
                 }, 500));
-            });
-            document.querySelectorAll('.delete-checklist-item-button').forEach(button => {
-                button.addEventListener('click', (e) => {
-                    e.stopPropagation(); // 팝업 닫기 방지
-                    const index = parseInt(e.target.dataset.index);
-                    deleteChecklistItem(task.id, index);
+
+                // 스와이프 이벤트 리스너
+                container.addEventListener('touchstart', (e) => {
+                    startX = e.touches[0].clientX;
+                    currentX = startX;
+                    isSwiping = true;
+                    // 스와이프 시작 시 X 아이콘 숨기기 (이전 상태가 남아있을 수 있으므로)
+                    deleteIconWrapper.style.width = '0';
+                    deleteIconWrapper.classList.remove('visible');
+                    container.style.transform = 'translateX(0)'; // 이전 스와이프 잔여 효과 제거
+                    container.style.transition = 'transform 0.1s ease-out';
+                });
+
+                container.addEventListener('touchmove', (e) => {
+                    if (!isSwiping) return;
+                    currentX = e.touches[0].clientX;
+                    const diffX = currentX - startX;
+
+                    // 왼쪽으로 스와이프 (삭제)
+                    if (diffX < 0) {
+                        const swipeDistance = Math.abs(diffX);
+                        const maxDeleteWidth = 40; // X 아이콘이 완전히 보일 너비 (px)
+                        const maxSwipeForDelete = 80; // 삭제로 인식할 스와이프 거리 (px)
+
+                        // 스와이프 정도에 따라 X 아이콘 너비 조절
+                        deleteIconWrapper.style.width = `${Math.min(swipeDistance, maxDeleteWidth)}px`;
+                        deleteIconWrapper.classList.add('visible');
+
+                        // 텍스트 컨테이너를 왼쪽으로 이동하여 X 아이콘 노출
+                        container.style.transform = `translateX(-${Math.min(swipeDistance, maxDeleteWidth)}px)`;
+
+                        // 삭제 임계점 넘으면 시각적 피드백 (선택 사항)
+                        if (swipeDistance > maxSwipeForDelete) {
+                            deleteIconWrapper.style.backgroundColor = '#b91c1c'; // 더 진한 빨강
+                        } else {
+                            deleteIconWrapper.style.backgroundColor = '#ef4444'; // 기본 빨강
+                        }
+                    } else if (diffX > 0) { // 오른쪽으로 스와이프 (토글)
+                        // 오른쪽 스와이프 시에는 X 아이콘 숨김
+                        deleteIconWrapper.style.width = '0';
+                        deleteIconWrapper.classList.remove('visible');
+                        container.style.transform = 'translateX(0)';
+                    }
+                });
+
+                container.addEventListener('touchend', async (e) => {
+                    if (!isSwiping) return;
+                    isSwiping = false;
+                    const diffX = currentX - startX;
+                    container.style.transition = ''; // 트랜지션 초기화 (부드러운 복귀)
+
+                    const maxDeleteWidth = 40; // X 아이콘이 완전히 보일 너비 (px)
+                    const maxSwipeForDelete = 80; // 삭제로 인식할 스와이프 거리 (px)
+
+
+                    if (diffX < -maxSwipeForDelete) { // 왼쪽으로 길게 스와이프 (삭제)
+                        await deleteChecklistItem(task.id, index);
+                    } else if (diffX > 30) { // 오른쪽으로 짧게 스와이프 (토글)
+                         // 체크박스가 이미 처리하므로, 텍스트 스와이프는 토글 기능 안함.
+                         // 대신 체크박스 클릭으로 토글하도록 유도.
+                         // 혹은 여기서 checkbox.click()을 직접 호출하여 토글 로직을 트리거할 수 있음.
+                         // 현재는 체크박스가 별도로 존재하므로 이 부분은 생략.
+                         // 이 경우, 스와이프 후 원위치.
+                    }
+
+                    // 스와이프가 충분하지 않으면 원위치로 복귀
+                    container.style.transform = 'translateX(0)';
+                    deleteIconWrapper.style.width = '0';
+                    deleteIconWrapper.classList.remove('visible');
+                });
+
+                 // 삭제 아이콘 자체 클릭 시 삭제 (모바일이 아닌 환경에서)
+                deleteIconWrapper.addEventListener('click', async (e) => {
+                    e.stopPropagation(); // 부모 요소 클릭 이벤트 방지
+                    const itemIndex = parseInt(e.currentTarget.dataset.index);
+                    await deleteChecklistItem(task.id, itemIndex);
                 });
             });
+
+
             document.getElementById('add-checklist-item-button').addEventListener('click', () => {
                 const input = document.getElementById('add-checklist-item-input');
                 if (input.value.trim()) {
@@ -652,38 +827,15 @@
                 }
             });
 
-            // AI Assistant Send Command button
-            document.getElementById('send-ai-command-button').addEventListener('click', async () => {
-                const commandInput = document.getElementById('ai-assistant-command-input');
-                const command = commandInput.value.trim();
-                if (!command) {
-                    showToast("AI에게 명령할 내용을 입력해주세요.", "info");
-                    return;
-                }
-
+            // AI Assistant Open Chatbot button
+            document.getElementById('open-ai-chatbot-button').addEventListener('click', async () => {
                 // AI 기능 사용 전 API 키 확인
                 if (!currentSettings.gemini_api_key) {
                     showToast("AI 기능을 사용하려면 설정에서 Gemini API 키를 입력해주세요.", "error");
                     openSettingsModal(); // 설정 모달 열기
                     return;
                 }
-
-                const btn = document.getElementById('send-ai-command-button');
-                const loadingText = document.getElementById('send-ai-command-loading-text');
-                const spinner = document.getElementById('send-ai-command-loading-spinner');
-                const errorDisplay = document.getElementById('ai-assistant-error');
-
-                btn.disabled = true;
-                loadingText.textContent = '처리 중...';
-                spinner.classList.remove('hidden');
-                errorDisplay.classList.add('hidden');
-
-                await handleAIAssistGeneralCommand(task.id, command);
-
-                btn.disabled = false;
-                loadingText.textContent = 'AI에게 명령';
-                spinner.classList.add('hidden');
-                commandInput.value = ''; // Clear input after sending command
+                openAIChatbotModal(task); // 현재 임무를 챗봇 모달에 전달
             });
 
 
@@ -873,6 +1025,71 @@
             }
         }
 
+        /**
+         * Opens the AI Chatbot Modal.
+         * @param {object} task - The task object for which to open the chatbot.
+         */
+        function openAIChatbotModal(task) {
+            currentChatbotTaskId = task.id; // 챗봇이 현재 어느 임무에 대해 대화 중인지 기록
+            aiChatbotModal.classList.remove('hidden');
+            renderChatMessages(task.history); // 임무 기록을 챗봇 메시지로 초기 로드
+            chatbotMessages.scrollTop = chatbotMessages.scrollHeight; // 스크롤을 항상 아래로
+            chatbotInput.focus(); // 입력 필드에 자동 포커스
+
+            // 챗봇 입력 필드에서 Enter 키 누르면 메시지 전송
+            chatbotInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) { // Shift+Enter는 줄바꿈, Enter만 전송
+                    e.preventDefault(); // 기본 Enter 동작 (줄바꿈) 방지
+                    chatbotSendButton.click();
+                }
+            });
+        }
+
+        /**
+         * Closes the AI Chatbot Modal.
+         */
+        function closeAIChatbotModal() {
+            aiChatbotModal.classList.add('hidden');
+            currentChatbotTaskId = null;
+            chatbotMessages.innerHTML = ''; // 메시지 초기화
+            chatbotInput.value = ''; // 입력 필드 초기화
+            chatbotErrorDisplay.classList.add('hidden'); // 오류 메시지 숨김
+        }
+
+        /**
+         * Renders chat messages in the chatbot modal.
+         * @param {Array<object>} history - The history array of the current task.
+         */
+        function renderChatMessages(history) {
+            chatbotMessages.innerHTML = '';
+            // AI 비서 관련 메시지만 필터링하여 표시
+            const chatbotSpecificHistory = history.filter(entry => entry.event.includes('사용자:') || entry.event.includes('AI 비서:'));
+
+            if (chatbotSpecificHistory.length === 0) {
+                chatbotMessages.innerHTML = `<p class="text-gray-500 text-center">AI 비서와 대화를 시작하세요.</p>`;
+                return;
+            }
+
+            chatbotSpecificHistory.forEach(entry => {
+                const messageDiv = document.createElement('div');
+                let className = 'chatbot-message text-gray-800 rounded-lg max-w-[80%]'; // 기본 스타일
+
+                if (entry.event.startsWith('사용자:')) {
+                    className += ' user bg-blue-200 self-end text-right';
+                    messageDiv.textContent = entry.event.replace('사용자: ', '').trim();
+                } else if (entry.event.startsWith('AI 비서:')) {
+                    className += ' ai bg-indigo-100 self-start text-left';
+                    messageDiv.textContent = entry.event.replace('AI 비서: ', '').trim();
+                } else {
+                    return; // 챗봇 대화가 아닌 일반 기록은 챗봇 모달에 표시하지 않음
+                }
+
+                messageDiv.className = className;
+                chatbotMessages.appendChild(messageDiv);
+            });
+            chatbotMessages.scrollTop = chatbotMessages.scrollHeight; // 항상 최신 메시지로 스크롤
+        }
+
 
         // --- Firebase Authentication & Firestore Interactions ---
 
@@ -948,6 +1165,16 @@
                                 } else {
                                     // 현재 모달의 임무가 삭제된 경우
                                     closeDetailModal();
+                                }
+                            }
+                            // 챗봇 모달이 열려 있고, 현재 대화 중인 작업이 업데이트된 작업이라면 챗봇 메시지 새로고침
+                            if (!aiChatbotModal.classList.contains('hidden') && currentChatbotTaskId) {
+                                const updatedTaskForChat = tasks.find(t => t.id === currentChatbotTaskId);
+                                if (updatedTaskForChat) {
+                                    renderChatMessages(updatedTaskForChat.history);
+                                } else {
+                                    // 챗봇 모달의 임무가 삭제된 경우
+                                    closeAIChatbotModal();
                                 }
                             }
                         }, (error) => {
@@ -1358,9 +1585,9 @@
         }
 
         /**
-         * Calls AI for a general command/question on a specific task.
-         * @param {string} taskId - The ID of the task.
-         * @param {string} userCommand - The user's command/question to the AI.
+         * Handles general commands/questions to the AI assistant in the chatbot.
+         * @param {string} taskId - The ID of the task the chatbot is currently linked to.
+         * @param {string} userCommand - The user's input command/question.
          */
         async function handleAIAssistGeneralCommand(taskId, userCommand) {
             if (!currentUserId) {
@@ -1377,12 +1604,17 @@
             const taskToInteract = tasks.find(t => t.id === taskId);
             if (!taskToInteract) return;
 
-            const aiAssistantErrorDisplay = document.getElementById('ai-assistant-error');
+            const aiAssistantErrorDisplay = chatbotErrorDisplay; // 챗봇 모달 내 오류 표시
             aiAssistantErrorDisplay.classList.add('hidden'); // Hide previous error
+
+            // 사용자 메시지를 먼저 챗봇 UI에 추가
+            renderNewChatMessage('user', userCommand);
+            chatbotInput.value = ''; // 입력 필드 즉시 초기화
+            chatbotSendButton.disabled = true; // 버튼 비활성화
 
             try {
                 const taskDetails = `Title: ${taskToInteract.title}\nDescription: ${taskToInteract.description || 'N/A'}\nMemo: ${taskToInteract.memo || 'N/A'}\nChecklist: ${taskToInteract.checklist.map(item => item.text).join(', ')}\nStatus: ${kanbanColumns.find(col => col.id === taskToInteract.columnId)?.title || '알 수 없음'}`;
-                // 최근 10개 기록만 포함
+                // 임무 기록은 최근 10개만 포함
                 const limitedHistory = taskToInteract.history
                     ? [...taskToInteract.history].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10)
                     : [];
@@ -1399,35 +1631,78 @@
                     .replace('{historyDetails}', historyDetails)
                     .replace('{userCommand}', userCommand);
 
+                // AI 응답 스키마는 액션 또는 일반 응답을 허용하도록 정의
                 const responseSchema = {
                     type: "OBJECT",
-                    properties: { "response": { type: "STRING" } },
-                    required: ["response"],
+                    properties: {
+                        "action": { "type": "STRING", "enum": ["add_checklist_items"] }, // 가능한 액션
+                        "items": { "type": "ARRAY", "items": { "type": "STRING" } }, // add_checklist_items 액션에 대한 데이터
+                        "response": { "type": "STRING" } // 일반 응답
+                    },
+                    // required: ["action"] 또는 required: ["response"] 둘 중 하나만 가능하게 하려면 더 복잡한 스키마 필요.
+                    // 현재는 AI가 유연하게 둘 중 하나를 반환할 것으로 가정.
                 };
 
                 const parsedJson = await callGeminiAPI(prompt, responseSchema);
 
-                if (parsedJson && parsedJson.response) {
-                    const aiResponseText = parsedJson.response;
-                    const taskRef = window.doc(tasksCollectionRef, taskId);
-                    const updatedTaskWithHistory = addHistoryEntry(taskToInteract, `사용자: ${userCommand}\nAI 비서: ${aiResponseText}`);
-                    await window.updateDoc(taskRef, {
-                        history: updatedTaskWithHistory.history,
-                    });
-                    showToast("AI 비서 응답이 기록되었습니다!", "success");
-                    // 모달 UI를 업데이트하여 최신 기록을 보여줍니다.
-                    openDetailModal(updatedTaskWithHistory, taskToInteract.columnId);
-                } else {
-                    showToast("AI 비서 응답 형식이 올바르지 않습니다.", "error");
-                    aiAssistantErrorDisplay.textContent = "AI 응답 형식이 올바르지 않습니다.";
-                    aiAssistantErrorDisplay.classList.remove('hidden');
+                let aiResponseText = "죄송합니다. 요청을 처리할 수 없습니다."; // 기본 오류 메시지
+
+                if (parsedJson) {
+                    if (parsedJson.action === "add_checklist_items" && parsedJson.items && Array.isArray(parsedJson.items)) {
+                        // AI가 체크리스트 추가 액션을 요청한 경우
+                        const newChecklistItems = parsedJson.items.map(item => ({ text: item, completed: false }));
+                        const taskRef = window.doc(tasksCollectionRef, taskId);
+                        const currentTaskSnapshot = await window.getDoc(taskRef);
+                        if (currentTaskSnapshot.exists()) {
+                            const currentTaskData = currentTaskSnapshot.data();
+                            const updatedChecklist = [...currentTaskData.checklist || [], ...newChecklistItems];
+                            const updatedTaskWithHistory = addHistoryEntry(currentTaskData, `AI 비서 (업무 추가): ${parsedJson.items.join(', ')}`);
+                            await window.updateDoc(taskRef, {
+                                checklist: updatedChecklist,
+                                history: updatedTaskWithHistory.history,
+                            });
+                            aiResponseText = `"${parsedJson.items.join(', ')}" 항목을 체크리스트에 추가했습니다.`;
+                            showToast("AI가 업무를 체크리스트에 추가했습니다!", "success");
+                        }
+                    } else if (parsedJson.response) {
+                        // AI가 일반 텍스트 응답을 한 경우
+                        aiResponseText = parsedJson.response;
+                    } else {
+                        aiResponseText = "AI 응답 형식이 올바르지 않습니다.";
+                    }
                 }
+
+                // AI 응답을 챗봇 UI에 추가하고 기록에 저장
+                renderNewChatMessage('ai', aiResponseText);
+                const taskRef = window.doc(tasksCollectionRef, taskId);
+                const updatedTaskWithHistory = addHistoryEntry(taskToInteract, `사용자: ${userCommand}\nAI 비서: ${aiResponseText}`);
+                await window.updateDoc(taskRef, {
+                    history: updatedTaskWithHistory.history,
+                });
+
             } catch (error) {
                 console.error('AI Assistant Command Error:', error);
                 aiAssistantErrorDisplay.textContent = `AI 비서 오류: ${error.message}`;
                 aiAssistantErrorDisplay.classList.remove('hidden');
+                renderNewChatMessage('ai', `죄송합니다. 오류가 발생했습니다: ${error.message}`);
                 showToast(`AI 비서 오류: ${error.message}`, "error");
+            } finally {
+                chatbotSendButton.disabled = false; // 버튼 다시 활성화
+                chatbotMessages.scrollTop = chatbotMessages.scrollHeight; // 스크롤을 항상 아래로
             }
+        }
+
+        /**
+         * Renders a new chat message in the chatbot modal.
+         * @param {'user' | 'ai'} sender - The sender of the message.
+         * @param {string} messageText - The text content of the message.
+         */
+        function renderNewChatMessage(sender, messageText) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chatbot-message text-gray-800 rounded-lg max-w-[80%] ${sender === 'user' ? 'user bg-blue-200 self-end text-right ml-auto' : 'ai bg-indigo-100 self-start text-left mr-auto'}`;
+            messageDiv.textContent = messageText;
+            chatbotMessages.appendChild(messageDiv);
+            chatbotMessages.scrollTop = chatbotMessages.scrollHeight; // 스크롤을 항상 아래로
         }
 
 
@@ -1537,6 +1812,19 @@
             // settingsButton은 항상 존재하며 클릭 시 모달을 렌더링하고 열도록 합니다.
             settingsButton.addEventListener('click', openSettingsModal);
 
+            // 챗봇 닫기 버튼 이벤트 리스너
+            chatbotCloseButton.addEventListener('click', closeAIChatbotModal);
+            // 챗봇 메시지 전송 버튼 이벤트 리스너
+            chatbotSendButton.addEventListener('click', async () => {
+                const command = chatbotInput.value.trim();
+                if (currentChatbotTaskId && command) {
+                    await handleAIAssistGeneralCommand(currentChatbotTaskId, command);
+                } else if (!command) {
+                    showToast("AI에게 명령할 내용을 입력해주세요.", "info");
+                }
+            });
+
+
             // 나머지 핵심 이벤트 리스너
             addCardButton.addEventListener('click', handleAddCard);
             overallAIReportButton.addEventListener('click', handleOverallAIReport);
@@ -1550,6 +1838,10 @@
             });
             confirmModal.addEventListener('click', (e) => {
                 if (e.target === confirmModal) closeConfirmModal();
+            });
+            aiChatbotModal.addEventListener('click', (e) => {
+                 // 모달 콘텐츠 내부 클릭은 무시하고, 배경 클릭 시에만 모달 닫기
+                if (e.target === aiChatbotModal) closeAIChatbotModal();
             });
         };
     </script>
