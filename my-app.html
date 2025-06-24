@@ -15,13 +15,21 @@
             flex-direction: column;
         }
         .task-card {
-            cursor: pointer;
+            cursor: grab; /* 드래그 가능함을 나타내는 커서 */
             transition: all 0.2s ease-in-out;
         }
         .task-card:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
         }
+        .task-card.dragging {
+            opacity: 0.5; /* 드래그 중인 카드 투명하게 */
+        }
+        .kanban-column.drag-over {
+            background-color: #e0f2fe; /* blue-100 드래그 오버 시 배경 변경 */
+            border-color: #38b2ac; /* teal-500 */
+        }
+
         .modal {
             position: fixed;
             top: 0;
@@ -41,8 +49,9 @@
             background-color: white;
             border-radius: 1rem;
             padding: 1.5rem;
-            max-width: 90%;
-            max-height: 90%;
+            /* 반응성을 위해 max-width를 90%로 유지하고, 고정값 대신 rem 사용 */
+            max-width: 56rem; /* Tailwind's max-w-2xl is 42rem, max-w-4xl is 56rem */
+            max-height: 90vh; /* Viewport height percentage */
             overflow-y: auto;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
             animation: slideInUp 0.3s ease-out;
@@ -77,6 +86,19 @@
         }
         @keyframes toastFadeOut {
             to { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+        }
+        /* 체크리스트 항목 텍스트 스타일 (줄 바꿈 및 완료 시 색상 변경) */
+        .checklist-item-text-input {
+            white-space: normal; /* 기본 줄 바꿈 허용 */
+            word-break: break-word; /* 긴 단어가 잘리지 않고 줄 바꿈 되도록 */
+            width: 100%; /* 부모 컨테이너 너비를 채우도록 */
+            background-color: transparent; /* 배경 투명 */
+            border: none; /* 테두리 제거 */
+            outline: none; /* 포커스 아웃라인 제거 */
+        }
+        .checklist-item-text-input.completed {
+            color: #9ca3af; /* gray-400 */
+            text-decoration: line-through;
         }
     </style>
 </head>
@@ -237,6 +259,19 @@
         </div>
     </div>
 
+    <!-- Confirmation Modal (for task deletion) -->
+    <div id="confirm-modal" class="modal hidden">
+        <div class="modal-content p-6 max-w-sm text-center">
+            <h3 class="text-xl font-bold text-gray-800 mb-4">정말 삭제하시겠습니까?</h3>
+            <p class="text-gray-700 mb-6">삭제된 임무는 복구할 수 없습니다.</p>
+            <div class="flex justify-center space-x-4">
+                <button id="confirm-cancel-button" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg transition duration-200">취소</button>
+                <button id="confirm-delete-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200">삭제</button>
+            </div>
+        </div>
+    </div>
+
+
     <!-- Toast Container -->
     <div id="toast-container" class="fixed bottom-4 left-1/2 -translate-x-1/2 flex flex-col items-center space-y-2 z-[1001]"></div>
 
@@ -257,7 +292,7 @@
                 role: '',
                 goals: ''
             },
-            global_ai_requirements: ''
+            global_ai_requirements: "Think slowly and meticulously, review the question content tens of thousands of times, and generate answers to the question diligently without laziness." // 전역 프롬프트 추가
         };
 
         const kanbanColumns = [
@@ -270,7 +305,6 @@
         // DOM elements
         const loadingOverlay = document.getElementById('loading-overlay');
         const userIdDisplay = document.getElementById('user-id-display');
-        // Google 로그인/로그아웃 버튼은 이제 설정 모달 내에 생성되므로 여기서 직접 참조하지 않습니다.
         const newCardTitleInput = document.getElementById('new-card-title');
         const newCardDescriptionInput = document.getElementById('new-card-description');
         const addCardButton = document.getElementById('add-card-button');
@@ -286,6 +320,9 @@
         const overallAIReportContent = document.getElementById('overall-ai-report-content');
         const overallAIReportError = document.getElementById('overall-ai-report-error');
         const toastContainer = document.getElementById('toast-container');
+        const confirmModal = document.getElementById('confirm-modal');
+        const confirmCancelButton = document.getElementById('confirm-cancel-button');
+        const confirmDeleteButton = document.getElementById('confirm-delete-button');
 
         // Firestore references (will be set after Firebase init)
         let tasksCollectionRef;
@@ -326,13 +363,15 @@
 
         /**
          * Helper function to add a history entry to a task.
+         * Limits the event string to 100 characters.
          * @param {object} task - The task object to update.
          * @param {string} event - The event description.
          * @returns {object} - The updated task object with new history.
          */
         function addHistoryEntry(task, event) {
             const newHistory = task.history ? [...task.history] : [];
-            newHistory.push({ timestamp: Date.now(), event: event });
+            const limitedEvent = event.substring(0, 100); // 100자 제한
+            newHistory.push({ timestamp: Date.now(), event: limitedEvent });
             return { ...task, history: newHistory };
         }
 
@@ -350,6 +389,57 @@
         // --- Core Render Functions ---
 
         /**
+         * Handles drag start event for task cards.
+         * @param {DragEvent} event
+         */
+        function drag(event) {
+            event.dataTransfer.setData("text/plain", event.target.id);
+            event.dataTransfer.setData("text/sourceColumnId", event.target.closest('.kanban-column').id);
+            event.target.classList.add('dragging'); // 드래그 중 시각적 피드백
+        }
+
+        /**
+         * Allows dropping on a Kanban column.
+         * @param {DragEvent} event
+         */
+        function allowDrop(event) {
+            event.preventDefault(); // Necessary to allow drop
+            // 드래그 오버 시 컬럼 배경 변경
+            event.currentTarget.classList.add('drag-over');
+        }
+
+        /**
+         * Handles drag leave event from a Kanban column.
+         * @param {DragEvent} event
+         */
+        function dragLeave(event) {
+            // 드래그 리브 시 컬럼 배경 복원
+            event.currentTarget.classList.remove('drag-over');
+        }
+
+        /**
+         * Handles drop event on a Kanban column.
+         * @param {DragEvent} event
+         */
+        async function drop(event) {
+            event.preventDefault();
+            event.currentTarget.classList.remove('drag-over'); // 드롭 후 배경 복원
+
+            const taskId = event.dataTransfer.getData("text/plain").replace('task-card-', ''); // Remove prefix
+            const sourceColumnId = event.dataTransfer.getData("text/sourceColumnId");
+            const targetColumnId = event.currentTarget.id; // Get ID of the column where it's dropped
+
+            const draggedCard = document.getElementById(`task-card-${taskId}`);
+            if (draggedCard) {
+                draggedCard.classList.remove('dragging'); // 드래그 피드백 제거
+            }
+
+            if (sourceColumnId !== targetColumnId) {
+                await moveCard(taskId, targetColumnId);
+            }
+        }
+
+        /**
          * Renders the entire Kanban board and its cards.
          */
         function renderKanbanBoard() {
@@ -363,7 +453,13 @@
 
             columnsWithTasks.forEach(column => {
                 const columnDiv = document.createElement('div');
+                columnDiv.id = column.id; // 컬럼 ID 설정 (드롭 타겟으로 사용)
                 columnDiv.className = 'kanban-column bg-blue-50 p-5 rounded-xl shadow-lg border border-blue-300';
+                // 드래그 앤 드롭 이벤트 리스너 추가
+                columnDiv.addEventListener('dragover', allowDrop);
+                columnDiv.addEventListener('dragleave', dragLeave);
+                columnDiv.addEventListener('drop', drop);
+
                 columnDiv.innerHTML = `
                     <h2 class="text-2xl font-bold text-blue-800 mb-5 border-b-2 border-blue-400 pb-3">
                         ${escapeHtml(column.title)} (${column.tasks.length})
@@ -378,6 +474,8 @@
                     const cardDiv = document.createElement('div');
                     cardDiv.id = `task-card-${task.id}`;
                     cardDiv.className = 'task-card bg-white p-4 rounded-lg shadow-md border border-gray-200';
+                    cardDiv.setAttribute('draggable', 'true'); // 드래그 가능하게 설정
+                    cardDiv.addEventListener('dragstart', drag); // 드래그 시작 이벤트 핸들러
                     cardDiv.innerHTML = `
                         <h3 class="text-lg font-semibold text-gray-900 mb-2">${escapeHtml(task.title)}</h3>
                         ${task.description ? `<p class="text-sm text-gray-600 mb-3 line-clamp-2">${escapeHtml(task.description)}</p>` : ''}
@@ -397,6 +495,14 @@
                     e.stopPropagation(); // Prevent opening detail modal
                     const taskId = e.target.dataset.taskId;
                     const taskTitle = e.target.dataset.taskTitle;
+
+                    // AI 기능 사용 전 API 키 확인
+                    if (!currentSettings.gemini_api_key) {
+                        showToast("AI 기능을 사용하려면 설정에서 Gemini API 키를 입력해주세요.", "error");
+                        openSettingsModal(); // 설정 모달 열기
+                        return;
+                    }
+
                     e.target.disabled = true; // Disable button during AI call
                     e.target.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> 생성 중...`;
                     await handleAIAssistChecklist(taskId, taskTitle);
@@ -443,7 +549,7 @@
                             task.checklist.map((item, index) => `
                                 <div class="flex items-center text-lg text-gray-800 group">
                                     <input type="checkbox" id="checklist-item-${index}" class="mr-3 h-5 w-5 rounded text-blue-600 focus:ring-blue-500" ${item.completed ? 'checked' : ''}>
-                                    <input type="text" value="${escapeHtml(item.text)}" class="flex-grow bg-transparent border-none focus:outline-none focus:ring-0 ${item.completed ? 'line-through text-gray-500' : ''}" data-index="${index}">
+                                    <input type="text" value="${escapeHtml(item.text)}" class="flex-grow ${item.completed ? 'checklist-item-text-input completed' : 'checklist-item-text-input'}" data-index="${index}">
                                     <button class="delete-checklist-item-button text-red-500 hover:text-red-700 ml-2 text-xl opacity-0 group-hover:opacity-100 transition-opacity" data-index="${index}">&times;</button>
                                 </div>
                             `).join('')
@@ -470,7 +576,7 @@
                 <!-- AI 비서 (대화형) -->
                 <div class="mb-6 border-t pt-4 border-gray-200">
                     <h4 class="text-xl font-semibold text-blue-700 mb-2 flex items-center"><i class="fas fa-robot mr-2"></i> AI 비서</h4>
-                    <textarea id="ai-assistant-command-input" rows="3" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg resize-y mb-3" placeholder="AI에게 명령하거나 질문하세요 (예: 이 임무의 다음 단계 3가지 생성해줘)."></textarea>
+                    <textarea id="ai-assistant-command-input" rows="3" maxlength="500" class="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 text-lg resize-y mb-3" placeholder="AI에게 명령하거나 질문하세요 (예: 이 임무의 다음 단계 3가지 생성해줘)."></textarea>
                     <button id="send-ai-command-button" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-6 rounded-lg shadow-md transition duration-300 ease-in-out transform hover:scale-105 text-lg flex items-center justify-center">
                         <span id="send-ai-command-loading-text">AI에게 명령</span>
                         <svg id="send-ai-command-loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -501,6 +607,9 @@
                             </button>
                         ` : ''}
                     `).join('')}
+                    <button id="delete-task-button" class="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg shadow-md transition duration-200">
+                        임무 삭제
+                    </button>
                 </div>
             `;
 
@@ -530,6 +639,7 @@
             });
             document.querySelectorAll('.delete-checklist-item-button').forEach(button => {
                 button.addEventListener('click', (e) => {
+                    e.stopPropagation(); // 팝업 닫기 방지
                     const index = parseInt(e.target.dataset.index);
                     deleteChecklistItem(task.id, index);
                 });
@@ -548,6 +658,13 @@
                 const command = commandInput.value.trim();
                 if (!command) {
                     showToast("AI에게 명령할 내용을 입력해주세요.", "info");
+                    return;
+                }
+
+                // AI 기능 사용 전 API 키 확인
+                if (!currentSettings.gemini_api_key) {
+                    showToast("AI 기능을 사용하려면 설정에서 Gemini API 키를 입력해주세요.", "error");
+                    openSettingsModal(); // 설정 모달 열기
                     return;
                 }
 
@@ -577,6 +694,11 @@
                     moveCard(task.id, targetColumnId);
                     closeDetailModal();
                 });
+            });
+
+            // Delete Task button
+            document.getElementById('delete-task-button').addEventListener('click', () => {
+                showConfirmModal(task.id);
             });
         }
 
@@ -706,10 +828,12 @@
         function openDetailModal(task, columnId) {
             renderTaskDetailModal(task, columnId);
             taskDetailModal.classList.remove('hidden');
+            taskDetailModalContent.dataset.taskId = task.id; // 현재 열린 작업의 ID를 모달 콘텐츠에 저장
         }
 
         function closeDetailModal() {
             taskDetailModal.classList.add('hidden');
+            taskDetailModalContent.removeAttribute('dataset.taskId'); // 모달 닫을 때 ID 제거
         }
 
         function openSettingsModal() {
@@ -720,6 +844,35 @@
         function closeSettingsModal() {
             settingsModal.classList.add('hidden');
         }
+
+        /**
+         * Shows a confirmation modal.
+         * @param {string} taskIdToDelete - The ID of the task to delete.
+         */
+        let currentTaskIdToDelete = null; // 삭제할 임무의 ID를 저장할 변수
+        function showConfirmModal(taskId) {
+            currentTaskIdToDelete = taskId;
+            confirmModal.classList.remove('hidden');
+            confirmCancelButton.addEventListener('click', closeConfirmModal, { once: true }); // 한 번만 실행되도록
+            confirmDeleteButton.addEventListener('click', handleDeleteConfirmed, { once: true }); // 한 번만 실행되도록
+        }
+
+        function closeConfirmModal() {
+            confirmModal.classList.add('hidden');
+            // 이벤트 리스너 제거 (이미 {once: true}로 설정되어 있지만 안전을 위해)
+            confirmCancelButton.removeEventListener('click', closeConfirmModal);
+            confirmDeleteButton.removeEventListener('click', handleDeleteConfirmed);
+            currentTaskIdToDelete = null;
+        }
+
+        async function handleDeleteConfirmed() {
+            if (currentTaskIdToDelete) {
+                await deleteTask(currentTaskIdToDelete);
+                closeConfirmModal();
+                closeDetailModal(); // 임무 삭제 후 상세 모달도 닫기
+            }
+        }
+
 
         // --- Firebase Authentication & Firestore Interactions ---
 
@@ -784,6 +937,19 @@
                         window.onSnapshot(window.query(tasksCollectionRef), (snapshot) => {
                             tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                             renderKanbanBoard(); // Re-render board on data change
+
+                            // 만약 모달이 열려 있고, 현재 모달에 표시된 작업이 업데이트된 작업이라면 모달도 새로고침
+                            if (!taskDetailModal.classList.contains('hidden')) {
+                                const currentModalTaskId = taskDetailModalContent.dataset.taskId; // dataset에서 ID 가져오기
+                                const updatedTaskInList = tasks.find(t => t.id === currentModalTaskId);
+                                if (updatedTaskInList) {
+                                    const currentModalColumnId = updatedTaskInList.columnId; // 업데이트된 컬럼 ID
+                                    renderTaskDetailModal(updatedTaskInList, currentModalColumnId);
+                                } else {
+                                    // 현재 모달의 임무가 삭제된 경우
+                                    closeDetailModal();
+                                }
+                            }
                         }, (error) => {
                             console.error("Error fetching tasks from Firestore:", error);
                             showToast("임무 데이터를 불러오는 데 실패했습니다.", "error");
@@ -806,7 +972,7 @@
                         // 로그인되지 않은 상태에서 데이터 및 설정 초기화
                         tasks = []; // 데이터 지우기
                         currentSettings.user_info = { name: '', role: '', goals: '' }; // 사용자 정보 초기화
-                        currentSettings.global_ai_requirements = ''; // 전역 AI 요구사항 초기화
+                        currentSettings.global_ai_requirements = "Think slowly and meticulously, review the question content tens of thousands of times, and generate answers to the question diligently without laziness."; // 전역 AI 요구사항 초기값으로 재설정
                         // AI Key는 유지 (사용자가 직접 설정한 값)
                         renderKanbanBoard(); // 보드 비우기
                     }
@@ -882,7 +1048,7 @@
                     [field]: value,
                     history: updatedTaskWithHistory.history
                 });
-                // showToast(`${taskToUpdate.title} 임무 ${field} 업데이트됨`, "success"); // Too many toasts for debounced updates
+                // showToast("`${taskToUpdate.title} 임무 ${field} 업데이트됨`", "success"); // Too many toasts for debounced updates
             } catch (e) {
                 console.error(`Error updating task ${field}: `, e);
                 showToast(`${taskToUpdate.title} 임무 ${field} 업데이트 실패.`, "error");
@@ -1027,6 +1193,24 @@
         }
 
         /**
+         * Deletes a task from Firestore.
+         * @param {string} taskId - The ID of the task to delete.
+         */
+        async function deleteTask(taskId) {
+            if (!currentUserId) return;
+            const taskToDelete = tasks.find(t => t.id === taskId);
+            if (!taskToDelete) return;
+
+            try {
+                await window.deleteDoc(window.doc(tasksCollectionRef, taskId));
+                showToast(`"${taskToDelete.title}" 임무가 삭제되었습니다.`, "success");
+            } catch (e) {
+                console.error("Error deleting task: ", e);
+                showToast(`"${taskToDelete.title}" 임무 삭제 실패.`, "error");
+            }
+        }
+
+        /**
          * Loads user settings from Firestore.
          */
         async function loadSettings() {
@@ -1129,6 +1313,13 @@
                 showToast("로그인 후 AI 보조 기능을 사용할 수 있습니다.", "error");
                 return;
             }
+            // AI 기능 사용 전 API 키 확인
+            if (!currentSettings.gemini_api_key) {
+                showToast("AI 기능을 사용하려면 설정에서 Gemini API 키를 입력해주세요.", "error");
+                openSettingsModal(); // 설정 모달 열기
+                return;
+            }
+
             try {
                 // 프롬프트에 'interaction language : korean'이 이미 포함되어 있습니다.
                 const prompt = currentSettings.ai_checklist_prompt.replace('{taskTitle}', taskTitle);
@@ -1176,6 +1367,13 @@
                 showToast("로그인 후 AI 비서 기능을 사용할 수 있습니다.", "error");
                 return;
             }
+            // AI 기능 사용 전 API 키 확인
+            if (!currentSettings.gemini_api_key) {
+                showToast("AI 기능을 사용하려면 설정에서 Gemini API 키를 입력해주세요.", "error");
+                openSettingsModal(); // 설정 모달 열기
+                return;
+            }
+
             const taskToInteract = tasks.find(t => t.id === taskId);
             if (!taskToInteract) return;
 
@@ -1184,7 +1382,12 @@
 
             try {
                 const taskDetails = `Title: ${taskToInteract.title}\nDescription: ${taskToInteract.description || 'N/A'}\nMemo: ${taskToInteract.memo || 'N/A'}\nChecklist: ${taskToInteract.checklist.map(item => item.text).join(', ')}\nStatus: ${kanbanColumns.find(col => col.id === taskToInteract.columnId)?.title || '알 수 없음'}`;
-                const historyDetails = taskToInteract.history.map(entry => `${new Date(entry.timestamp).toLocaleString()}: ${entry.event}`).join('\n');
+                // 최근 10개 기록만 포함
+                const limitedHistory = taskToInteract.history
+                    ? [...taskToInteract.history].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10)
+                    : [];
+                const historyDetails = limitedHistory.map(entry => `${new Date(entry.timestamp).toLocaleString()}: ${entry.event}`).join('\n');
+                
                 const userInfoDetails = `Name: ${currentSettings.user_info.name}\nRole: ${currentSettings.user_info.role}\nGoals: ${currentSettings.user_info.goals}`;
                 const globalAIRequirements = currentSettings.global_ai_requirements;
 
@@ -1230,10 +1433,17 @@
 
         /**
          * Calls AI to generate an overall project report.
+         * @param {string} userId - The ID of the current user.
          */
         async function handleOverallAIReport() {
             if (!currentUserId) {
                 showToast("로그인 후 전체 프로젝트 보고서 기능을 사용할 수 있습니다.", "error");
+                return;
+            }
+            // AI 기능 사용 전 API 키 확인
+            if (!currentSettings.gemini_api_key) {
+                showToast("AI 기능을 사용하려면 설정에서 Gemini API 키를 입력해주세요.", "error");
+                openSettingsModal(); // 설정 모달 열기
                 return;
             }
 
@@ -1256,8 +1466,12 @@
                     const checklistInfo = task.checklist && task.checklist.length > 0
                         ? `Checklist: ${task.checklist.map(item => `${item.text} (${item.completed ? '완료' : '미완료'})`).join(', ')}`
                         : 'No checklist.';
-                    const historyInfo = task.history && task.history.length > 0
-                        ? `History: ${task.history.map(entry => `${new Date(entry.timestamp).toLocaleDateString()}: ${entry.event}`).join('; ')}`
+                    // 각 임무에 대해서도 최근 10개 기록만 포함
+                    const limitedTaskHistory = task.history
+                        ? [...task.history].sort((a, b) => b.timestamp - a.timestamp).slice(0, 10)
+                        : [];
+                    const historyInfo = limitedTaskHistory.length > 0
+                        ? `History: ${limitedTaskHistory.map(entry => `${new Date(entry.timestamp).toLocaleDateString()}: ${entry.event}`).join('; ')}`
                         : 'No history.';
                     return `Task Title: ${task.title}\nDescription: ${task.description}\nStatus: ${kanbanColumns.find(col => col.id === task.columnId)?.title || task.columnId}\n${checklistInfo}\n${historyInfo}\n---`;
                 }).join('\n');
@@ -1333,6 +1547,9 @@
             });
             settingsModal.addEventListener('click', (e) => {
                 if (e.target === settingsModal) closeSettingsModal();
+            });
+            confirmModal.addEventListener('click', (e) => {
+                if (e.target === confirmModal) closeConfirmModal();
             });
         };
     </script>
