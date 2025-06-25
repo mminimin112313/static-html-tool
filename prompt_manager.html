@@ -1,0 +1,2414 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project P.R.I.M.E. - Collaborative Prompt Platform</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Feather Icons -->
+    <script src="https://unpkg.com/feather-icons"></script>
+
+    <!-- React & Babel for Progressive Enhancement -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { font-family: 'Inter', 'Noto Sans KR', sans-serif; }
+        .modal-backdrop { background-color: rgba(0, 0, 0, 0.5); }
+        .transition-all { transition: all 0.3s ease-in-out; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        .cursor-not-allowed { cursor: not-allowed; }
+        .line-clamp-3 { overflow: hidden; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
+        .star-rating input[type="radio"] { display: none; }
+        .star-rating label { font-size: 1.75rem; color: #d1d5db; cursor: pointer; transition: color 0.2s; }
+        .star-rating input[type="radio"]:checked ~ label,
+        .star-rating label:hover,
+        .star-rating label:hover ~ label { color: #f59e0b; }
+        /* Snippet context menu styling */
+        #snippet-context-menu {
+            position: absolute;
+            background-color: white;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            max-height: 200px;
+            overflow-y: auto;
+            width: 200px; /* Adjust as needed */
+        }
+        #snippet-context-menu div {
+            padding: 0.5rem 0.75rem;
+            cursor: pointer;
+            font-size: 0.875rem; /* text-sm */
+            color: #4a5568; /* text-gray-700 */
+        }
+        #snippet-context-menu div:hover,
+        #snippet-context-menu div.selected {
+            background-color: #f0f4f8; /* bg-gray-100 */
+        }
+        .dark #snippet-context-menu {
+            background-color: #1f2937; /* dark:bg-gray-800 */
+            border-color: #4b5563; /* dark:border-gray-600 */
+        }
+        .dark #snippet-context-menu div {
+            color: #d1d5db; /* dark:text-gray-300 */
+        }
+        .dark #snippet-context-menu div:hover,
+        .dark #snippet-context-menu div.selected {
+            background-color: #374151; /* dark:bg-gray-700 */
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200">
+
+    <!-- Loader -->
+    <div id="loader" class="fixed inset-0 bg-gray-100 dark:bg-gray-900 z-50 flex flex-col items-center justify-center space-y-4"><svg class="animate-spin h-10 w-10 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><p class="text-lg font-medium text-gray-600 dark:text-gray-400">P.R.I.M.E. 시스템을 초기화하는 중...</p></div>
+
+    <!-- Auth Container -->
+    <div id="auth-container" class="hidden min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-800 p-4">
+        <div class="w-full max-w-md bg-white dark:bg-gray-900 rounded-2xl shadow-xl p-8 space-y-5">
+            <div class="text-center">
+                <h1 class="text-2xl font-bold text-gray-900 dark:text-white">Project P.R.I.M.E.</h1>
+                <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">협업 프롬프트 자산 플랫폼</p>
+            </div>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label for="login-email" class="text-sm font-medium text-gray-700 dark:text-gray-300">이메일</label>
+                    <input id="login-email" type="email" autocomplete="email" required class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="login-password" class="text-sm font-medium text-gray-700 dark:text-gray-300">비밀번호</label>
+                    <input id="login-password" type="password" autocomplete="current-password" required class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2">로그인</button>
+            </form>
+            <p id="auth-error" class="text-sm text-center text-red-500"></p>
+            <div class="relative">
+                <div class="absolute inset-0 flex items-center">
+                    <div class="w-full border-t border-gray-300 dark:border-gray-600"></div>
+                </div>
+                <div class="relative flex justify-center text-sm">
+                    <span class="px-2 bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400">또는</span>
+                </div>
+            </div>
+            <div>
+                <button id="google-login-btn" disabled title="Firebase 콘솔에서 도메인 승인 필요" class="w-full flex items-center justify-center py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-gray-200 dark:bg-gray-800 text-sm font-medium text-gray-500 dark:text-gray-400 cursor-not-allowed">
+                    <svg class="w-5 h-5 mr-2" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 488 512"><path fill="currentColor" d="M488 261.8C488 403.3 381.5 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 126 23.4 172.9 61.9l-76.2 74.7C309 93.5 280.7 80 248 80c-82.8 0-150.5 67.7-150.5 152s67.7 152 150.5 152c93.2 0 135-67.6 140.8-103.9H248v-96h239.1c1.3 12.2 2.9 24.4 2.9 36.8z"></path></svg>
+                    Google 계정으로 계속
+                </button>
+            </div>
+            <p class="text-center text-sm">
+                <a href="#" id="show-signup-link" class="font-medium text-blue-600 hover:text-blue-500">아직 계정이 없으신가요?</a>
+            </p>
+        </div>
+    </div>
+    <div id="signup-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4">
+        <div class="modal-backdrop fixed inset-0"></div>
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-sm z-50">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h2 class="text-lg font-bold">새 계정 생성</h2>
+                <button id="close-signup-modal" class="text-gray-400 hover:text-gray-600"><i data-feather="x" class="w-5 h-5"></i></button>
+            </div>
+            <form id="signup-form" class="p-6 space-y-4">
+                <div>
+                    <label for="signup-email" class="text-sm font-medium">이메일</label>
+                    <input id="signup-email" type="email" required class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="signup-password" class="text-sm font-medium">비밀번호</label>
+                    <input id="signup-password" type="password" required class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <button type="submit" class="w-full flex justify-center py-2 px-3 border-transparent rounded-md text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">가입하기</button>
+            </form>
+            <p id="signup-error" class="text-sm text-center text-red-500 pb-4 px-6"></p>
+        </div>
+    </div>
+
+    <!-- Main App Container -->
+    <div id="app-container" class="hidden h-screen flex">
+        <aside class="w-56 bg-white dark:bg-gray-800/50 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+            <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                <h1 class="text-lg font-bold">P.R.I.M.E.</h1>
+            </div>
+            <nav class="flex-1 p-3 space-y-1">
+                <a href="#" id="nav-my-templates" class="flex items-center px-3 py-2 text-sm font-medium rounded-md bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300"><i data-feather="box" class="w-4 h-4 mr-3"></i>나의 템플릿</a>
+                <a href="#" id="nav-shared-templates" class="flex items-center px-3 py-2 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"><i data-feather="share-2" class="w-4 h-4 mr-3"></i>공유된 템플릿</a>
+                <a href="#" id="nav-snippets" class="flex items-center px-3 py-2 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"><i data-feather="type" class="w-4 h-4 mr-3"></i>상용구 관리</a>
+                <a href="#" id="nav-settings" class="flex items-center px-3 py-2 text-sm font-medium rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"><i data-feather="settings" class="w-4 h-4 mr-3"></i>설정</a>
+            </nav>
+            <div class="p-3 border-t border-gray-200 dark:border-gray-700">
+                <div id="user-profile" class="flex items-center space-x-2">
+                    <img id="user-avatar" src="https://placehold.co/32x32/E2E8F0/4A5568?text=U" class="w-8 h-8 rounded-full" alt="Avatar">
+                    <div>
+                        <p id="user-name" class="text-sm font-semibold truncate"></p><p id="user-email" class="text-xs text-gray-500 dark:text-gray-400 truncate"></p>
+                        <p id="user-id" class="text-xs text-gray-500 dark:text-gray-400 truncate"></p> <!-- Add user ID -->
+                    </div>
+                </div>
+                <button id="logout-btn" class="mt-3 w-full flex items-center justify-center py-1.5 px-3 border border-gray-300 dark:border-gray-600 rounded-md text-sm font-medium hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <i data-feather="log-out" class="w-4 h-4 mr-2"></i>로그아웃
+                </button>
+            </div>
+        </aside>
+        <main class="flex-1 flex flex-col">
+            <header class="bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700 p-3 flex justify-between items-center">
+                <h2 id="main-title" class="text-xl font-semibold">템플릿 관리</h2>
+                <div class="flex items-center space-x-2">
+                    <div id="view-toggle-buttons" class="flex items-center border border-gray-300 dark:border-gray-600 rounded-md p-1">
+                        <button id="view-toggle-grid" class="p-1 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" title="갤러리 뷰"><i data-feather="grid" class="w-4 h-4"></i></button>
+                        <button id="view-toggle-list" class="p-1 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700" title="리스트 뷰"><i data-feather="list" class="w-4 h-4"></i></button>
+                    </div>
+                    <div id="search-filter-area" class="flex items-center space-x-2">
+                         <input type="text" id="search-input" placeholder="검색..." class="px-3 py-1.5 w-48 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm">
+                         <!-- Add a tag filter button/dropdown later if needed -->
+                    </div>
+                    <button id="add-item-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-md flex items-center text-sm" title="새 항목 추가">
+                        <i data-feather="plus" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            </header>
+            <div class="flex-1 p-4 overflow-y-auto no-scrollbar">
+                <!-- Content areas for different navigation items -->
+                <div id="my-templates-view" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+                <div id="shared-templates-view" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+                <div id="snippets-view" class="hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"></div>
+                <div id="settings-view" class="hidden p-6 max-w-lg mx-auto bg-white dark:bg-gray-800 rounded-lg shadow">
+                    <h3 class="text-lg font-semibold mb-4">데이터 관리</h3>
+                    <button id="export-data-btn" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-md flex items-center justify-center text-sm">
+                        <i data-feather="download" class="w-4 h-4 mr-2"></i>모든 데이터 내보내기 (JSON)
+                    </button>
+                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">소유한 템플릿과 상용구 데이터를 백업합니다.</p>
+                </div>
+                
+                <div id="empty-state" class="hidden text-center py-16">
+                    <i data-feather="inbox" class="w-12 h-12 mx-auto text-gray-400"></i>
+                    <h3 class="mt-4 text-lg font-semibold" id="empty-state-text">템플릿이 없습니다</h3>
+                    <p class="mt-1 text-sm text-gray-500" id="empty-state-subtext">'새 템플릿' 버튼으로 시작해보세요.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <!-- Template Modal -->
+    <div id="template-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4"><div class="modal-backdrop fixed inset-0"></div><div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-xl z-50 flex flex-col max-h-[90vh]"><div class="p-4 border-b flex justify-between items-center"><h3 id="modal-title" class="text-lg font-semibold"></h3><button id="close-template-modal" class="text-gray-400 hover:text-gray-600"><i data-feather="x" class="w-5 h-5"></i></button></div><form id="template-form" class="p-6 flex-1 overflow-y-auto no-scrollbar space-y-4"><input type="hidden" id="template-id"><div><label for="template-title" class="block text-sm font-medium">템플릿 제목</label><input type="text" id="template-title" required class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500"></div><div><label for="template-content" class="block text-sm font-medium">프롬프트 내용</label><textarea id="template-content" rows="10" required class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-md font-mono text-sm"></textarea><p class="mt-2 text-xs text-gray-500">`{{변수}}` 구문을 사용하여 동적 필드를 만드세요. 상용구는 `:상용구명`, 다른 템플릿은 `@템플릿명`으로 포함할 수 있습니다.</p><button type="button" id="enhance-prompt-btn" class="mt-2 bg-purple-500 hover:bg-purple-600 text-white font-bold py-1.5 px-3 rounded-md flex items-center text-sm"><i data-feather="zap" class="w-4 h-4 mr-2"></i>✨ 프롬프트 개선 ✨</button></div><div><label for="template-tags" class="block text-sm font-medium">태그 (쉼표로 구분)</label><input type="text" id="template-tags" class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-md"><button type="button" id="suggest-tags-btn" class="mt-2 bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-1.5 px-3 rounded-md flex items-center text-sm"><i data-feather="tag" class="w-4 h-4 mr-2"></i>✨ 태그 추천 ✨</button></div></form><div class="p-4 border-t flex justify-end space-x-2"><button id="delete-template-btn" type="button" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 px-3 rounded-md text-sm">삭제</button><button id="save-template-btn" type="submit" form="template-form" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-md text-sm">저장</button></div></div></div>
+
+    <!-- Snippet Modal -->
+    <div id="snippet-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4">
+        <div class="modal-backdrop fixed inset-0"></div>
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-xl z-50 flex flex-col max-h-[90vh]">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 id="snippet-modal-title" class="text-lg font-semibold"></h3>
+                <button id="close-snippet-modal" class="text-gray-400 hover:text-gray-600"><i data-feather="x" class="w-5 h-5"></i></button>
+            </div>
+            <form id="snippet-form" class="p-6 flex-1 overflow-y-auto no-scrollbar space-y-4">
+                <input type="hidden" id="snippet-id">
+                <div>
+                    <label for="snippet-title" class="block text-sm font-medium">상용구 제목</label>
+                    <input type="text" id="snippet-title" required class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label for="snippet-content" class="block text-sm font-medium">상용구 내용</label>
+                    <textarea id="snippet-content" rows="10" required class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-md font-mono text-sm"></textarea>
+                </div>
+            </form>
+            <div class="p-4 border-t flex justify-end space-x-2">
+                <button id="delete-snippet-btn" type="button" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 px-3 rounded-md text-sm">삭제</button>
+                <button id="save-snippet-btn" type="submit" form="snippet-form" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-md text-sm">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Run Modal -->
+    <div id="run-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4">
+        <div class="modal-backdrop fixed inset-0"></div>
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-xl z-50 flex flex-col max-h-[90vh]">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 id="run-modal-title" class="text-lg font-semibold"></h3>
+                <button id="close-run-modal" class="text-gray-400 hover:text-gray-600"><i data-feather="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 flex-1 overflow-y-auto no-scrollbar space-y-6">
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <h4 class="text-base font-semibold">1. 변수 입력</h4>
+                        <button id="show-preview-btn" class="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-xs py-1 px-2 rounded-md">완성 프롬프트 보기</button>
+                    </div>
+                    <div id="run-modal-variables" class="space-y-4"></div>
+                </div>
+                <div class="space-y-3">
+                    <h4 class="text-base font-semibold">2. 결과 피드백 (선택)</h4>
+                    <div class="flex items-center space-x-4">
+                        <div class="star-rating flex flex-row-reverse justify-end">
+                            <input type="radio" id="star5" name="rating" value="5"><label for="star5" title="5 stars">★</label>
+                            <input type="radio" id="star4" name="rating" value="4"><label for="star4" title="4 stars">★</label>
+                            <input type="radio" id="star3" name="rating" value="3"><label for="star3" title="3 stars">★</label>
+                            <input type="radio" id="star2" name="rating" value="2"><label for="star2" title="2 stars">★</label>
+                            <input type="radio" id="star1" name="rating" value="1"><label for="star1" title="1 star">★</label>
+                        </div>
+                        <textarea id="run-modal-memo" placeholder="간단한 메모..." rows="2" class="block w-full text-sm px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-md"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t flex justify-end">
+                <button id="copy-and-save-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-md flex items-center text-sm">
+                    <i data-feather="copy" class="w-4 h-4 mr-2"></i><span>복사 및 기록</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics Modal -->
+    <div id="analytics-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4">
+        <div class="modal-backdrop fixed inset-0"></div>
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl z-50 flex flex-col max-h-[90vh]">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 id="analytics-modal-title" class="text-lg font-semibold"></h3>
+                <button id="close-analytics-modal" class="text-gray-400 hover:text-gray-600"><i data-feather="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 flex-1 overflow-y-auto no-scrollbar">
+                <div class="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+                    <button id="analytics-tab-summary" class="py-2 px-4 text-sm font-medium border-b-2 border-blue-500 text-blue-600 dark:text-blue-400">요약 대시보드</button>
+                    <button id="analytics-tab-history" class="py-2 px-4 text-sm font-medium border-b-2 border-transparent text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600">상세 히스토리</button>
+                    <button id="analytics-tab-versions" class="py-2 px-4 text-sm font-medium border-b-2 border-transparent text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600">버전 기록</button>
+                </div>
+                <div id="analytics-react-root"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div id="preview-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="modal-backdrop fixed inset-0"></div>
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-2xl z-50 flex flex-col max-h-[90vh]">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 class="text-lg font-semibold">완성된 프롬프트</h3>
+                <button id="close-preview-modal" class="text-gray-400 hover:text-gray-600"><i data-feather="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 flex-1 overflow-y-auto">
+                <pre id="preview-modal-content" class="text-sm whitespace-pre-wrap font-mono"></pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Share Modal -->
+    <div id="share-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4">
+        <div class="modal-backdrop fixed inset-0"></div>
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-md z-50 flex flex-col max-h-[90vh]">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 id="share-modal-title" class="text-lg font-semibold">템플릿 공유: <span id="share-template-name"></span></h3>
+                <button id="close-share-modal" class="text-gray-400 hover:text-gray-600"><i data-feather="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 flex-1 overflow-y-auto no-scrollbar space-y-4">
+                <div>
+                    <label for="share-email" class="block text-sm font-medium">초대할 사용자 이메일</label>
+                    <input type="email" id="share-email" class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="user@example.com">
+                </div>
+                <div>
+                    <label for="share-role" class="block text-sm font-medium">권한</label>
+                    <select id="share-role" class="mt-1 block w-full px-3 py-1.5 bg-gray-100 dark:bg-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                        <option value="viewer">뷰어 (보기 및 실행)</option>
+                        <option value="editor">에디터 (보기, 실행, 수정, 버전 관리)</option>
+                    </select>
+                </div>
+                <button id="add-collaborator-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-md flex items-center justify-center text-sm">
+                    <i data-feather="user-plus" class="w-4 h-4 mr-2"></i>협업자 추가
+                </button>
+                
+                <div class="mt-6">
+                    <h4 class="text-base font-semibold mb-3">현재 협업자</h4>
+                    <div id="collaborators-list" class="space-y-2">
+                        <p class="text-gray-500 dark:text-gray-400 text-sm" id="no-collaborators-text">협업자가 없습니다.</p>
+                    </div>
+                </div>
+            </div>
+            <div class="p-4 border-t flex justify-end">
+                <button id="close-share-modal-btn-bottom" class="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-1.5 px-3 rounded-md text-sm">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Generic Message/Confirmation Modal -->
+    <div id="message-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="modal-backdrop fixed inset-0"></div>
+        <div class="bg-white dark:bg-gray-900 rounded-lg shadow-xl w-full max-w-sm z-50">
+            <div class="p-4 border-b flex justify-between items-center">
+                <h3 id="message-modal-title" class="text-lg font-semibold">알림</h3>
+                <button id="close-message-modal" class="text-gray-400 hover:text-gray-600"><i data-feather="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6">
+                <p id="message-modal-content" class="text-sm text-gray-700 dark:text-gray-300 mb-4"></p>
+                <div id="message-modal-buttons" class="flex justify-end space-x-2">
+                    <!-- Buttons will be injected here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Snippet Live Search Context Menu -->
+    <div id="snippet-context-menu" class="hidden"></div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay hidden">
+        <div class="loading-spinner"></div>
+    </div>
+
+    <!-- Main Logic Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, signInWithCustomToken, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, setLogLevel, collection, addDoc, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp, query, getDoc, updateDoc, where, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Firebase configuration and app ID from environment
+        // Using provided firebaseConfig as default if __firebase_config is not defined
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : `{
+            "apiKey": "AIzaSyBAu9SO6kz8IkIsdRrx8CxbIf_j8rNStSc",
+            "authDomain": "myproject-c8755.firebaseapp.com",
+            "projectId": "myproject-c8755",
+            "storageBucket": "myproject-c8755.firebasestorage.app",
+            "messagingSenderId": "688390265283",
+            "appId": "1:688390265283:web:d4d5da40b0d9f2ceb78576",
+            "measurementId": "G-SFX7GVPRME"
+        }`);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : firebaseConfig.projectId; // Use projectId as appId or provided
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Firebase instances
+        let app, auth, db;
+        // Expose Firebase instances globally for React component
+        window.firebaseDb = db;
+        window.firebaseAuth = auth;
+
+        // Unsubscribe functions for real-time listeners
+        let unsubscribeFromMyTemplates = null;
+        let unsubscribeFromSharedTemplates = null;
+        let unsubscribeFromSnippets = null;
+        // Current active item for modals (template or snippet)
+        let currentTemplate = null;
+        let currentSnippet = null;
+        // React root for analytics modal
+        let analyticsReactRoot = null;
+        // Caches for composition
+        const templateCache = new Map();
+        const snippetCache = new Map();
+
+        // Global data stores for client-side filtering and rendering
+        let allMyTemplates = [];
+        let allSharedTemplates = [];
+        let allSnippets = [];
+
+        // Current view state
+        let currentViewMode = 'grid'; // 'grid' or 'list'
+        let currentActiveView = 'my-templates'; // 'my-templates', 'shared-templates', 'snippets', 'settings'
+        let searchTerm = ''; // Current search term
+
+        let snippetSearchTimeout = null;
+        let snippetSearchQuery = '';
+        let snippetSearchResults = [];
+        let selectedSnippetIndex = -1;
+
+        // Utility function to get element by ID
+        const $ = (selector) => document.getElementById(selector);
+
+        // All relevant DOM elements
+        const elements = {
+            loader: $('loader'), authContainer: $('auth-container'), appContainer: $('app-container'), loginForm: $('login-form'), authError: $('auth-error'), logoutBtn: $('logout-btn'),
+            userProfile: { avatar: $('user-avatar'), name: $('user-name'), email: $('user-email'), id: $('user-id') },
+            navMyTemplates: $('nav-my-templates'), navSharedTemplates: $('nav-shared-templates'), navSnippets: $('nav-snippets'), navSettings: $('nav-settings'),
+            mainTitle: $('main-title'), addItemBtn: $('add-item-btn'),
+            viewToggleGrid: $('view-toggle-grid'), viewToggleList: $('view-toggle-list'),
+            searchInput: $('search-input'),
+            myTemplatesView: $('my-templates-view'), sharedTemplatesView: $('shared-templates-view'), snippetsView: $('snippets-view'), settingsView: $('settings-view'),
+            emptyState: $('empty-state'), emptyStateText: $('empty-state-text'), emptyStateSubtext: $('empty-state-subtext'), exportDataBtn: $('export-data-btn'),
+
+            templateModal: $('template-modal'), closeTemplateModalBtn: $('close-template-modal'), templateForm: $('template-form'), modalTitle: $('modal-title'), templateIdInput: $('template-id'), templateTitleInput: $('template-title'), templateContentInput: $('template-content'), templateTagsInput: $('template-tags'), saveTemplateBtn: $('save-template-btn'), deleteTemplateBtn: $('delete-template-btn'),
+            enhancePromptBtn: $('enhance-prompt-btn'), // New element for prompt enhancement
+            suggestTagsBtn: $('suggest-tags-btn'),     // New element for tag suggestion
+
+            signupModal: $('signup-modal'), showSignupLink: $('show-signup-link'), closeSignupModalBtn: $('close-signup-modal'), signupForm: $('signup-form'), signupError: $('signup-error'),
+            
+            snippetModal: $('snippet-modal'), closeSnippetModalBtn: $('close-snippet-modal'), snippetForm: $('snippet-form'), snippetModalTitle: $('snippet-modal-title'), snippetIdInput: $('snippet-id'), snippetTitleInput: $('snippet-title'), snippetContentInput: $('snippet-content'), saveSnippetBtn: $('save-snippet-btn'), deleteSnippetBtn: $('delete-snippet-btn'),
+
+            runModal: $('run-modal'), closeRunModalBtn: $('close-run-modal'), runModalTitle: $('run-modal-title'), runModalVariables: $('run-modal-variables'), copyAndSaveBtn: $('copy-and-save-btn'), runModalMemo: $('run-modal-memo'), showPreviewBtn: $('show-preview-btn'),
+            analyticsModal: $('analytics-modal'), closeAnalyticsModalBtn: $('close-analytics-modal'), analyticsModalTitle: $('analytics-modal-title'), analyticsReactRoot: $('analytics-react-root'),
+            analyticsTabSummary: $('analytics-tab-summary'), analyticsTabHistory: $('analytics-tab-history'), analyticsTabVersions: $('analytics-tab-versions'),
+            
+            previewModal: $('preview-modal'), closePreviewModalBtn: $('close-preview-modal'), previewModalContent: $('preview-modal-content'),
+
+            shareModal: $('share-modal'), closeShareModalBtn: $('close-share-modal'), shareTemplateName: $('share-template-name'), shareEmailInput: $('share-email'), shareRoleSelect: $('share-role'), addCollaboratorBtn: $('add-collaborator-btn'), collaboratorsList: $('collaborators-list'), noCollaboratorsText: $('no-collaborators-text'), closeShareModalBtnBottom: $('close-share-modal-btn-bottom'),
+
+            messageModal: $('message-modal'), closeMessageModalBtn: $('close-message-modal'), messageModalTitle: $('message-modal-title'), messageModalContent: $('message-modal-content'), messageModalButtons: $('message-modal-buttons'),
+
+            snippetContextMenu: $('snippet-context-menu'),
+            loadingOverlay: $('loading-overlay') // New element for global loading indicator
+        };
+        
+        // Initial setup function
+        async function init() {
+            initializeFirebase(); // Initialize Firebase app
+            if (!app) return; // Exit if Firebase initialization failed
+
+            setupEventListeners(); // Set up all event listeners
+            await performInitialSignIn(); // Perform initial sign-in (custom token or anonymous)
+            feather.replace(); // Replace Feather icons
+            switchView('my-templates'); // Default view to "My Templates"
+            setViewMode('grid'); // Default to grid view
+        }
+
+        // Initializes Firebase with the provided configuration
+        function initializeFirebase() {
+            try {
+                app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+                setLogLevel('debug'); // Enable Firestore debug logging
+                console.log("Firebase initialized successfully.");
+
+                // Expose db and auth globally for React component
+                window.firebaseDb = db;
+                window.firebaseAuth = auth;
+            } catch (error) {
+                console.error("Firebase initialization error:", error);
+                elements.loader.innerText = "Firebase 설정 오류. 콘솔을 확인하세요.";
+            }
+        }
+
+        // Performs initial sign-in using custom token or anonymously
+        async function performInitialSignIn() {
+            try {
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                    console.log("Signed in with custom token.");
+                } else if (!auth.currentUser) {
+                    await signInAnonymously(auth);
+                    console.log("Signed in anonymously.");
+                }
+            } catch (error) {
+                console.error("Initial sign-in failed:", error);
+                elements.authError.textContent = "초기 인증에 실패했습니다: " + mapAuthError(error.code);
+            }
+        }
+
+        // Sets up all event listeners for UI interactions
+        function setupEventListeners() {
+            // Authentication state change listener
+            onAuthStateChanged(auth, async user => { // Made async to await user profile creation
+                elements.loader.classList.add('hidden'); // Hide loader once auth state is determined
+                if (user) {
+                    await onUserLogin(user); // Await user profile creation
+                } else {
+                    onUserLogout(); // Handle user logout
+                }
+            });
+
+            // Login form submission
+            elements.loginForm.addEventListener('submit', async e => {
+                e.preventDefault();
+                elements.authError.textContent = ''; // Clear previous error
+                try {
+                    const userCredential = await signInWithEmailAndPassword(auth, elements.loginForm['login-email'].value, elements.loginForm['login-password'].value);
+                    // Ensure user profile is created/updated on login
+                    await createUserProfile(userCredential.user);
+                } catch (error) {
+                    elements.authError.textContent = "로그인 실패: " + mapAuthError(error.code);
+                }
+            });
+
+            // Signup form submission
+            elements.signupForm.addEventListener('submit', async e => {
+                e.preventDefault();
+                elements.signupError.textContent = ''; // Clear previous error
+                try {
+                    const userCredential = await createUserWithEmailAndPassword(auth, elements.signupForm['signup-email'].value, elements.signupForm['signup-password'].value);
+                    await createUserProfile(userCredential.user); // Create user profile on signup
+                    closeSignupModal(); // Close modal on successful signup
+                } catch (error) {
+                    elements.signupError.textContent = "가입 실패: " + mapAuthError(error.code);
+                }
+            });
+
+            // Logout button click
+            elements.logoutBtn.addEventListener('click', () => signOut(auth));
+
+            // Navigation clicks
+            elements.navMyTemplates.addEventListener('click', () => switchView('my-templates'));
+            elements.navSharedTemplates.addEventListener('click', () => switchView('shared-templates'));
+            elements.navSnippets.addEventListener('click', () => switchView('snippets'));
+            elements.navSettings.addEventListener('click', () => switchView('settings'));
+
+            // View toggle buttons
+            elements.viewToggleGrid.addEventListener('click', () => setViewMode('grid'));
+            elements.viewToggleList.addEventListener('click', () => setViewMode('list'));
+
+            // Search input
+            elements.searchInput.addEventListener('input', debounce(() => {
+                searchTerm = elements.searchInput.value.toLowerCase();
+                applyFiltersAndSearch();
+            }, 300));
+
+            // Add item button (contextual)
+            elements.addItemBtn.addEventListener('click', () => {
+                if (currentActiveView === 'snippets') {
+                    openSnippetModal(); // Open snippet modal if snippets view is active
+                } else if (currentActiveView === 'my-templates') {
+                    openTemplateModal(); // Otherwise, open template modal
+                } else {
+                    // Do nothing or show message if on shared templates/settings
+                    showMessageModal('알림', '현재 뷰에서는 새 항목을 추가할 수 없습니다.');
+                }
+            });
+
+            // Template modal event listeners
+            elements.closeTemplateModalBtn.addEventListener('click', closeTemplateModal);
+            elements.templateModal.addEventListener('click', e => e.target === elements.templateModal && closeTemplateModal());
+            elements.deleteTemplateBtn.addEventListener('click', deleteTemplate);
+            elements.templateForm.addEventListener('submit', saveTemplate);
+            elements.templateContentInput.addEventListener('input', handleSnippetCompositionInput);
+            elements.templateContentInput.addEventListener('keydown', handleSnippetCompositionKeydown);
+            document.addEventListener('click', hideSnippetContextMenu);
+
+            // New LLM feature buttons
+            elements.enhancePromptBtn.addEventListener('click', handlePromptEnhancement);
+            elements.suggestTagsBtn.addEventListener('click', handleTagSuggestion);
+
+
+            // Snippet modal event listeners
+            elements.closeSnippetModalBtn.addEventListener('click', closeSnippetModal);
+            elements.snippetModal.addEventListener('click', e => e.target === elements.snippetModal && closeSnippetModal());
+            elements.deleteSnippetBtn.addEventListener('click', deleteSnippet);
+            elements.snippetForm.addEventListener('submit', saveSnippet);
+
+            // Run modal event listeners
+            elements.closeRunModalBtn.addEventListener('click', closeRunModal);
+            elements.runModal.addEventListener('click', e => e.target === elements.runModal && closeRunModal());
+            elements.copyAndSaveBtn.addEventListener('click', saveUsageAndCopy);
+            elements.showPreviewBtn.addEventListener('click', openPreviewModal);
+            
+            // Preview modal event listeners
+            elements.closePreviewModalBtn.addEventListener('click', closePreviewModal);
+            elements.previewModal.addEventListener('click', e => e.target === elements.previewModal && closePreviewModal());
+            
+            // Analytics modal event listeners
+            elements.closeAnalyticsModalBtn.addEventListener('click', closeAnalyticsModal);
+            elements.analyticsModal.addEventListener('click', e => e.target === elements.analyticsModal && closeAnalyticsModal());
+            elements.analyticsTabSummary.addEventListener('click', () => renderAnalyticsTab('summary'));
+            elements.analyticsTabHistory.addEventListener('click', () => renderAnalyticsTab('history'));
+            elements.analyticsTabVersions.addEventListener('click', () => renderAnalyticsTab('versions'));
+
+            // Signup modal event listeners
+            elements.showSignupLink.addEventListener('click', e => { e.preventDefault(); openSignupModal(); });
+            elements.closeSignupModalBtn.addEventListener('click', closeSignupModal);
+            elements.signupModal.addEventListener('click', e => e.target === elements.signupModal && closeSignupModal());
+
+            // Share modal event listeners
+            elements.closeShareModalBtn.addEventListener('click', closeShareModal);
+            elements.closeShareModalBtnBottom.addEventListener('click', closeShareModal);
+            elements.shareModal.addEventListener('click', e => e.target === elements.shareModal && closeShareModal());
+            elements.addCollaboratorBtn.addEventListener('click', addCollaborator);
+
+            // Export data button
+            elements.exportDataBtn.addEventListener('click', exportUserData);
+        }
+
+        // Displays a global loading overlay
+        function showLoadingOverlay() {
+            elements.loadingOverlay.classList.remove('hidden');
+        }
+
+        // Hides the global loading overlay
+        function hideLoadingOverlay() {
+            elements.loadingOverlay.classList.add('hidden');
+        }
+
+        // Creates or updates a user profile document in the 'users' collection
+        async function createUserProfile(user) {
+            const userRef = doc(db, 'users', user.uid);
+            try {
+                await setDoc(userRef, {
+                    uid: user.uid,
+                    email: user.email,
+                    displayName: user.displayName || user.email,
+                    createdAt: serverTimestamp() // Only set on creation
+                }, { merge: true }); // Use merge to update if already exists
+                console.log(`User profile created/updated for ${user.uid}`);
+            } catch (error) {
+                console.error("Error creating/updating user profile:", error);
+            }
+        }
+
+        // Handles user login: updates UI and sets up real-time listeners
+        async function onUserLogin(user) {
+            await createUserProfile(user); // Ensure profile exists
+            updateUIForUser(user);
+            // Setup listeners for owned and shared templates, and snippets
+            setupRealtimeMyTemplateListener(user.uid);
+            setupRealtimeSharedTemplateListener(user.uid);
+            setupRealtimeSnippetListener(user.uid);
+            elements.authContainer.classList.add('hidden');
+            elements.appContainer.classList.remove('hidden');
+        }
+
+        // Handles user logout: cleans up UI and listeners
+        function onUserLogout() {
+            // Unsubscribe from all listeners
+            if (unsubscribeFromMyTemplates) unsubscribeFromMyTemplates();
+            if (unsubscribeFromSharedTemplates) unsubscribeFromSharedTemplates();
+            if (unsubscribeFromSnippets) unsubscribeFromSnippets();
+
+            updateUIForGuest();
+            elements.authContainer.classList.remove('hidden');
+            elements.appContainer.classList.add('hidden');
+        }
+
+        // Maps Firebase authentication error codes to user-friendly messages
+        function mapAuthError(code) {
+            const errors = {
+                'auth/invalid-email': '유효하지 않은 이메일 주소입니다.',
+                'auth/user-not-found': '존재하지 않는 사용자입니다.',
+                'auth/wrong-password': '비밀번호가 일치하지 않습니다.',
+                'auth/email-already-in-use': '이미 사용 중인 이메일입니다.',
+                'auth/weak-password': '비밀번호는 6자 이상이어야 합니다.',
+                'auth/network-request-failed': '네트워크 오류가 발생했습니다. 인터넷 연결을 확인하세요.'
+            };
+            return errors[code] || '알 수 없는 오류가 발생했습니다. 다시 시도해주세요.';
+        }
+
+        // Updates the UI with current user's profile information
+        function updateUIForUser(user) {
+            const isAnon = user.isAnonymous;
+            elements.userProfile.name.textContent = isAnon ? '익명 사용자' : (user.displayName || '사용자');
+            elements.userProfile.email.textContent = isAnon ? `ID: ${user.uid.substring(0, 8)}...` : user.email;
+            elements.userProfile.id.textContent = `UID: ${user.uid}`; // Display full UID for debugging/identification
+            const initials = (user.displayName || user.email || (isAnon ? 'A' : 'U')).charAt(0).toUpperCase();
+            elements.userProfile.avatar.src = user.photoURL || `https://placehold.co/32x32/E2E8F0/4A5568?text=${initials}`;
+        }
+
+        // Resets the UI for a guest user
+        function updateUIForGuest() {
+            elements.userProfile.name.textContent = '';
+            elements.userProfile.email.textContent = '';
+            elements.userProfile.id.textContent = '';
+            elements.userProfile.avatar.src = 'https://placehold.co/32x32/E2E8F0/4A5568?text=G';
+            elements.myTemplatesView.innerHTML = '';
+            elements.sharedTemplatesView.innerHTML = '';
+            elements.snippetsView.innerHTML = '';
+            elements.emptyState.classList.remove('hidden');
+            elements.emptyStateText.textContent = '로그인이 필요합니다.';
+            elements.emptyStateSubtext.textContent = '로그인하여 P.R.I.M.E. 기능을 사용하세요.';
+        }
+
+        // Debounce function to limit how often a function runs
+        function debounce(func, delay) {
+            let timeout;
+            return function(...args) {
+                const context = this;
+                clearTimeout(timeout);
+                timeout = setTimeout(() => func.apply(context, args), delay);
+            };
+        }
+
+        // Switches the main content view based on navigation selection
+        function switchView(viewId) {
+            currentActiveView = viewId;
+            // Deactivate all nav links
+            document.querySelectorAll('nav a').forEach(link => {
+                link.classList.remove('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+                link.classList.add('text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-100', 'dark:hover:bg-gray-700');
+            });
+
+            // Hide all content views
+            elements.myTemplatesView.classList.add('hidden');
+            elements.sharedTemplatesView.classList.add('hidden');
+            elements.snippetsView.classList.add('hidden');
+            elements.settingsView.classList.add('hidden');
+            elements.searchInput.classList.remove('hidden'); // Show search input by default
+
+            // Show selected view and activate its nav link
+            let currentViewElement;
+            let currentAddItemBtnIcon = 'plus';
+
+            switch (viewId) {
+                case 'my-templates':
+                    elements.navMyTemplates.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+                    elements.mainTitle.textContent = '나의 템플릿';
+                    currentViewElement = elements.myTemplatesView;
+                    currentAddItemBtnIcon = 'plus';
+                    applyFiltersAndSearch();
+                    break;
+                case 'shared-templates':
+                    elements.navSharedTemplates.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+                    elements.mainTitle.textContent = '공유된 템플릿';
+                    currentViewElement = elements.sharedTemplatesView;
+                    elements.addItemBtn.classList.add('hidden'); // Hide add button for shared templates
+                    applyFiltersAndSearch();
+                    break;
+                case 'snippets':
+                    elements.navSnippets.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+                    elements.mainTitle.textContent = '상용구 관리';
+                    currentViewElement = elements.snippetsView;
+                    currentAddItemBtnIcon = 'plus';
+                    applyFiltersAndSearch();
+                    break;
+                case 'settings':
+                    elements.navSettings.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+                    elements.mainTitle.textContent = '설정';
+                    currentViewElement = elements.settingsView;
+                    elements.addItemBtn.classList.add('hidden'); // Hide add button for settings view
+                    elements.searchInput.classList.add('hidden'); // Hide search input for settings
+                    break;
+            }
+            currentViewElement.classList.remove('hidden');
+            // Update add item button icon (if not hidden)
+            if (!elements.addItemBtn.classList.contains('hidden')) {
+                elements.addItemBtn.innerHTML = `<i data-feather="${currentAddItemBtnIcon}" class="w-4 h-4"></i>`;
+                elements.addItemBtn.title = currentAddItemBtnIcon === 'plus' ? `새 ${currentActiveView === 'snippets' ? '상용구' : '템플릿'} 추가` : '';
+            }
+            feather.replace(); // Re-render feather icons for the new view
+        }
+
+        // Sets the current view mode (grid/list)
+        function setViewMode(mode) {
+            currentViewMode = mode;
+            // Update button styles
+            elements.viewToggleGrid.classList.remove('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+            elements.viewToggleList.classList.remove('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+            
+            elements.viewToggleGrid.classList.add('text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-100', 'dark:hover:bg-gray-700');
+            elements.viewToggleList.classList.add('text-gray-700', 'dark:text-gray-300', 'hover:bg-gray-100', 'dark:hover:bg-gray-700');
+
+            if (mode === 'grid') {
+                elements.viewToggleGrid.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+            } else {
+                elements.viewToggleList.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-700', 'dark:text-blue-300');
+            }
+            applyFiltersAndSearch(); // Re-render with new view mode
+        }
+
+        // Filters and renders the current view based on search term
+        function applyFiltersAndSearch() {
+            let filteredData = [];
+            let containerElement;
+            let viewType;
+
+            if (currentActiveView === 'my-templates') {
+                filteredData = allMyTemplates;
+                containerElement = elements.myTemplatesView;
+                viewType = 'my-templates';
+            } else if (currentActiveView === 'shared-templates') {
+                filteredData = allSharedTemplates;
+                containerElement = elements.sharedTemplatesView;
+                viewType = 'shared-templates';
+            } else if (currentActiveView === 'snippets') {
+                filteredData = allSnippets;
+                containerElement = elements.snippetsView;
+                viewType = 'snippets';
+            } else {
+                // For settings view, no filtering needed
+                return;
+            }
+
+            if (searchTerm) {
+                filteredData = filteredData.filter(item => 
+                    (item.title && item.title.toLowerCase().includes(searchTerm)) ||
+                    (item.content && item.content.toLowerCase().includes(searchTerm)) ||
+                    (item.tags && Array.isArray(item.tags) && item.tags.some(tag => tag.toLowerCase().includes(searchTerm)))
+                );
+            }
+
+            if (currentActiveView === 'snippets') {
+                renderSnippets(filteredData);
+            } else {
+                renderTemplates(filteredData, containerElement, viewType);
+            }
+        }
+
+        // --- Template Management ---
+
+        // Sets up a real-time listener for templates owned by the user
+        function setupRealtimeMyTemplateListener(userId) {
+            if (!userId) return;
+            if (unsubscribeFromMyTemplates) unsubscribeFromMyTemplates(); // Unsubscribe from previous listener
+            const q = query(collection(db, 'templates'), where('owner_uid', '==', userId));
+            unsubscribeFromMyTemplates = onSnapshot(q, s => {
+                allMyTemplates = s.docs.map(d => ({ id: d.id, ...d.data(), type: 'owned' }));
+                applyFiltersAndSearch(); // Re-render with current filters/search
+            }, e => console.error("Error fetching owned templates:", e));
+        }
+
+        // Sets up a real-time listener for templates shared with the user
+        function setupRealtimeSharedTemplateListener(userId) {
+            if (!userId) return;
+            if (unsubscribeFromSharedTemplates) unsubscribeFromSharedTemplates(); // Unsubscribe from previous listener
+            
+            // Query templates where the current user has viewer or editor permissions AND is not the owner
+            const q = query(collection(db, 'templates'), 
+                            where(`permissions.${userId}`, 'in', ['viewer', 'editor']));
+            unsubscribeFromSharedTemplates = onSnapshot(q, s => {
+                allSharedTemplates = s.docs
+                    .map(d => ({ id: d.id, ...d.data(), type: 'shared' }))
+                    .filter(t => t.owner_uid !== userId); // Exclude templates owned by the current user
+                applyFiltersAndSearch(); // Re-render with current filters/search
+            }, e => console.error("Error fetching shared templates:", e));
+        }
+
+
+        // Renders a list of templates into a specified container
+        function renderTemplates(templates, containerElement, viewType) {
+            containerElement.innerHTML = ''; // Clear existing content
+            elements.emptyState.classList.add('hidden'); // Hide empty state by default
+
+            if (templates.length === 0) {
+                // Only show empty state if the current view matches the type of templates being rendered
+                const currentActiveContentContainer = document.querySelector('main .flex-1 > div:not(.hidden)');
+                if (currentActiveContentContainer === containerElement) {
+                    elements.emptyState.classList.remove('hidden'); // Show empty state if no templates
+                    if (viewType === 'my-templates') {
+                        elements.emptyStateText.textContent = '템플릿이 없습니다';
+                        elements.emptyStateSubtext.textContent = `'새 템플릿' 버튼으로 시작해보세요.`;
+                    } else if (viewType === 'shared-templates') {
+                        elements.emptyStateText.textContent = '공유된 템플릿이 없습니다';
+                        elements.emptyStateSubtext.textContent = "다른 사용자가 템플릿을 공유할 때 여기에 표시됩니다.";
+                    }
+                }
+            } else {
+                elements.emptyState.classList.add('hidden'); // Ensure empty state is hidden if templates exist
+                // Apply view mode classes to container
+                containerElement.className = ''; // Clear existing classes
+                if (currentViewMode === 'grid') {
+                    containerElement.classList.add('grid', 'grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-3', 'xl:grid-cols-4', 'gap-4');
+                } else { // list view
+                    containerElement.classList.add('flex', 'flex-col', 'gap-2');
+                }
+
+                templates.forEach(template => {
+                    const card = document.createElement('div');
+                    let cardClasses = 'bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300';
+                    if (currentViewMode === 'grid') {
+                        cardClasses += ' flex flex-col';
+                    } else { // list view
+                        cardClasses += ' flex items-center p-3';
+                    }
+                    card.className = cardClasses;
+                    
+                    const tagsHtml = (template.tags || []).map(t => `<span class="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 text-xs font-medium mr-2 px-2 py-0.5 rounded-full">${t}</span>`).join('');
+                    
+                    // Determine permissions for the current user for this template
+                    const user = auth.currentUser;
+                    const isOwner = template.owner_uid === user.uid;
+                    const userPermission = (template.permissions || {})[user.uid]; // Get permission from map
+                    const canEdit = userPermission === 'owner' || userPermission === 'editor';
+                    const canShare = userPermission === 'owner';
+                    const canDelete = userPermission === 'owner';
+
+                    if (currentViewMode === 'grid') {
+                        card.innerHTML = `
+                            <div class="p-4 flex-1 cursor-pointer card-body">
+                                <h4 class="font-semibold text-gray-900 dark:text-white truncate">${template.title}</h4>
+                                <p class="mt-2 text-sm text-gray-600 dark:text-gray-400 line-clamp-3">${template.content}</p>
+                            </div>
+                            <div class="p-2 border-t border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                                <div class="flex flex-wrap items-center gap-1 overflow-hidden">
+                                    ${tagsHtml || '<span class="text-xs text-gray-400">태그 없음</span>'}
+                                    ${template.type === 'shared' ? `<span class="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">공유됨 (${userPermission})</span>` : ''}
+                                </div>
+                                <div class="flex items-center space-x-1 flex-shrink-0">
+                                    <button class="analytics-btn p-1.5 text-gray-400 hover:text-purple-500" title="분석"><i data-feather="bar-chart-2" class="w-4 h-4"></i></button>
+                                    <button class="share-btn p-1.5 text-gray-400 hover:text-green-500 ${canShare ? '' : 'hidden'}" title="공유"><i data-feather="share-2" class="w-4 h-4"></i></button>
+                                    <button class="edit-btn p-1.5 text-gray-400 hover:text-blue-500 ${canEdit ? '' : 'hidden'}" title="편집"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                                </div>
+                            </div>
+                        `;
+                    } else { // list view
+                        card.innerHTML = `
+                            <div class="flex-1 cursor-pointer card-body">
+                                <h4 class="font-semibold text-gray-900 dark:text-white truncate">${template.title}</h4>
+                                <p class="mt-1 text-xs text-gray-600 dark:text-gray-400 truncate">${template.content}</p>
+                                <div class="flex flex-wrap items-center gap-1 mt-1">
+                                    ${tagsHtml || '<span class="text-xs text-gray-400">태그 없음</span>'}
+                                    ${template.type === 'shared' ? `<span class="bg-blue-100 text-blue-800 text-xs font-medium px-2 py-0.5 rounded-full">공유됨 (${userPermission})</span>` : ''}
+                                </div>
+                            </div>
+                            <div class="flex items-center space-x-1 flex-shrink-0 ml-4">
+                                <button class="analytics-btn p-1.5 text-gray-400 hover:text-purple-500" title="분석"><i data-feather="bar-chart-2" class="w-4 h-4"></i></button>
+                                <button class="share-btn p-1.5 text-gray-400 hover:text-green-500 ${canShare ? '' : 'hidden'}" title="공유"><i data-feather="share-2" class="w-4 h-4"></i></button>
+                                <button class="edit-btn p-1.5 text-gray-400 hover:text-blue-500 ${canEdit ? '' : 'hidden'}" title="편집"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                            </div>
+                        `;
+                    }
+
+                    card.querySelector('.card-body').addEventListener('click', () => openRunModal(template));
+                    card.querySelector('.edit-btn').addEventListener('click', () => openTemplateModal(template));
+                    card.querySelector('.analytics-btn').addEventListener('click', () => openAnalyticsModal(template));
+                    if (canShare) { 
+                        card.querySelector('.share-btn').addEventListener('click', () => openShareModal(template));
+                    }
+                    containerElement.appendChild(card);
+                });
+            }
+            feather.replace(); 
+        }
+
+        // Opens the template creation/edit modal
+        function openTemplateModal(template = null) {
+            elements.templateForm.reset(); 
+            elements.modalTitle.textContent = template ? '템플릿 편집' : '새 템플릿 추가';
+            elements.templateIdInput.value = template?.id || '';
+            elements.templateTitleInput.value = template?.title || '';
+            elements.templateContentInput.value = template?.content || '';
+            elements.templateTagsInput.value = template?.tags?.join(', ') || '';
+            
+            // Determine if delete button should be shown based on new permission model
+            const user = auth.currentUser;
+            const canDelete = template && template.permissions && template.permissions[user.uid] === 'owner';
+            elements.deleteTemplateBtn.classList.toggle('hidden', !canDelete); 
+
+            elements.templateModal.classList.remove('hidden');
+            feather.replace();
+        }
+
+        // Closes the template modal
+        function closeTemplateModal() {
+            elements.templateModal.classList.add('hidden');
+            hideSnippetContextMenu(); // Hide snippet context menu if open
+        }
+
+        // Saves a new template or updates an existing one
+        async function saveTemplate(e) {
+            e.preventDefault();
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const id = elements.templateIdInput.value;
+            const content = elements.templateContentInput.value;
+            const title = elements.templateTitleInput.value;
+            const tags = elements.templateTagsInput.value.split(',').map(t => t.trim()).filter(Boolean);
+
+            const data = {
+                title: title,
+                content: content,
+                tags: tags,
+                updatedAt: serverTimestamp()
+            };
+
+            try {
+                if (id) {
+                    // Fetch current template to get existing permissions
+                    const currentTemplateDoc = await getDoc(doc(db, 'templates', id));
+                    if (!currentTemplateDoc.exists()) {
+                        showMessageModal('오류', '템플릿을 찾을 수 없습니다.');
+                        return;
+                    }
+                    const currentPermissions = currentTemplateDoc.data().permissions || {};
+                    // Check if current user has edit permission
+                    if (!(currentPermissions[user.uid] === 'owner' || currentPermissions[user.uid] === 'editor')) {
+                        showMessageModal('권한 없음', '이 템플릿을 수정할 권한이 없습니다.');
+                        return;
+                    }
+
+                    await updateDoc(doc(db, 'templates', id), data);
+
+                    // Save a new version
+                    const templateDoc = await getDoc(doc(db, 'templates', id));
+                    if (templateDoc.exists()) {
+                        const currentTemplateData = templateDoc.data();
+                        await addDoc(collection(db, `templates/${id}/versions`), { // Updated path
+                            content: currentTemplateData.content,
+                            title: currentTemplateData.title,
+                            tags: currentTemplateData.tags,
+                            updatedAt: serverTimestamp(),
+                            updatedBy: user.uid,
+                        });
+                    }
+                    showMessageModal('알림', '템플릿이 성공적으로 업데이트되었습니다.');
+                } else {
+                    // Create new template
+                    data.owner_uid = user.uid;
+                    data.createdAt = serverTimestamp();
+                    data.permissions = { [user.uid]: 'owner' }; // Set initial owner permission
+
+                    const newTemplateRef = await addDoc(collection(db, 'templates'), data); // Updated path
+                    // Add initial version
+                    await addDoc(collection(db, `templates/${newTemplateRef.id}/versions`), { // Updated path
+                        content: data.content,
+                        title: data.title,
+                        tags: data.tags,
+                        updatedAt: serverTimestamp(),
+                        updatedBy: user.uid,
+                    });
+                    showMessageModal('알림', '새 템플릿이 성공적으로 생성되었습니다.');
+                }
+                closeTemplateModal();
+            } catch (error) {
+                console.error("템플릿 저장 오류:", error);
+                showMessageModal('오류', '템플릿 저장 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        // Deletes a template
+        async function deleteTemplate() {
+            const id = elements.templateIdInput.value;
+            const user = auth.currentUser;
+            if (!id || !user) return;
+
+            showConfirmationModal('템플릿 삭제 확인', `정말로 "${elements.templateTitleInput.value}" 템플릿을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`, async () => {
+                try {
+                    // Verify owner permission before deletion
+                    const templateDoc = await getDoc(doc(db, 'templates', id));
+                    if (!templateDoc.exists() || templateDoc.data().permissions[user.uid] !== 'owner') {
+                        showMessageModal('권한 없음', '이 템플릿을 삭제할 권한이 없습니다.');
+                        return;
+                    }
+                    await deleteDoc(doc(db, 'templates', id)); // Updated path
+                    closeTemplateModal();
+                    showMessageModal('알림', '템플릿이 성공적으로 삭제되었습니다.');
+                } catch (error) {
+                    console.error("템플릿 삭제 오류:", error);
+                    showMessageModal('오류', '템플릿 삭제 중 오류가 발생했습니다: ' + error.message);
+                }
+            });
+        }
+
+
+        // --- Snippet Management ---
+
+        // Sets up a real-time listener for snippets owned by the user
+        function setupRealtimeSnippetListener(userId) {
+            if (!userId) return;
+            if (unsubscribeFromSnippets) unsubscribeFromSnippets();
+            const q = query(collection(db, 'snippets'), where('owner_uid', '==', userId)); // Updated path
+            unsubscribeFromSnippets = onSnapshot(q, s => {
+                allSnippets = s.docs.map(d => ({ id: d.id, ...d.data() }));
+                applyFiltersAndSearch(); // Re-render with current filters/search
+            }, e => console.error("Error fetching snippets:", e));
+        }
+
+        // Renders a list of snippets into the snippets view
+        function renderSnippets(snippets) {
+            elements.snippetsView.innerHTML = '';
+            elements.emptyState.classList.add('hidden'); // Hide empty state by default if data is being rendered
+            
+            if (elements.snippetsView.classList.contains('hidden') && snippets.length === 0) {
+                // Do nothing if snippets view is not active and no snippets
+            } else if (snippets.length === 0 && !elements.snippetsView.classList.contains('hidden')) {
+                elements.emptyState.classList.remove('hidden'); // Show empty state if no snippets and view is active
+                elements.emptyStateText.textContent = '상용구가 없습니다';
+                elements.emptyStateSubtext.textContent = "'새 상용구' 버튼으로 시작해보세요.";
+            } else {
+                elements.emptyState.classList.add('hidden');
+                 // Apply view mode classes to container
+                elements.snippetsView.className = ''; // Clear existing classes
+                if (currentViewMode === 'grid') {
+                    elements.snippetsView.classList.add('grid', 'grid-cols-1', 'md:grid-cols-2', 'lg:grid-cols-3', 'xl:grid-cols-4', 'gap-4');
+                } else { // list view
+                    elements.snippetsView.classList.add('flex', 'flex-col', 'gap-2');
+                }
+
+                snippets.forEach(snippet => {
+                    const card = document.createElement('div');
+                    let cardClasses = 'bg-white dark:bg-gray-800 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300';
+                    if (currentViewMode === 'grid') {
+                        cardClasses += ' flex flex-col';
+                    } else { // list view
+                        cardClasses += ' flex items-center p-3';
+                    }
+                    card.className = cardClasses;
+
+                    if (currentViewMode === 'grid') {
+                        card.innerHTML = `
+                            <div class="p-4 flex-1 cursor-pointer snippet-card-body">
+                                <h4 class="font-semibold text-gray-900 dark:text-white truncate">${snippet.title}</h4>
+                                <p class="mt-2 text-sm text-gray-600 dark:text-gray-400 line-clamp-3">${snippet.content}</p>
+                            </div>
+                            <div class="p-2 border-t border-gray-100 dark:border-gray-700 flex justify-end items-center">
+                                <button class="edit-snippet-btn p-1.5 text-gray-400 hover:text-blue-500" title="편집"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                            </div>
+                        `;
+                    } else { // list view
+                         card.innerHTML = `
+                            <div class="flex-1 cursor-pointer snippet-card-body">
+                                <h4 class="font-semibold text-gray-900 dark:text-white truncate">${snippet.title}</h4>
+                                <p class="mt-1 text-xs text-gray-600 dark:text-gray-400 truncate">${snippet.content}</p>
+                            </div>
+                            <div class="flex items-center space-x-1 flex-shrink-0 ml-4">
+                                <button class="edit-snippet-btn p-1.5 text-gray-400 hover:text-blue-500" title="편집"><i data-feather="edit-2" class="w-4 h-4"></i></button>
+                            </div>
+                        `;
+                    }
+                    card.querySelector('.edit-snippet-btn').addEventListener('click', () => openSnippetModal(snippet));
+                    elements.snippetsView.appendChild(card);
+                });
+            }
+            feather.replace();
+        }
+
+        // Opens the snippet creation/edit modal
+        function openSnippetModal(snippet = null) {
+            elements.snippetForm.reset();
+            elements.snippetModalTitle.textContent = snippet ? '상용구 편집' : '새 상용구 추가';
+            elements.snippetIdInput.value = snippet?.id || '';
+            elements.snippetTitleInput.value = snippet?.title || '';
+            elements.snippetContentInput.value = snippet?.content || '';
+            elements.deleteSnippetBtn.classList.toggle('hidden', !snippet);
+            elements.snippetModal.classList.remove('hidden');
+            feather.replace();
+        }
+
+        // Closes the snippet modal
+        function closeSnippetModal() {
+            elements.snippetModal.classList.add('hidden');
+        }
+
+        // Saves a new snippet or updates an existing one
+        async function saveSnippet(e) {
+            e.preventDefault();
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const id = elements.snippetIdInput.value;
+            const data = {
+                title: elements.snippetTitleInput.value,
+                content: elements.snippetContentInput.value,
+                updatedAt: serverTimestamp()
+            };
+            const path = 'snippets'; // Updated path
+
+            try {
+                if (id) {
+                    await setDoc(doc(db, path, id), data, { merge: true });
+                    showMessageModal('알림', '상용구가 성공적으로 업데이트되었습니다.');
+                } else {
+                    data.owner_uid = user.uid;
+                    data.createdAt = serverTimestamp();
+                    await addDoc(collection(db, path), data);
+                    showMessageModal('알림', '새 상용구가 성공적으로 생성되었습니다.');
+                }
+                closeSnippetModal();
+            } catch (error) {
+                console.error("상용구 저장 오류:", error);
+                showMessageModal('오류', '상용구 저장 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        // Deletes a snippet
+        async function deleteSnippet() {
+            const id = elements.snippetIdInput.value;
+            const user = auth.currentUser;
+            if (!id || !user) return;
+
+            showConfirmationModal('상용구 삭제 확인', `정말로 "${elements.snippetTitleInput.value}" 상용구를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`, async () => {
+                try {
+                    // Verify owner permission before deletion
+                    const snippetDoc = await getDoc(doc(db, 'snippets', id));
+                    if (!snippetDoc.exists() || snippetDoc.data().owner_uid !== user.uid) {
+                        showMessageModal('권한 없음', '이 상용구를 삭제할 권한이 없습니다.');
+                        return;
+                    }
+                    await deleteDoc(doc(db, 'snippets', id)); // Updated path
+                    closeSnippetModal();
+                    showMessageModal('알림', '상용구가 성공적으로 삭제되었습니다.');
+                } catch (error) {
+                    console.error("상용구 삭제 오류:", error);
+                    showMessageModal('오류', '상용구 삭제 중 오류가 발생했습니다: ' + error.message);
+                }
+            });
+        }
+
+
+        // --- Prompt Execution & Composition ---
+
+        // Opens the run modal for a given template
+        function openRunModal(template) {
+            currentTemplate = template;
+            elements.runModalTitle.textContent = template.title;
+            elements.runModalVariables.innerHTML = '';
+            elements.runModalMemo.value = '';
+            document.querySelectorAll('.star-rating input').forEach(r => r.checked = false);
+
+            // Extract variables from the template content
+            const variables = new Set(Array.from(template.content.matchAll(/\{\{([^}]+)\}\}/g), m => m[1].trim()));
+
+            if (variables.size === 0) {
+                elements.runModalVariables.innerHTML = '<p class="text-sm text-gray-500">이 템플릿에는 동적 변수가 없습니다.</p>';
+            } else {
+                variables.forEach(v => {
+                    const inputGroup = document.createElement('div');
+                    inputGroup.innerHTML = `
+                        <label for="var-${v}" class="block text-sm font-medium">${v}</label>
+                        <input type="text" id="var-${v}" data-varname="${v}" 
+                               class="variable-input mt-1 block w-full px-3 py-1.5 text-sm 
+                                     bg-gray-100 dark:bg-gray-800 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500">
+                    `;
+                    elements.runModalVariables.appendChild(inputGroup);
+                });
+            }
+            elements.runModal.classList.remove('hidden');
+            feather.replace();
+        }
+
+        // Closes the run modal
+        function closeRunModal() {
+            elements.runModal.classList.add('hidden');
+        }
+
+        // Recursive function to compile prompt content, handling nested snippets and templates
+        async function getCompiledPrompt(templateContent = currentTemplate.content, compositionStack = new Set(), depth = 0) {
+            const MAX_COMPOSITION_DEPTH = 5; // Prevent infinite recursion for deeply nested compositions
+
+            if (depth > MAX_COMPOSITION_DEPTH) {
+                return "[오류: 최대 컴포지션 깊이 초과. 순환 참조가 있거나 너무 깊게 중첩되어 있습니다.]";
+            }
+
+            let compiledContent = templateContent;
+            const user = auth.currentUser;
+            if (!user) return compiledContent;
+
+            // 1. Replace variables ({{var}})
+            // Note: This needs to be dynamic based on current inputs in run modal
+            // For general compilation, we just leave them as is if not in run modal context,
+            // or assume a replacement strategy. For simplicity here, we assume if called outside run modal,
+            // variables will remain as `{{VAR_NAME}}`
+            if (elements.runModal.classList.contains('hidden') === false) { // Only replace if run modal is open
+                document.querySelectorAll('.variable-input').forEach(input => {
+                    const varName = input.dataset.varname;
+                    const varValue = input.value;
+                    compiledContent = compiledContent.replace(new RegExp(`\\{\\{\\s*${varName}\\s*\\}\\}`, 'g'), varValue);
+                });
+            }
+
+
+            // 2. Replace snippets (:snippet_name)
+            // Changed regex to match : instead of #
+            const snippetMatches = [...compiledContent.matchAll(/:([a-zA-Z0-9가-힣\s_.-]+)/g)];
+            for (const match of snippetMatches) {
+                const snippetTitle = match[1].trim();
+                let snippetContent = snippetCache.get(snippetTitle);
+
+                if (!snippetContent) {
+                    try {
+                        const q = query(collection(db, 'snippets'), where('title', '==', snippetTitle), where('owner_uid', '==', user.uid)); // Ensure only owned snippets are used
+                        const snapshot = await getDocs(q);
+                        if (!snapshot.empty) {
+                            snippetContent = snapshot.docs[0].data().content;
+                            snippetCache.set(snippetTitle, snippetContent); // Cache the snippet
+                        } else {
+                            snippetContent = `[오류: 상용구 "${snippetTitle}"을(를) 찾을 수 없습니다]`;
+                        }
+                    } catch (error) {
+                        console.error("상용구 조회 오류:", error);
+                        snippetContent = `[오류: 상용구 "${snippetTitle}" 조회 중 오류 발생]`;
+                    }
+                }
+                // Changed regex to match : instead of #
+                compiledContent = compiledContent.replace(new RegExp(`:${escapeRegExp(snippetTitle)}`, 'g'), snippetContent);
+            }
+
+            // 3. Replace nested templates (@template_name)
+            const templateMatches = [...compiledContent.matchAll(/@([a-zA-Z0-9가-힣\s_.-]+)/g)];
+            for (const match of templateMatches) {
+                const nestedTemplateTitle = match[1].trim();
+                let nestedTemplateContent = templateCache.get(nestedTemplateTitle);
+
+                if (!nestedTemplateContent) {
+                    try {
+                        // Check for circular reference before fetching
+                        if (compositionStack.has(nestedTemplateTitle)) {
+                            throw new Error(`순환 참조 감지: ${nestedTemplateTitle}`);
+                        }
+                        compositionStack.add(nestedTemplateTitle); // Add to stack
+
+                        // Query for templates the user has read access to
+                        const q = query(collection(db, 'templates'), 
+                                        where('title', '==', nestedTemplateTitle),
+                                        where(`permissions.${user.uid}`, 'in', ['owner', 'editor', 'viewer']));
+                        const snapshot = await getDocs(q);
+                        if (!snapshot.empty) {
+                            const nestedTemplateData = snapshot.docs[0].data();
+                            nestedTemplateContent = await getCompiledPrompt(nestedTemplateData.content, compositionStack, depth + 1); // Recursive call
+                            templateCache.set(nestedTemplateTitle, nestedTemplateContent); // Cache compiled content
+                        } else {
+                            nestedTemplateContent = `[오류: 템플릿 "${nestedTemplateTitle}"을(를) 찾을 수 없습니다]`;
+                        }
+                        compositionStack.delete(nestedTemplateTitle); // Remove from stack after processing
+                    } catch (error) {
+                        console.error("템플릿 컴포지션 오류:", error);
+                        if (error.message.includes("순환 참조")) {
+                            nestedTemplateContent = `[오류: 템플릿 "${nestedTemplateTitle}"에서 순환 참조가 감지되었습니다]`;
+                        } else {
+                            nestedTemplateContent = `[오류: 템플릿 "${nestedTemplateTitle}" 로드 중 오류 발생]`;
+                        }
+                    }
+                }
+                compiledContent = compiledContent.replace(new RegExp(`@${escapeRegExp(nestedTemplateTitle)}`, 'g'), nestedTemplateContent);
+            }
+
+            return compiledContent;
+        }
+
+        // Helper function to escape special characters for RegExp
+        function escapeRegExp(string) {
+            return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $& means the matched substring
+        }
+
+        // Handles input for snippet composition (live search)
+        function handleSnippetCompositionInput(event) {
+            const textarea = event.target;
+            const cursorPosition = textarea.selectionStart;
+            const textBeforeCursor = textarea.value.substring(0, cursorPosition);
+            const match = textBeforeCursor.match(/:([a-zA-Z0-9가-힣\s_.-]*)$/); // Match colon followed by optional characters
+
+            if (match) {
+                snippetSearchQuery = match[1].toLowerCase();
+                const filtered = allSnippets.filter(snippet => 
+                    snippet.title.toLowerCase().includes(snippetSearchQuery)
+                );
+                snippetSearchResults = filtered.slice(0, 10); // Limit results
+                selectedSnippetIndex = -1; // Reset selection
+                showSnippetContextMenu(textarea, match.index, snippetSearchResults);
+            } else {
+                hideSnippetContextMenu();
+            }
+        }
+
+        // Handles keydown for snippet composition (navigation and selection)
+        function handleSnippetCompositionKeydown(event) {
+            if (elements.snippetContextMenu.classList.contains('hidden')) return;
+
+            const items = elements.snippetContextMenu.children;
+            if (items.length === 0) return;
+
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                selectedSnippetIndex = (selectedSnippetIndex + 1) % items.length;
+                updateSnippetContextMenuSelection();
+            } else if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                selectedSnippetIndex = (selectedSnippetIndex - 1 + items.length) % items.length;
+                updateSnippetContextMenuSelection();
+            } else if (event.key === 'Enter') {
+                event.preventDefault();
+                if (selectedSnippetIndex !== -1) {
+                    insertSelectedSnippet();
+                }
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                hideSnippetContextMenu();
+            }
+        }
+
+        // Displays the snippet context menu
+        function showSnippetContextMenu(textarea, matchStartIndex, results) {
+            elements.snippetContextMenu.innerHTML = '';
+            if (results.length === 0) {
+                elements.snippetContextMenu.classList.add('hidden');
+                return;
+            }
+
+            results.forEach((snippet, index) => {
+                const itemDiv = document.createElement('div');
+                itemDiv.textContent = snippet.title;
+                itemDiv.dataset.snippetContent = snippet.content;
+                itemDiv.dataset.snippetTitle = snippet.title; // Store title to replace the query part
+                itemDiv.addEventListener('click', () => {
+                    selectedSnippetIndex = index;
+                    insertSelectedSnippet();
+                });
+                elements.snippetContextMenu.appendChild(itemDiv);
+            });
+
+            // Position the context menu
+            const rect = textarea.getBoundingClientRect();
+            // Calculate cursor's approximate position relative to the textarea
+            // This is a rough estimation and may not be perfectly accurate for all fonts/zoom levels
+            // A more precise method would involve a hidden mirror div to measure text dimensions.
+            
+            const lineHeight = parseFloat(getComputedStyle(textarea).lineHeight) || 20; // Default to 20px
+            const fontSize = parseFloat(getComputedStyle(textarea).fontSize) || 14; // Default to 14px
+            const paddingLeft = parseFloat(getComputedStyle(textarea).paddingLeft) || 12;
+            const paddingTop = parseFloat(getComputedStyle(textarea).paddingTop) || 8;
+
+
+            // Get the text up to the cursor position
+            const textUntilCursor = textarea.selectionStart > 0 ? textarea.value.substring(0, textarea.selectionStart) : '';
+            const lines = textUntilCursor.split('\n');
+            const currentLineNumber = lines.length - 1;
+            const currentLineTextBeforeCursor = lines[lines.length - 1];
+
+            // Create a temporary span to measure the width of the text before the cursor on the current line
+            const tempSpan = document.createElement('span');
+            tempSpan.style.visibility = 'hidden';
+            tempSpan.style.position = 'absolute'; // Don't affect layout
+            tempSpan.style.whiteSpace = 'pre';
+            tempSpan.style.fontFamily = getComputedStyle(textarea).fontFamily;
+            tempSpan.style.fontSize = getComputedStyle(textarea).fontSize;
+            tempSpan.textContent = currentLineTextBeforeCursor;
+            document.body.appendChild(tempSpan);
+            const textWidth = tempSpan.offsetWidth;
+            document.body.removeChild(tempSpan);
+
+            // Calculate x and y position relative to the document
+            const x = rect.left + paddingLeft + textWidth;
+            const y = rect.top + paddingTop + (currentLineNumber * lineHeight) + fontSize;
+
+
+            elements.snippetContextMenu.style.left = `${x}px`;
+            elements.snippetContextMenu.style.top = `${y}px`;
+            
+            elements.snippetContextMenu.classList.remove('hidden');
+            updateSnippetContextMenuSelection();
+        }
+
+        // Updates selected item in snippet context menu
+        function updateSnippetContextMenuSelection() {
+            Array.from(elements.snippetContextMenu.children).forEach((item, index) => {
+                if (index === selectedSnippetIndex) {
+                    item.classList.add('selected');
+                    item.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+                } else {
+                    item.classList.remove('selected');
+                }
+            });
+        }
+
+        // Inserts the selected snippet into the textarea
+        function insertSelectedSnippet() {
+            if (selectedSnippetIndex === -1) return;
+
+            const textarea = elements.templateContentInput;
+            const snippetContent = snippetSearchResults[selectedSnippetIndex].content;
+            
+            const cursorPosition = textarea.selectionStart;
+            const textBeforeCursor = textarea.value.substring(0, cursorPosition);
+            
+            // Find the start of the current :query to replace it
+            // Adjust regex to match the snippet search trigger (colon)
+            const regex = new RegExp(`:(${escapeRegExp(snippetSearchQuery)})$`);
+            const match = textBeforeCursor.match(regex);
+
+            if (match && match.index !== undefined) {
+                const startReplaceIndex = match.index;
+                const endReplaceIndex = cursorPosition;
+
+                const newText = textarea.value.substring(0, startReplaceIndex) + 
+                                snippetContent + 
+                                textarea.value.substring(endReplaceIndex);
+                
+                textarea.value = newText;
+                // Position cursor after the inserted snippet
+                textarea.selectionStart = startReplaceIndex + snippetContent.length;
+                textarea.selectionEnd = startReplaceIndex + snippetContent.length;
+                textarea.focus(); // Re-focus textarea
+            }
+            hideSnippetContextMenu();
+        }
+
+        // Hides the snippet context menu
+        function hideSnippetContextMenu(event) {
+            // Prevent hiding if the click was inside the context menu itself
+            if (event && elements.snippetContextMenu.contains(event.target)) {
+                return;
+            }
+            elements.snippetContextMenu.classList.add('hidden');
+            elements.snippetContextMenu.innerHTML = '';
+            selectedSnippetIndex = -1;
+            snippetSearchQuery = '';
+            snippetSearchResults = [];
+        }
+
+
+        // --- Gemini API Integrations ---
+
+        async function callGeminiAPI(prompt, responseSchema = null) {
+            showLoadingOverlay();
+            let chatHistory = [];
+            chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+            const payload = { contents: chatHistory };
+
+            if (responseSchema) {
+                payload.generationConfig = {
+                    responseMimeType: "application/json",
+                    responseSchema: responseSchema
+                };
+            }
+
+            const apiKey = ""; // Canvas will automatically provide this
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await response.json();
+                
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    if (responseSchema) {
+                        return JSON.parse(result.candidates[0].content.parts[0].text);
+                    } else {
+                        return result.candidates[0].content.parts[0].text;
+                    }
+                } else {
+                    console.error("Gemini API 응답 구조가 예상과 다릅니다.", result);
+                    throw new Error("Gemini API 응답 오류");
+                }
+            } catch (error) {
+                console.error("Gemini API 호출 중 오류 발생:", error);
+                showMessageModal('API 오류', 'Gemini API 호출 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
+                return null;
+            } finally {
+                hideLoadingOverlay();
+            }
+        }
+
+
+        // Handle Prompt Enhancement
+        async function handlePromptEnhancement() {
+            const currentPromptContent = elements.templateContentInput.value.trim();
+            if (!currentPromptContent) {
+                showMessageModal('안내', '개선할 프롬프트 내용을 입력해주세요.');
+                return;
+            }
+
+            const prompt = `다음 프롬프트 내용을 개선하여 더 명확하고, 구체적이며, LLM이 의도를 잘 파악할 수 있도록 수정해주세요. 가독성과 효율성을 높여주세요. 개선된 프롬프트 내용만 제공하세요.
+            ---
+            ${currentPromptContent}
+            ---`;
+
+            const enhancedPrompt = await callGeminiAPI(prompt);
+
+            if (enhancedPrompt) {
+                showConfirmationModal(
+                    '프롬프트 개선 제안', 
+                    'Gemini가 프롬프트를 개선했습니다. 현재 내용을 다음으로 교체하시겠습니까?',
+                    () => {
+                        elements.templateContentInput.value = enhancedPrompt;
+                        showMessageModal('성공', '프롬프트 내용이 업데이트되었습니다.');
+                    },
+                    () => {
+                        showMessageModal('취소', '프롬프트 내용 변경이 취소되었습니다.', enhancedPrompt);
+                    }
+                );
+            }
+        }
+
+        // Handle Tag Suggestion
+        async function handleTagSuggestion() {
+            const currentPromptTitle = elements.templateTitleInput.value.trim();
+            const currentPromptContent = elements.templateContentInput.value.trim();
+
+            if (!currentPromptTitle && !currentPromptContent) {
+                showMessageModal('안내', '태그를 추천받으려면 템플릿 제목 또는 내용을 입력해주세요.');
+                return;
+            }
+
+            const prompt = `다음 템플릿의 제목과 내용을 기반으로, 템플릿을 분류하는 데 유용한 5개 이하의 핵심 태그(키워드)를 추천해주세요. 각 태그는 2단어 이내로 간결하게 작성해주세요. 응답은 JSON 배열 형식으로만 제공하세요. 예를 들어, ["태그1", "태그2", "태그3"] 형식이어야 합니다.
+            제목: ${currentPromptTitle}
+            내용: ${currentPromptContent}`;
+
+            const responseSchema = {
+                type: "ARRAY",
+                items: { type: "STRING" }
+            };
+
+            const suggestedTagsArray = await callGeminiAPI(prompt, responseSchema);
+
+            if (suggestedTagsArray && Array.isArray(suggestedTagsArray)) {
+                const currentTags = elements.templateTagsInput.value.split(',').map(t => t.trim()).filter(Boolean);
+                const newTags = [...new Set([...currentTags, ...suggestedTagsArray])]; // Merge and remove duplicates
+
+                showConfirmationModal(
+                    '태그 추천 제안',
+                    `Gemini가 다음 태그를 추천했습니다: ${suggestedTagsArray.join(', ')}. 현재 태그에 추가하시겠습니까? (중복 제거)`,
+                    () => {
+                        elements.templateTagsInput.value = newTags.join(', ');
+                        showMessageModal('성공', '태그가 업데이트되었습니다.');
+                    },
+                    () => {
+                        showMessageModal('취소', '태그 추가가 취소되었습니다.');
+                    }
+                );
+            } else {
+                showMessageModal('오류', '태그 추천에 실패했습니다. 유효한 태그 형식을 받지 못했습니다.');
+            }
+        }
+
+
+        // Saves usage history and copies the compiled prompt to clipboard
+        async function saveUsageAndCopy() {
+            const user = auth.currentUser;
+            if (!user || !currentTemplate) return;
+
+            const textToCopy = await getCompiledPrompt(); // Use the async version
+            const ratingInput = document.querySelector('.star-rating input:checked');
+            const historyData = {
+                userId: user.uid,
+                usedAt: serverTimestamp(),
+                compiledPrompt: textToCopy,
+                rating: ratingInput ? parseInt(ratingInput.value) : null,
+                memo: elements.runModalMemo.value
+            };
+
+            try {
+                await addDoc(collection(db, `templates/${currentTemplate.id}/history`), historyData); // Updated path
+                const btnSpan = elements.copyAndSaveBtn.querySelector('span');
+                btnSpan.textContent = '완료!';
+                setTimeout(() => {
+                    btnSpan.textContent = '복사 및 기록';
+                }, 2000);
+
+                // Use document.execCommand('copy') for broader compatibility in iframes
+                const textArea = document.createElement('textarea');
+                textArea.value = textToCopy;
+                textArea.style.position = 'fixed'; // Avoid scrolling to bottom
+                textArea.style.left = '-9999px'; // Hide from view
+                document.body.appendChild(textArea);
+                textArea.focus();
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    showMessageModal('알림', '프롬프트가 클립보드에 복사되고 사용 기록이 저장되었습니다.');
+                } catch (err) {
+                    console.error('클립보드 복사 실패 (execCommand):', err);
+                    showMessageModal('오류', '클립보드 복사 실패! 텍스트를 수동으로 복사해주세요.', textToCopy);
+                }
+                document.body.removeChild(textArea);
+
+            } catch (error) {
+                console.error("Error saving history or copying:", error);
+                showMessageModal('오류', '기록 저장 또는 클립보드 복사 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        // Opens the preview modal with the compiled prompt
+        async function openPreviewModal() {
+            elements.previewModalContent.textContent = await getCompiledPrompt();
+            elements.previewModal.classList.remove('hidden');
+        }
+
+        // Closes the preview modal
+        function closePreviewModal() {
+            elements.previewModal.classList.add('hidden');
+        }
+
+        // --- Analytics & Version Management ---
+
+        // Opens the analytics modal for a given template
+        async function openAnalyticsModal(template) {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            currentTemplate = template;
+            elements.analyticsModalTitle.textContent = `"${template.title}" 분석`;
+            elements.analyticsReactRoot.innerHTML = '<p class="text-center text-gray-500">데이터 로딩 중...</p>';
+            elements.analyticsModal.classList.remove('hidden');
+
+            // Reset tab selection to summary
+            elements.analyticsTabSummary.classList.add('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+            elements.analyticsTabSummary.classList.remove('border-transparent', 'text-gray-600', 'dark:text-gray-400', 'hover:border-gray-300', 'dark:hover:border-gray-600');
+            elements.analyticsTabHistory.classList.remove('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+            elements.analyticsTabHistory.classList.add('border-transparent', 'text-gray-600', 'dark:text-gray-400', 'hover:border-gray-300', 'dark:hover:border-gray-600');
+            elements.analyticsTabVersions.classList.remove('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+            elements.analyticsTabVersions.classList.add('border-transparent', 'text-gray-600', 'dark:text-gray-400', 'hover:border-gray-300', 'dark:hover:border-gray-600');
+
+
+            try {
+                // The React component will now handle its own data fetching based on currentTemplate
+                if (!analyticsReactRoot) analyticsReactRoot = ReactDOM.createRoot(elements.analyticsReactRoot);
+                analyticsReactRoot.render(React.createElement(window.AnalyticsComponent, { 
+                    currentTemplate: currentTemplate, 
+                    restoreTemplateVersion: restoreTemplateVersion,
+                    activeTab: 'summary' // Default tab to show
+                }));
+
+            } catch (error) {
+                console.error("Error rendering analytics component:", error);
+                elements.analyticsReactRoot.innerHTML = '<p class="text-center text-red-500">데이터 로딩 실패. 콘솔을 확인하세요.</p>';
+            }
+        }
+
+        // Renders content for the selected analytics tab
+        function renderAnalyticsTab(tabName) {
+            document.querySelectorAll('#analytics-modal .border-b-2').forEach(btn => {
+                btn.classList.remove('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+                btn.classList.add('border-transparent', 'text-gray-600', 'dark:text-gray-400', 'hover:border-gray-300', 'dark:hover:border-gray-600');
+            });
+            
+            const selectedTabButton = elements[`analyticsTab${tabName.charAt(0).toUpperCase() + tabName.slice(1)}`];
+            if (selectedTabButton) {
+                selectedTabButton.classList.add('border-blue-500', 'text-blue-600', 'dark:text-blue-400');
+                selectedTabButton.classList.remove('border-transparent', 'text-gray-600', 'dark:text-gray-400', 'hover:border-gray-300', 'dark:hover:border-gray-600');
+            }
+
+            // The AnalyticsComponent handles rendering based on internal state
+            // Re-render it with the activeTab prop to tell it which tab to show
+            if (analyticsReactRoot && currentTemplate) {
+                 analyticsReactRoot.render(React.createElement(window.AnalyticsComponent, { 
+                    currentTemplate: currentTemplate,
+                    restoreTemplateVersion: restoreTemplateVersion,
+                    activeTab: tabName // Pass the active tab to the React component
+                }));
+            }
+        }
+
+        // Restores a template to a previous version
+        async function restoreTemplateVersion(versionId) {
+            const user = auth.currentUser;
+            if (!user || !currentTemplate) return;
+
+            showConfirmationModal('버전 복원 확인', '선택한 버전으로 템플릿을 복원하시겠습니까? 현재 내용은 이 버전으로 덮어쓰여집니다.', async () => {
+                try {
+                    // Check user's permission to restore
+                    const templateDoc = await getDoc(doc(db, 'templates', currentTemplate.id));
+                    if (!templateDoc.exists()) {
+                        showMessageModal('오류', '템플릿을 찾을 수 없습니다.');
+                        return;
+                    }
+                    const userPermission = templateDoc.data().permissions[user.uid];
+                    if (!(userPermission === 'owner' || userPermission === 'editor')) {
+                        showMessageModal('권한 없음', '이 템플릿의 버전을 복원할 권한이 없습니다.');
+                        return;
+                    }
+
+                    const versionDocRef = doc(db, `templates/${currentTemplate.id}/versions`, versionId); // Updated path
+                    const versionDoc = await getDoc(versionDocRef);
+
+                    if (versionDoc.exists()) {
+                        const versionData = versionDoc.data();
+                        await updateDoc(doc(db, 'templates', currentTemplate.id), { // Updated path
+                            title: versionData.title,
+                            content: versionData.content,
+                            tags: versionData.tags,
+                            updatedAt: serverTimestamp()
+                        });
+                        showMessageModal('알림', '템플릿이 성공적으로 복원되었습니다.');
+                        closeAnalyticsModal(); // Close analytics modal after restoration
+                    } else {
+                        showMessageModal('오류', '선택한 버전을 찾을 수 없습니다.');
+                    }
+                } catch (error) {
+                    console.error("템플릿 복원 오류:", error);
+                    showMessageModal('오류', '템플릿 복원 중 오류가 발생했습니다: ' + error.message);
+                }
+            });
+        }
+
+
+        // Closes the analytics modal and unmounts React component
+        function closeAnalyticsModal() {
+            elements.analyticsModal.classList.add('hidden');
+            if(analyticsReactRoot) {
+                analyticsReactRoot.unmount();
+                analyticsReactRoot = null;
+            }
+        }
+
+        // --- User Account & Auth Modals ---
+
+        // Opens the signup modal
+        function openSignupModal() {
+            elements.signupForm.reset();
+            elements.signupError.textContent = '';
+            elements.signupModal.classList.remove('hidden');
+            feather.replace();
+        }
+
+        // Closes the signup modal
+        function closeSignupModal() {
+            elements.signupModal.classList.add('hidden');
+        }
+
+        // --- Sharing & Collaboration ---
+
+        // Opens the share modal for a template
+        async function openShareModal(template) {
+            currentTemplate = template;
+            elements.shareTemplateName.textContent = template.title;
+            elements.shareEmailInput.value = ''; // Clear email input
+            elements.shareRoleSelect.value = 'viewer'; // Default role
+
+            // Check if current user is owner before opening share modal
+            const user = auth.currentUser;
+            if (!user || template.permissions[user.uid] !== 'owner') {
+                showMessageModal('권한 없음', '이 템플릿을 공유할 권한이 없습니다. 템플릿 소유자만 공유할 수 있습니다.');
+                return;
+            }
+
+            // Fetch and display current collaborators
+            await renderCollaboratorsList(template);
+
+            elements.shareModal.classList.remove('hidden');
+            feather.replace();
+        }
+
+        // Renders the list of collaborators in the share modal
+        async function renderCollaboratorsList(template) {
+            elements.collaboratorsList.innerHTML = ''; // Clear existing list
+            const collaborators = Object.entries(template.permissions || {}) // Iterate over permissions map
+                                    .filter(([uid, role]) => uid !== template.owner_uid) // Exclude owner from list
+                                    .map(([uid, role]) => ({ userId: uid, role: role }));
+            
+            if (collaborators.length === 0) {
+                elements.noCollaboratorsText.classList.remove('hidden');
+            } else {
+                elements.noCollaboratorsText.classList.add('hidden');
+                for (const collab of collaborators) {
+                    // Fetch user profile to get email/displayName
+                    const userDocRef = doc(db, 'users', collab.userId); // Updated path
+                    const userDoc = await getDoc(userDocRef);
+                    const userName = userDoc.exists() ? (userDoc.data().displayName || userDoc.data().email || collab.userId) : collab.userId; // Fallback to UID if profile not found
+                    
+                    const collabItem = document.createElement('div');
+                    collabItem.className = 'flex justify-between items-center bg-gray-100 dark:bg-gray-700 p-2 rounded-md';
+                    collabItem.innerHTML = `
+                        <span class="text-sm">${userName} (${collab.role === 'viewer' ? '뷰어' : '에디터'})</span>
+                        <div class="flex space-x-1">
+                            <button data-userid="${collab.userId}" data-role="${collab.role}" class="change-role-btn p-1 text-gray-400 hover:text-blue-500" title="권한 변경"><i data-feather="repeat" class="w-4 h-4"></i></button>
+                            <button data-userid="${collab.userId}" class="remove-collaborator-btn p-1 text-gray-400 hover:text-red-500" title="삭제"><i data-feather="user-x" class="w-4 h-4"></i></button>
+                        </div>
+                    `;
+                    // Only owner can change/remove roles (already checked in openShareModal, but good for buttons too)
+                    collabItem.querySelector('.change-role-btn').addEventListener('click', (e) => changeCollaboratorRole(e.currentTarget.dataset.userid, e.currentTarget.dataset.role));
+                    collabItem.querySelector('.remove-collaborator-btn').addEventListener('click', (e) => removeCollaborator(e.currentTarget.dataset.userid));
+                    elements.collaboratorsList.appendChild(collabItem);
+                }
+            }
+            feather.replace();
+        }
+
+        // Adds a collaborator to the current template
+        async function addCollaborator() {
+            const user = auth.currentUser;
+            if (!user || !currentTemplate || currentTemplate.permissions[user.uid] !== 'owner') {
+                showMessageModal('오류', '템플릿 소유자만 공유할 수 있습니다.');
+                return;
+            }
+
+            const email = elements.shareEmailInput.value.trim();
+            const role = elements.shareRoleSelect.value;
+
+            if (!email) {
+                showMessageModal('오류', '이메일 주소를 입력해주세요.');
+                return;
+            }
+
+            let targetUid = null;
+            try {
+                // Query the 'users' collection to find UID by email
+                const usersRef = collection(db, 'users'); 
+                const q = query(usersRef, where('email', '==', email)); 
+                const querySnapshot = await getDocs(q);
+                if (!querySnapshot.empty) {
+                    targetUid = querySnapshot.docs[0].id; // The document ID is the UID
+                }
+            } catch (error) {
+                console.error("사용자 UID 조회 오류:", error);
+            }
+
+            if (!targetUid) {
+                showMessageModal('오류', '해당 이메일로 등록된 사용자를 찾을 수 없습니다.');
+                return;
+            }
+
+            // Check if user is trying to share with themselves or an already shared user
+            if (targetUid === user.uid) {
+                showMessageModal('경고', '자신에게 템플릿을 공유할 수 없습니다.');
+                return;
+            }
+            if ((currentTemplate.permissions || {})[targetUid]) { // Check if user already has a permission entry
+                showMessageModal('경고', '이미 공유된 사용자입니다.');
+                return;
+            }
+
+            try {
+                const updatedPermissions = { ...currentTemplate.permissions, [targetUid]: role };
+
+                await updateDoc(doc(db, 'templates', currentTemplate.id), { // Updated path
+                    permissions: updatedPermissions
+                });
+
+                showMessageModal('알림', `"${email}" 사용자가 ${role === 'viewer' ? '뷰어' : '에디터'} 권한으로 초대되었습니다.`);
+                elements.shareEmailInput.value = ''; // Clear input
+                // Re-fetch currentTemplate to update local state and then re-render collaborators
+                const updatedTemplateDoc = await getDoc(doc(db, 'templates', currentTemplate.id)); // Updated path
+                if (updatedTemplateDoc.exists()) {
+                    currentTemplate = { id: updatedTemplateDoc.id, ...updatedTemplateDoc.data() };
+                    await renderCollaboratorsList(currentTemplate);
+                }
+            } catch (error) {
+                console.error("협업자 추가 오류:", error);
+                showMessageModal('오류', '협업자 추가 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        // Changes the role of an existing collaborator
+        async function changeCollaboratorRole(targetUid, currentRole) {
+            const user = auth.currentUser;
+            if (!user || !currentTemplate || currentTemplate.permissions[user.uid] !== 'owner') {
+                showMessageModal('오류', '템플릿 소유자만 권한을 변경할 수 있습니다.');
+                return;
+            }
+
+            const newRole = currentRole === 'viewer' ? 'editor' : 'viewer';
+
+            showConfirmationModal('권한 변경 확인', `"${targetUid.substring(0, 8)}..." 사용자의 권한을 "${newRole === 'viewer' ? '뷰어' : '에디터'}"로 변경하시겠습니까?`, async () => {
+                try {
+                    const updatedPermissions = { ...currentTemplate.permissions, [targetUid]: newRole };
+
+                    await updateDoc(doc(db, 'templates', currentTemplate.id), { // Updated path
+                        permissions: updatedPermissions
+                    });
+
+                    showMessageModal('알림', '권한이 성공적으로 변경되었습니다.');
+                    // Re-fetch currentTemplate to update local state and then re-render collaborators
+                    const updatedTemplateDoc = await getDoc(doc(db, 'templates', currentTemplate.id)); // Updated path
+                    if (updatedTemplateDoc.exists()) {
+                        currentTemplate = { id: updatedTemplateDoc.id, ...updatedTemplateDoc.data() };
+                        await renderCollaboratorsList(currentTemplate);
+                    }
+                } catch (error) {
+                    console.error("권한 변경 오류:", error);
+                    showMessageModal('오류', '권한 변경 중 오류가 발생했습니다: ' + error.message);
+                }
+            });
+        }
+
+        // Removes a collaborator from the current template
+        async function removeCollaborator(targetUid) {
+            const user = auth.currentUser;
+            if (!user || !currentTemplate || currentTemplate.permissions[user.uid] !== 'owner') {
+                showMessageModal('오류', '템플릿 소유자만 협업자를 삭제할 수 있습니다.');
+                return;
+            }
+
+            showConfirmationModal('협업자 삭제 확인', `정말로 "${targetUid.substring(0, 8)}..." 협업자를 삭제하시겠습니까?`, async () => {
+                try {
+                    const updatedPermissions = { ...currentTemplate.permissions };
+                    delete updatedPermissions[targetUid]; // Remove the collaborator from the map
+
+                    await updateDoc(doc(db, 'templates', currentTemplate.id), { // Updated path
+                        permissions: updatedPermissions
+                    });
+
+                    showMessageModal('알림', '협업자가 성공적으로 삭제되었습니다.');
+                    // Re-fetch currentTemplate to update local state and then re-render collaborators
+                    const updatedTemplateDoc = await getDoc(doc(db, 'templates', currentTemplate.id)); // Updated path
+                    if (updatedTemplateDoc.exists()) {
+                        currentTemplate = { id: updatedTemplateDoc.id, ...updatedTemplateDoc.data() };
+                        await renderCollaboratorsList(currentTemplate);
+                    }
+                } catch (error) {
+                    console.error("협업자 삭제 오류:", error);
+                    showMessageModal('오류', '협업자 삭제 중 오류가 발생했습니다: ' + error.message);
+                }
+            });
+        }
+
+        // Closes the share modal
+        function closeShareModal() {
+            elements.shareModal.classList.add('hidden');
+        }
+
+        // --- Data Export ---
+
+        // Exports all user data (owned templates and snippets) as a JSON file
+        async function exportUserData() {
+            const user = auth.currentUser;
+            if (!user) {
+                showMessageModal('오류', '로그인한 사용자만 데이터를 내보낼 수 있습니다.');
+                return;
+            }
+
+            showMessageModal('알림', '데이터 내보내기 중입니다. 잠시 기다려주세요...');
+
+            try {
+                // Fetch all owned templates
+                const templatesSnapshot = await getDocs(query(collection(db, 'templates'), where('owner_uid', '==', user.uid))); // Updated path
+                const ownedTemplates = templatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                // Fetch all owned snippets
+                const snippetsSnapshot = await getDocs(query(collection(db, 'snippets'), where('owner_uid', '==', user.uid))); // Updated path
+                const ownedSnippets = snippetsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                const exportData = {
+                    user_id: user.uid,
+                    export_date: new Date().toISOString(),
+                    templates: ownedTemplates,
+                    snippets: ownedSnippets
+                };
+
+                const filename = `prime_data_export_${user.uid.substring(0, 8)}_${new Date().toISOString().split('T')[0]}.json`;
+                const jsonStr = JSON.stringify(exportData, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url); // Clean up the URL object
+
+                showMessageModal('알림', '데이터가 성공적으로 내보내졌습니다.');
+            } catch (error) {
+                console.error("데이터 내보내기 오류:", error);
+                showMessageModal('오류', '데이터 내보내기 중 오류가 발생했습니다: ' + error.message);
+            }
+        }
+
+        // --- Custom Modals (replacing alert/confirm) ---
+
+        /**
+         * Displays a custom message modal.
+         * @param {string} title The title of the message.
+         * @param {string} message The content message.
+         * @param {string} [extraContent=''] Optional extra content to display, e.g., for copy-paste.
+         * @param {string} [actionButtonText=null] Optional text for an action button (e.g., '적용하기').
+         * @param {Function} [actionButtonCallback=null] Callback for the action button.
+         */
+        function showMessageModal(title, message, extraContent = '', actionButtonText = null, actionButtonCallback = null) {
+            elements.messageModalTitle.textContent = title;
+            elements.messageModalContent.innerHTML = `<p>${message}</p>`;
+            if (extraContent) {
+                elements.messageModalContent.innerHTML += `<pre class="mt-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-md text-xs whitespace-pre-wrap">${extraContent}</pre>`;
+            }
+            elements.messageModalButtons.innerHTML = ''; // Clear previous buttons
+
+            const okBtn = document.createElement('button');
+            okBtn.className = "bg-blue-600 hover:bg-blue-700 text-white font-bold py-1.5 px-3 rounded-md text-sm";
+            okBtn.textContent = "확인";
+            elements.messageModalButtons.appendChild(okBtn);
+
+            if (actionButtonText && actionButtonCallback) {
+                const actionBtn = document.createElement('button');
+                actionBtn.className = "ml-2 bg-green-600 hover:bg-green-700 text-white font-bold py-1.5 px-3 rounded-md text-sm";
+                actionBtn.textContent = actionButtonText;
+                actionBtn.addEventListener('click', () => {
+                    actionButtonCallback();
+                    // Do NOT close here if callback handles closing, or if it expects to be shown.
+                    // If callback handles closing, it should call closeMessageModal() itself.
+                });
+                elements.messageModalButtons.prepend(actionBtn); // Add before OK button
+            }
+
+            elements.messageModal.classList.remove('hidden');
+
+            const closeBtn = elements.closeMessageModalBtn;
+
+            const closeHandler = () => {
+                elements.messageModal.classList.add('hidden');
+                okBtn.removeEventListener('click', closeHandler);
+                closeBtn.removeEventListener('click', closeHandler);
+                elements.messageModal.removeEventListener('click', backdropCloseHandler);
+            };
+
+            const backdropCloseHandler = (e) => {
+                if (e.target === elements.messageModal) {
+                    closeHandler();
+                }
+            };
+            
+            okBtn.addEventListener('click', closeHandler);
+            closeBtn.addEventListener('click', closeHandler);
+            elements.messageModal.addEventListener('click', backdropCloseHandler);
+            feather.replace();
+        }
+
+        /**
+         * Displays a custom confirmation modal.
+         * @param {string} title The title of the confirmation.
+         * @param {string} message The confirmation message.
+         * @param {Function} onConfirm Callback function to execute if confirmed.
+         * @param {Function} [onCancel=() => {}] Callback function to execute if cancelled.
+         */
+        function showConfirmationModal(title, message, onConfirm, onCancel = () => {}) {
+            elements.messageModalTitle.textContent = title;
+            elements.messageModalContent.innerHTML = `<p>${message}</p>`;
+            elements.messageModalButtons.innerHTML = `
+                <button class="bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-800 dark:text-gray-200 font-bold py-1.5 px-3 rounded-md text-sm" id="message-modal-cancel-btn">취소</button>
+                <button class="bg-red-600 hover:bg-red-700 text-white font-bold py-1.5 px-3 rounded-md text-sm" id="message-modal-confirm-btn">확인</button>
+            `;
+            elements.messageModal.classList.remove('hidden');
+
+            const confirmBtn = $('message-modal-confirm-btn');
+            const cancelBtn = $('message-modal-cancel-btn');
+            const closeBtn = elements.closeMessageModalBtn;
+
+            const cleanup = () => {
+                elements.messageModal.classList.add('hidden');
+                confirmBtn.removeEventListener('click', confirmHandler);
+                cancelBtn.removeEventListener('click', cancelHandler);
+                closeBtn.removeEventListener('click', cancelHandler);
+                elements.messageModal.removeEventListener('click', backdropCloseHandler);
+            };
+
+            const confirmHandler = () => {
+                cleanup();
+                onConfirm();
+            };
+
+            const cancelHandler = () => {
+                cleanup();
+                onCancel();
+            };
+
+            const backdropCloseHandler = (e) => {
+                if (e.target === elements.messageModal) {
+                    cancelHandler();
+                }
+            };
+
+            confirmBtn.addEventListener('click', confirmHandler);
+            cancelBtn.addEventListener('click', cancelHandler);
+            closeBtn.addEventListener('click', cancelHandler);
+            elements.messageModal.addEventListener('click', backdropCloseHandler);
+            feather.replace();
+        }
+
+        // Helper to close message modal directly (used by callbacks)
+        function closeMessageModal() {
+            elements.messageModal.classList.add('hidden');
+        }
+
+
+        // Initialize the app when DOM is ready
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+
+    <!-- React Component Script -->
+    <script type="text/babel">
+        // Access Firebase functions from the global window object
+        const db = window.firebaseDb; 
+        const auth = window.firebaseAuth; 
+
+        function AnalyticsComponent({ currentTemplate, restoreTemplateVersion, activeTab = 'summary' }) {
+            const [localHistory, setLocalHistory] = React.useState([]);
+            const [localVersions, setLocalVersions] = React.useState([]);
+            const [currentActiveTab, setCurrentActiveTab] = React.useState(activeTab);
+            const [loading, setLoading] = React.useState(false);
+
+            // Fetch data whenever currentTemplate or activeTab changes
+            React.useEffect(() => {
+                const fetchData = async () => {
+                    setLoading(true);
+                    const user = auth.currentUser;
+                    if (!user || !currentTemplate) {
+                        setLoading(false);
+                        return;
+                    }
+
+                    try {
+                        // Fetch history data
+                        const historyQuery = firebase.firestore.query(firebase.firestore.collection(db, `templates/${currentTemplate.id}/history`)); // Updated path
+                        const historySnapshot = await firebase.firestore.getDocs(historyQuery);
+                        const fetchedHistory = historySnapshot.docs.map(d => ({ id: d.id, ...d.data(), usedAt: d.data().usedAt.toDate() }));
+                        setLocalHistory(fetchedHistory.sort((a, b) => b.usedAt - a.usedAt)); // Sort history by latest first
+
+                        // Fetch version data
+                        const versionsQuery = firebase.firestore.query(firebase.firestore.collection(db, `templates/${currentTemplate.id}/versions`)); // Updated path
+                        const versionsSnapshot = await firebase.firestore.getDocs(versionsQuery);
+                        const fetchedVersions = versionsSnapshot.docs.map(d => ({ id: d.id, ...d.data(), updatedAt: d.data().updatedAt.toDate() }));
+                        setLocalVersions(fetchedVersions.sort((a, b) => b.updatedAt - a.updatedAt)); // Sort versions by latest first
+
+                    } catch (error) {
+                        console.error("Error fetching data in AnalyticsComponent:", error);
+                    } finally {
+                        setLoading(false);
+                    }
+                };
+                fetchData();
+            }, [currentTemplate]); // Only re-fetch if template changes, tab switching uses already fetched data
+
+            // Re-render Feather icons whenever history or versions change
+            React.useEffect(() => {
+                feather.replace();
+            }, [localHistory, localVersions, currentActiveTab]);
+
+            if (loading) {
+                return <p className="text-center text-gray-500 py-4">데이터 로딩 중...</p>;
+            }
+            if (!currentTemplate) {
+                return <p className="text-center text-gray-500 py-4">템플릿을 선택하여 분석 정보를 확인하세요.</p>;
+            }
+
+            const usageCount = localHistory.length;
+            const ratedHistory = localHistory.filter(h => h.rating != null);
+            const averageRating = ratedHistory.length > 0 ? (ratedHistory.reduce((acc, h) => acc + h.rating, 0) / ratedHistory.length).toFixed(1) : 'N/A';
+
+            const SummaryCard = ({ title, value, icon, colorClass }) => (
+                <div className="bg-gray-100 dark:bg-gray-800 p-4 rounded-lg flex items-center space-x-4">
+                    <div className={`p-2 rounded-full ${colorClass}`}>
+                        <i data-feather={icon} className="w-5 h-5 text-white"></i>
+                    </div>
+                    <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{title}</p>
+                        <p className="text-2xl font-bold">{value}</p>
+                    </div>
+                </div>
+            );
+
+            const HistoryItem = ({ item }) => {
+                const StarRating = ({ rating }) => {
+                    if (rating === null) return <span className="text-xs text-gray-500">평가 없음</span>;
+                    return (
+                        <div className="flex">
+                            {Array(5).fill(0).map((_, i) => (
+                                <svg key={i} className={`w-4 h-4 ${i < rating ? 'text-amber-400' : 'text-gray-300 dark:text-gray-600'}`} fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" /></svg>
+                            ))}
+                        </div>
+                    );
+                };
+
+                return (
+                    <div className="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-md">
+                        <div className="flex justify-between items-start">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">{item.usedAt.toLocaleString('ko-KR')}</p>
+                            <StarRating rating={item.rating} />
+                        </div>
+                        {item.memo && <p className="mt-2 text-sm text-gray-700 dark:text-gray-300 italic">"{item.memo}"</p>}
+                        <pre className="mt-2 text-xs text-gray-600 dark:text-gray-400 whitespace-pre-wrap font-mono line-clamp-3 overflow-hidden">
+                            {item.compiledPrompt}
+                        </pre>
+                    </div>
+                );
+            };
+
+            const VersionItem = ({ version }) => {
+                const user = auth.currentUser;
+                // Determine permission for the current template context
+                const userPermission = (currentTemplate.permissions || {})[user.uid];
+                const canRestore = userPermission === 'owner' || userPermission === 'editor';
+
+                return (
+                    <div className="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-md flex justify-between items-center">
+                        <div>
+                            <p className="text-sm font-medium">{version.updatedAt.toLocaleString('ko-KR')}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                변경자: {version.updatedBy ? (version.updatedBy.substring(0, 8) + '...') : '알 수 없음'}
+                            </p>
+                        </div>
+                        <button 
+                            onClick={() => restoreTemplateVersion(version.id)}
+                            className={`bg-blue-500 hover:bg-blue-600 text-white text-xs py-1 px-2 rounded-md ${canRestore ? '' : 'opacity-50 cursor-not-allowed'}`}
+                            disabled={!canRestore}
+                        >
+                            복원
+                        </button>
+                    </div>
+                );
+            };
+
+            const renderContent = () => {
+                switch (currentActiveTab) {
+                    case 'summary':
+                        return (
+                            <div className="space-y-6">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <SummaryCard title="총 사용 횟수" value={usageCount} icon="hash" colorClass="bg-blue-500" />
+                                    <SummaryCard title="평균 별점" value={averageRating} icon="star" colorClass="bg-amber-500" />
+                                </div>
+                                <h4 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-3">최근 사용 기록</h4>
+                                {localHistory.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {localHistory.slice(0, 5).map((h, index) => <HistoryItem key={h.id || index} item={h} />)}
+                                    </div>
+                                ) : (
+                                    <p className="text-center text-gray-500 py-4">사용 기록이 없습니다.</p>
+                                )}
+                            </div>
+                        );
+                    case 'history':
+                        return (
+                            <div className="space-y-6">
+                                <h4 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-3">상세 사용 기록</h4>
+                                {localHistory.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {localHistory.map((h, index) => <HistoryItem key={h.id || index} item={h} />)}
+                                    </div>
+                                ) : (
+                                    <p className="text-center text-gray-500 py-4">사용 기록이 없습니다.</p>
+                                )}
+                            </div>
+                        );
+                    case 'versions':
+                        return (
+                            <div className="space-y-6">
+                                <h4 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-3">버전 기록</h4>
+                                {localVersions.length > 0 ? (
+                                    <div className="space-y-3">
+                                        {localVersions.map((v, index) => <VersionItem key={v.id || index} version={v} />)}
+                                    </div>
+                                ) : (
+                                    <p className="text-center text-gray-500 py-4">버전 기록이 없습니다.</p>
+                                )}
+                            </div>
+                        );
+                    default:
+                        return null;
+                }
+            };
+
+            return (
+                <div className="space-y-6">
+                    <div className="flex border-b border-gray-200 dark:border-gray-700 mb-4">
+                        <button 
+                            onClick={() => setCurrentActiveTab('summary')}
+                            className={`py-2 px-4 text-sm font-medium border-b-2 ${currentActiveTab === 'summary' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'}`}
+                        >
+                            요약 대시보드
+                        </button>
+                        <button 
+                            onClick={() => setCurrentActiveTab('history')}
+                            className={`py-2 px-4 text-sm font-medium border-b-2 ${currentActiveTab === 'history' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'}`}
+                        >
+                            상세 히스토리
+                        </button>
+                        <button 
+                            onClick={() => setCurrentActiveTab('versions')}
+                            className={`py-2 px-4 text-sm font-medium border-b-2 ${currentActiveTab === 'versions' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-600 dark:text-gray-400 hover:border-gray-300 dark:hover:border-gray-600'}`}
+                        >
+                            버전 기록
+                        </button>
+                    </div>
+                    {renderContent()}
+                </div>
+            );
+        }
+        window.AnalyticsComponent = AnalyticsComponent;
+    </script>
+</body>
+</html>
