@@ -140,6 +140,9 @@
             </div>
         </aside>
 
+        <!-- Sidebar Overlay for mobile -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-40 md:hidden hidden"></div>
+
         <!-- Main Content Area -->
         <main class="flex-1 flex flex-col p-6 overflow-y-auto">
 
@@ -149,7 +152,11 @@
                     <button id="sidebar-toggle-button" class="md:hidden p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition-colors">
                         <i data-feather="menu"></i>
                     </button>
-                    <h2 id="current-view-title" class="text-3xl font-bold">나의 템플릿</h2>
+                    <!-- Updated current-view-title to include an icon -->
+                    <h2 id="current-view-title" class="text-3xl font-bold flex items-center space-x-2">
+                        <i id="current-view-icon" data-feather="file-text" class="h-8 w-8 text-prime-blue"></i>
+                        <span>나의 템플릿</span>
+                    </h2>
                     <div class="flex items-center space-x-2 ml-4">
                         <button id="view-gallery" class="p-2 rounded-xl text-prime-blue bg-prime-blue/10 hover:bg-prime-blue/20 transition-colors">
                             <i data-feather="grid"></i>
@@ -468,7 +475,8 @@
 
         // Global variable for Gemini API Key, can be updated from settings
         let GEMINI_API_KEY = "";
-        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`;
+        // Updated API URL to use gemini-2.5-flash
+        const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
         
         // -----------------------------------------------------------
         // IV. 비기능적 요구사항 (Non-Functional Requirements)
@@ -568,14 +576,47 @@
         const userProfile = document.getElementById('user-profile');
         const sidebar = document.getElementById('sidebar');
         const sidebarToggleButton = document.getElementById('sidebar-toggle-button');
+        const sidebarOverlay = document.getElementById('sidebar-overlay'); // Get the new overlay element
         const userDisplayName = document.getElementById('user-display-name');
+        const currentViewTitle = document.getElementById('current-view-title'); // Get the title element
+        const currentViewIcon = document.getElementById('current-view-icon'); // Get the icon element
         const settingsModal = document.getElementById('settings-modal');
         const settingsForm = document.getElementById('settings-form');
         const geminiApiKeyInput = document.getElementById('gemini-api-key');
 
+        // Function to update the header title and icon based on currentView
+        const updateHeaderViewDisplay = (view) => {
+            let iconName = 'file-text'; // Default for 'my-templates'
+            let titleText = '나의 템플릿';
+
+            switch (view) {
+                case 'my-templates':
+                    iconName = 'file-text';
+                    titleText = '나의 템플릿';
+                    break;
+                case 'shared-templates':
+                    iconName = 'share-2';
+                    titleText = '공유된 템플릿';
+                    break;
+                case 'snippets':
+                    iconName = 'code';
+                    titleText = '상용구';
+                    break;
+            }
+            currentViewIcon.setAttribute('data-feather', iconName);
+            currentViewTitle.querySelector('span').textContent = titleText; // Update the span inside h2
+            feather.replace(); // Re-render icon
+        };
 
         sidebarToggleButton.addEventListener('click', () => {
             sidebar.classList.toggle('-translate-x-full');
+            sidebarOverlay.classList.toggle('hidden'); // Show/hide overlay
+        });
+
+        // Close sidebar when clicking on the overlay
+        sidebarOverlay.addEventListener('click', () => {
+            sidebar.classList.add('-translate-x-full');
+            sidebarOverlay.classList.add('hidden');
         });
         
         onAuthStateChanged(auth, async (user) => {
@@ -603,6 +644,7 @@
                 // Initial render of templates and setup listeners
                 renderTemplates();
                 setupRealtimeListeners();
+                updateHeaderViewDisplay(currentView); // Initial header display
             } else {
                 currentUser = null;
                 showModal('login-modal');
@@ -805,17 +847,17 @@
 
         document.getElementById('nav-my-templates').addEventListener('click', () => {
             currentView = 'my-templates';
-            document.getElementById('current-view-title').textContent = '나의 템플릿';
+            updateHeaderViewDisplay(currentView); // Update header
             renderTemplates(templates.filter(t => t.owner_uid === currentUser.uid));
         });
         document.getElementById('nav-shared-templates').addEventListener('click', () => {
             currentView = 'shared-templates';
-            document.getElementById('current-view-title').textContent = '공유된 템플릿';
+            updateHeaderViewDisplay(currentView); // Update header
             renderTemplates(templates.filter(t => t.permissions && t.permissions[currentUser.uid] && t.permissions[currentUser.uid] !== 'owner'));
         });
         document.getElementById('nav-snippets').addEventListener('click', () => {
             currentView = 'snippets';
-            document.getElementById('current-view-title').textContent = '상용구';
+            updateHeaderViewDisplay(currentView); // Update header
             renderTemplates(snippets);
         });
 
@@ -1592,7 +1634,7 @@
                     analyticsModal.dataset.templateId = templateId; // Store ID for version restore
                     showModal('analytics-modal');
 
-                } catch (error) {
+                } /* Removed unnecessary 'else if' block for history as per instruction. */ catch (error) {
                     console.error("Analytics fetch error:", error);
                     showMessage('데이터 조회 실패', '분석 데이터를 불러오는 데 실패했습니다.', true);
                 } finally {
