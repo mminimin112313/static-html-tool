@@ -1215,20 +1215,21 @@
         import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, collection, setDoc, updateDoc, deleteDoc, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Initialize Firebase config using the provided global variable
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        // Firebase config provided by the user, with fallback to hardcoded if __firebase_config is not available or empty
+        const firebaseConfig = typeof __firebase_config !== 'undefined' && __firebase_config !== '' 
+            ? JSON.parse(__firebase_config) 
+            : {
+                apiKey: "AIzaSyCaVi8p8WAoXRZpvWaoCUnqG1IM0aoWJo0",
+                authDomain: "learneverything-dcef7.firebaseapp.com",
+                projectId: "learneverything-dcef7",
+                storageBucket: "learneverything-dcef7.firebasestorage.app",
+                messagingSenderId: "727818762307",
+                appId: "1:727818762307:web:88b939848357f1eee53cf6",
+                measurementId: "G-E9FRPC2Z9B"
+            };
         
-        // Initialize Firebase services
+        // Declare app, auth, db in a scope accessible by initApp and other functions after DOMContentLoaded
         let app, auth, db;
-        if (firebaseConfig) {
-            app = initializeApp(firebaseConfig);
-            auth = getAuth(app);
-            db = getFirestore(app);
-            console.log("Firebase initialized.");
-        } else {
-            console.error("Firebase configuration is missing or invalid. Firebase features will not be available.");
-            // Provide a fallback or user notification if Firebase is critical
-        }
 
         // Define MASTER_PROMPT_SHELL and DEFAULT_ACTIONS (kept global for simplicity)
         const MASTER_PROMPT_SHELL = `
@@ -1352,8 +1353,56 @@ Now, give me the result which fits on the {{purpose}}, considering the full <Pro
             function initApp() {
                 cacheDOMElements();
                 initBootstrap();
-                loadDb(); // Load local UI state and activeProjectId
-                // Firebase auth state listener will handle loading user projects
+                
+                // Initialize Firebase services after DOM elements are cached
+                try {
+                    app = initializeApp(firebaseConfig);
+                    // getAnalytics(app); // Analytics is optional, not directly used in app logic
+                    auth = getAuth(app);
+                    db = getFirestore(app);
+                    console.log("Firebase initialized successfully.");
+
+                    // ONLY set up auth listener AFTER Firebase services are initialized
+                    onAuthStateChanged(auth, async (user) => {
+                        if (user) {
+                            App.dom.authStatus.textContent = `${user.displayName}님 환영합니다!`;
+                            App.dom.googleSigninBtn.classList.add('d-none');
+                            App.dom.signOutBtn.classList.remove('d-none');
+                            App.db.currentUser = {
+                                uid: user.uid,
+                                displayName: user.displayName,
+                                email: user.email
+                            };
+                            await loadUserProjectsFromFirestore(user.uid); // Load user-specific projects
+                            render(); // Render after data is loaded from Firestore
+                            showToast("로그인됨", `${user.displayName}님 환영합니다!`, "info");
+                        } else {
+                            App.dom.authStatus.textContent = "로그인이 필요합니다.";
+                            App.dom.googleSigninBtn.classList.remove('d-none'); 
+                            App.dom.signOutBtn.classList.add('d-none');
+                            App.db.currentUser = null;
+                            App.db.activeProjectId = null;
+                            App.db.projects = {}; // Clear local projects on logout
+                            saveDb(); // Save local UI state (activeProjectId will be null)
+                            render(); // Re-render to show welcome screen
+                            showToast("로그아웃됨", "로그인하여 프로젝트를 관리하세요.", "info");
+                        }
+                    });
+
+                } catch (e) {
+                    console.error("Firebase initialization failed:", e);
+                    // Mark auth/db as null if init fails to prevent further errors
+                    app = null;
+                    auth = null;
+                    db = null;
+                    showToast("오류", "Firebase 서비스 초기화에 실패했습니다. 기능이 제한될 수 있습니다: " + e.message, "danger");
+                    // Ensure authStatus still updates even if Firebase fails
+                    App.dom.authStatus.textContent = "Firebase 연결 오류";
+                    App.dom.googleSigninBtn.disabled = true;
+                    App.dom.signOutBtn.disabled = true;
+                }
+
+                loadDb(); 
                 registerEventListeners();
                 console.log("ILE App v8.5 Initialized");
             }
@@ -1383,7 +1432,7 @@ Now, give me the result which fits on the {{purpose}}, considering the full <Pro
                 App.dom.studyPadEditorContent = document.getElementById('study-pad-editor-content'); // New editor textarea
                 App.dom.studyPadViewerTitle = document.getElementById('studyPadViewerTitle');
                 App.dom.toggleViewerModeBtn = document.getElementById('toggle-viewer-mode-btn'); // New toggle button
-                App.dom.saveViewerContentBtn = document.getElementById('save-viewer-content-btn'); // New save button
+                App.dom.saveViewerContentBtn = document.getElementById('document-save-viewer-content-btn'); // Renamed ID to avoid conflict with other save buttons
 
                 // For learning progress visualization
                 App.dom.overallProgressBar = document.getElementById('overall-progress-bar');
@@ -1447,39 +1496,8 @@ Now, give me the result which fits on the {{purpose}}, considering the full <Pro
             }
 
             // Listen for authentication state changes
-            if (auth) { // Only set up listener if auth is initialized
-                onAuthStateChanged(auth, async (user) => {
-                    if (user) {
-                        App.dom.authStatus.textContent = `${user.displayName}님 환영합니다!`;
-                        App.dom.googleSigninBtn.classList.add('d-none');
-                        App.dom.signOutBtn.classList.remove('d-none');
-                        App.db.currentUser = {
-                            uid: user.uid,
-                            displayName: user.displayName,
-                            email: user.email
-                        };
-                        await loadUserProjectsFromFirestore(user.uid); // Load user-specific projects
-                        render(); // Render after data is loaded from Firestore
-                        showToast("로그인됨", `${user.displayName}님 환영합니다!`, "info");
-                    } else {
-                        App.dom.authStatus.textContent = "로그인이 필요합니다.";
-                        App.dom.googleSigninBtn.classList.remove('d-none'); // Ensure visible on logout
-                        App.dom.signOutBtn.classList.add('d-none');
-                        App.db.currentUser = null;
-                        App.db.activeProjectId = null;
-                        App.db.projects = {}; // Clear local projects on logout
-                        saveDb(); // Save local UI state (activeProjectId will be null)
-                        render(); // Re-render to show welcome screen
-                        showToast("로그아웃됨", "로그인하여 프로젝트를 관리하세요.", "info");
-                    }
-                });
-            } else { // Fallback if Firebase auth is not initialized
-                App.dom.authStatus.textContent = "Firebase 연결 오류";
-                App.dom.googleSigninBtn.disabled = true;
-                App.dom.signOutBtn.disabled = true;
-                showToast("오류", "Firebase 인증 서비스가 초기화되지 않아 로그인할 수 없습니다.", "danger");
-            }
-
+            // This listener is now set up inside initApp() after Firebase is initialized
+            // So, no need for the top-level conditional check anymore.
 
             // --- Firestore Data Management Functions ---
             async function loadUserProjectsFromFirestore(userId) {
@@ -1975,6 +1993,10 @@ Now, give me the result which fits on the {{purpose}}, considering the full <Pro
                     showToast("오류", "먼저 로그인해주세요.", "danger");
                     return;
                 }
+                if (!db) {
+                    showToast("오류", "Firebase 데이터베이스가 초기화되지 않았습니다.", "danger");
+                    return;
+                }
                 const id = doc(collection(db, `users/${App.db.currentUser.uid}/projects`)).id; // Generate Firestore ID
                 const newProject = {
                     id,
@@ -2049,6 +2071,10 @@ Now, give me the result which fits on the {{purpose}}, considering the full <Pro
                 if (!project) return;
                 if (!App.db.currentUser?.uid) {
                     showToast("오류", "로그인이 필요합니다.", "danger");
+                    return;
+                }
+                if (!db) {
+                    showToast("오류", "Firebase 데이터베이스가 초기화되지 않았습니다.", "danger");
                     return;
                 }
 
@@ -2168,13 +2194,12 @@ Now, give me the result which fits on the {{purpose}}, considering the full <Pro
                         App.dom.studyPadViewerContent.scrollTop = savedScroll;
                         App.dom.studyPadEditorContent.scrollTop = savedScroll; // Apply to editor too
                     }
+                    // Call MathJax to render equations after content is set AND modal is shown
+                    if (typeof MathJax !== 'undefined') {
+                        MathJax.typesetPromise([App.dom.studyPadViewerContent]).catch((err) => console.error('MathJax rendering failed:', err));
+                    }
                     App.dom.studyPadViewerModal.removeEventListener('shown.bs.modal', handler); // Remove listener after first execution
                 });
-
-                // Call MathJax to render equations after content is set
-                if (typeof MathJax !== 'undefined') {
-                    MathJax.typesetPromise([App.dom.studyPadViewerContent]).catch((err) => console.error('MathJax rendering failed:', err));
-                }
             }
 
             function toggleStudyPadViewerMode() {
@@ -2309,6 +2334,10 @@ Now, give me the result which fits on the {{purpose}}, considering the full <Pro
                 const file = e.target.files[0];
                 if (!file) return;
                 if (!App.db.currentUser?.uid) return showToast("오류", "로그인이 필요합니다.", "danger");
+                if (!db) {
+                    showToast("오류", "Firebase 데이터베이스가 초기화되지 않았습니다.", "danger");
+                    return;
+                }
 
                 try {
                     const jsonText = await readFileAsText(file);
@@ -2456,6 +2485,10 @@ Now, give me the result which fits on the {{purpose}}, considering the full <Pro
             async function handleApplyPlanClick() {
                 if (!App.db.activeProjectId) return showToast("오류", "먼저 프로젝트를 선택하세요.", "warning");
                 if (!App.db.currentUser?.uid) return showToast("오류", "로그인이 필요합니다.", "danger");
+                if (!db) {
+                    showToast("오류", "Firebase 데이터베이스가 초기화되지 않았습니다.", "danger");
+                    return;
+                }
                 try {
                     const planText = App.dom.planInput.value;
                     // Remove leading/trailing markdown code block fences if present
