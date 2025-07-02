@@ -99,7 +99,7 @@
             transition: box-shadow 0.2s ease, border-color 0.2s ease;
         }
         #item-list li.selected { border-color: var(--primary-color); box-shadow: 0 0 0 2px var(--primary-color); }
-        .tag-display { display: flex; gap: 6px; margin-top: 8px; }
+        .tag-display { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
         .tag-chip { background-color: var(--bg-color); color: var(--text-secondary); padding: 2px 8px; border-radius: 12px; font-size: 12px; }
         #detail-panel {
             width: 400px;
@@ -140,31 +140,27 @@
         }
         .modal-overlay.visible { display: flex; }
         .modal-content { background-color: var(--panel-bg-color); padding: 2rem; border-radius: 8px; width: 90%; max-width: 500px; }
-        .modal-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem; }
+        .modal-content .form-group { margin-bottom: 1rem; }
+        .modal-content label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
+        .modal-content input, .modal-content select { width: 100%; padding: 0.75rem; font-size: 1rem; border: 1px solid var(--border-color); border-radius: 6px; }
+        .modal-buttons { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem; }
         .modal-buttons button { padding: 0.5rem 1rem; border-radius: 6px; border: 1px solid var(--border-color); cursor: pointer; }
         .modal-buttons .primary { background-color: var(--primary-color); color: white; border-color: var(--primary-color); }
     </style>
 </head>
 <body>
-    <!-- 인증 화면 -->
     <div id="auth-container">
         <div>
             <h1>FlowMind에 오신 것을 환영합니다</h1>
             <p>"자동화된 내 비서"가 당신의 생산성을 극대화해 드립니다.</p>
-            <button id="google-signin-btn">
-                <svg class="icon" viewBox="0 0 24 24" fill="white"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/><path d="M1 1h22v22H1z" fill="none"/></svg>
-                <span>Google 계정으로 시작하기</span>
-            </button>
+            <button id="google-signin-btn"><span>Google 계정으로 시작하기</span></button>
         </div>
     </div>
-
-    <!-- 메인 애플리케이션 -->
     <div id="app-container">
         <nav id="navigation-panel"></nav>
         <main id="main-panel"></main>
         <aside id="detail-panel"></aside>
     </div>
-
     <button id="quick-add-btn" title="새 항목 추가">+</button>
     <div id="modal-overlay" class="modal-overlay"></div>
 
@@ -177,14 +173,13 @@
             storageBucket: "learnia-65bf7.appspot.com",
             messagingSenderId: "116483044735",
             appId: "1:116483044735:web:f7d7eeeaebac7858ccd64a",
-            measurementId: "G-W47W8HV9EQ"
         };
         firebase.initializeApp(firebaseConfig);
         const auth = firebase.auth();
         const db = firebase.firestore();
         const googleProvider = new firebase.auth.GoogleAuthProvider();
 
-        // --- 전역 변수 및 상태 ---
+        // --- 전역 상태 ---
         let state = {
             user: null,
             activeList: 'inbox',
@@ -192,7 +187,11 @@
             selectedItemId: null,
             items: [],
             tags: [],
-            unsubscribe: null // Firestore 리스너 해제용
+            settings: {
+                apiKey: '',
+                geminiModel: 'gemini-2.0-flash'
+            },
+            unsubscribe: null
         };
         const listMeta = {
             inbox: { title: '수신함', icon: '📥' },
@@ -202,6 +201,7 @@
             somedayMaybe: { title: '언젠가/어쩌면', icon: '🤔' },
             reference: { title: '참조 자료', icon: '🗂️' },
         };
+        const availableModels = ['gemini-2.0-flash', 'gemini-2.5-flash-lite-preview-06-17', 'gemini-2.5-flash'];
 
         // --- DOM 요소 ---
         const dom = {
@@ -215,6 +215,46 @@
             modalOverlay: document.getElementById('modal-overlay'),
         };
 
+        // --- Gemini AI 비서 객체 ---
+        const GeminiHelper = {
+            apiKey: null,
+            model: null,
+
+            init(settings) {
+                this.apiKey = settings.apiKey;
+                this.model = settings.geminiModel;
+            },
+
+            async _callApi(prompt) {
+                if (!this.apiKey || !this.model) {
+                    throw new Error("API 키 또는 모델이 설정되지 않았습니다.");
+                }
+                const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent`;
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: { responseMimeType: "application/json" }
+                    })
+                });
+                if (!response.ok) throw new Error(`API 오류: ${response.status}`);
+                const data = await response.json();
+                return JSON.parse(data.candidates[0].content.parts[0].text);
+            },
+
+            // 기능 1: 항목 자동 분류
+            async classifyItem(itemText) {
+                const prompt = `
+                    Analyze the following task and return a valid JSON object with two keys: "list" and "tags".
+                    - "list": Must be one of [${Object.keys(listMeta).filter(k => k !== 'inbox').join(', ')}].
+                    - "tags": Must be an array of 1 to 3 relevant string tags.
+                    Task: "${itemText}"
+                `;
+                return this._callApi(prompt);
+            }
+        };
+
         // --- 인증 로직 ---
         auth.onAuthStateChanged(user => {
             if (user) {
@@ -224,33 +264,37 @@
                 initializeApp();
             } else {
                 state.user = null;
-                if(state.unsubscribe) state.unsubscribe();
+                if (state.unsubscribe) state.unsubscribe();
                 dom.appContainer.classList.remove('visible');
                 dom.authContainer.classList.add('visible');
             }
         });
 
-        dom.googleSigninBtn.addEventListener('click', () => {
-            auth.signInWithPopup(googleProvider).catch(error => console.error("로그인 오류:", error));
-        });
+        dom.googleSigninBtn.addEventListener('click', () => auth.signInWithPopup(googleProvider));
 
-        // --- 앱 초기화 ---
+        // --- 앱 초기화 및 데이터 동기화 ---
         function initializeApp() {
-            // Firestore 리스너 설정
+            const settingsRef = db.collection('users').doc(state.user.uid).collection('settings').doc('appSettings');
+            settingsRef.get().then(doc => {
+                if (doc.exists) {
+                    state.settings = { ...state.settings, ...doc.data() };
+                    GeminiHelper.init(state.settings);
+                }
+            });
+
             const itemsRef = db.collection('users').doc(state.user.uid).collection('items');
-            state.unsubscribe = itemsRef.onSnapshot(snapshot => {
+            state.unsubscribe = itemsRef.orderBy('createdAt', 'desc').onSnapshot(snapshot => {
                 state.items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // 태그 목록 자동 생성
                 const allTags = new Set();
                 state.items.forEach(item => {
                     if (item.tags) item.tags.forEach(tag => allTags.add(tag));
                 });
                 state.tags = Array.from(allTags).sort();
                 render();
-            }, error => console.error("데이터 로딩 오류:", error));
+            }, console.error);
         }
 
-        // --- 렌더링 로직 ---
+        // --- 렌더링 로직 (생략 - 이전 버전과 유사, 일부 수정) ---
         function render() {
             if (!state.user) return;
             renderNavigation();
@@ -269,42 +313,26 @@
                         </li>
                     `).join('')}
                 </ul>
-                <h4>태그</h4>
+                <h4>태그 <span id="add-new-tag-btn" style="cursor:pointer;">+</span></h4>
                 <ul id="tag-list">
-                    ${state.tags.map(tag => `
-                        <li data-tag-id="${tag}" class="${state.activeTag === tag ? 'active' : ''}">
-                            <span># ${tag}</span>
-                            <span class="item-count">${state.items.filter(i => i.tags && i.tags.includes(tag)).length}</span>
-                        </li>
-                    `).join('')}
+                    ${state.tags.map(tag => `<li data-tag-id="${tag}" class="${state.activeTag === tag ? 'active' : ''}"><span># ${tag}</span></li>`).join('')}
                 </ul>
                 <div id="user-profile">
                     <img src="${state.user.photoURL}" alt="User photo">
-                    <div>
-                        <strong>${state.user.displayName}</strong>
-                        <span>${state.user.email}</span>
-                    </div>
-                    <span id="logout-btn">로그아웃</span>
+                    <div><strong>${state.user.displayName}</strong></div>
+                    <span id="settings-btn" style="cursor:pointer; margin-left:auto;">⚙️</span>
+                    <span id="logout-btn" style="cursor:pointer;">나가기</span>
                 </div>
             `;
             // 이벤트 리스너 추가
-            dom.navPanel.querySelectorAll('#nav-list li').forEach(li => {
-                li.addEventListener('click', (e) => {
-                    state.activeList = e.currentTarget.dataset.listId;
-                    state.activeTag = null;
-                    state.selectedItemId = null;
-                    render();
-                });
-            });
-            dom.navPanel.querySelectorAll('#tag-list li').forEach(li => {
-                li.addEventListener('click', (e) => {
-                    state.activeTag = e.currentTarget.dataset.tagId;
-                    state.activeList = null;
-                    state.selectedItemId = null;
-                    render();
-                });
-            });
             dom.navPanel.querySelector('#logout-btn').addEventListener('click', () => auth.signOut());
+            dom.navPanel.querySelector('#settings-btn').addEventListener('click', renderSettingsModal);
+            dom.navPanel.querySelectorAll('#nav-list li').forEach(li => li.addEventListener('click', (e) => {
+                state.activeList = e.currentTarget.dataset.listId; state.activeTag = null; state.selectedItemId = null; render();
+            }));
+            dom.navPanel.querySelectorAll('#tag-list li').forEach(li => li.addEventListener('click', (e) => {
+                state.activeTag = e.currentTarget.dataset.tagId; state.activeList = null; state.selectedItemId = null; render();
+            }));
         }
 
         function renderMainPanel() {
@@ -325,136 +353,123 @@
                     currentItems.map(item => `
                         <li data-item-id="${item.id}" class="${state.selectedItemId === item.id ? 'selected' : ''}">
                             <div>${item.text}</div>
-                            <div class="tag-display">
-                                ${item.tags ? item.tags.map(tag => `<span class="tag-chip">#${tag}</span>`).join('') : ''}
-                            </div>
-                        </li>
-                    `).join('')}
-                </ul>
-            `;
-            dom.mainPanel.querySelectorAll('#item-list li').forEach(li => {
-                li.addEventListener('click', (e) => {
-                    state.selectedItemId = e.currentTarget.dataset.itemId;
-                    render();
-                });
-            });
+                            <div class="tag-display">${item.tags ? item.tags.map(tag => `<span class="tag-chip">#${tag}</span>`).join('') : ''}</div>
+                        </li>`).join('')}
+                </ul>`;
+            dom.mainPanel.querySelectorAll('#item-list li').forEach(li => li.addEventListener('click', (e) => {
+                state.selectedItemId = e.currentTarget.dataset.itemId; render();
+            }));
         }
 
         function renderDetailPanel() {
-            if (!state.selectedItemId) {
-                dom.detailPanel.classList.remove('visible');
-                return;
-            }
+            if (!state.selectedItemId) { dom.detailPanel.classList.remove('visible'); return; }
             const item = state.items.find(i => i.id === state.selectedItemId);
-            if (!item) {
-                state.selectedItemId = null;
-                dom.detailPanel.classList.remove('visible');
-                return;
-            }
+            if (!item) { state.selectedItemId = null; dom.detailPanel.classList.remove('visible'); return; }
             
             dom.detailPanel.innerHTML = `
                 <div id="detail-panel-content">
                     <div id="detail-item-text">${item.text}</div>
-                    ${item.list === 'inbox' ? `
-                        <button id="ai-process-btn">🤖 AI로 자동 분류</button>
-                        <div id="ai-suggestion-box"></div>` : ''
-                    }
-                    <div id="tag-management-section">
-                        <h4>태그 관리</h4>
-                        <div class="tag-display">
-                            ${item.tags ? item.tags.map(tag => `<span class="tag-chip">${tag} <span class="remove-tag" data-tag="${tag}">x</span></span>`).join('') : ''}
-                        </div>
+                    ${item.list === 'inbox' ? `<button id="ai-process-btn">🤖 AI로 자동 분류</button><div id="ai-suggestion-box"></div>` : ''}
+                    <div id="tag-management-section"><h4>태그 관리</h4>
+                        <div class="tag-display">${item.tags ? item.tags.map(tag => `<span class="tag-chip">${tag} <span class="remove-tag" data-tag="${tag}" style="cursor:pointer;">x</span></span>`).join('') : ''}</div>
                         <input type="text" id="add-tag-input" placeholder="새 태그 추가 (쉼표로 구분)">
                     </div>
-                    <div class="detail-actions">
-                        <h4>목록 이동</h4>
-                        <div class="action-grid">
-                            ${Object.keys(listMeta).filter(k => k !== 'inbox' && k !== item.list).map(k => `<button data-target-list="${k}">${listMeta[k].icon} ${listMeta[k].title}</button>`).join('')}
-                        </div>
-                    </div>
-                    <button id="delete-item-btn">🗑️ 삭제</button>
-                </div>
-            `;
+                    <div class="detail-actions"><h4>목록 이동</h4><div class="action-grid">
+                        ${Object.keys(listMeta).filter(k => k !== 'inbox' && k !== item.list).map(k => `<button data-target-list="${k}">${listMeta[k].icon} ${listMeta[k].title}</button>`).join('')}
+                    </div></div><button id="delete-item-btn">🗑️ 삭제</button>
+                </div>`;
             dom.detailPanel.classList.add('visible');
 
-            // 이벤트 리스너 추가
-            if (item.list === 'inbox') {
-                document.getElementById('ai-process-btn').addEventListener('click', () => getAiSuggestion(item));
-            }
+            if (item.list === 'inbox') document.getElementById('ai-process-btn').addEventListener('click', () => handleAiClassification(item));
             document.getElementById('delete-item-btn').addEventListener('click', () => deleteItem(item.id));
-            document.querySelectorAll('.action-grid button').forEach(btn => {
-                btn.addEventListener('click', (e) => moveItem(item.id, e.currentTarget.dataset.targetList));
-            });
+            document.querySelectorAll('.action-grid button').forEach(btn => btn.addEventListener('click', (e) => moveItem(item.id, e.currentTarget.dataset.targetList)));
             const addTagInput = document.getElementById('add-tag-input');
             addTagInput.addEventListener('keypress', (e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && addTagInput.value) {
                     const newTags = addTagInput.value.split(',').map(t => t.trim()).filter(Boolean);
-                    if (newTags.length > 0) updateTags(item.id, [...(item.tags || []), ...newTags]);
+                    updateTags(item.id, [...(item.tags || []), ...newTags]);
                     addTagInput.value = '';
                 }
             });
-            document.querySelectorAll('.remove-tag').forEach(span => {
-                span.addEventListener('click', (e) => {
-                    const tagToRemove = e.currentTarget.dataset.tag;
-                    updateTags(item.id, item.tags.filter(t => t !== tagToRemove));
-                });
+            document.querySelectorAll('.remove-tag').forEach(span => span.addEventListener('click', (e) => {
+                updateTags(item.id, item.tags.filter(t => t !== e.currentTarget.dataset.tag));
+            }));
+        }
+
+        function renderSettingsModal() {
+            dom.modalOverlay.innerHTML = `
+                <div class="modal-content"><h3>설정</h3>
+                    <div class="form-group">
+                        <label for="api-key-input">Gemini API 키</label>
+                        <input type="password" id="api-key-input" value="${state.settings.apiKey}">
+                    </div>
+                    <div class="form-group">
+                        <label for="model-select">Gemini 모델 선택</label>
+                        <select id="model-select">
+                            ${availableModels.map(m => `<option value="${m}" ${state.settings.geminiModel === m ? 'selected' : ''}>${m}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="modal-buttons">
+                        <button id="modal-cancel">취소</button><button id="modal-save" class="primary">저장</button>
+                    </div>
+                </div>`;
+            dom.modalOverlay.classList.add('visible');
+            dom.modalOverlay.querySelector('#modal-save').addEventListener('click', () => {
+                const newSettings = {
+                    apiKey: document.getElementById('api-key-input').value,
+                    geminiModel: document.getElementById('model-select').value
+                };
+                state.settings = newSettings;
+                GeminiHelper.init(newSettings);
+                db.collection('users').doc(state.user.uid).collection('settings').doc('appSettings').set(newSettings, { merge: true });
+                closeModal();
             });
+            dom.modalOverlay.querySelector('#modal-cancel').addEventListener('click', closeModal);
         }
 
-        // --- 데이터 CRUD ---
+        function closeModal() { dom.modalOverlay.classList.remove('visible'); dom.modalOverlay.innerHTML = ''; }
+
+        // --- 데이터 CRUD 및 AI 연동 ---
         function addItem(text, list = 'inbox') {
-            const newItem = {
-                text,
-                list,
-                tags: [],
-                createdAt: firebase.firestore.FieldValue.serverTimestamp()
-            };
-            db.collection('users').doc(state.user.uid).collection('items').add(newItem);
+            db.collection('users').doc(state.user.uid).collection('items').add({ text, list, tags: [], createdAt: firebase.firestore.FieldValue.serverTimestamp() });
         }
-
         function deleteItem(itemId) {
             db.collection('users').doc(state.user.uid).collection('items').doc(itemId).delete();
             state.selectedItemId = null;
         }
-
         function moveItem(itemId, targetList) {
             db.collection('users').doc(state.user.uid).collection('items').doc(itemId).update({ list: targetList });
-            state.activeList = targetList;
-            state.activeTag = null;
+            state.activeList = targetList; state.activeTag = null;
         }
-
         function updateTags(itemId, newTags) {
-            const uniqueTags = [...new Set(newTags)]; // 중복 제거
-            db.collection('users').doc(state.user.uid).collection('items').doc(itemId).update({ tags: uniqueTags });
+            db.collection('users').doc(state.user.uid).collection('items').doc(itemId).update({ tags: [...new Set(newTags)] });
         }
-
-        // --- AI 기능 ---
-        async function getAiSuggestion(item) {
-            if (!state.user.apiKey) { // 실제로는 설정에서 가져와야 함
-                alert('API 키를 설정해주세요.'); return;
-            }
+        async function handleAiClassification(item) {
             const suggestionBox = document.getElementById('ai-suggestion-box');
-            suggestionBox.textContent = '🤖 AI 비서가 생각 중입니다...';
-
-            const prompt = `Analyze the following task and return a JSON object with 'list' and 'tags'. Task: "${item.text}"
-            Available lists: nextActions, projects, waitingFor, somedayMaybe, reference.
-            Suggest 1 to 3 relevant tags.`;
-            // ... API 호출 로직 (이전 버전과 유사)
-            // 성공 시:
-            // const result = { list: 'projects', tags: ['업무', '기획'] };
-            // db.collection('users').doc(state.user.uid).collection('items').doc(item.id).update(result);
-            // suggestionBox.textContent = `AI가 '${result.list}' 목록으로 이동하고, 태그 [${result.tags.join(', ')}]를 추가했습니다.`;
+            try {
+                suggestionBox.textContent = '🤖 AI 비서가 분석 중입니다...';
+                const result = await GeminiHelper.classifyItem(item.text);
+                await db.collection('users').doc(state.user.uid).collection('items').doc(item.id).update({
+                    list: result.list,
+                    tags: firebase.firestore.FieldValue.arrayUnion(...result.tags)
+                });
+                suggestionBox.textContent = `✅ AI가 '${listMeta[result.list].title}' 목록으로 이동하고, 태그 [${result.tags.join(', ')}]를 추가했습니다.`;
+                state.activeList = result.list;
+                state.activeTag = null;
+            } catch (error) {
+                suggestionBox.textContent = `❌ 오류: ${error.message}`;
+                console.error(error);
+            }
         }
-
-        // --- 모달 및 기타 UI 이벤트 ---
+        
+        // --- UI 이벤트 ---
         dom.quickAddBtn.addEventListener('click', () => {
             const text = prompt("새 항목 내용을 입력하세요:");
             if (text) {
-                let list = state.activeList && state.activeList !== 'inbox' ? state.activeList : 'inbox';
+                let list = state.activeList && state.activeList !== 'inbox' && !state.activeTag ? state.activeList : 'inbox';
                 addItem(text, list);
             }
         });
-
     </script>
 </body>
 </html>
