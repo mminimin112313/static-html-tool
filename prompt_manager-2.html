@@ -156,7 +156,10 @@
                 body: document.getElementById('template-modal-body'),
                 generateBtn: document.getElementById('template-modal-generate-btn'),
                 closeBtn: document.getElementById('template-modal-close-btn')
-            }
+            },
+            sidebar: document.getElementById('sidebar'), // 사이드바 자체 참조 추가
+            mobileMenuToggle: document.getElementById('mobile-menu-toggle'), // 모바일 햄버거 메뉴 버튼
+            sidebarCloseBtn: document.getElementById('sidebar-close-btn') // 사이드바 닫기 버튼
         };
 
         // 앱의 전역 상태 (현재 필터, 프롬프트/폴더 데이터)
@@ -551,7 +554,7 @@
                         <h2>${isNew ? '새 항목 생성' : '항목 편집'}</h2>
                         <div class="editor-actions">
                             ${!isNew ? `<button class="delete-btn" data-id="${id}"><i class="fa-regular fa-trash-can"></i> 삭제</button>` : ''}
-                            <button class="save-btn" data-id="${id}"><i class="fa-regular fa-save"></i> 저장</button>
+                            <button class="save-btn" data-id="${isNew ? '' : id}"><i class="fa-regular fa-save"></i> 저장</button>
                         </div>
                     </div>
                     <div class="form-group"><label>제목</label><input id="title-input" value="${p.title || ''}"></div>
@@ -728,7 +731,7 @@
                 const deleteBtn = e.target.closest('.delete-btn');
 
                 if (saveBtn) { // 저장 버튼 클릭
-                    const id = saveBtn.dataset.id || null;
+                    const id = saveBtn.dataset.id || null; // data-id가 빈 문자열이면 null로 처리
                     const tags = document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean);
                     const currentContent = document.getElementById('content-input').value; // 버전 저장을 위해 현재 내용 가져옴
                     
@@ -748,8 +751,13 @@
                     if (id) { 
                         const existingPrompt = await dbService.getById('prompts', id);
                         if (existingPrompt) {
-                            data.isFavorite = existingPrompt.isFavorite;
-                            data.usageCount = existingPrompt.usageCount;
+                            // undefined가 아닌 경우에만 기존 값 사용, 아니면 기본값 유지
+                            data.isFavorite = existingPrompt.isFavorite !== undefined ? existingPrompt.isFavorite : false;
+                            data.usageCount = existingPrompt.usageCount !== undefined ? existingPrompt.usageCount : 0;
+                            // createdAt도 기존 항목인 경우 유지
+                            if (existingPrompt.createdAt) {
+                                data.createdAt = existingPrompt.createdAt;
+                            }
                         }
                     } else { // 새 항목인 경우
                         data.createdAt = serverTimestamp(); // 새 항목은 생성 시간 설정
@@ -842,7 +850,15 @@
             ui.contentView.addEventListener('click', e => { handlers.content(e); handlers.editor(e); });            
             ui.searchInput.addEventListener('input', () => render.prompts());            
             ui.templateModal.closeBtn.addEventListener('click', () => ui.templateModal.overlay.classList.remove('show'));            
-            ui.templateModal.overlay.addEventListener('click', e => e.target === ui.templateModal.overlay && ui.templateModal.overlay.classList.remove('show'));        
+            ui.templateModal.overlay.addEventListener('click', e => ui.templateModal.overlay.classList.remove('show')); // 모달 외부 클릭 시 닫기
+            
+            // 사이드바 외부 클릭 시 닫기 (모바일 햄버거 메뉴용)
+            document.addEventListener('click', (e) => {
+                if (ui.sidebar.classList.contains('open') && !ui.sidebar.contains(e.target) && !ui.mobileMenuToggle.contains(e.target)) {
+                    ui.sidebar.classList.remove('open');
+                }
+            });
+
 
             // 데이터 내보내기/가져오기 버튼 추가 (설정 섹션이 없으므로 임시로 추가)
             const dataMgmtSection = document.createElement('div');
@@ -970,13 +986,36 @@
             z-index: 999; /* 다른 요소 위에 표시 */
             overflow-y: auto;
         }
-        /* .sidebar { display: none; } <- 이 부분을 제거했습니다. 사이드바가 항상 보이도록 함. */
+        /* 풀스크린 시 사이드바 숨김 (모바일에서는 햄버거 메뉴로 제어) */
+        body.fullscreen-editor-mode .sidebar { 
+            display: none; 
+        }
         .main-header .search-wrapper {
             display: none; /* 풀스크린 시 검색창 숨김 */
         }
 
         /* 반응형 디자인 개선 (26번) */
+        /* 모바일 햄버거 메뉴 버튼은 데스크탑에서 숨김 */
+        #mobile-menu-toggle {
+            display: none; 
+        }
+
         @media (max-width: 768px) {
+            /* 모바일에서 햄버거 메뉴 버튼 표시 */
+            #mobile-menu-toggle {
+                display: block; 
+                background: none;
+                border: none;
+                color: var(--text-secondary);
+                font-size: 1.5rem;
+                cursor: pointer;
+                padding: 8px;
+            }
+            #mobile-menu-toggle:hover {
+                background-color: var(--bg-tertiary);
+                border-radius: 50%;
+            }
+
             .sidebar {
                 position: fixed;
                 top: 0;
@@ -989,11 +1028,34 @@
             .sidebar.open {
                 left: 0; /* 열릴 때 표시 */
             }
+
+            /* 사이드바 닫기 버튼 (모바일에서만 표시) */
+            #sidebar-close-btn {
+                display: block;
+                background: none;
+                border: none;
+                color: var(--text-secondary);
+                font-size: 1.8rem;
+                cursor: pointer;
+                padding: 8px;
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                z-index: 1001;
+            }
+            #sidebar-close-btn:hover {
+                background-color: var(--bg-tertiary);
+                border-radius: 50%;
+            }
+            
             .main-content {
                 width: 100%;
             }
             .main-header {
                 padding: 0 16px;
+                /* 모바일에서 햄버거 메뉴 버튼과 제목 정렬 */
+                justify-content: flex-start;
+                gap: 15px;
             }
             .main-header h1 {
                 font-size: 1.2rem;
@@ -1021,6 +1083,11 @@
             .editor-actions {
                 width: 100%;
                 justify-content: flex-end;
+            }
+
+            /* 풀스크린 모드에서 사이드바 숨김 (모바일) */
+            body.fullscreen-editor-mode .sidebar { 
+                display: none; 
             }
         }
         /* 버튼 공통 스타일 (버전 기록 버튼 등) */
@@ -1067,10 +1134,14 @@
                 <button class="new-folder-btn" id="new-folder-btn"><i class="fa-solid fa-folder-plus"></i> 새 폴더</button>
             </nav>
         </div>
+        <!-- 모바일 사이드바 닫기 버튼 -->
+        <button id="sidebar-close-btn" style="display: none;"><i class="fa-solid fa-times"></i></button>
     </aside>
 
     <main class="main-content">
         <header class="main-header">
+            <!-- 모바일 햄버거 메뉴 버튼 -->
+            <button id="mobile-menu-toggle"><i class="fa-solid fa-bars"></i></button>
             <h1 id="main-header-title">환영합니다</h1>
             <div class="search-wrapper">
                 <i class="fa-solid fa-magnifying-glass"></i>
