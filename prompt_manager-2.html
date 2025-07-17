@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>프롬프트 관리자 프로 (최종)</title>
     <!-- Font Awesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script type="module">
         // Firebase SDK 모듈 임포트
@@ -295,10 +295,8 @@
                     }
 
                     // IndexedDB 캐시 업데이트: Firestore에 저장된 실제 데이터로 업데이트
-                    // Firestore에서 저장된 데이터의 실제 Timestamp 값을 반영하기 위해 다시 가져오거나 예측
-                    // 여기서는 간단히 최신 정보를 포함하여 IndexedDB에 다시 put 합니다.
-                    const updatedItem = { id: resultId, ...cleanItem, updatedAt: new Date() }; // 임시로 현재 시간 사용
-                    // 이 부분은 Firestore Timestamp 객체가 아닌 Date 객체를 IndexedDB에 저장하기 위함
+                    const updatedItem = { id: resultId, ...cleanItem, updatedAt: new Date() }; 
+                    // Firestore Timestamp 객체가 아닌 Date 객체를 IndexedDB에 저장하기 위함
                     if (updatedItem.createdAt && updatedItem.createdAt.toDate) updatedItem.createdAt = updatedItem.createdAt.toDate();
                     if (updatedItem.updatedAt && updatedItem.updatedAt.toDate) updatedItem.updatedAt = updatedItem.updatedAt.toDate();
 
@@ -531,6 +529,7 @@
             // 프롬프트 편집기 화면 렌더링
             promptEditor: async (id) => {
                 const isNew = id === null;
+                // isFavorite, usageCount를 항상 초기화
                 let p = { title: '', content: '', folderId: null, tags: [], isFavorite: false, isTemplate: false, usageCount: 0 };
                 if (!isNew) {
                     const fetchedPrompt = await dbService.getById('prompts', id);
@@ -732,23 +731,28 @@
                     const id = saveBtn.dataset.id || null;
                     const tags = document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean);
                     const currentContent = document.getElementById('content-input').value; // 버전 저장을 위해 현재 내용 가져옴
-                    const data = {
+                    
+                    // isFavorite과 usageCount를 항상 명시적으로 초기화
+                    let data = {
                         title: document.getElementById('title-input').value,
                         content: currentContent,
                         folderId: document.getElementById('folder-select').value || null,
                         tags: tags,
                         isTemplate: document.getElementById('is-template-checkbox').checked,
-                        updatedAt: serverTimestamp() // Firestore 서버 타임스탬프 사용
+                        updatedAt: serverTimestamp(), // Firestore 서버 타임스탬프 사용
+                        isFavorite: false, // 기본값으로 항상 초기화
+                        usageCount: 0 // 기본값으로 항상 초기화
                     };
-                    let existingPrompt = null;
-                    if (id) {
-                        existingPrompt = await dbService.getById('prompts', id);
-                        data.isFavorite = existingPrompt ? existingPrompt.isFavorite : false; // 기존 즐겨찾기 상태 유지
-                        data.usageCount = existingPrompt ? existingPrompt.usageCount : 0; // 기존 사용 횟수 유지
+
+                    // 기존 항목인 경우, 기존 isFavorite과 usageCount 값을 유지
+                    if (id) { 
+                        const existingPrompt = await dbService.getById('prompts', id);
+                        if (existingPrompt) {
+                            data.isFavorite = existingPrompt.isFavorite;
+                            data.usageCount = existingPrompt.usageCount;
+                        }
                     } else { // 새 항목인 경우
-                        data.createdAt = serverTimestamp(); 
-                        data.isFavorite = false; // 새 항목은 기본적으로 즐겨찾기 아님
-                        data.usageCount = 0; // 새 항목은 사용 횟수 0
+                        data.createdAt = serverTimestamp(); // 새 항목은 생성 시간 설정
                     }
                                         
                     try {
