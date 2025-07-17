@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>프롬프트 관리자 프로 (Firebase)</title>
+    <title>프롬프트 관리자 프로 (Firebase & 캐싱)</title>
+    <!-- Font Awesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
+    <!-- Firebase SDKs - Modular version -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
         import { 
@@ -30,7 +32,7 @@
             orderBy
         } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
-        // Your web app's Firebase configuration
+        // Firebase 프로젝트 설정
         // !!! 중요: 아래 firebaseConfig 객체에 실제 Firebase 프로젝트 설정값을 붙여넣으세요. !!!
         const firebaseConfig = {
             apiKey: "AIzaSyAzpL5nTg6v92Uj28QsBpxt1k8wYoGKXtY",
@@ -45,11 +47,90 @@
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
-        const db = getFirestore(app);
+        const dbFirestore = getFirestore(app); // Firestore DB 인스턴스
         let currentUser = null;
 
         // =================================================================
-        // UI 요소 및 상태 관리 (UI Elements and State Management)
+        // IndexedDB Setup for Caching and Versioning
+        // =================================================================
+        const INDEXEDDB_NAME = 'PromptManagerCacheDB';
+        const INDEXEDDB_VERSION = 2; // 버전 기록을 위해 버전 증가
+        const CACHE_STORE_PROMPTS = 'cachedPrompts';
+        const CACHE_STORE_FOLDERS = 'cachedFolders';
+        const CACHE_STORE_VERSIONS = 'promptVersions'; // 프롬프트 버전 기록 저장소
+
+        let indexedDbInstance;
+
+        function openIndexedDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(INDEXEDDB_NAME, INDEXEDDB_VERSION);
+
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(CACHE_STORE_PROMPTS)) {
+                        db.createObjectStore(CACHE_STORE_PROMPTS, { keyPath: 'id' });
+                    }
+                    if (!db.objectStoreNames.contains(CACHE_STORE_FOLDERS)) {
+                        db.createObjectStore(CACHE_STORE_FOLDERS, { keyPath: 'id' });
+                    }
+                    // 버전 기록 저장소 생성 및 인덱스 추가
+                    if (!db.objectStoreNames.contains(CACHE_STORE_VERSIONS)) {
+                        const versionStore = db.createObjectStore(CACHE_STORE_VERSIONS, { keyPath: 'id', autoIncrement: true });
+                        versionStore.createIndex('promptId', 'promptId', { unique: false });
+                        versionStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    }
+                };
+
+                request.onsuccess = (event) => {
+                    indexedDbInstance = event.target.result;
+                    resolve(indexedDbInstance);
+                };
+
+                request.onerror = (event) => {
+                    console.error("IndexedDB 열기 오류:", event.target.errorCode);
+                    reject(event.target.errorCode);
+                };
+            });
+        }
+
+        // IndexedDB에서 모든 항목 가져오기
+        async function getFromIndexedDB(storeName) {
+            if (!indexedDbInstance) await openIndexedDB();
+            return new Promise((resolve, reject) => {
+                const transaction = indexedDbInstance.transaction([storeName], 'readonly');
+                const store = transaction.objectStore(storeName);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = (event) => reject(event.target.error);
+            });
+        }
+
+        // IndexedDB에 항목 추가/업데이트
+        async function putIntoIndexedDB(storeName, data) {
+            if (!indexedDbInstance) await openIndexedDB();
+            return new Promise((resolve, reject) => {
+                const transaction = indexedDbInstance.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.put(data);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = (event) => reject(event.target.error);
+            });
+        }
+
+        // IndexedDB에서 특정 항목 삭제
+        async function deleteFromIndexedDB(storeName, id) {
+            if (!indexedDbInstance) await openIndexedDB();
+            return new Promise((resolve, reject) => {
+                const transaction = indexedDbInstance.transaction([storeName], 'readwrite');
+                const store = transaction.objectStore(storeName);
+                const request = store.delete(id);
+                request.onsuccess = () => resolve();
+                request.onerror = (event) => reject(event.target.error);
+            });
+        }
+
+        // =================================================================
+        // UI 요소 참조 및 상태 관리 (UI Elements and State Management)
         // =================================================================
         const ui = {
             contentView: document.getElementById('content-view'),
@@ -78,43 +159,280 @@
         let state = { currentFilter: { type: 'all', id: null, name: '모든 항목' }, prompts: [], folders: [] };
 
         // =================================================================
-        // Firebase Firestore 데이터 서비스 (Firestore Data Service)
+        // Firebase Firestore & IndexedDB Hybrid Data Service
         // =================================================================
         const dbService = {
+            // 현재 사용자 UID 기반 컬렉션 참조 가져오기
             getCollectionRef: (collectionName) => {
-                if (!currentUser) throw new Error("로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
-                return collection(db, 'users', currentUser.uid, collectionName);
+                if (!currentUser) {
+                    console.error("오류: 로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
+                    throw new Error("로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
+                }
+                return collection(dbFirestore, 'users', currentUser.uid, collectionName);
             },
+            // 특정 문서 참조 가져오기
             getDocRef: (collectionName, id) => {
-                if (!currentUser) throw new Error("로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
-                return doc(db, 'users', currentUser.uid, collectionName, id);
+                if (!currentUser) {
+                     console.error("오류: 로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
+                    throw new Error("로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
+                }
+                return doc(dbFirestore, 'users', currentUser.uid, collectionName, id);
             },
-            getAll: async (collectionName) => {
-                const q = query(dbService.getCollectionRef(collectionName), orderBy("updatedAt", "desc"));
-                const snapshot = await getDocs(q);
-                return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            },
-            getById: async (collectionName, id) => {
-                const docSnap = await getDoc(dbService.getDocRef(collectionName, id));
-                return docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
-            },
-            put: async (collectionName, item) => {
-                const cleanItem = { ...item };
-                delete cleanItem.id; // Firestore 문서 자체에 id를 저장하지 않음
+            // 모든 문서 가져오기 (캐싱 적용)
+            getAll: async (collectionName, forceRefresh = false) => {
+                if (!currentUser) return [];
 
-                if (item.id) { // ID가 있으면 업데이트
-                    await setDoc(dbService.getDocRef(collectionName, item.id), cleanItem, { merge: true });
-                    return item.id;
-                } else { // ID가 없으면 새로 추가
-                    const docRef = await addDoc(dbService.getCollectionRef(collectionName), cleanItem);
-                    return docRef.id;
+                const cacheStoreName = collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS;
+
+                // 1. IndexedDB에서 캐시된 데이터 시도
+                if (!forceRefresh) {
+                    try {
+                        const cachedData = await getFromIndexedDB(cacheStoreName);
+                        if (cachedData.length > 0) {
+                            console.log(`IndexedDB에서 ${collectionName} 데이터 로드됨.`);
+                            return cachedData;
+                        }
+                    } catch (e) {
+                        console.warn(`IndexedDB에서 ${collectionName} 데이터 로드 실패, Firestore 시도:`, e);
+                    }
+                }
+
+                // 2. Firestore에서 최신 데이터 가져오기
+                try {
+                    const q = query(dbService.getCollectionRef(collectionName), orderBy("updatedAt", "desc"));
+                    const snapshot = await getDocs(q);
+                    const firestoreData = snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        // Firestore Timestamp를 Date 객체로 변환하여 저장 (IndexedDB 호환성)
+                        if (data.createdAt && data.createdAt.toDate) data.createdAt = data.createdAt.toDate();
+                        if (data.updatedAt && data.updatedAt.toDate) data.updatedAt = data.updatedAt.toDate();
+                        return { id: doc.id, ...data };
+                    });
+
+                    // 3. IndexedDB에 캐시 업데이트
+                    try {
+                        const transaction = indexedDbInstance.transaction([cacheStoreName], 'readwrite');
+                        const store = transaction.objectStore(cacheStoreName);
+                        store.clear(); // 기존 캐시 삭제
+                        for (const item of firestoreData) {
+                            store.put(item); // 새 데이터 추가
+                        }
+                        console.log(`Firestore에서 ${collectionName} 데이터 로드 및 IndexedDB에 캐시됨.`);
+                    } catch (e) {
+                        console.error("IndexedDB 캐시 업데이트 오류:", e);
+                    }
+                    
+                    return firestoreData;
+                } catch (error) {
+                    console.error(`Firestore ${collectionName} 데이터 가져오기 오류:`, error);
+                    helpers.showToast(`데이터 로드 실패: ${error.message}`);
+                    return []; 
                 }
             },
-            update: (collectionName, id, data) => {
-                return updateDoc(dbService.getDocRef(collectionName, id), data);
+            // ID로 특정 문서 가져오기 (캐싱 적용)
+            getById: async (collectionName, id) => {
+                if (!currentUser) return null;
+
+                const cacheStoreName = collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS;
+
+                // 1. IndexedDB에서 캐시된 단일 항목 시도
+                try {
+                    const transaction = indexedDbInstance.transaction([cacheStoreName], 'readonly');
+                    const store = transaction.objectStore(cacheStoreName);
+                    const cachedItem = await new Promise((resolve, reject) => {
+                        const request = store.get(id);
+                        request.onsuccess = () => resolve(request.result);
+                        request.onerror = (event) => reject(event.target.error);
+                    });
+                    if (cachedItem) {
+                        console.log(`IndexedDB에서 ${collectionName}:${id} 로드됨.`);
+                        return cachedItem;
+                    }
+                } catch (e) {
+                    console.warn(`IndexedDB에서 ${collectionName}:${id} 로드 실패, Firestore 시도:`, e);
+                }
+
+                // 2. Firestore에서 가져오기
+                try {
+                    const docSnap = await getDoc(dbService.getDocRef(collectionName, id));
+                    const item = docSnap.exists() ? { id: docSnap.id, ...docSnap.data() } : null;
+
+                    // 3. IndexedDB에 캐시 업데이트
+                    if (item) {
+                        // Firestore Timestamp를 Date 객체로 변환하여 저장
+                        if (item.createdAt && item.createdAt.toDate) item.createdAt = item.createdAt.toDate();
+                        if (item.updatedAt && item.updatedAt.toDate) item.updatedAt = item.updatedAt.toDate();
+                        await putIntoIndexedDB(cacheStoreName, item);
+                        console.log(`Firestore에서 ${collectionName}:${id} 로드 및 IndexedDB에 캐시됨.`);
+                    }
+                    return item;
+                } catch (error) {
+                    console.error(`Firestore ${collectionName}:${id} 데이터 가져오기 오류:`, error);
+                    helpers.showToast(`항목 로드 실패: ${error.message}`);
+                    return null;
+                }
             },
-            delete: (collectionName, id) => {
-                return deleteDoc(dbService.getDocRef(collectionName, id));
+            // 문서 추가 또는 업데이트 (캐싱 적용)
+            put: async (collectionName, item) => {
+                if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 저장할 수 없습니다.");
+                const cleanItem = { ...item };
+                const itemId = cleanItem.id;
+                delete cleanItem.id; 
+
+                let resultId;
+                try {
+                    if (itemId) { 
+                        await setDoc(dbService.getDocRef(collectionName, itemId), cleanItem, { merge: true });
+                        resultId = itemId;
+                    } else { 
+                        const docRef = await addDoc(dbService.getCollectionRef(collectionName), cleanItem);
+                        resultId = docRef.id;
+                    }
+
+                    // IndexedDB 캐시 업데이트: Firestore에 저장된 실제 데이터로 업데이트
+                    const updatedItem = await dbService.getById(collectionName, resultId); // Firestore에서 최신 데이터 가져옴
+                    if (updatedItem) {
+                        const cacheStoreName = collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS;
+                        await putIntoIndexedDB(cacheStoreName, updatedItem);
+                    }
+                    return resultId;
+                } catch (error) {
+                    console.error(`Firestore ${collectionName} 데이터 저장 오류:`, error);
+                    helpers.showToast(`데이터 저장 실패: ${error.message}`);
+                    throw error; 
+                }
+            },
+            // 문서 업데이트 (부분 업데이트, 캐싱 적용)
+            update: async (collectionName, id, data) => {
+                 if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 업데이트할 수 없습니다.");
+                try {
+                    await updateDoc(dbService.getDocRef(collectionName, id), data);
+                    // IndexedDB 캐시 업데이트: Firestore에 저장된 실제 데이터로 업데이트
+                    const updatedItem = await dbService.getById(collectionName, id); // Firestore에서 최신 데이터 가져옴
+                    if (updatedItem) {
+                        const cacheStoreName = collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS;
+                        await putIntoIndexedDB(cacheStoreName, updatedItem);
+                    }
+                } catch (error) {
+                    console.error(`Firestore ${collectionName}:${id} 데이터 업데이트 오류:`, error);
+                    helpers.showToast(`데이터 업데이트 실패: ${error.message}`);
+                    throw error;
+                }
+            },
+            // 문서 삭제 (캐싱 적용)
+            delete: async (collectionName, id) => {
+                if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 삭제할 수 없습니다.");
+                try {
+                    await deleteDoc(dbService.getDocRef(collectionName, id));
+                    // IndexedDB 캐시 삭제
+                    await deleteFromIndexedDB(collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS, id);
+                } catch (error) {
+                    console.error(`Firestore ${collectionName}:${id} 데이터 삭제 오류:`, error);
+                    helpers.showToast(`데이터 삭제 실패: ${error.message}`);
+                    throw error;
+                }
+            },
+            // 프롬프트 버전 저장 (IndexedDB에만 저장)
+            savePromptVersion: async (promptId, content, memo = '') => {
+                if (!indexedDbInstance) await openIndexedDB();
+                const versionData = {
+                    promptId: promptId,
+                    content: content,
+                    timestamp: new Date(),
+                    memo: memo
+                };
+                await putIntoIndexedDB(CACHE_STORE_VERSIONS, versionData);
+                helpers.showToast('프롬프트 버전이 저장되었습니다.');
+            },
+            // 특정 프롬프트의 모든 버전 가져오기
+            getPromptVersions: async (promptId) => {
+                if (!indexedDbInstance) await openIndexedDB();
+                return new Promise((resolve, reject) => {
+                    const transaction = indexedDbInstance.transaction([CACHE_STORE_VERSIONS], 'readonly');
+                    const store = transaction.objectStore(CACHE_STORE_VERSIONS);
+                    const index = store.index('promptId');
+                    const request = index.getAll(promptId);
+                    request.onsuccess = () => {
+                         // 최신순으로 정렬
+                        const sortedVersions = request.result.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+                        resolve(sortedVersions);
+                    };
+                    request.onerror = (event) => reject(event.target.error);
+                });
+            },
+            // 데이터 내보내기 (Firebase + IndexedDB 통합)
+            exportData: async () => {
+                // Firestore에서 강제 새로고침하여 최신 데이터 가져옴
+                const allPrompts = await dbService.getAll('prompts', true); 
+                const allFolders = await dbService.getAll('folders', true); 
+                const data = { prompts: allPrompts, folders: allFolders };
+                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `prompt_manager_backup_${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                helpers.showToast('데이터가 내보내기되었습니다.');
+            },
+            // 데이터 가져오기 (Firebase + IndexedDB 통합)
+            importData: async (file) => {
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const importedData = JSON.parse(event.target.result);
+                        if (importedData.prompts && Array.isArray(importedData.prompts)) {
+                             // 기존 데이터 삭제 여부 확인
+                            const confirmClear = confirm('기존 데이터를 모두 지우고 가져오겠습니까? (취소 시 기존 데이터에 추가)');
+                            if (confirmClear) {
+                                // Firestore 및 IndexedDB에서 모두 삭제
+                                const currentPrompts = await dbService.getAll('prompts', true);
+                                for (const p of currentPrompts) {
+                                    await dbService.delete('prompts', p.id);
+                                }
+                                const currentFolders = await dbService.getAll('folders', true);
+                                for (const f of currentFolders) {
+                                    await dbService.delete('folders', f.id);
+                                }
+                                helpers.showToast('기존 데이터가 지워졌습니다.');
+                            }
+
+                            for (const promptData of importedData.prompts) {
+                                // ID 필드를 제거하고 Firestore에 새로 추가 (중복 방지)
+                                await dbService.put('prompts', {
+                                    title: promptData.title,
+                                    content: promptData.content,
+                                    folderId: promptData.folderId,
+                                    tags: promptData.tags || [],
+                                    isFavorite: promptData.isFavorite || false,
+                                    isTemplate: promptData.isTemplate || false,
+                                    usageCount: promptData.usageCount || 0, // 사용 빈도 필드
+                                    createdAt: serverTimestamp(),
+                                    updatedAt: serverTimestamp()
+                                });
+                            }
+                            if (importedData.folders && Array.isArray(importedData.folders)) {
+                                for (const folderData of importedData.folders) {
+                                    await dbService.put('folders', {
+                                        name: folderData.name,
+                                        createdAt: serverTimestamp(),
+                                        updatedAt: serverTimestamp()
+                                    });
+                                }
+                            }
+                            helpers.showToast('데이터가 성공적으로 가져오기되었습니다!');
+                            initializeAppLogic(); // UI 새로고침
+                        } else {
+                            throw new Error("유효하지 않은 JSON 데이터 형식입니다.");
+                        }
+                    } catch (e) {
+                        console.error("데이터 가져오기 오류:", e);
+                        helpers.showToast('데이터 가져오기 실패: ' + e.message);
+                    }
+                };
+                reader.readAsText(file);
             }
         };
 
@@ -122,6 +440,7 @@
         // UI 렌더링 함수들 (UI Rendering Functions)
         // =================================================================
         const render = {
+            // 폴더 목록 렌더링
             folders: async () => {
                 state.folders = await dbService.getAll('folders');
                 ui.folderList.innerHTML = state.folders.map(f => `
@@ -130,26 +449,29 @@
                     </li>
                 `).join('') + `<li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
             },
+            // 프롬프트 목록 렌더링
             prompts: async () => {
                 ui.mainHeader.textContent = state.currentFilter.name;
                 let allItems = [];
                 try {
+                    // 캐시 강제 업데이트가 필요한 경우 dbService.getAll('prompts', true) 호출
                     allItems = await dbService.getAll('prompts');
                 } catch (e) {
-                    console.error("프롬프트 가져오기 오류:", e);
-                    ui.contentView.innerHTML = `<div class="content-placeholder">프롬프트 로드 중 오류 발생: ${e.message}. 다시 로그인해 주세요.</div>`;
-                    return;
+                    console.warn("render.prompts에서 데이터 로드 중 경고:", e); 
+                    allItems = [];
                 }
-                
+                                
                 let filtered = allItems;
 
+                // 현재 필터 타입에 따른 데이터 필터링
                 const { type, id } = state.currentFilter;
                 if (type === 'folder') filtered = allItems.filter(p => p.folderId === id);
                 else if (type === 'uncategorized') filtered = allItems.filter(p => !p.folderId);
                 else if (type === 'favorites') filtered = allItems.filter(p => p.isFavorite);
                 else if (type === 'templates') filtered = allItems.filter(p => p.isTemplate);
                 else if (type === 'prompts') filtered = allItems.filter(p => !p.isTemplate);
-                
+                                
+                // 검색어 필터링
                 const searchTerm = ui.searchInput.value.toLowerCase();
                 if(searchTerm) {
                     if (searchTerm.startsWith('is:template')) filtered = filtered.filter(p => p.isTemplate);
@@ -161,19 +483,25 @@
                         filtered = filtered.filter(p => p.title.toLowerCase().includes(searchTerm) || p.content.toLowerCase().includes(searchTerm));
                     }
                 }
-                
+                                
+                // 필터링된 항목이 없을 경우 메시지 표시
                 if (filtered.length === 0) {
                     ui.contentView.innerHTML = `<div class="content-placeholder">항목을 찾을 수 없습니다.</div>`;
                     return;
                 }
+                // updatedAt 타임스탬프 기준으로 정렬 (최신순)
+                // IndexedDB에서 로드된 Date 객체와 Firestore Timestamp를 모두 처리
+                filtered.sort((a, b) => {
+                    const dateA = a.updatedAt instanceof Date ? a.updatedAt : (a.updatedAt ? a.updatedAt.toDate() : new Date(0));
+                    const dateB = b.updatedAt instanceof Date ? b.updatedAt : (b.updatedAt ? b.updatedAt.toDate() : new Date(0));
+                    return dateB.getTime() - dateA.getTime();
+                });
 
-                // Sort by updatedAt timestamp for consistent order
-                filtered.sort((a, b) => (b.updatedAt?.toMillis() || 0) - (a.updatedAt?.toMillis() || 0));
-
+                // 프롬프트 목록 HTML 생성 및 렌더링
                 ui.contentView.innerHTML = filtered.map(p => {
                     const icon = p.isTemplate ? 'fa-puzzle-piece' : 'fa-file-lines';
                     const tagsHTML = (p.tags || []).map(tag => `<span class="prompt-tag">#${tag}</span>`).join('');
-                    const date = p.updatedAt ? p.updatedAt.toDate().toLocaleString() : 'N/A'; // Convert Firestore Timestamp to Date
+                    const date = p.updatedAt ? (p.updatedAt instanceof Date ? p.updatedAt.toLocaleString() : p.updatedAt.toDate().toLocaleString()) : 'N/A';
 
                     return `
                     <div class="prompt-list-item" data-prompt-id="${p.id}">
@@ -191,22 +519,24 @@
                     </div>`;
                 }).join('');
             },
+            // 프롬프트 편집기 화면 렌더링
             promptEditor: async (id) => {
                 const isNew = id === null;
-                let p = { title: '', content: '', folderId: null, tags: [], isFavorite: false, isTemplate: false };
+                let p = { title: '', content: '', folderId: null, tags: [], isFavorite: false, isTemplate: false, usageCount: 0 };
                 if (!isNew) {
                     const fetchedPrompt = await dbService.getById('prompts', id);
                     if (fetchedPrompt) {
                         p = fetchedPrompt;
                     } else {
                         helpers.showToast('항목을 찾을 수 없습니다!');
-                        render.prompts(); // 목록으로 돌아가기
+                        render.prompts(); 
                         return;
                     }
                 }
-                
+                                
+                // 폴더 선택 드롭다운 옵션 생성
                 const folderOpts = state.folders.map(f => `<option value="${f.id}" ${f.id === p.folderId ? 'selected' : ''}>${f.name}</option>`).join('');
-                
+                                
                 ui.mainHeader.textContent = isNew ? '새 항목' : `편집: ${p.title}`;
                 ui.contentView.innerHTML = `
                     <div class="editor-header">
@@ -223,19 +553,77 @@
                         <div class="form-group" style="flex:1;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div>
                     </div>
                     <div class="is-template-toggle"><input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}><label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label></div>
+                    ${!isNew ? `
+                    <button id="view-versions-btn" class="button-like" style="margin-top: 20px;"><i class="fa-solid fa-history"></i> 버전 기록 보기</button>
+                    <div id="versions-history" style="margin-top: 20px; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; display:none;">
+                        <h3>버전 기록</h3>
+                        <ul id="versions-list" style="list-style: none; padding: 0;"></ul>
+                    </div>
+                    ` : ''}
                 `;
-                // Set the correct folder value after rendering
+                // 폴더 드롭다운의 선택된 값 설정 (렌더링 후)
                 if (p.folderId) document.getElementById('folder-select').value = p.folderId;
+
+                // 버전 기록 버튼 및 리스너 추가
+                const viewVersionsBtn = document.getElementById('view-versions-btn');
+                const versionsHistoryDiv = document.getElementById('versions-history');
+                const versionsList = document.getElementById('versions-list');
+                
+                if (viewVersionsBtn) {
+                    viewVersionsBtn.addEventListener('click', async () => {
+                        if (versionsHistoryDiv.style.display === 'none') {
+                            versionsHistoryDiv.style.display = 'block';
+                            const versions = await dbService.getPromptVersions(id);
+                            if (versions.length === 0) {
+                                versionsList.innerHTML = '<li>저장된 버전이 없습니다.</li>';
+                            } else {
+                                versionsList.innerHTML = versions.map(v => `
+                                    <li style="padding: 8px 0; border-bottom: 1px dashed var(--border-color);">
+                                        <strong>${v.timestamp.toLocaleString()}</strong>: ${v.memo || '메모 없음'}
+                                        <button data-version-id="${v.id}" class="restore-version-btn button-like" style="margin-left: 10px;">복원</button>
+                                        <button data-version-id="${v.id}" class="delete-version-btn button-like" style="margin-left: 5px; color: var(--accent-pink); border-color: var(--accent-pink);">삭제</button>
+                                    </li>
+                                `).join('');
+                            }
+                        } else {
+                            versionsHistoryDiv.style.display = 'none';
+                        }
+                    });
+
+                    // 버전 복원 및 삭제 이벤트 리스너 (위임)
+                    versionsList.addEventListener('click', async (e) => {
+                        const versionId = parseInt(e.target.dataset.versionId, 10);
+                        if (e.target.classList.contains('restore-version-btn')) {
+                            if (confirm('이 버전으로 프롬프트를 복원하시겠습니까? 현재 내용은 덮어씌워집니다.')) {
+                                const versions = await dbService.getPromptVersions(id);
+                                const versionToRestore = versions.find(v => v.id === versionId);
+                                if (versionToRestore) {
+                                    document.getElementById('content-input').value = versionToRestore.content;
+                                    helpers.showToast('버전이 복원되었습니다. 저장을 눌러 적용하세요.');
+                                }
+                            }
+                        } else if (e.target.classList.contains('delete-version-btn')) {
+                            if (confirm('이 버전을 삭제하시겠습니까?')) {
+                                await deleteFromIndexedDB(CACHE_STORE_VERSIONS, versionId);
+                                helpers.showToast('버전이 삭제되었습니다.');
+                                viewVersionsBtn.click(); // 히스토리 새로고침 (토글 닫고 다시 열기)
+                                viewVersionsBtn.click();
+                            }
+                        }
+                    });
+                }
             },
+            // 템플릿 사용 모달 렌더링
             templateModal: async (id) => {
                 const p = await dbService.getById('prompts', id);
                 if (!p) {
                     helpers.showToast('템플릿을 찾을 수 없습니다!');
                     return;
                 }
+                // 템플릿 내용에서 플레이스홀더 추출
                 const placeholders = [...p.content.matchAll(/{{(.*?)}}/g)].map(match => match[1].trim());
                 const uniquePlaceholders = [...new Set(placeholders)];
-                
+                                
                 ui.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
                 ui.templateModal.body.innerHTML = uniquePlaceholders.map(ph => `
                     <div class="form-group">
@@ -243,7 +631,7 @@
                         <input type="text" id="ph-${ph}" data-placeholder="${ph}">
                     </div>`).join('') + `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${p.content}</div></div>`;
                 ui.templateModal.overlay.classList.add('show');
-                
+                                
                 const inputs = ui.templateModal.body.querySelectorAll('input[data-placeholder]');
                 const preview = document.getElementById('template-preview');
                 const updatePreview = () => {
@@ -251,17 +639,26 @@
                     inputs.forEach(input => {
                         const ph = `{{${input.dataset.placeholder}}}`;
                         const value = input.value;
-                        content = content.replaceAll(ph, value || ph); // Replace with value or placeholder if empty
+                        content = content.replaceAll(ph, value || ph); // 입력 값이 없으면 플레이스홀더 유지
                     });
                     preview.textContent = content;
                 };
                 inputs.forEach(input => input.addEventListener('input', updatePreview));
-                updatePreview(); // Initial preview render
+                updatePreview(); // 초기 미리보기 렌더링
 
-                ui.templateModal.generateBtn.onclick = () => {
-                    navigator.clipboard.writeText(preview.textContent).then(() => {
+                // '생성 및 복사' 버튼 클릭 이벤트
+                ui.templateModal.generateBtn.onclick = async () => { // async 추가
+                    navigator.clipboard.writeText(preview.textContent).then(async () => { // await 추가
                         helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
                         ui.templateModal.overlay.classList.remove('show');
+                        
+                        // 사용 빈도 증가 (16번)
+                        if (p.id) {
+                            const currentUsageCount = p.usageCount || 0;
+                            await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1, updatedAt: serverTimestamp() });
+                            render.prompts(); // 목록 새로고침
+                        }
+
                     }).catch(err => {
                         console.error('텍스트 복사 실패: ', err);
                         helpers.showToast('복사 실패. 다시 시도해 주세요.');
@@ -274,12 +671,14 @@
         // 이벤트 핸들러 (Event Handlers)
         // =================================================================
         const handlers = {
+            // 사이드바 메뉴 클릭 이벤트
             sidebar: (e) => {
                 const target = e.target.closest('.nav-item');
                 if (!target) return;
+                // 현재 활성화된 메뉴 항목 초기화
                 document.querySelectorAll('.sidebar-nav .nav-item.active').forEach(el => el.classList.remove('active'));
-                target.classList.add('active');
-                
+                target.classList.add('active'); // 클릭된 항목 활성화
+                                
                 const { filterType, folderId } = target.dataset;
                 if (filterType === 'folder') {
                     const id = folderId;
@@ -287,66 +686,85 @@
                 } else {
                     state.currentFilter = { type: filterType, id: null, name: target.textContent.trim() };
                 }
-                render.prompts();
+                render.prompts(); // 프롬프트 목록 새로고침
             },
+            // 메인 콘텐츠 영역 클릭 이벤트 (프롬프트 목록 항목, 버튼 등)
             content: async (e) => {
                 const promptItem = e.target.closest('.prompt-list-item');
                 if (!promptItem) return;
                 const promptId = promptItem.dataset.promptId;
-                
-                if (e.target.closest('.edit-btn')) {
+                                
+                if (e.target.closest('.edit-btn')) { // 편집 버튼 클릭
                     render.promptEditor(promptId);
-                } else if (e.target.closest('.use-btn')) {
+                } else if (e.target.closest('.use-btn')) { // 템플릿 사용 버튼 클릭
                     render.templateModal(promptId);
-                } else if (e.target.closest('.copy-btn')) {
+                } else if (e.target.closest('.copy-btn')) { // 복사 버튼 클릭
                     const p = await dbService.getById('prompts', promptId);
                     if (p) {
                         navigator.clipboard.writeText(p.content).then(() => helpers.showToast('클립보드에 복사되었습니다!'));
                     }
-                } else if (e.target.closest('.fav-icon')) {
+                } else if (e.target.closest('.fav-icon')) { // 즐겨찾기 아이콘 클릭
                     const p = await dbService.getById('prompts', promptId);
                     if (p) {
-                        await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite });
+                        await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite, updatedAt: serverTimestamp() });
                         helpers.showToast(!p.isFavorite ? '즐겨찾기에 추가되었습니다.' : '즐겨찾기에서 제거되었습니다.');
-                        render.prompts();
+                        render.prompts(); // 즐겨찾기 상태 변경 후 목록 새로고침
                     }
+                } else if (promptItem) { // 프롬프트 목록 항목 자체 클릭 (편집 버튼이 아닌 경우)
+                    render.promptEditor(promptId);
                 }
             },
+            // 편집기 화면 내 버튼 클릭 이벤트 (저장, 삭제)
             editor: async (e) => {
                 const saveBtn = e.target.closest('.save-btn');
                 const deleteBtn = e.target.closest('.delete-btn');
 
-                if (saveBtn) {
+                if (saveBtn) { // 저장 버튼 클릭
                     const id = saveBtn.dataset.id || null;
                     const tags = document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean);
+                    const currentContent = document.getElementById('content-input').value; // 버전 저장을 위해 현재 내용 가져옴
                     const data = {
                         title: document.getElementById('title-input').value,
-                        content: document.getElementById('content-input').value,
+                        content: currentContent,
                         folderId: document.getElementById('folder-select').value || null,
                         tags: tags,
                         isTemplate: document.getElementById('is-template-checkbox').checked,
-                        updatedAt: serverTimestamp() // Use Firestore server timestamp
+                        updatedAt: serverTimestamp() // Firestore 서버 타임스탬프 사용
                     };
-                    if (!id) {
-                        data.createdAt = serverTimestamp(); // Set createdAt only for new items
-                        data.isFavorite = false; // Default for new items
+                    let existingPrompt = null;
+                    if (id) {
+                        existingPrompt = await dbService.getById('prompts', id);
+                        data.isFavorite = existingPrompt ? existingPrompt.isFavorite : false; // 기존 즐겨찾기 상태 유지
+                        data.usageCount = existingPrompt ? existingPrompt.usageCount : 0; // 기존 사용 횟수 유지
+                    } else { // 새 항목인 경우
+                        data.createdAt = serverTimestamp(); 
+                        data.isFavorite = false; // 새 항목은 기본적으로 즐겨찾기 아님
+                        data.usageCount = 0; // 새 항목은 사용 횟수 0
                     }
-                    
+                                        
                     try {
                         const savedId = await dbService.put('prompts', { id, ...data });
                         helpers.showToast(id ? '항목이 업데이트되었습니다!' : '항목이 저장되었습니다!');
+
+                        // 프롬프트 버전 관리: 자동 저장 및 히스토리 (1번)
+                        if (savedId) {
+                            const memo = prompt('이 버전에 대한 메모를 남겨주세요 (선택 사항):');
+                            await dbService.savePromptVersion(savedId, currentContent, memo || '');
+                        }
+
                     } catch (error) {
                         console.error("항목 저장 오류:", error);
                         helpers.showToast('항목 저장 오류: ' + error.message);
                     }
 
-                    await render.folders(); // Re-render folders as a prompt's folder might change
-                    state.currentFilter = { type: 'all', id: null, name: '모든 항목' }; // Go back to all items view
-                    await render.prompts();
+                    await render.folders(); // 폴더 목록 새로고침 (폴더 변경 가능성)
+                    state.currentFilter = { type: 'all', id: null, name: '모든 항목' }; // 모든 항목 뷰로 돌아감
+                    await render.prompts(true); // 프롬프트 목록 새로고침 (캐시 강제 업데이트)
                 }
 
-                if (deleteBtn) {
+                if (deleteBtn) { // 삭제 버튼 클릭
                     const id = deleteBtn.dataset.id;
+                    // 사용자에게 확인 대화상자 표시
                     if (confirm('이 항목을 영구적으로 삭제하시겠습니까?')) {
                         try {
                             await dbService.delete('prompts', id);
@@ -355,8 +773,8 @@
                             console.error("항목 삭제 오류:", error);
                             helpers.showToast('항목 삭제 오류: ' + error.message);
                         }
-                        state.currentFilter = { type: 'all', id: null, name: '모든 항목' };
-                        await render.prompts();
+                        state.currentFilter = { type: 'all', id: null, name: '모든 항목' }; // 모든 항목 뷰로 돌아감
+                        await render.prompts(true); // 프롬프트 목록 새로고침 (캐시 강제 업데이트)
                     }
                 }
             }
@@ -366,6 +784,7 @@
         // 헬퍼 함수 (Helper Functions)
         // =================================================================
         const helpers = {
+            // 토스트 알림 표시
             showToast: (msg) => {
                 ui.toast.textContent = msg;
                 ui.toast.classList.add('show');
@@ -376,94 +795,227 @@
         // =================================================================
         // 앱 초기화 및 인증 로직 (App Initialization and Authentication Logic)
         // =================================================================
-        function initializeAppLogic() {
-            ui.sidebarContent.style.display = 'flex';
-            ui.sidebarContent.style.flexDirection = 'column';
-            ui.contentView.innerHTML = ''; // Clear placeholder content
+        // initializeAppLogic 함수를 async로 선언하여 내부의 await를 사용
+        async function initializeAppLogic() {            
+            // IndexedDB 초기화
+            await openIndexedDB();
 
-            render.folders();
-            render.prompts();
+            // UI 요소들을 먼저 보이게 설정 (데이터 로드 전에 빈 화면 방지)
+            ui.sidebarContent.style.display = 'flex';            
+            ui.sidebarContent.style.flexDirection = 'column';            
+            ui.contentView.innerHTML = '<div class="content-placeholder">데이터를 불러오는 중...</div>'; // 로딩 메시지 표시
+            
+            // 데이터 로드 및 렌더링을 기다림
+            await render.folders();            
+            await render.prompts();                        
             
             // Event Listeners after user is logged in
-            ui.newPromptBtn.addEventListener('click', () => render.promptEditor(null));
-            ui.newFolderBtn.addEventListener('click', async () => {
-                const name = prompt('새 폴더 이름을 입력하세요:');
-                if (name?.trim()) {
-                    try {
-                        await dbService.put('folders', { name: name.trim(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-                        await render.folders();
-                        helpers.showToast('폴더가 생성되었습니다!');
-                    } catch (error) {
-                        console.error("폴더 생성 오류:", error);
-                        helpers.showToast('폴더 생성 오류: ' + error.message);
+            ui.newPromptBtn.addEventListener('click', () => render.promptEditor(null));            
+            ui.newFolderBtn.addEventListener('click', async () => {                
+                const name = prompt('새 폴더 이름을 입력하세요:');                
+                if (name?.trim()) {                    
+                    try {                        
+                        await dbService.put('folders', { name: name.trim(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });                        
+                        await render.folders();                        
+                        helpers.showToast('폴더가 생성되었습니다!');                    
+                    } catch (error) {                        
+                        console.error("폴더 생성 오류:", error);                        
+                        helpers.showToast('폴더 생성 오류: ' + error.message);                    
+                    }                
+                }            
+            });            
+            ui.libraryList.addEventListener('click', handlers.sidebar);            
+            ui.folderList.addEventListener('click', handlers.sidebar);            
+            ui.contentView.addEventListener('click', e => { handlers.content(e); handlers.editor(e); });            
+            ui.searchInput.addEventListener('input', () => render.prompts());            
+            ui.templateModal.closeBtn.addEventListener('click', () => ui.templateModal.overlay.classList.remove('show'));            
+            ui.templateModal.overlay.addEventListener('click', e => e.target === ui.templateModal.overlay && ui.templateModal.overlay.classList.remove('show'));        
+
+            // 데이터 내보내기/가져오기 버튼 추가 (설정 섹션이 없으므로 임시로 추가)
+            const dataMgmtSection = document.createElement('div');
+            dataMgmtSection.style = "padding: 16px; border-top: 1px solid var(--border-color); margin-top: 20px;";
+            dataMgmtSection.innerHTML = `
+                <h3 class="nav-section-title" style="padding: 0;">데이터 관리</h3>
+                <button id="export-data-btn" class="button-like" style="width:100%; padding: 8px; margin-top: 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">데이터 내보내기</button>
+                <input type="file" id="import-data-input" accept=".json" style="display: none;">
+                <button id="import-data-btn" class="button-like" style="width:100%; padding: 8px; margin-top: 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">데이터 가져오기</button>
+            `;
+            ui.sidebarContent.appendChild(dataMgmtSection);
+
+            document.getElementById('export-data-btn').addEventListener('click', dbService.exportData);
+            document.getElementById('import-data-btn').addEventListener('click', () => {
+                document.getElementById('import-data-input').click();
+            });
+            document.getElementById('import-data-input').addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    dbService.importData(e.target.files[0]);
+                }
+            });
+
+            // 전역 단축키 (N: 새 항목, F: 풀스크린 편집 토글)
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'n' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) { 
+                    e.preventDefault();
+                    ui.newPromptBtn.click();
+                }
+                if (e.key === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+                    e.preventDefault();
+                    document.body.classList.toggle('fullscreen-editor-mode'); // body에 클래스 토글
+                    const editorArea = document.querySelector('.main-content .content-view');
+                    if (editorArea) {
+                        editorArea.classList.toggle('fullscreen-editor');
+                        if (editorArea.classList.contains('fullscreen-editor')) {
+                            helpers.showToast('풀스크린 편집 모드');
+                        } else {
+                            helpers.showToast('풀스크린 편집 모드 종료');
+                        }
                     }
                 }
             });
-            ui.libraryList.addEventListener('click', handlers.sidebar);
-            ui.folderList.addEventListener('click', handlers.sidebar);
-            ui.contentView.addEventListener('click', e => { handlers.content(e); handlers.editor(e); });
-            ui.searchInput.addEventListener('input', () => render.prompts());
-            ui.templateModal.closeBtn.addEventListener('click', () => ui.templateModal.overlay.classList.remove('show'));
-            ui.templateModal.overlay.addEventListener('click', e => e.target === ui.templateModal.overlay && ui.templateModal.overlay.classList.remove('show'));
+        }        
+
+        // Firebase 인증 상태 변화 감지 옵저버
+        onAuthStateChanged(auth, async user => { 
+            if (user) {                
+                currentUser = user;                
+                ui.loginBtn.style.display = 'none';                
+                ui.userProfile.style.display = 'flex';               
+                ui.userEmail.textContent = user.displayName || user.email; 
+                ui.userPhoto.src = user.photoURL || `https://via.placeholder.com/32`; 
+                await initializeAppLogic(); 
+            } else {                
+                currentUser = null;                
+                ui.loginBtn.style.display = 'block';                
+                ui.userProfile.style.display = 'none';               
+                ui.sidebarContent.style.display = 'none';            
+                ui.contentView.innerHTML = '<div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>'; 
+                ui.mainHeader.textContent = "환영합니다";            
+            }        
+        });        
+
+        // 로그인 버튼 이벤트 리스너
+        ui.loginBtn.addEventListener('click', () => {            
+            const provider = new GoogleAuthProvider();            
+            signInWithPopup(auth, provider).catch(error => {                
+                console.error("로그인 실패:", error);                
+                alert("로그인에 실패했습니다. 자세한 내용은 콘솔을 확인해주세요."); 
+            });        
+        });        
+
+        // 로그아웃 버튼 이벤트 리스너
+        ui.logoutBtn.addEventListener('click', () => {            
+            signOut(auth);        
+        });    
+    </script>    
+    <style>        
+        /* 기본 스타일 및 변수 정의 */
+        :root{--bg-primary:#131314;--bg-secondary:#1e1f20;--bg-tertiary:#2d2e30;--bg-hover:#3c4043;--text-primary:#e2e2e3;--text-secondary:#bdc1c6;--accent-blue:#8ab4f8;--accent-yellow:#fdd663;--accent-pink:#f28b82;--border-color:#3c4043;--sidebar-width:280px;--header-height:64px}        
+        *{margin:0;padding:0;box-sizing:border-box}        
+        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background-color:var(--bg-primary);color:var(--text-primary);display:flex;height:100vh;overflow:hidden}        
+        button{font-family:inherit; cursor: pointer;}        
+        
+        /* 인증 섹션 스타일 */
+        #auth-section{padding:16px;border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; align-items:center; gap: 10px;}        
+        #login-btn{width:100%;padding:10px;background-color:var(--accent-blue);color:var(--bg-primary);border:none;border-radius:6px;font-weight:500}        
+        #user-profile{display:none;align-items:center;gap:10px; width:100%;}        
+        #user-profile img{width:32px;height:32px;border-radius:50%}        
+        #user-profile p{font-size:.9rem;flex-grow:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}        
+        #logout-btn{background:none;border:1px solid var(--border-color);color:var(--text-secondary);padding:6px 10px;border-radius:6px; flex-shrink: 0;}        
+        
+        /* 사이드바 스타일 */
+        .sidebar{width:var(--sidebar-width);background-color:var(--bg-secondary);display:flex;flex-direction:column;flex-shrink:0;height:100%}.sidebar-content{flex-grow:1;overflow-y:auto}.new-prompt-btn{display:flex;align-items:center;gap:12px;background-color:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:24px;padding:10px 16px;font-size:.9rem;cursor:pointer;margin:8px 16px;white-space:nowrap}.new-prompt-btn:hover{background-color:#282a2c}.nav-section-title{font-size:.9rem;color:var(--text-secondary);padding:16px 16px 8px;font-weight:500}.nav-list{list-style:none}.nav-item a{display:flex;align-items:center;gap:16px;padding:10px 16px;color:var(--text-primary);text-decoration:none;border-radius:4px;font-size:.9rem;white-space:nowrap;cursor:pointer}.nav-item a:hover{background-color:var(--bg-tertiary)}.nav-item.active a{background-color:var(--accent-blue);color:var(--bg-primary)}.nav-icon{width:24px;text-align:center;font-size:1rem}.new-folder-btn{width:calc(100% - 32px);margin:10px 16px;padding:10px;background:none;border:1px dashed var(--border-color);color:var(--text-secondary);border-radius:4px}.new-folder-btn:hover{background-color:var(--bg-tertiary)}        
+        
+        /* 메인 콘텐츠 스타일 */
+        .main-content{flex-grow:1;display:flex;flex-direction:column;height:100vh}.main-header{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:var(--header-height);flex-shrink:0;border-bottom:1px solid var(--border-color)}.main-header h1{font-size:1.4rem;font-weight:500}.search-wrapper{position:relative}.search-input{background-color:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:8px 16px 8px 36px;font-size:1rem}.search-wrapper .fa-magnifying-glass{position:absolute;left:12px;top:11px;color:var(--text-secondary)}        
+        
+        /* 콘텐츠 뷰 및 목록 항목 스타일 */
+        .content-view{flex-grow:1;overflow-y:auto;padding:24px}.content-placeholder{padding:50px 20px;text-align:center;color:var(--text-secondary)}.prompt-list-item{display:flex;align-items:center;padding:16px;border-bottom:1px solid var(--border-color);cursor:pointer;gap:16px}.prompt-list-item:hover{background-color:var(--bg-secondary)}.prompt-list-icon{font-size:1.1rem;color:var(--text-secondary);width:20px}.prompt-title{font-weight:500}.prompt-subtitle{font-size:.8rem;color:var(--text-secondary);margin-top:4px}.prompt-tags{display:flex;gap:6px;margin-top:8px}.prompt-tag{background-color:var(--bg-tertiary);color:var(--text-secondary);font-size:.75rem;padding:2px 6px;border-radius:4px}.prompt-actions{margin-left:auto;display:flex;gap:8px}.prompt-actions button{background-color:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px 12px;border-radius:6px}.prompt-actions button:hover{background-color:var(--bg-hover)}        
+        
+        /* 편집기 스타일 */
+        .editor-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.editor-actions button{background-color:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);padding:10px 16px;border-radius:6px;margin-left:8px}.editor-actions button.save-btn{background-color:var(--accent-blue);color:var(--bg-primary);border:none}.editor-actions button.delete-btn{color:var(--accent-pink);border-color:var(--accent-pink)}        
+        .form-group{margin-bottom:24px}.form-group label{display:block;font-size:.9rem;color:var(--text-secondary);margin-bottom:8px}.form-group input,.form-group textarea,.form-group select{width:100%;background-color:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:12px;font-size:1rem;font-family:inherit}.form-group textarea{height:300px;resize:vertical}        
+        .is-template-toggle{display:flex;align-items:center;gap:10px;margin-top:16px;font-size:.9rem}        
+        
+        /* 모달 스타일 */
+        .modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background-color:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;z-index:1000;opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s}.modal-overlay.show{opacity:1;visibility:visible}.modal-content{background-color:var(--bg-secondary);padding:24px;border-radius:8px;width:90%;max-width:600px;box-shadow:0 5px 15px rgba(0,0,0,0.3)}.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.modal-header h3{color:var(--accent-blue)}.modal-header .close-btn{background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer}.modal-body{max-height:60vh;overflow-y:auto}.modal-body .form-group label{font-weight:500;color:var(--accent-blue);}.modal-preview{background-color:var(--bg-primary);padding:12px;border-radius:4px;margin-top:16px;white-space:pre-wrap;font-family:monospace;max-height:150px;overflow-y:auto}.modal-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.modal-footer button{padding:10px 16px;border-radius:6px;cursor:pointer;border:none}.modal-footer .generate-btn{background-color:var(--accent-blue);color:var(--bg-primary)}        
+        
+        /* 토스트 알림 스타일 */
+        .toast{position:fixed;bottom:20px;right:20px;background-color:var(--bg-tertiary);color:var(--text-primary);padding:12px 20px;border-radius:6px;border-left:4px solid var(--accent-blue);opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s,transform .3s;transform:translateY(20px);z-index:2000}.toast.show{opacity:1;visibility:visible;transform:translateY(0)}    
+        
+        /* 풀스크린 편집 모드 (24번) */
+        body.fullscreen-editor-mode {
+            overflow: hidden; /* 스크롤바 숨김 */
+        }
+        .main-content .content-view.fullscreen-editor {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+            background-color: var(--bg-primary);
+            z-index: 999; /* 다른 요소 위에 표시 */
+            overflow-y: auto;
+        }
+        .sidebar {
+            display: none; /* 풀스크린 시 사이드바 숨김 */
+        }
+        .main-header .search-wrapper {
+            display: none; /* 풀스크린 시 검색창 숨김 */
         }
 
-        // Firebase Authentication State Observer
-        onAuthStateChanged(auth, user => {
-            if (user) {
-                currentUser = user;
-                ui.loginBtn.style.display = 'none';
-                ui.userProfile.style.display = 'flex';
-                ui.userEmail.textContent = user.displayName || user.email;
-                ui.userPhoto.src = user.photoURL || `https://via.placeholder.com/32`;
-                initializeAppLogic(); // Initialize app features once user is logged in
-            } else {
-                currentUser = null;
-                ui.loginBtn.style.display = 'block';
-                ui.userProfile.style.display = 'none';
-                ui.sidebarContent.style.display = 'none'; // Hide content when logged out
-                ui.contentView.innerHTML = '<div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>';
-                ui.mainHeader.textContent = "환영합니다";
+        /* 반응형 디자인 개선 (26번) */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                top: 0;
+                left: -100%; /* 기본적으로 숨김 */
+                height: 100%;
+                width: 250px; /* 모바일 사이드바 너비 */
+                z-index: 1000;
+                transition: left 0.3s ease-in-out;
             }
-        });
-
-        // Login Button Event
-        ui.loginBtn.addEventListener('click', () => {
-            const provider = new GoogleAuthProvider();
-            signInWithPopup(auth, provider).catch(error => {
-                console.error("로그인 실패:", error);
-                alert("로그인에 실패했습니다. 자세한 내용은 콘솔을 확인해주세요.");
-            });
-        });
-
-        // Logout Button Event
-        ui.logoutBtn.addEventListener('click', () => {
-            signOut(auth);
-        });
-    </script>
-
-    <style>
-        :root{--bg-primary:#131314;--bg-secondary:#1e1f20;--bg-tertiary:#2d2e30;--bg-hover:#3c4043;--text-primary:#e2e2e3;--text-secondary:#bdc1c6;--accent-blue:#8ab4f8;--accent-yellow:#fdd663;--accent-pink:#f28b82;--border-color:#3c4043;--sidebar-width:280px;--header-height:64px}
-        *{margin:0;padding:0;box-sizing:border-box}
-        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background-color:var(--bg-primary);color:var(--text-primary);display:flex;height:100vh;overflow:hidden}
-        button{font-family:inherit; cursor: pointer;}
-        #auth-section{padding:16px;border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; align-items:center; gap: 10px;}
-        #login-btn{width:100%;padding:10px;background-color:var(--accent-blue);color:var(--bg-primary);border:none;border-radius:6px;font-weight:500}
-        #user-profile{display:none;align-items:center;gap:10px; width:100%;}
-        #user-profile img{width:32px;height:32px;border-radius:50%}
-        #user-profile p{font-size:.9rem;flex-grow:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-        #logout-btn{background:none;border:1px solid var(--border-color);color:var(--text-secondary);padding:6px 10px;border-radius:6px; flex-shrink: 0;}
-        .sidebar{width:var(--sidebar-width);background-color:var(--bg-secondary);display:flex;flex-direction:column;flex-shrink:0;height:100%}.sidebar-content{flex-grow:1;overflow-y:auto}.new-prompt-btn{display:flex;align-items:center;gap:12px;background-color:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:24px;padding:10px 16px;font-size:.9rem;cursor:pointer;margin:8px 16px;white-space:nowrap}.new-prompt-btn:hover{background-color:#282a2c}.nav-section-title{font-size:.9rem;color:var(--text-secondary);padding:16px 16px 8px;font-weight:500}.nav-list{list-style:none}.nav-item a{display:flex;align-items:center;gap:16px;padding:10px 16px;color:var(--text-primary);text-decoration:none;border-radius:4px;font-size:.9rem;white-space:nowrap;cursor:pointer}.nav-item a:hover{background-color:var(--bg-tertiary)}.nav-item.active a{background-color:var(--accent-blue);color:var(--bg-primary)}.nav-icon{width:24px;text-align:center;font-size:1rem}.new-folder-btn{width:calc(100% - 32px);margin:10px 16px;padding:10px;background:none;border:1px dashed var(--border-color);color:var(--text-secondary);border-radius:4px}.new-folder-btn:hover{background-color:var(--bg-tertiary)}
-        .main-content{flex-grow:1;display:flex;flex-direction:column;height:100vh}.main-header{display:flex;align-items:center;justify-content:space-between;padding:0 24px;height:var(--header-height);flex-shrink:0;border-bottom:1px solid var(--border-color)}.main-header h1{font-size:1.4rem;font-weight:500}.search-wrapper{position:relative}.search-input{background-color:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:8px 16px 8px 36px;font-size:1rem}.search-wrapper .fa-magnifying-glass{position:absolute;left:12px;top:11px;color:var(--text-secondary)}
-        .content-view{flex-grow:1;overflow-y:auto;padding:24px}.content-placeholder{padding:50px 20px;text-align:center;color:var(--text-secondary)}.prompt-list-item{display:flex;align-items:center;padding:16px;border-bottom:1px solid var(--border-color);cursor:pointer;gap:16px}.prompt-list-item:hover{background-color:var(--bg-secondary)}.prompt-list-icon{font-size:1.1rem;color:var(--text-secondary);width:20px}.prompt-title{font-weight:500}.prompt-subtitle{font-size:.8rem;color:var(--text-secondary);margin-top:4px}.prompt-tags{display:flex;gap:6px;margin-top:8px}.prompt-tag{background-color:var(--bg-tertiary);color:var(--text-secondary);font-size:.75rem;padding:2px 6px;border-radius:4px}.prompt-actions{margin-left:auto;display:flex;gap:8px}.prompt-actions button{background-color:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px 12px;border-radius:6px}.prompt-actions button:hover{background-color:var(--bg-hover)}
-        .editor-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.editor-actions button{background-color:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);padding:10px 16px;border-radius:6px;margin-left:8px}.editor-actions button.save-btn{background-color:var(--accent-blue);color:var(--bg-primary);border:none}.editor-actions button.delete-btn{color:var(--accent-pink);border-color:var(--accent-pink)}
-        .form-group{margin-bottom:24px}.form-group label{display:block;font-size:.9rem;color:var(--text-secondary);margin-bottom:8px}.form-group input,.form-group textarea,.form-group select{width:100%;background-color:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:12px;font-size:1rem;font-family:inherit}.form-group textarea{height:300px;resize:vertical}
-        .is-template-toggle{display:flex;align-items:center;gap:10px;margin-top:16px;font-size:.9rem}
-        .modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background-color:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;z-index:1000;opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s}.modal-overlay.show{opacity:1;visibility:visible}.modal-content{background-color:var(--bg-secondary);padding:24px;border-radius:8px;width:90%;max-width:600px;box-shadow:0 5px 15px rgba(0,0,0,0.3)}.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.modal-header h3{color:var(--accent-blue)}.modal-header .close-btn{background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer}.modal-body{max-height:60vh;overflow-y:auto}.modal-body .form-group label{font-weight:500;color:var(--accent-blue);}.modal-preview{background-color:var(--bg-primary);padding:12px;border-radius:4px;margin-top:16px;white-space:pre-wrap;font-family:monospace;max-height:150px;overflow-y:auto}.modal-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.modal-footer button{padding:10px 16px;border-radius:6px;cursor:pointer;border:none}.modal-footer .generate-btn{background-color:var(--accent-blue);color:var(--bg-primary)}
-        .toast{position:fixed;bottom:20px;right:20px;background-color:var(--bg-tertiary);color:var(--text-primary);padding:12px 20px;border-radius:6px;border-left:4px solid var(--accent-blue);opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s,transform .3s;transform:translateY(20px);z-index:2000}.toast.show{opacity:1;visibility:visible;transform:translateY(0)}
+            .sidebar.open {
+                left: 0; /* 열릴 때 표시 */
+            }
+            .main-content {
+                width: 100%;
+            }
+            .main-header {
+                padding: 0 16px;
+            }
+            .main-header h1 {
+                font-size: 1.2rem;
+            }
+            .main-header .search-wrapper {
+                width: auto; /* 검색창 너비 조정 */
+                flex-grow: 1; /* 남은 공간 차지 */
+            }
+            .search-input {
+                width: 100%;
+            }
+            .prompt-list-item {
+                flex-wrap: wrap; /* 작은 화면에서 항목 줄바꿈 */
+            }
+            .prompt-actions {
+                width: 100%; /* 버튼이 아래로 내려오도록 */
+                justify-content: flex-end; /* 오른쪽 정렬 */
+                margin-top: 10px;
+            }
+            .editor-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            .editor-actions {
+                width: 100%;
+                justify-content: flex-end;
+            }
+        }
     </style>
 </head>
 <body>
-    <aside class="sidebar">
+    <aside class="sidebar" id="sidebar">
         <div id="auth-section">
             <button id="login-btn"><i class="fa-brands fa-google"></i> Google 계정으로 로그인</button>
             <div id="user-profile">
@@ -502,6 +1054,7 @@
         </div>
     </main>
 
+    <!-- Template Modal Structure (hidden by default) -->
     <div class="modal-overlay" id="template-modal-overlay">
         <div class="modal-content">
             <div class="modal-header">
@@ -509,13 +1062,15 @@
                 <button class="close-btn" id="template-modal-close-btn">&times;</button>
             </div>
             <div class="modal-body" id="template-modal-body">
-                </div>
+                <!-- Template variables will be rendered here -->
+            </div>
             <div class="modal-footer">
                 <button id="template-modal-generate-btn" class="generate-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 생성 및 복사</button>
             </div>
         </div>
     </div>
-    
+        
+    <!-- Toast Notification -->
     <div class="toast" id="toast"></div>
 
 </body>
