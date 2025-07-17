@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>프롬프트 관리자 프로 (최종)</title>
     <!-- Font Awesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script type="module">
         // Firebase SDK 모듈 임포트
@@ -289,10 +289,11 @@
 
                 let resultId;
                 try {
-                    if (itemId) { // itemId가 존재하면 (undefined가 아니면) 업데이트
+                    // itemId가 유효한 문자열 ID인 경우에만 업데이트로 처리
+                    if (typeof itemId === 'string' && itemId.trim().length > 0 && itemId !== 'null') { 
                         await setDoc(dbService.getDocRef(collectionName, itemId), cleanItem, { merge: true });
                         resultId = itemId;
-                    } else { // itemId가 undefined이면 새 문서 추가
+                    } else { // 그 외의 경우 (undefined, null, "", "null")는 새 문서 추가
                         const docRef = await addDoc(dbService.getCollectionRef(collectionName), cleanItem);
                         resultId = docRef.id;
                     }
@@ -554,7 +555,7 @@
                         <h2>${isNew ? '새 항목 생성' : '항목 편집'}</h2>
                         <div class="editor-actions">
                             ${!isNew ? `<button class="delete-btn" data-id="${id}"><i class="fa-regular fa-trash-can"></i> 삭제</button>` : ''}
-                            <button class="save-btn" ${isNew ? '' : `data-id="${id}"`}><i class="fa-regular fa-save"></i> 저장</button>
+                            <button class="save-btn" id="save-prompt-btn" ${isNew ? '' : `data-id="${id}"`}><i class="fa-regular fa-save"></i> 저장</button>
                         </div>
                     </div>
                     <div class="form-group"><label>제목</label><input id="title-input" value="${p.title || ''}"></div>
@@ -659,21 +660,33 @@
 
                 // '생성 및 복사' 버튼 클릭 이벤트
                 ui.templateModal.generateBtn.onclick = async () => { // async 추가
-                    navigator.clipboard.writeText(preview.textContent).then(async () => { // await 추가
-                        helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
-                        ui.templateModal.overlay.classList.remove('show');
-                        
-                        // 사용 빈도 증가 (16번)
-                        if (p.id) {
-                            const currentUsageCount = p.usageCount || 0;
-                            await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1, updatedAt: serverTimestamp() });
-                            render.prompts(true); // 목록 새로고침 (캐시 강제 업데이트)
-                        }
+                    // navigator.clipboard.writeText 대신 document.execCommand('copy') 사용
+                    const textToCopy = preview.textContent;
+                    try {
+                        const textarea = document.createElement('textarea');
+                        textarea.value = textToCopy;
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
 
-                    }).catch(err => {
+                        helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
+                        
+                        // 복사 성공 후 약간의 딜레이를 주어 토스트 메시지를 볼 시간을 제공
+                        setTimeout(async () => { // async 추가
+                            ui.templateModal.overlay.classList.remove('show');
+                            // 사용 빈도 증가 (16번) - 모달 닫힌 후 백그라운드에서 처리
+                            if (p.id) {
+                                const currentUsageCount = p.usageCount || 0;
+                                await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1, updatedAt: serverTimestamp() });
+                                render.prompts(true); // 목록 새로고침 (캐시 강제 업데이트)
+                            }
+                        }, 300); // 300ms 딜레이
+
+                    } catch (err) {
                         console.error('텍스트 복사 실패: ', err);
                         helpers.showToast('복사 실패. 다시 시도해 주세요.');
-                    });
+                    }
                 };
             }
         };
@@ -712,7 +725,14 @@
                 } else if (e.target.closest('.copy-btn')) { // 복사 버튼 클릭
                     const p = await dbService.getById('prompts', promptId);
                     if (p) {
-                        navigator.clipboard.writeText(p.content).then(() => helpers.showToast('클립보드에 복사되었습니다!'));
+                        // navigator.clipboard.writeText 대신 document.execCommand('copy') 사용
+                        const textarea = document.createElement('textarea');
+                        textarea.value = p.content;
+                        document.body.appendChild(textarea);
+                        textarea.select();
+                        document.execCommand('copy');
+                        document.body.removeChild(textarea);
+                        helpers.showToast('클립보드에 복사되었습니다!');
                     }
                 } else if (e.target.closest('.fav-icon')) { // 즐겨찾기 아이콘 클릭
                     const p = await dbService.getById('prompts', promptId);
@@ -732,7 +752,7 @@
 
                 if (saveBtn) { // 저장 버튼 클릭
                     const idFromDataset = saveBtn.dataset.id;
-                    // id가 빈 문자열이거나 'null' 문자열인 경우 null로 처리하여 새 문서 생성을 유도
+                    // id가 undefined, null, 빈 문자열, 또는 "null" 문자열인 경우 null로 처리하여 새 문서 생성을 유도
                     const id = (typeof idFromDataset === 'string' && idFromDataset.trim().length > 0 && idFromDataset !== 'null') ? idFromDataset : null; 
                     
                     const tags = document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean);
