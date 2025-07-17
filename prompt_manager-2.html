@@ -7,6 +7,11 @@
     <!-- Font Awesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
+    <!-- Fuse.js for fuzzy search -->
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+    <!-- Sortable.js for drag-and-drop (used for sequences, though full implementation is complex) -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
     <script type="module">
         // Firebase SDK 모듈 임포트
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
@@ -58,6 +63,7 @@
         const CACHE_STORE_PROMPTS = 'cachedPrompts';
         const CACHE_STORE_FOLDERS = 'cachedFolders';
         const CACHE_STORE_VERSIONS = 'promptVersions'; // 프롬프트 버전 기록 저장소
+        const CACHE_STORE_SEQUENCES = 'cachedSequences'; // 시퀀스 캐시 저장소
 
         let indexedDbInstance;
 
@@ -81,6 +87,10 @@
                         const versionStore = db.createObjectStore(CACHE_STORE_VERSIONS, { keyPath: 'id', autoIncrement: true });
                         versionStore.createIndex('promptId', 'promptId', { unique: false });
                         versionStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    }
+                    // 시퀀스 캐시 저장소 생성
+                    if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES)) {
+                        db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: 'id' });
                     }
                 };
 
@@ -157,13 +167,32 @@
                 generateBtn: document.getElementById('template-modal-generate-btn'),
                 closeBtn: document.getElementById('template-modal-close-btn')
             },
+            sequenceModal: { // 시퀀스 모달 UI 요소 추가
+                overlay: document.getElementById('sequence-modal-overlay'),
+                title: document.getElementById('sequence-modal-title'),
+                body: document.getElementById('sequence-modal-body'),
+                saveBtn: document.getElementById('sequence-modal-save-btn'),
+                runBtn: document.getElementById('sequence-modal-run-btn'),
+                closeBtn: document.getElementById('sequence-modal-close-btn'),
+                deleteBtn: document.getElementById('sequence-modal-delete-btn')
+            },
             sidebar: document.getElementById('sidebar'), // 사이드바 자체 참조 추가
             mobileMenuToggle: document.getElementById('mobile-menu-toggle'), // 모바일 햄버거 메뉴 버튼
-            sidebarCloseBtn: document.getElementById('sidebar-close-btn') // 사이드바 닫기 버튼
+            sidebarCloseBtn: document.getElementById('sidebar-close-btn'), // 사이드바 닫기 버튼
+            sequenceList: document.getElementById('sequence-list'), // 시퀀스 목록
+            newSequenceBtn: document.getElementById('new-sequence-btn') // 새 시퀀스 버튼
         };
 
         // 앱의 전역 상태 (현재 필터, 프롬프트/폴더 데이터)
-        let state = { currentFilter: { type: 'all', id: null, name: '모든 항목' }, prompts: [], folders: [] };
+        let state = { 
+            currentFilter: { type: 'all', id: null, name: '모든 항목' }, 
+            prompts: [], 
+            folders: [],
+            sequences: [], // 시퀀스 데이터 추가
+            searchResults: null // Fuse.js 검색 결과 저장
+        };
+
+        let fuse = null; // Fuse.js 인스턴스
 
         // =================================================================
         // Firebase Firestore & IndexedDB 하이브리드 데이터 서비스
@@ -190,7 +219,12 @@
             getAll: async (collectionName, forceRefresh = false) => {
                 if (!currentUser) return [];
 
-                const cacheStoreName = collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS;
+                let cacheStoreName;
+                if (collectionName === 'prompts') cacheStoreName = CACHE_STORE_PROMPTS;
+                else if (collectionName === 'folders') cacheStoreName = CACHE_STORE_FOLDERS;
+                else if (collectionName === 'sequences') cacheStoreName = CACHE_STORE_SEQUENCES;
+                else throw new Error(`알 수 없는 컬렉션 이름: ${collectionName}`);
+
 
                 // 1. IndexedDB에서 캐시된 데이터 시도
                 if (!forceRefresh) {
@@ -241,7 +275,11 @@
             getById: async (collectionName, id) => {
                 if (!currentUser) return null;
 
-                const cacheStoreName = collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS;
+                let cacheStoreName;
+                if (collectionName === 'prompts') cacheStoreName = CACHE_STORE_PROMPTS;
+                else if (collectionName === 'folders') cacheStoreName = CACHE_STORE_FOLDERS;
+                else if (collectionName === 'sequences') cacheStoreName = CACHE_STORE_SEQUENCES;
+                else throw new Error(`알 수 없는 컬렉션 이름: ${collectionName}`);
 
                 // 1. IndexedDB에서 캐시된 단일 항목 시도
                 try {
@@ -304,7 +342,13 @@
                     if (updatedItem.createdAt && updatedItem.createdAt.toDate) updatedItem.createdAt = updatedItem.createdAt.toDate();
                     if (updatedItem.updatedAt && updatedItem.updatedAt.toDate) updatedItem.updatedAt = updatedItem.updatedAt.toDate();
 
-                    await putIntoIndexedDB(collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS, updatedItem);
+                    let cacheStoreName;
+                    if (collectionName === 'prompts') cacheStoreName = CACHE_STORE_PROMPTS;
+                    else if (collectionName === 'folders') cacheStoreName = CACHE_STORE_FOLDERS;
+                    else if (collectionName === 'sequences') cacheStoreName = CACHE_STORE_SEQUENCES;
+                    else throw new Error(`알 수 없는 컬렉션 이름: ${collectionName}`);
+
+                    await putIntoIndexedDB(cacheStoreName, updatedItem);
                     
                     return resultId;
                 } catch (error) {
@@ -321,7 +365,11 @@
                     // IndexedDB 캐시 업데이트: Firestore에 저장된 실제 데이터로 업데이트
                     const updatedItem = await dbService.getById(collectionName, id); // Firestore에서 최신 데이터 가져옴
                     if (updatedItem) {
-                        const cacheStoreName = collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS;
+                        let cacheStoreName;
+                        if (collectionName === 'prompts') cacheStoreName = CACHE_STORE_PROMPTS;
+                        else if (collectionName === 'folders') cacheStoreName = CACHE_STORE_FOLDERS;
+                        else if (collectionName === 'sequences') cacheStoreName = CACHE_STORE_SEQUENCES;
+                        else throw new Error(`알 수 없는 컬렉션 이름: ${collectionName}`);
                         await putIntoIndexedDB(cacheStoreName, updatedItem);
                     }
                 } catch (error) {
@@ -336,7 +384,12 @@
                 try {
                     await deleteDoc(dbService.getDocRef(collectionName, id));
                     // IndexedDB 캐시 삭제
-                    await deleteFromIndexedDB(collectionName === 'prompts' ? CACHE_STORE_PROMPTS : CACHE_STORE_FOLDERS, id);
+                    let cacheStoreName;
+                    if (collectionName === 'prompts') cacheStoreName = CACHE_STORE_PROMPTS;
+                    else if (collectionName === 'folders') cacheStoreName = CACHE_STORE_FOLDERS;
+                    else if (collectionName === 'sequences') cacheStoreName = CACHE_STORE_SEQUENCES;
+                    else throw new Error(`알 수 없는 컬렉션 이름: ${collectionName}`);
+                    await deleteFromIndexedDB(cacheStoreName, id);
                 } catch (error) {
                     console.error(`Firestore ${collectionName}:${id} 데이터 삭제 오류:`, error);
                     helpers.showToast(`데이터 삭제 실패: ${error.message}`);
@@ -376,7 +429,8 @@
                 // Firestore에서 강제 새로고침하여 최신 데이터 가져옴
                 const allPrompts = await dbService.getAll('prompts', true); 
                 const allFolders = await dbService.getAll('folders', true); 
-                const data = { prompts: allPrompts, folders: allFolders };
+                const allSequences = await dbService.getAll('sequences', true);
+                const data = { prompts: allPrompts, folders: allFolders, sequences: allSequences };
                 const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -407,6 +461,10 @@
                                 for (const f of currentFolders) {
                                     await dbService.delete('folders', f.id);
                                 }
+                                const currentSequences = await dbService.getAll('sequences', true);
+                                for (const s of currentSequences) {
+                                    await dbService.delete('sequences', s.id);
+                                }
                                 helpers.showToast('기존 데이터가 지워졌습니다.');
                             }
 
@@ -428,6 +486,17 @@
                                 for (const folderData of importedData.folders) {
                                     await dbService.put('folders', {
                                         name: folderData.name,
+                                        createdAt: serverTimestamp(),
+                                        updatedAt: serverTimestamp()
+                                    });
+                                }
+                            }
+                            if (importedData.sequences && Array.isArray(importedData.sequences)) {
+                                for (const sequenceData of importedData.sequences) {
+                                    await dbService.put('sequences', {
+                                        name: sequenceData.name,
+                                        description: sequenceData.description || '',
+                                        promptIds: sequenceData.promptIds || [],
                                         createdAt: serverTimestamp(),
                                         updatedAt: serverTimestamp()
                                     });
@@ -460,12 +529,19 @@
                     </li>
                 `).join('') + `<li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
             },
+            // 시퀀스 목록 렌더링
+            sequences: async () => {
+                state.sequences = await dbService.getAll('sequences');
+                ui.sequenceList.innerHTML = state.sequences
+                    .map(s => `<li class="nav-item" data-filter-type="sequence" data-seq-id="${s.id}">
+                                <a><i class="nav-icon fa-solid fa-layer-group"></i> ${s.name}</a>
+                              </li>`).join('');
+            },
             // 프롬프트 목록 렌더링
             prompts: async () => {
                 ui.mainHeader.textContent = state.currentFilter.name;
                 let allItems = [];
                 try {
-                    // 캐시 강제 업데이트가 필요한 경우 dbService.getAll('prompts', true) 호출
                     allItems = await dbService.getAll('prompts');
                 } catch (e) {
                     console.warn("render.prompts에서 데이터 로드 중 경고:", e); 
@@ -482,17 +558,27 @@
                 else if (type === 'templates') filtered = allItems.filter(p => p.isTemplate);
                 else if (type === 'prompts') filtered = allItems.filter(p => !p.isTemplate);
                                 
-                // 검색어 필터링
+                // 검색어 필터링 (Fuse.js 사용)
                 const searchTerm = ui.searchInput.value.toLowerCase();
                 if(searchTerm) {
-                    if (searchTerm.startsWith('is:template')) filtered = filtered.filter(p => p.isTemplate);
-                    else if (searchTerm.startsWith('is:prompt')) filtered = filtered.filter(p => !p.isTemplate);
-                    else if (searchTerm.startsWith('#')) {
+                    if (!fuse) { // Fuse 인덱스가 없으면 빌드
+                        await buildSearchIndex();
+                    }
+                    // is:template, is:prompt, #tag 특별 검색어 처리
+                    if (searchTerm.startsWith('is:template')) {
+                        filtered = filtered.filter(p => p.isTemplate);
+                    } else if (searchTerm.startsWith('is:prompt')) {
+                        filtered = filtered.filter(p => !p.isTemplate);
+                    } else if (searchTerm.startsWith('#')) {
                         const tag = searchTerm.slice(1);
                         filtered = filtered.filter(p => p.tags?.includes(tag));
                     } else {
-                        filtered = filtered.filter(p => p.title.toLowerCase().includes(searchTerm) || p.content.toLowerCase().includes(searchTerm));
+                        // 일반 검색어는 Fuse.js 사용
+                        state.searchResults = fuse.search(searchTerm).map(r => r.item);
+                        filtered = state.searchResults;
                     }
+                } else {
+                    state.searchResults = null; // 검색어 없으면 검색 결과 초기화
                 }
                                 
                 // 필터링된 항목이 없을 경우 메시지 표시
@@ -696,6 +782,52 @@
                         helpers.showToast('복사 실패. 다시 시도해 주세요.');
                     }
                 };
+            },
+            // 시퀀스 편집기 모달 렌더링
+            sequenceEditor: async (id) => {
+                const isNew = id === null;
+                let s = { name: '', description: '', promptIds: [] };
+                if (!isNew) {
+                    const fetchedSequence = await dbService.getById('sequences', id);
+                    if (fetchedSequence) {
+                        s = fetchedSequence;
+                    } else {
+                        helpers.showToast('시퀀스를 찾을 수 없습니다!');
+                        render.sequences();
+                        return;
+                    }
+                }
+                
+                // 모든 프롬프트 가져와서 선택 옵션으로 제공
+                const allPrompts = await dbService.getAll('prompts');
+                const promptOptions = allPrompts.map(p => `
+                    <option value="${p.id}" ${s.promptIds.includes(p.id) ? 'selected' : ''}>${p.title}</option>
+                `).join('');
+
+                ui.sequenceModal.title.textContent = isNew ? '새 시퀀스 생성' : `시퀀스 편집: ${s.name}`;
+                ui.sequenceModal.body.innerHTML = `
+                    <div class="form-group">
+                        <label for="sequence-name-input">시퀀스 이름</label>
+                        <input type="text" id="sequence-name-input" value="${s.name || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label for="sequence-description-input">설명</label>
+                        <textarea id="sequence-description-input">${s.description || ''}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="sequence-prompts-select">포함할 프롬프트 (Ctrl/Cmd 클릭으로 다중 선택)</label>
+                        <select id="sequence-prompts-select" multiple size="10">
+                            ${promptOptions}
+                        </select>
+                    </div>
+                `;
+                ui.sequenceModal.overlay.classList.add('show');
+
+                // 저장/실행/삭제 버튼 데이터-ID 설정
+                ui.sequenceModal.saveBtn.dataset.id = isNew ? '' : id;
+                ui.sequenceModal.runBtn.dataset.id = isNew ? '' : id;
+                ui.sequenceModal.deleteBtn.dataset.id = isNew ? '' : id;
+                ui.sequenceModal.deleteBtn.style.display = isNew ? 'none' : 'inline-block';
             }
         };
 
@@ -711,14 +843,24 @@
                 document.querySelectorAll('.sidebar-nav .nav-item.active').forEach(el => el.classList.remove('active'));
                 target.classList.add('active'); // 클릭된 항목 활성화
                                 
-                const { filterType, folderId } = target.dataset;
+                const { filterType, folderId, seqId } = target.dataset;
                 if (filterType === 'folder') {
                     const id = folderId;
                     state.currentFilter = { type: 'folder', id, name: state.folders.find(f => f.id === id)?.name || '알 수 없는 폴더' };
+                    render.prompts();
+                } else if (filterType === 'sequence') {
+                    const id = seqId;
+                    state.currentFilter = { type: 'sequence', id, name: state.sequences.find(s => s.id === id)?.name || '알 수 없는 시퀀스' };
+                    // 시퀀스 클릭 시 시퀀스 편집기 바로 열기
+                    render.sequenceEditor(id); 
                 } else {
                     state.currentFilter = { type: filterType, id: null, name: target.textContent.trim() };
+                    render.prompts(); // 프롬프트 목록 새로고침
                 }
-                render.prompts(); // 프롬프트 목록 새로고침
+                // 모바일에서 사이드바 메뉴 클릭 시 사이드바 닫기
+                if (window.innerWidth <= 768) {
+                    ui.sidebar.classList.remove('open');
+                }
             },
             // 메인 콘텐츠 영역 클릭 이벤트 (프롬프트 목록 항목, 버튼 등)
             content: async (e) => {
@@ -845,6 +987,19 @@
         };
 
         // =================================================================
+        // Fuse.js 검색 인덱스 빌드
+        // =================================================================
+        async function buildSearchIndex() {
+            const data = await dbService.getAll('prompts'); // 모든 프롬프트 가져오기
+            fuse = new Fuse(data, { 
+                keys: ['title', 'content', 'tags'], 
+                includeScore: true, 
+                threshold: 0.3 // 오타 허용 범위 (0.0 = 정확 일치, 1.0 = 모든 항목)
+            });
+            console.log("Fuse.js 검색 인덱스 빌드 완료.");
+        }
+
+        // =================================================================
         // 앱 초기화 및 인증 로직 (App Initialization and Authentication Logic)
         // =================================================================
         // initializeAppLogic 함수를 async로 선언하여 내부의 await를 사용
@@ -859,8 +1014,12 @@
             
             // 데이터 로드 및 렌더링을 기다림
             await render.folders();            
+            await render.sequences(); // 시퀀스 목록 렌더링
             await render.prompts();                        
             
+            // Fuse.js 검색 인덱스 빌드 (데이터 로드 후)
+            await buildSearchIndex();
+
             // Event Listeners after user is logged in
             ui.newPromptBtn.addEventListener('click', () => render.promptEditor(null));            
             ui.newFolderBtn.addEventListener('click', async () => {                
@@ -876,17 +1035,103 @@
                     }                
                 }            
             });            
+            ui.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null)); // 새 시퀀스 버튼 이벤트
+
             ui.libraryList.addEventListener('click', handlers.sidebar);            
             ui.folderList.addEventListener('click', handlers.sidebar);            
+            ui.sequenceList.addEventListener('click', handlers.sidebar); // 시퀀스 목록 클릭 이벤트
+
             ui.contentView.addEventListener('click', e => { handlers.content(e); handlers.editor(e); });            
-            ui.searchInput.addEventListener('input', () => render.prompts());            
+            ui.searchInput.addEventListener('input', () => render.prompts()); // 검색 입력 시 프롬프트 목록 새로고침
+
             ui.templateModal.closeBtn.addEventListener('click', () => ui.templateModal.overlay.classList.remove('show'));            
             ui.templateModal.overlay.addEventListener('click', e => { // 모달 외부 클릭 시 닫기
                 if (e.target === ui.templateModal.overlay) {
                     ui.templateModal.overlay.classList.remove('show');
                 }
             });
-            
+
+            // 시퀀스 모달 이벤트 리스너
+            ui.sequenceModal.closeBtn.addEventListener('click', () => ui.sequenceModal.overlay.classList.remove('show'));
+            ui.sequenceModal.overlay.addEventListener('click', e => {
+                if (e.target === ui.sequenceModal.overlay) {
+                    ui.sequenceModal.overlay.classList.remove('show');
+                }
+            });
+            ui.sequenceModal.saveBtn.addEventListener('click', async () => {
+                const id = ui.sequenceModal.saveBtn.dataset.id || null;
+                const name = document.getElementById('sequence-name-input').value;
+                const description = document.getElementById('sequence-description-input').value;
+                const selectedPromptElements = Array.from(document.getElementById('sequence-prompts-select').selectedOptions);
+                const promptIds = selectedPromptElements.map(option => option.value);
+
+                if (!name.trim()) {
+                    helpers.showToast('시퀀스 이름을 입력해주세요.');
+                    return;
+                }
+
+                const data = {
+                    name: name.trim(),
+                    description: description.trim(),
+                    promptIds: promptIds,
+                    updatedAt: serverTimestamp()
+                };
+                if (!id) {
+                    data.createdAt = serverTimestamp();
+                }
+
+                try {
+                    await dbService.put('sequences', { id: id, ...data });
+                    helpers.showToast(id ? '시퀀스가 업데이트되었습니다!' : '시퀀스가 저장되었습니다!');
+                    ui.sequenceModal.overlay.classList.remove('show');
+                    await render.sequences(); // 시퀀스 목록 새로고침
+                } catch (error) {
+                    console.error("시퀀스 저장 오류:", error);
+                    helpers.showToast('시퀀스 저장 오류: ' + error.message);
+                }
+            });
+            ui.sequenceModal.deleteBtn.addEventListener('click', async () => {
+                const id = ui.sequenceModal.deleteBtn.dataset.id;
+                if (confirm('이 시퀀스를 영구적으로 삭제하시겠습니까?')) {
+                    try {
+                        await dbService.delete('sequences', id);
+                        helpers.showToast('시퀀스가 삭제되었습니다.');
+                        ui.sequenceModal.overlay.classList.remove('show');
+                        await render.sequences();
+                    } catch (error) {
+                        console.error("시퀀스 삭제 오류:", error);
+                        helpers.showToast('시퀀스 삭제 오류: ' + error.message);
+                    }
+                }
+            });
+            ui.sequenceModal.runBtn.addEventListener('click', async () => {
+                const id = ui.sequenceModal.runBtn.dataset.id;
+                const sequence = await dbService.getById('sequences', id);
+                if (!sequence || !sequence.promptIds || sequence.promptIds.length === 0) {
+                    helpers.showToast('실행할 프롬프트가 없습니다.');
+                    return;
+                }
+
+                let combinedContent = '';
+                for (const promptId of sequence.promptIds) {
+                    const prompt = await dbService.getById('prompts', promptId);
+                    if (prompt) {
+                        combinedContent += prompt.content + '\n\n---\n\n'; // 프롬프트 구분자
+                    }
+                }
+                
+                // 클립보드에 복사
+                const textarea = document.createElement('textarea');
+                textarea.value = combinedContent.trim();
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                helpers.showToast('시퀀스 프롬프트가 클립보드에 복사되었습니다!');
+                ui.sequenceModal.overlay.classList.remove('show');
+            });
+
+
             // 모바일 햄버거 메뉴 토글 버튼 이벤트 리스너
             ui.mobileMenuToggle.addEventListener('click', () => {
                 ui.sidebar.classList.toggle('open');
@@ -1153,6 +1398,33 @@
         .button-like:hover {
             background-color: var(--bg-hover);
         }
+        /* 시퀀스 모달을 위한 추가 스타일 */
+        .modal-sequence-content {
+            background-color: var(--bg-secondary);
+            padding: 24px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 700px; /* 템플릿 모달보다 약간 넓게 */
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        .modal-sequence-footer {
+            display: flex;
+            justify-content: space-between; /* 저장/실행 버튼과 삭제 버튼 분리 */
+            gap: 10px;
+            margin-top: 24px;
+        }
+        .modal-sequence-footer .left-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .modal-sequence-footer .delete-btn {
+            background: none;
+            color: var(--accent-pink);
+            border: 1px solid var(--accent-pink);
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -1178,6 +1450,12 @@
                 <h3 class="nav-section-title">폴더</h3>
                 <ul class="nav-list" id="folder-list"></ul>
                 <button class="new-folder-btn" id="new-folder-btn"><i class="fa-solid fa-folder-plus"></i> 새 폴더</button>
+                
+                <h3 class="nav-section-title">시퀀스</h3>
+                <ul class="nav-list" id="sequence-list"></ul>
+                <button id="new-sequence-btn" class="new-folder-btn">
+                    <i class="fa-solid fa-layer-group"></i> 새 시퀀스
+                </button>
             </nav>
         </div>
         <!-- 모바일 사이드바 닫기 버튼 -->
@@ -1211,6 +1489,26 @@
             </div>
             <div class="modal-footer">
                 <button id="template-modal-generate-btn" class="generate-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 생성 및 복사</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Sequence Modal Structure -->
+    <div class="modal-overlay" id="sequence-modal-overlay">
+        <div class="modal-sequence-content">
+            <div class="modal-header">
+                <h3 id="sequence-modal-title">새 시퀀스 생성</h3>
+                <button class="close-btn" id="sequence-modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" id="sequence-modal-body">
+                <!-- Sequence editor form will be rendered here -->
+            </div>
+            <div class="modal-sequence-footer">
+                <div class="left-actions">
+                    <button id="sequence-modal-save-btn" class="generate-btn"><i class="fa-regular fa-save"></i> 저장</button>
+                    <button id="sequence-modal-run-btn" class="button-like"><i class="fa-solid fa-play"></i> 실행</button>
+                </div>
+                <button id="sequence-modal-delete-btn" class="delete-btn" style="display: none;"><i class="fa-regular fa-trash-can"></i> 삭제</button>
             </div>
         </div>
     </div>
