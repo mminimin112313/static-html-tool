@@ -645,7 +645,18 @@
                         </div>
                     </div>
                     <div class="form-group"><label>제목</label><input id="title-input" value="${p.title || ''}"></div>
-                    <div class="form-group"><label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label><textarea id="content-input">${p.content || ''}</textarea></div>
+                    <div class="form-group">
+                        <label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label>
+                        <textarea id="content-input">${p.content || ''}</textarea>
+                        <div class="file-upload-section">
+                            <input type="file" id="large-text-file" accept=".txt" style="display:none;">
+                            <button id="load-text-btn" class="button-like"><i class="fa-solid fa-file-arrow-up"></i> 파일에서 불러오기</button>
+                            <span id="loaded-file-name" style="margin-left: 10px; font-size: 0.85rem; color: var(--text-secondary);"></span>
+                        </div>
+                        <p id="content-size-warning" style="color: var(--accent-yellow); font-size: 0.85rem; margin-top: 5px; display: none;">
+                            경고: 내용이 너무 길어 저장에 실패할 수 있습니다. (Firestore 문서 제한 1MB)
+                        </p>
+                    </div>
                     <div style="display:flex; gap: 24px;">
                         <div class="form-group" style="flex:1;"><label>폴더</label><select id="folder-select"><option value="">미분류</option>${folderOpts}</select></div>
                         <div class="form-group" style="flex:1;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div>
@@ -669,6 +680,65 @@
                         saveBtnElement.removeAttribute('data-id');
                     }
                 }
+
+                // 파일 업로드 관련 이벤트 리스너
+                const largeTextFile = document.getElementById('large-text-file');
+                const loadTextBtn = document.getElementById('load-text-btn');
+                const loadedFileNameSpan = document.getElementById('loaded-file-name');
+                const contentInput = document.getElementById('content-input');
+                const contentSizeWarning = document.getElementById('content-size-warning');
+
+                // 파일 불러오기 버튼 클릭 시 파일 입력 요소 트리거
+                loadTextBtn.onclick = () => {
+                    largeTextFile.click();
+                };
+
+                // 파일 선택 시 내용 읽어오기
+                largeTextFile.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (!file) {
+                        loadedFileNameSpan.textContent = '';
+                        return;
+                    }
+
+                    const MAX_FILE_SIZE_MB = 5; // 5 MB 제한
+                    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                        helpers.showToast(`파일 용량이 너무 큽니다. (${MAX_FILE_SIZE_MB}MB 이하로 업로드해주세요.)`);
+                        loadedFileNameSpan.textContent = '';
+                        e.target.value = ''; // 파일 입력 초기화
+                        return;
+                    }
+
+                    loadedFileNameSpan.textContent = file.name;
+                    try {
+                        const txt = await file.text();
+                        contentInput.value = txt;
+                        helpers.showToast('파일 내용이 성공적으로 불러와졌습니다.');
+                        // 파일 로드 후 내용 길이 경고 업데이트
+                        checkContentSizeWarning();
+                    } catch (error) {
+                        console.error("파일 읽기 오류:", error);
+                        helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
+                    }
+                    e.target.value = ''; // 파일 입력 초기화 (동일 파일 재선택 가능하게)
+                };
+
+                // 내용 입력 시 길이 경고 체크
+                const checkContentSizeWarning = () => {
+                    const contentByteLength = new TextEncoder().encode(contentInput.value).length;
+                    const FIREBASE_DOC_LIMIT_BYTES = 1000 * 1024; // 약 1MB (Firestore 문서 크기 제한)
+                    const WARNING_THRESHOLD_BYTES = 900 * 1024; // 900KB 이상일 때 경고
+
+                    if (contentByteLength > WARNING_THRESHOLD_BYTES) {
+                        contentSizeWarning.style.display = 'block';
+                    } else {
+                        contentSizeWarning.style.display = 'none';
+                    }
+                };
+                contentInput.addEventListener('input', checkContentSizeWarning);
+                // 초기 로드 시에도 경고 체크
+                checkContentSizeWarning();
+
 
                 // 버전 기록 버튼 및 리스너 추가
                 const viewVersionsBtn = document.getElementById('view-versions-btn');
@@ -706,6 +776,7 @@
                                 if (versionToRestore) {
                                     document.getElementById('content-input').value = versionToRestore.content;
                                     helpers.showToast('버전이 복원되었습니다. 저장을 눌러 적용하세요.');
+                                    checkContentSizeWarning(); // 복원 후 내용 길이 경고 업데이트
                                 }
                             }
                         } else if (e.target.classList.contains('delete-version-btn')) {
@@ -800,6 +871,8 @@
                 
                 // 모든 프롬프트 가져와서 선택 옵션으로 제공
                 const allPrompts = await dbService.getAll('prompts');
+                state.prompts = allPrompts; // 전역 state.prompts 업데이트 (시퀀스 미리보기에서 사용)
+
                 const promptOptions = allPrompts.map(p => `
                     <option value="${p.id}" ${s.promptIds.includes(p.id) ? 'selected' : ''}>${p.title}</option>
                 `).join('');
@@ -822,7 +895,9 @@
                     </div>
                     <div class="form-group">
                         <label>시퀀스 미리보기</label>
-                        <div class="modal-preview" id="sequence-preview" style="max-height: 200px; overflow-y: auto;"></div>
+                        <div id="sequence-individual-prompts" class="sequence-individual-prompts" style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; border-radius: 8px;">
+                            <!-- Individual prompt previews will be rendered here -->
+                        </div>
                     </div>
                 `;
                 ui.sequenceModal.overlay.classList.add('show');
@@ -835,22 +910,56 @@
 
                 // 시퀀스 미리보기 업데이트 로직
                 const sequencePromptsSelect = document.getElementById('sequence-prompts-select');
-                const sequencePreview = document.getElementById('sequence-preview');
+                const sequenceIndividualPrompts = document.getElementById('sequence-individual-prompts');
 
                 const updateSequencePreview = async () => {
                     const selectedIds = Array.from(sequencePromptsSelect.selectedOptions).map(opt => opt.value);
-                    let combinedContent = '';
+                    sequenceIndividualPrompts.innerHTML = ''; // 기존 미리보기 초기화
+
+                    if (selectedIds.length === 0) {
+                        sequenceIndividualPrompts.innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">선택된 프롬프트가 없습니다.</div>';
+                        return;
+                    }
+
                     for (const promptId of selectedIds) {
-                        const prompt = allPrompts.find(p => p.id === promptId); // 캐시된 allPrompts에서 찾기
+                        const prompt = state.prompts.find(p => p.id === promptId);
                         if (prompt) {
-                            combinedContent += prompt.content + '\n\n---\n\n'; // 프롬프트 구분자
+                            const promptBlock = document.createElement('div');
+                            promptBlock.classList.add('sequence-prompt-block');
+                            promptBlock.innerHTML = `
+                                <h4>${prompt.title}</h4>
+                                <textarea readonly class="prompt-content-textarea">${prompt.content}</textarea>
+                                <button class="copy-individual-prompt-btn button-like"><i class="fa-regular fa-copy"></i> 복사</button>
+                            `;
+                            sequenceIndividualPrompts.appendChild(promptBlock);
                         }
                     }
-                    sequencePreview.textContent = combinedContent.trim();
                 };
 
                 sequencePromptsSelect.addEventListener('change', updateSequencePreview);
                 updateSequencePreview(); // 초기 미리보기 렌더링
+
+                // 개별 프롬프트 복사 버튼 이벤트 리스너 (위임)
+                sequenceIndividualPrompts.addEventListener('click', (e) => {
+                    if (e.target.classList.contains('copy-individual-prompt-btn')) {
+                        const textarea = e.target.previousElementSibling; // 바로 이전 형제 요소인 textarea
+                        if (textarea) {
+                            const textToCopy = textarea.value;
+                            try {
+                                const tempTextarea = document.createElement('textarea');
+                                tempTextarea.value = textToCopy;
+                                document.body.appendChild(tempTextarea);
+                                tempTextarea.select();
+                                document.execCommand('copy');
+                                document.body.removeChild(tempTextarea);
+                                helpers.showToast('프롬프트 내용이 클립보드에 복사되었습니다!');
+                            } catch (err) {
+                                console.error('텍스트 복사 실패: ', err);
+                                helpers.showToast('복사 실패. 다시 시도해 주세요.');
+                            }
+                        }
+                    }
+                });
             }
         };
 
@@ -931,6 +1040,14 @@
                     const tags = document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean);
                     const currentContent = document.getElementById('content-input').value; // 버전 저장을 위해 현재 내용 가져옴
                     
+                    // Firestore 문서 크기 제한 (1MB) 경고
+                    const contentByteLength = new TextEncoder().encode(currentContent).length;
+                    const FIREBASE_DOC_LIMIT_BYTES = 1000 * 1024; // Approx 1MB
+                    if (contentByteLength > FIREBASE_DOC_LIMIT_BYTES) {
+                        helpers.showToast('오류: 내용이 너무 길어 저장할 수 없습니다. (Firestore 문서 제한 1MB 초과)');
+                        return; // 저장 중단
+                    }
+
                     // isFavorite과 usageCount를 항상 명시적으로 초기화
                     let data = {
                         title: document.getElementById('title-input').value,
@@ -1417,6 +1534,7 @@
             justify-content: center;
             gap: 8px;
             font-size: 0.9rem;
+            white-space: nowrap; /* 버튼 텍스트 줄바꿈 방지 */
         }
         .button-like:hover {
             background-color: var(--bg-hover);
@@ -1447,6 +1565,56 @@
             padding: 10px 16px;
             border-radius: 6px;
             cursor: pointer;
+        }
+
+        /* 파일 업로드 섹션 스타일 */
+        .file-upload-section {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+            gap: 10px;
+        }
+        .file-upload-section .button-like {
+            padding: 8px 12px;
+            font-size: 0.85rem;
+        }
+
+        /* 시퀀스 개별 프롬프트 미리보기 스타일 */
+        .sequence-individual-prompts {
+            display: flex;
+            flex-direction: column;
+            gap: 20px; /* 각 프롬프트 블록 사이 간격 */
+        }
+        .sequence-prompt-block {
+            background-color: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .sequence-prompt-block h4 {
+            margin: 0;
+            color: var(--accent-blue);
+            font-size: 1.1rem;
+        }
+        .sequence-prompt-block .prompt-content-textarea {
+            width: 100%;
+            height: 120px; /* 미리보기 텍스트 영역 높이 */
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-primary);
+            padding: 10px;
+            font-size: 0.9rem;
+            resize: vertical;
+            font-family: monospace;
+        }
+        .sequence-prompt-block .copy-individual-prompt-btn {
+            align-self: flex-end; /* 버튼을 오른쪽으로 정렬 */
+            padding: 6px 10px;
+            font-size: 0.8rem;
         }
     </style>
 </head>
