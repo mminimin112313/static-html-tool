@@ -9,7 +9,7 @@
     
     <!-- Fuse.js for fuzzy search -->
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
-    <!-- Sortable.js for drag-and-drop (used for sequences, though full implementation is complex) -->
+    <!-- Sortable.js for drag-and-drop (used for sequences) -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 
     <script type="module">
@@ -193,6 +193,11 @@
         };
 
         let fuse = null; // Fuse.js 인스턴스
+
+        // 전역 시퀀스 실행 상태
+        let activeSequencePrompts = []; // 현재 실행 중인 시퀀스의 프롬프트 객체들 (순서대로)
+        let currentSequencePromptIndex = -1; // 현재 실행 중인 프롬프트의 인덱스
+        let sequenceSortableInstance = null; // Sortable.js 인스턴스
 
         // =================================================================
         // Firebase Firestore & IndexedDB 하이브리드 데이터 서비스
@@ -543,6 +548,7 @@
                 let allItems = [];
                 try {
                     allItems = await dbService.getAll('prompts');
+                    state.prompts = allItems; // 전역 state.prompts 업데이트
                 } catch (e) {
                     console.warn("render.prompts에서 데이터 로드 중 경고:", e); 
                     allItems = [];
@@ -791,10 +797,12 @@
                 }
             },
             // 템플릿 사용 모달 렌더링
-            templateModal: async (id) => {
+            // onCompleteCallback: 템플릿 처리 완료 후 호출될 콜백 함수 (시퀀스 실행 시 사용)
+            templateModal: async (id, onCompleteCallback = null) => {
                 const p = await dbService.getById('prompts', id);
                 if (!p) {
                     helpers.showToast('템플릿을 찾을 수 없습니다!');
+                    if (onCompleteCallback) onCompleteCallback(true); // 오류 발생 시 시퀀스 종료 신호
                     return;
                 }
                 // 템플릿 내용에서 플레이스홀더 추출
@@ -824,8 +832,7 @@
                 updatePreview(); // 초기 미리보기 렌더링
 
                 // '생성 및 복사' 버튼 클릭 이벤트
-                ui.templateModal.generateBtn.onclick = async () => { // async 추가
-                    // navigator.clipboard.writeText 대신 document.execCommand('copy') 사용
+                ui.templateModal.generateBtn.onclick = async () => {
                     const textToCopy = preview.textContent;
                     try {
                         const textarea = document.createElement('textarea');
@@ -837,21 +844,32 @@
 
                         helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
                         
-                        // 복사 성공 후 약간의 딜레이를 주어 토스트 메시지를 볼 시간을 제공
-                        setTimeout(async () => { // async 추가
+                        // 사용 빈도 증가
+                        if (p.id) {
+                            const currentUsageCount = p.usageCount || 0;
+                            await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1, updatedAt: serverTimestamp() });
+                            render.prompts(true); // 목록 새로고침 (캐시 강제 업데이트)
+                        }
+
+                        // 콜백 함수가 있으면 호출 (시퀀스 실행 중인 경우)
+                        if (onCompleteCallback) {
+                            onCompleteCallback(); // 다음 프롬프트 실행을 알림
+                        } else {
+                            // 시퀀스 실행 중이 아니면 모달 닫기
                             ui.templateModal.overlay.classList.remove('show');
-                            // 사용 빈도 증가 (16번) - 모달 닫힌 후 백그라운드에서 처리
-                            if (p.id) {
-                                const currentUsageCount = p.usageCount || 0;
-                                await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1, updatedAt: serverTimestamp() });
-                                render.prompts(true); // 목록 새로고침 (캐시 강제 업데이트)
-                            }
-                        }, 300); // 300ms 딜레이
+                        }
 
                     } catch (err) {
                         console.error('텍스트 복사 실패: ', err);
                         helpers.showToast('복사 실패. 다시 시도해 주세요.');
+                        if (onCompleteCallback) onCompleteCallback(true); // 오류 발생 시 시퀀스 종료 신호
                     }
+                };
+
+                // 모달 닫기 버튼 클릭 시 시퀀스 중단
+                ui.templateModal.closeBtn.onclick = () => {
+                    ui.templateModal.overlay.classList.remove('show');
+                    if (onCompleteCallback) onCompleteCallback(true); // 시퀀스 중단 신호
                 };
             },
             // 시퀀스 편집기 모달 렌더링
@@ -873,10 +891,6 @@
                 const allPrompts = await dbService.getAll('prompts');
                 state.prompts = allPrompts; // 전역 state.prompts 업데이트 (시퀀스 미리보기에서 사용)
 
-                const promptOptions = allPrompts.map(p => `
-                    <option value="${p.id}" ${s.promptIds.includes(p.id) ? 'selected' : ''}>${p.title}</option>
-                `).join('');
-
                 ui.sequenceModal.title.textContent = isNew ? '새 시퀀스 생성' : `시퀀스 편집: ${s.name}`;
                 ui.sequenceModal.body.innerHTML = `
                     <div class="form-group">
@@ -890,13 +904,13 @@
                     <div class="form-group">
                         <label for="sequence-prompts-select">포함할 프롬프트 (Ctrl/Cmd 클릭으로 다중 선택)</label>
                         <select id="sequence-prompts-select" multiple size="10">
-                            ${promptOptions}
+                            ${allPrompts.map(p => `<option value="${p.id}">${p.title}</option>`).join('')}
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>시퀀스 미리보기</label>
-                        <div id="sequence-individual-prompts" class="sequence-individual-prompts" style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); padding: 10px; border-radius: 8px;">
-                            <!-- Individual prompt previews will be rendered here -->
+                        <label>시퀀스 순서 조정 (드래그 앤 드롭)</label>
+                        <div id="sequence-sortable-list" class="sequence-sortable-list">
+                            <!-- Drag-and-drop items will be rendered here -->
                         </div>
                     </div>
                 `;
@@ -908,55 +922,79 @@
                 ui.sequenceModal.deleteBtn.dataset.id = isNew ? '' : id;
                 ui.sequenceModal.deleteBtn.style.display = isNew ? 'none' : 'inline-block';
 
-                // 시퀀스 미리보기 업데이트 로직
                 const sequencePromptsSelect = document.getElementById('sequence-prompts-select');
-                const sequenceIndividualPrompts = document.getElementById('sequence-individual-prompts');
+                const sequenceSortableList = document.getElementById('sequence-sortable-list');
 
-                const updateSequencePreview = async () => {
+                // Sortable.js 인스턴스 초기화 (기존 인스턴스 파괴 후 재생성)
+                if (sequenceSortableInstance) {
+                    sequenceSortableInstance.destroy();
+                }
+                sequenceSortableInstance = Sortable.create(sequenceSortableList, {
+                    animation: 150,
+                    ghostClass: 'sortable-ghost', // 드래그 시 고스트 클래스
+                    handle: '.drag-handle' // 드래그 핸들 지정
+                });
+
+                // 초기 선택된 프롬프트들을 Sortable 리스트에 추가
+                s.promptIds.forEach(promptId => {
+                    const prompt = allPrompts.find(p => p.id === promptId);
+                    if (prompt) {
+                        const item = document.createElement('div');
+                        item.classList.add('sequence-sortable-item');
+                        item.dataset.promptId = prompt.id;
+                        item.innerHTML = `
+                            <i class="fa-solid fa-grip-vertical drag-handle"></i>
+                            <span>${prompt.title}</span>
+                            <button class="remove-from-sequence-btn button-like"><i class="fa-solid fa-times"></i></button>
+                        `;
+                        sequenceSortableList.appendChild(item);
+                    }
+                });
+
+                // select 박스에서 프롬프트 선택/해제 시 Sortable 리스트 업데이트
+                sequencePromptsSelect.addEventListener('change', () => {
+                    const currentSortableIds = Array.from(sequenceSortableList.children).map(item => item.dataset.promptId);
                     const selectedIds = Array.from(sequencePromptsSelect.selectedOptions).map(opt => opt.value);
-                    sequenceIndividualPrompts.innerHTML = ''; // 기존 미리보기 초기화
 
-                    if (selectedIds.length === 0) {
-                        sequenceIndividualPrompts.innerHTML = '<div style="color: var(--text-secondary); text-align: center; padding: 20px;">선택된 프롬프트가 없습니다.</div>';
-                        return;
-                    }
-
-                    for (const promptId of selectedIds) {
-                        const prompt = state.prompts.find(p => p.id === promptId);
-                        if (prompt) {
-                            const promptBlock = document.createElement('div');
-                            promptBlock.classList.add('sequence-prompt-block');
-                            promptBlock.innerHTML = `
-                                <h4>${prompt.title}</h4>
-                                <textarea readonly class="prompt-content-textarea">${prompt.content}</textarea>
-                                <button class="copy-individual-prompt-btn button-like"><i class="fa-regular fa-copy"></i> 복사</button>
-                            `;
-                            sequenceIndividualPrompts.appendChild(promptBlock);
-                        }
-                    }
-                };
-
-                sequencePromptsSelect.addEventListener('change', updateSequencePreview);
-                updateSequencePreview(); // 초기 미리보기 렌더링
-
-                // 개별 프롬프트 복사 버튼 이벤트 리스너 (위임)
-                sequenceIndividualPrompts.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('copy-individual-prompt-btn')) {
-                        const textarea = e.target.previousElementSibling; // 바로 이전 형제 요소인 textarea
-                        if (textarea) {
-                            const textToCopy = textarea.value;
-                            try {
-                                const tempTextarea = document.createElement('textarea');
-                                tempTextarea.value = textToCopy;
-                                document.body.appendChild(tempTextarea);
-                                tempTextarea.select();
-                                document.execCommand('copy');
-                                document.body.removeChild(tempTextarea);
-                                helpers.showToast('프롬프트 내용이 클립보드에 복사되었습니다!');
-                            } catch (err) {
-                                console.error('텍스트 복사 실패: ', err);
-                                helpers.showToast('복사 실패. 다시 시도해 주세요.');
+                    // 새로 추가된 항목
+                    selectedIds.forEach(id => {
+                        if (!currentSortableIds.includes(id)) {
+                            const prompt = allPrompts.find(p => p.id === id);
+                            if (prompt) {
+                                const item = document.createElement('div');
+                                item.classList.add('sequence-sortable-item');
+                                item.dataset.promptId = prompt.id;
+                                item.innerHTML = `
+                                    <i class="fa-solid fa-grip-vertical drag-handle"></i>
+                                    <span>${prompt.title}</span>
+                                    <button class="remove-from-sequence-btn button-like"><i class="fa-solid fa-times"></i></button>
+                                `;
+                                sequenceSortableList.appendChild(item);
                             }
+                        }
+                    });
+
+                    // 제거된 항목
+                    currentSortableIds.forEach(id => {
+                        if (!selectedIds.includes(id)) {
+                            const itemToRemove = sequenceSortableList.querySelector(`[data-prompt-id="${id}"]`);
+                            if (itemToRemove) {
+                                itemToRemove.remove();
+                            }
+                        }
+                    });
+                });
+
+                // Sortable 리스트에서 항목 제거 버튼 이벤트 (위임)
+                sequenceSortableList.addEventListener('click', (e) => {
+                    if (e.target.closest('.remove-from-sequence-btn')) {
+                        const item = e.target.closest('.sequence-sortable-item');
+                        const promptIdToRemove = item.dataset.promptId;
+                        item.remove();
+                        // select 박스에서도 선택 해제
+                        const optionToDeselect = sequencePromptsSelect.querySelector(`option[value="${promptIdToRemove}"]`);
+                        if (optionToDeselect) {
+                            optionToDeselect.selected = false;
                         }
                     }
                 });
@@ -1123,6 +1161,13 @@
                 ui.toast.textContent = msg;
                 ui.toast.classList.add('show');
                 setTimeout(() => ui.toast.classList.remove('show'), 3000);
+            },
+            // 시퀀스 실행 중단 및 초기화
+            resetSequenceExecution: () => {
+                activeSequencePrompts = [];
+                currentSequencePromptIndex = -1;
+                ui.templateModal.overlay.classList.remove('show'); // 혹시 열려있는 템플릿 모달 닫기
+                helpers.showToast('시퀀스 실행이 종료되었습니다.');
             }
         };
 
@@ -1138,6 +1183,83 @@
             });
             console.log("Fuse.js 검색 인덱스 빌드 완료.");
         }
+
+        // =================================================================
+        // 시퀀스 실행 로직
+        // =================================================================
+
+        // 시퀀스의 다음 프롬프트를 실행하는 함수
+        async function executeNextPromptInSequence(forceStop = false) {
+            if (forceStop || currentSequencePromptIndex >= activeSequencePrompts.length) {
+                // 시퀀스 종료 또는 강제 중단
+                helpers.resetSequenceExecution();
+                return;
+            }
+
+            const currentPrompt = activeSequencePrompts[currentSequencePromptIndex];
+
+            // 템플릿 프롬프트인 경우 템플릿 모달 사용
+            if (currentPrompt.isTemplate) {
+                render.templateModal(currentPrompt.id, (isErrorOrCanceled) => {
+                    if (isErrorOrCanceled) {
+                        helpers.resetSequenceExecution(); // 모달에서 취소 또는 오류 발생 시 시퀀스 중단
+                    } else {
+                        currentSequencePromptIndex++;
+                        executeNextPromptInSequence(); // 다음 프롬프트 실행
+                    }
+                });
+            } else {
+                // 일반 프롬프트인 경우 즉시 클립보드에 복사
+                try {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = currentPrompt.content;
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                    helpers.showToast(`'${currentPrompt.title}' 프롬프트가 클립보드에 복사되었습니다!`);
+                } catch (err) {
+                    console.error('텍스트 복사 실패: ', err);
+                    helpers.showToast(`'${currentPrompt.title}' 복사 실패. 시퀀스를 중단합니다.`);
+                    helpers.resetSequenceExecution();
+                    return;
+                }
+
+                currentSequencePromptIndex++;
+                // 다음 프롬프트로 넘어가기 전 짧은 딜레이 (사용자가 토스트 메시지를 볼 수 있도록)
+                setTimeout(() => {
+                    executeNextSequencePrompt();
+                }, 1000); // 1초 딜레이
+            }
+        }
+
+        // 시퀀스 실행 시작 함수
+        async function startSequenceExecution(sequenceId) {
+            const sequence = await dbService.getById('sequences', sequenceId);
+            if (!sequence || !sequence.promptIds || sequence.promptIds.length === 0) {
+                helpers.showToast('실행할 프롬프트가 없는 시퀀스입니다.');
+                return;
+            }
+
+            // 시퀀스에 포함된 프롬프트 객체들을 순서대로 가져와 activeSequencePrompts에 저장
+            activeSequencePrompts = [];
+            for (const promptId of sequence.promptIds) {
+                const prompt = state.prompts.find(p => p.id === promptId); // 캐시된 state.prompts에서 찾기
+                if (prompt) {
+                    activeSequencePrompts.push(prompt);
+                } else {
+                    helpers.showToast(`시퀀스에 포함된 프롬프트 (ID: ${promptId})를 찾을 수 없습니다. 시퀀스 실행을 중단합니다.`);
+                    helpers.resetSequenceExecution();
+                    return;
+                }
+            }
+
+            currentSequencePromptIndex = 0;
+            ui.sequenceModal.overlay.classList.remove('show'); // 시퀀스 편집 모달 닫기
+            helpers.showToast(`'${sequence.name}' 시퀀스를 시작합니다.`);
+            executeNextPromptInSequence(); // 첫 번째 프롬프트 실행 시작
+        }
+
 
         // =================================================================
         // 앱 초기화 및 인증 로직 (App Initialization and Authentication Logic)
@@ -1184,9 +1306,14 @@
             ui.contentView.addEventListener('click', e => { handlers.content(e); handlers.editor(e); });            
             ui.searchInput.addEventListener('input', () => render.prompts()); // 검색 입력 시 프롬프트 목록 새로고침
 
-            ui.templateModal.closeBtn.addEventListener('click', () => ui.templateModal.overlay.classList.remove('show'));            
+            // 템플릿 모달 닫기 (시퀀스 실행 중이 아닐 때만)
+            ui.templateModal.closeBtn.addEventListener('click', () => {
+                if (currentSequencePromptIndex === -1) { // 시퀀스 실행 중이 아닐 때만 일반 닫기
+                    ui.templateModal.overlay.classList.remove('show');
+                }
+            });            
             ui.templateModal.overlay.addEventListener('click', e => { // 모달 외부 클릭 시 닫기
-                if (e.target === ui.templateModal.overlay) {
+                if (e.target === ui.templateModal.overlay && currentSequencePromptIndex === -1) { // 시퀀스 실행 중이 아닐 때만 일반 닫기
                     ui.templateModal.overlay.classList.remove('show');
                 }
             });
@@ -1202,8 +1329,10 @@
                 const id = ui.sequenceModal.saveBtn.dataset.id || null;
                 const name = document.getElementById('sequence-name-input').value;
                 const description = document.getElementById('sequence-description-input').value;
-                const selectedPromptElements = Array.from(document.getElementById('sequence-prompts-select').selectedOptions);
-                const promptIds = selectedPromptElements.map(option => option.value);
+                
+                // Sortable.js 리스트에서 현재 순서대로 promptIds 가져오기
+                const sequenceSortableList = document.getElementById('sequence-sortable-list');
+                const promptIds = Array.from(sequenceSortableList.children).map(item => item.dataset.promptId);
 
                 if (!name.trim()) {
                     helpers.showToast('시퀀스 이름을 입력해주세요.');
@@ -1213,7 +1342,7 @@
                 const data = {
                     name: name.trim(),
                     description: description.trim(),
-                    promptIds: promptIds,
+                    promptIds: promptIds, // 정렬된 ID 배열 저장
                     updatedAt: serverTimestamp()
                 };
                 if (!id) {
@@ -1246,29 +1375,7 @@
             });
             ui.sequenceModal.runBtn.addEventListener('click', async () => {
                 const id = ui.sequenceModal.runBtn.dataset.id;
-                const sequence = await dbService.getById('sequences', id);
-                if (!sequence || !sequence.promptIds || sequence.promptIds.length === 0) {
-                    helpers.showToast('실행할 프롬프트가 없습니다.');
-                    return;
-                }
-
-                let combinedContent = '';
-                for (const promptId of sequence.promptIds) {
-                    const prompt = state.prompts.find(p => p.id === promptId); // 현재 캐시된 state.prompts에서 찾기
-                    if (prompt) {
-                        combinedContent += prompt.content + '\n\n---\n\n'; // 프롬프트 구분자
-                    }
-                }
-                
-                // 클립보드에 복사
-                const textarea = document.createElement('textarea');
-                textarea.value = combinedContent.trim();
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-                helpers.showToast('시퀀스 프롬프트가 클립보드에 복사되었습니다!');
-                ui.sequenceModal.overlay.classList.remove('show');
+                startSequenceExecution(id); // 시퀀스 실행 시작
             });
 
 
@@ -1579,42 +1686,64 @@
             font-size: 0.85rem;
         }
 
-        /* 시퀀스 개별 프롬프트 미리보기 스타일 */
-        .sequence-individual-prompts {
-            display: flex;
-            flex-direction: column;
-            gap: 20px; /* 각 프롬프트 블록 사이 간격 */
-        }
-        .sequence-prompt-block {
-            background-color: var(--bg-primary);
-            border: 1px solid var(--border-color);
+        /* Sortable.js를 위한 시퀀스 프롬프트 목록 스타일 */
+        .sequence-sortable-list {
+            min-height: 100px; /* 드래그 앤 드롭 영역 확보 */
+            border: 1px dashed var(--border-color);
             border-radius: 8px;
-            padding: 15px;
+            padding: 10px;
+            background-color: var(--bg-primary);
             display: flex;
             flex-direction: column;
-            gap: 10px;
+            gap: 8px;
+            overflow-y: auto;
+            max-height: 250px;
         }
-        .sequence-prompt-block h4 {
-            margin: 0;
-            color: var(--accent-blue);
-            font-size: 1.1rem;
-        }
-        .sequence-prompt-block .prompt-content-textarea {
-            width: 100%;
-            height: 120px; /* 미리보기 텍스트 영역 높이 */
+        .sequence-sortable-item {
+            display: flex;
+            align-items: center;
             background-color: var(--bg-secondary);
             border: 1px solid var(--border-color);
-            border-radius: 4px;
-            color: var(--text-primary);
-            padding: 10px;
-            font-size: 0.9rem;
-            resize: vertical;
-            font-family: monospace;
+            border-radius: 6px;
+            padding: 8px 12px;
+            font-size: 0.95rem;
+            cursor: grab; /* 드래그 가능함을 나타냄 */
+            gap: 10px;
         }
-        .sequence-prompt-block .copy-individual-prompt-btn {
-            align-self: flex-end; /* 버튼을 오른쪽으로 정렬 */
-            padding: 6px 10px;
-            font-size: 0.8rem;
+        .sequence-sortable-item:active {
+            cursor: grabbing;
+        }
+        .sequence-sortable-item .drag-handle {
+            cursor: grab;
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-right: 5px;
+        }
+        .sequence-sortable-item span {
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .sequence-sortable-item .remove-from-sequence-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1rem;
+            padding: 4px;
+            border-radius: 4px;
+            cursor: pointer;
+            line-height: 1; /* 아이콘 정렬 */
+        }
+        .sequence-sortable-item .remove-from-sequence-btn:hover {
+            background-color: var(--bg-hover);
+            color: var(--accent-pink);
+        }
+        /* Sortable.js 고스트 클래스 */
+        .sortable-ghost {
+            opacity: 0.4;
+            background-color: var(--accent-blue);
+            border: 1px dashed var(--accent-blue);
         }
     </style>
 </head>
@@ -1709,3 +1838,4 @@
 
 </body>
 </html>
+
