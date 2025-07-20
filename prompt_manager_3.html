@@ -367,7 +367,7 @@
                  if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 업데이트할 수 없습니다.");
                 try {
                     await updateDoc(dbService.getDocRef(collectionName, id), data);
-                    // IndexedDB 캐시 업데이트: Firestore에 저장된 실제 데이터로 업데이트
+                    // IndexedDB 캐시 업데이트: Firestore에서 최신 데이터 가져옴
                     const updatedItem = await dbService.getById(collectionName, id); // Firestore에서 최신 데이터 가져옴
                     if (updatedItem) {
                         let cacheStoreName;
@@ -455,7 +455,8 @@
                         const importedData = JSON.parse(event.target.result);
                         if (importedData.prompts && Array.isArray(importedData.prompts)) {
                              // 기존 데이터 삭제 여부 확인
-                            const confirmClear = confirm('기존 데이터를 모두 지우고 가져오겠습니까? (취소 시 기존 데이터에 추가)');
+                            // Use custom modal for confirmation instead of window.confirm
+                            const confirmClear = await helpers.showConfirm('기존 데이터를 모두 지우고 가져오겠습니까? (취소 시 기존 데이터에 추가)');
                             if (confirmClear) {
                                 // Firestore 및 IndexedDB에서 모두 삭제
                                 const currentPrompts = await dbService.getAll('prompts', true);
@@ -655,7 +656,7 @@
                         <label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label>
                         <textarea id="content-input">${p.content || ''}</textarea>
                         <div class="file-upload-section">
-                            <input type="file" id="large-text-file" accept=".txt" style="display:none;">
+                            <input type="file" id="large-text-file" accept=".txt,.html,.htm,.md,.json,.csv,.xml,.yaml,.yml,.js,.css,text/*" style="display:none;">
                             <button id="load-text-btn" class="button-like"><i class="fa-solid fa-file-arrow-up"></i> 파일에서 불러오기</button>
                             <span id="loaded-file-name" style="margin-left: 10px; font-size: 0.85rem; color: var(--text-secondary);"></span>
                         </div>
@@ -687,7 +688,7 @@
                     }
                 }
 
-                // 파일 업로드 관련 이벤트 리스너
+                // 파일 업로드 관련 요소 참조
                 const largeTextFile = document.getElementById('large-text-file');
                 const loadTextBtn = document.getElementById('load-text-btn');
                 const loadedFileNameSpan = document.getElementById('loaded-file-name');
@@ -699,35 +700,72 @@
                     largeTextFile.click();
                 };
 
-                // 파일 선택 시 내용 읽어오기
-                largeTextFile.onchange = async (e) => {
-                    const file = e.target.files[0];
+                // 파일 로드 및 처리 로직을 헬퍼 함수로 분리
+                const handleFileLoad = async (file, targetTextarea, fileNameSpan = null) => {
                     if (!file) {
-                        loadedFileNameSpan.textContent = '';
+                        if (fileNameSpan) fileNameSpan.textContent = '';
                         return;
                     }
 
                     const MAX_FILE_SIZE_MB = 5; // 5 MB 제한
                     if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
                         helpers.showToast(`파일 용량이 너무 큽니다. (${MAX_FILE_SIZE_MB}MB 이하로 업로드해주세요.)`);
-                        loadedFileNameSpan.textContent = '';
-                        e.target.value = ''; // 파일 입력 초기화
-                        return;
+                        if (fileNameSpan) fileNameSpan.textContent = '';
+                        return false; // 파일 처리 실패
                     }
 
-                    loadedFileNameSpan.textContent = file.name;
+                    if (fileNameSpan) fileNameSpan.textContent = file.name;
                     try {
-                        const txt = await file.text();
-                        contentInput.value = txt;
-                        helpers.showToast('파일 내용이 성공적으로 불러와졌습니다.');
-                        // 파일 로드 후 내용 길이 경고 업데이트
-                        checkContentSizeWarning();
+                        let raw = await file.text();
+                        let processedText = raw;
+
+                        // HTML 파일인 경우 태그 이스케이프
+                        if (file.name.match(/\.(html?|htm)$/i)) {
+                            processedText = raw.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                            helpers.showToast('HTML 파일이 이스케이프되어 불러와졌습니다.');
+                        } else if (file.name.match(/\.(json|yaml|yml)$/i)) {
+                            // JSON/YAML 등은 prettier 라이브러리로 포맷팅 가능 (여기서는 구현 생략)
+                            // processedText = prettier.format(raw, { parser: "json" });
+                            helpers.showToast('파일 내용이 불러와졌습니다.');
+                        } else {
+                            helpers.showToast('파일 내용이 불러와졌습니다.');
+                        }
+
+                        targetTextarea.value = processedText;
+                        // Only check content size warning for the main editor
+                        if (targetTextarea.id === 'content-input') {
+                            checkContentSizeWarning(); 
+                        }
+                        return true; // 파일 처리 성공
                     } catch (error) {
                         console.error("파일 읽기 오류:", error);
                         helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
+                        return false; // 파일 처리 실패
+                    }
+                };
+
+                // 파일 선택 시 내용 읽어오기 (refactored to use handleFileLoad)
+                largeTextFile.onchange = async (e) => {
+                    const file = e.target.files[0];
+                    if (file) {
+                        await handleFileLoad(file, contentInput, loadedFileNameSpan);
                     }
                     e.target.value = ''; // 파일 입력 초기화 (동일 파일 재선택 가능하게)
                 };
+
+                // 드래그 앤 드롭 지원
+                contentInput.addEventListener('dragover', e => {
+                    e.preventDefault(); // 기본 동작 방지 (파일 열림 방지)
+                    e.dataTransfer.dropEffect = 'copy'; // 드롭 시 복사 효과 표시
+                });
+
+                contentInput.addEventListener('drop', async e => {
+                    e.preventDefault(); // 기본 동작 방지
+                    const file = e.dataTransfer.files[0];
+                    if (file) {
+                        await handleFileLoad(file, contentInput, loadedFileNameSpan);
+                    }
+                });
 
                 // 내용 입력 시 길이 경고 체크
                 const checkContentSizeWarning = () => {
@@ -776,7 +814,9 @@
                     versionsList.addEventListener('click', async (e) => {
                         const versionId = parseInt(e.target.dataset.versionId, 10);
                         if (e.target.classList.contains('restore-version-btn')) {
-                            if (confirm('이 버전으로 프롬프트를 복원하시겠습니까? 현재 내용은 덮어씌워집니다.')) {
+                            // Use custom modal for confirmation instead of window.confirm
+                            const confirmed = await helpers.showConfirm('이 버전으로 프롬프트를 복원하시겠습니까? 현재 내용은 덮어씌워집니다.');
+                            if (confirmed) {
                                 const versions = await dbService.getPromptVersions(id);
                                 const versionToRestore = versions.find(v => v.id === versionId);
                                 if (versionToRestore) {
@@ -786,7 +826,9 @@
                                 }
                             }
                         } else if (e.target.classList.contains('delete-version-btn')) {
-                            if (confirm('이 버전을 삭제하시겠습니까?')) {
+                            // Use custom modal for confirmation instead of window.confirm
+                            const confirmed = await helpers.showConfirm('이 버전을 삭제하시겠습니까?');
+                            if (confirmed) {
                                 await deleteFromIndexedDB(CACHE_STORE_VERSIONS, versionId);
                                 helpers.showToast('버전이 삭제되었습니다.');
                                 viewVersionsBtn.click(); // 히스토리 새로고침 (토글 닫고 다시 열기)
@@ -810,14 +852,22 @@
                 const uniquePlaceholders = [...new Set(placeholders)];
                                 
                 ui.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
+                // Change input type="text" to textarea for multi-line input
                 ui.templateModal.body.innerHTML = uniquePlaceholders.map(ph => `
                     <div class="form-group">
                         <label for="ph-${ph}">${ph.replace(/_/g, ' ')}</label>
-                        <input type="text" id="ph-${ph}" data-placeholder="${ph}">
+                        <div class="template-input-with-file"> <!-- New wrapper for flex layout -->
+                            <textarea id="ph-${ph}" data-placeholder="${ph}" rows="1"></textarea> <!-- Changed rows to 1 -->
+                            <input type="file" id="file-ph-${ph}" accept=".txt,.html,.htm,.md,.json,.csv,.xml,.yaml,.yml,.js,.css,text/*" style="display:none;">
+                            <button class="button-like file-upload-icon-btn" data-target-ph="${ph}" title="파일에서 불러오기">
+                                <i class="fa-solid fa-file-arrow-up"></i>
+                            </button>
+                        </div>
                     </div>`).join('') + `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${p.content}</div></div>`;
                 ui.templateModal.overlay.classList.add('show');
                                 
-                const inputs = ui.templateModal.body.querySelectorAll('input[data-placeholder]');
+                // Select textarea elements instead of input
+                const inputs = ui.templateModal.body.querySelectorAll('textarea[data-placeholder]');
                 const preview = document.getElementById('template-preview');
                 const updatePreview = () => {
                     let content = p.content;
@@ -830,6 +880,77 @@
                 };
                 inputs.forEach(input => input.addEventListener('input', updatePreview));
                 updatePreview(); // 초기 미리보기 렌더링
+
+                // File upload logic for template modal
+                const handleModalFileLoad = async (file, targetTextarea) => {
+                    if (!file) return;
+
+                    const MAX_FILE_SIZE_MB = 5;
+                    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                        helpers.showToast(`파일 용량이 너무 큽니다. (${MAX_FILE_SIZE_MB}MB 이하로 업로드해주세요.)`);
+                        return false;
+                    }
+
+                    try {
+                        let raw = await file.text();
+                        let processedText = raw;
+
+                        if (file.name.match(/\.(html?|htm)$/i)) {
+                            processedText = raw.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                            helpers.showToast('HTML 파일이 이스케이프되어 불러와졌습니다.');
+                        } else if (file.name.match(/\.(json|yaml|yml)$/i)) {
+                            helpers.showToast('파일 내용이 불러와졌습니다.');
+                        } else {
+                            helpers.showToast('파일 내용이 불러와졌습니다.');
+                        }
+
+                        targetTextarea.value = processedText;
+                        updatePreview(); // Update the template preview after loading
+                        return true;
+                    } catch (error) {
+                        console.error("파일 읽기 오류:", error);
+                        helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
+                        return false;
+                    }
+                };
+
+                const fileInputButtons = ui.templateModal.body.querySelectorAll('.file-upload-icon-btn');
+                fileInputButtons.forEach(button => {
+                    button.addEventListener('click', () => {
+                        const targetPh = button.dataset.targetPh;
+                        const fileInput = document.getElementById(`file-ph-${targetPh}`);
+                        fileInput.click();
+                    });
+                });
+
+                inputs.forEach(textarea => {
+                    const ph = textarea.dataset.placeholder;
+                    const fileInput = document.getElementById(`file-ph-${ph}`);
+
+                    // File input change listener
+                    fileInput.addEventListener('change', async (e) => {
+                        const file = e.target.files[0];
+                        if (file) {
+                            await handleModalFileLoad(file, textarea);
+                        }
+                        e.target.value = ''; // Clear file input
+                    });
+
+                    // Drag and drop listeners for each textarea in the modal
+                    textarea.addEventListener('dragover', e => {
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'copy';
+                    });
+
+                    textarea.addEventListener('drop', async e => {
+                        e.preventDefault();
+                        const file = e.dataTransfer.files[0];
+                        if (file) {
+                            await handleModalFileLoad(file, textarea);
+                        }
+                    });
+                });
+
 
                 // '생성 및 복사' 버튼 클릭 이벤트
                 ui.templateModal.generateBtn.onclick = async () => {
@@ -929,7 +1050,7 @@
                 if (sequenceSortableInstance) {
                     sequenceSortableInstance.destroy();
                 }
-                sequenceSortableInstance = Sortable.create(sequenceSortableList, {
+                Sortable.create(sequenceSortableList, {
                     animation: 150,
                     ghostClass: 'sortable-ghost', // 드래그 시 고스트 클래스
                     handle: '.drag-handle' // 드래그 핸들 지정
@@ -1142,8 +1263,9 @@
 
                 if (deleteBtn) { // 삭제 버튼 클릭
                     const id = deleteBtn.dataset.id;
-                    // 사용자에게 확인 대화상자 표시
-                    if (confirm('이 항목을 영구적으로 삭제하시겠습니까?')) {
+                    // Use custom modal for confirmation instead of window.confirm
+                    const confirmed = await helpers.showConfirm('이 항목을 영구적으로 삭제하시겠습니까?');
+                    if (confirmed) {
                         try {
                             await dbService.delete('prompts', id);
                             helpers.showToast('항목이 삭제되었습니다.');
@@ -1174,6 +1296,44 @@
                 currentSequencePromptIndex = -1;
                 ui.templateModal.overlay.classList.remove('show'); // 혹시 열려있는 템플릿 모달 닫기
                 helpers.showToast('시퀀스 실행이 종료되었습니다.');
+            },
+            // Custom confirmation dialog
+            showConfirm: (message) => {
+                return new Promise(resolve => {
+                    const modalOverlay = document.createElement('div');
+                    modalOverlay.classList.add('modal-overlay', 'show');
+                    modalOverlay.innerHTML = `
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3>확인</h3>
+                                <button class="close-btn">&times;</button>
+                            </div>
+                            <div class="modal-body">
+                                <p>${message}</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button id="confirm-cancel-btn" class="button-like">취소</button>
+                                <button id="confirm-ok-btn" class="generate-btn">확인</button>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(modalOverlay);
+
+                    const closeAndResolve = (result) => {
+                        modalOverlay.classList.remove('show');
+                        modalOverlay.addEventListener('transitionend', () => modalOverlay.remove(), { once: true });
+                        resolve(result);
+                    };
+
+                    modalOverlay.querySelector('.close-btn').onclick = () => closeAndResolve(false);
+                    modalOverlay.querySelector('#confirm-cancel-btn').onclick = () => closeAndResolve(false);
+                    modalOverlay.querySelector('#confirm-ok-btn').onclick = () => closeAndResolve(true);
+                    modalOverlay.onclick = (e) => {
+                        if (e.target === modalOverlay) {
+                            closeAndResolve(false);
+                        }
+                    };
+                });
             }
         };
 
@@ -1296,14 +1456,7 @@
                     try {                        
                         await dbService.put('folders', { name: name.trim(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });                        
                         await render.folders();                        
-                        helpers.showToast('폴더가 생성되었습니다!');                    
-                    } catch (error) {                        
-                        console.error("폴더 생성 오류:", error);                        
-                        helpers.showToast('폴더 생성 오류: ' + error.message);                    
-                    }                
-                }            
-            });            
-            ui.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null)); // 새 시퀀스 버튼 이벤트
+                        helpers.showToast('폴더가 생성되었습니다!');                    } catch (error) {                        console.error("폴더 생성 오류:", error);                        helpers.showToast('폴더 생성 오류: ' + error.message);                    }                }            });            ui.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null)); // 새 시퀀스 버튼 이벤트
 
             ui.libraryList.addEventListener('click', handlers.sidebar);            
             ui.folderList.addEventListener('click', handlers.sidebar);            
@@ -1367,7 +1520,9 @@
             });
             ui.sequenceModal.deleteBtn.addEventListener('click', async () => {
                 const id = ui.sequenceModal.deleteBtn.dataset.id;
-                if (confirm('이 시퀀스를 영구적으로 삭제하시겠습니까?')) {
+                // Use custom modal for confirmation instead of window.confirm
+                const confirmed = await helpers.showConfirm('이 시퀀스를 영구적으로 삭제하시겠습니까?');
+                if (confirmed) {
                     try {
                         await dbService.delete('sequences', id);
                         helpers.showToast('시퀀스가 삭제되었습니다.');
@@ -1475,7 +1630,8 @@
             const provider = new GoogleAuthProvider();            
             signInWithPopup(auth, provider).catch(error => {                
                 console.error("로그인 실패:", error);                
-                alert("로그인에 실패했습니다. 자세한 내용은 콘솔을 확인해주세요."); // 사용자에게 알림
+                // Use custom modal for confirmation instead of alert
+                helpers.showToast("로그인에 실패했습니다. 자세한 내용은 콘솔을 확인해주세요.");
             });        
         });        
 
@@ -1732,7 +1888,7 @@
             cursor: pointer;
         }
 
-        /* 파일 업로드 섹션 스타일 */
+        /* 파일 업로드 섹션 스타일 (메인 편집기) */
         .file-upload-section {
             display: flex;
             align-items: center;
@@ -1803,6 +1959,27 @@
             opacity: 0.4;
             background-color: var(--accent-blue);
             border: 1px dashed var(--accent-blue);
+        }
+
+        /* New style for template input with file button in modal */
+        .template-input-with-file {
+            display: flex;
+            align-items: center;
+            gap: 8px; /* Space between textarea and button */
+        }
+
+        .template-input-with-file textarea {
+            flex-grow: 1; /* Allow textarea to take available space */
+            min-width: 0; /* Prevent flex item from overflowing */
+            height: auto; /* Allow textarea to adjust height based on rows */
+            resize: vertical; /* Allow vertical resize */
+        }
+
+        .file-upload-icon-btn {
+            padding: 8px 10px; /* Adjust padding for icon-only button */
+            font-size: 1rem; /* Adjust icon size */
+            width: auto; /* Allow button to size based on content */
+            flex-shrink: 0; /* Prevent button from shrinking */
         }
     </style>
 </head>
@@ -1899,3 +2076,4 @@
 
 </body>
 </html>
+
