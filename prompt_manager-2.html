@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>프롬프트 관리자 프로 (최종)</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
@@ -177,7 +177,8 @@
             mobileMenuToggle: document.getElementById('mobile-menu-toggle'), // 모바일 햄버거 메뉴 버튼
             sidebarCloseBtn: document.getElementById('sidebar-close-btn'), // 사이드바 닫기 버튼
             sequenceList: document.getElementById('sequence-list'), // 시퀀스 목록
-            newSequenceBtn: document.getElementById('new-sequence-btn') // 새 시퀀스 버튼
+            newSequenceBtn: document.getElementById('new-sequence-btn'), // 새 시퀀스 버튼
+            refreshDataBtn: document.getElementById('refresh-data-btn') // 새로고침 버튼 추가
         };
 
         // 앱의 전역 상태 (현재 필터, 프롬프트/폴더 데이터)
@@ -243,6 +244,8 @@
 
                 // 2. Firestore에서 최신 데이터 가져오기
                 try {
+                    // Firestore 보안 규칙에 orderBy("updatedAt", "desc")에 대한 인덱스가 없을 경우 에러가 발생할 수 있습니다.
+                    // 실제 배포 시에는 Firebase 콘솔에서 해당 인덱스를 생성해야 합니다.
                     const q = query(dbService.getCollectionRef(collectionName), orderBy("updatedAt", "desc"));
                     const snapshot = await getDocs(q);
                     const firestoreData = snapshot.docs.map(doc => {
@@ -329,28 +332,38 @@
 
                 let resultId;
                 try {
+                    // createdAt과 updatedAt은 Firestore의 serverTimestamp()로만 설정되도록 보장
+                    // IndexedDB put 시점에는 Date 객체로 변환하여 저장
+                    const timestampedItem = { 
+                        ...cleanItem,
+                        updatedAt: serverTimestamp() 
+                    };
+                    if (!itemId) { // 새 항목인 경우에만 createdAt 설정
+                        timestampedItem.createdAt = serverTimestamp();
+                    }
+
                     // itemId가 유효한 문자열 ID인 경우에만 업데이트로 처리
                     if (typeof itemId === 'string' && itemId.trim().length > 0 && itemId !== 'null') { 
-                        await setDoc(dbService.getDocRef(collectionName, itemId), cleanItem, { merge: true });
+                        await setDoc(dbService.getDocRef(collectionName, itemId), timestampedItem, { merge: true });
                         resultId = itemId;
                     } else { // 그 외의 경우 (undefined, null, "", "null")는 새 문서 추가
-                        const docRef = await addDoc(dbService.getCollectionRef(collectionName), cleanItem);
+                        const docRef = await addDoc(dbService.getCollectionRef(collectionName), timestampedItem);
                         resultId = docRef.id;
                     }
 
-                    // IndexedDB 캐시 업데이트: Firestore에 저장된 실제 데이터로 업데이트
-                    const updatedItem = { id: resultId, ...cleanItem, updatedAt: new Date() }; 
-                    // Firestore Timestamp 객체가 아닌 Date 객체를 IndexedDB에 저장하기 위함
-                    if (updatedItem.createdAt && updatedItem.createdAt.toDate) updatedItem.createdAt = updatedItem.createdAt.toDate();
-                    if (updatedItem.updatedAt && updatedItem.updatedAt.toDate) updatedItem.updatedAt = updatedItem.updatedAt.toDate();
-
+                    // IndexedDB 캐시 업데이트: Firestore에 저장된 실제 데이터로 업데이트 (로컬에서는 Date 객체로 변환)
+                    const itemForIndexedDB = { id: resultId, ...cleanItem, updatedAt: new Date() }; 
+                    if (!itemId) {
+                        itemForIndexedDB.createdAt = new Date();
+                    }
+                    
                     let cacheStoreName;
                     if (collectionName === 'prompts') cacheStoreName = CACHE_STORE_PROMPTS;
                     else if (collectionName === 'folders') cacheStoreName = CACHE_STORE_FOLDERS;
                     else if (collectionName === 'sequences') cacheStoreName = CACHE_STORE_SEQUENCES;
                     else throw new Error(`알 수 없는 컬렉션 이름: ${collectionName}`);
 
-                    await putIntoIndexedDB(cacheStoreName, updatedItem);
+                    await putIntoIndexedDB(cacheStoreName, itemForIndexedDB);
                     
                     return resultId;
                 } catch (error) {
@@ -363,7 +376,9 @@
             update: async (collectionName, id, data) => {
                 if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 업데이트할 수 없습니다.");
                 try {
-                    await updateDoc(dbService.getDocRef(collectionName, id), data);
+                    // updatedAt은 항상 서버 타임스탬프로 업데이트
+                    const updateData = { ...data, updatedAt: serverTimestamp() };
+                    await updateDoc(dbService.getDocRef(collectionName, id), updateData);
                     // IndexedDB 캐시 업데이트: Firestore에서 최신 데이터 가져옴
                     const updatedItem = await dbService.getById(collectionName, id); // Firestore에서 최신 데이터 가져옴
                     if (updatedItem) {
@@ -465,7 +480,7 @@
                                     await dbService.delete('folders', f.id);
                                 }
                                 const currentSequences = await dbService.getAll('sequences', true);
-                                for (const s of currentSequpts) {
+                                for (const s of currentSequences) {
                                     await dbService.delete('sequences', s.id);
                                 }
                                 helpers.showToast('기존 데이터가 지워졌습니다.');
@@ -482,16 +497,14 @@
                                     isTemplate: promptData.isTemplate || false,
                                     usageCount: promptData.usageCount || 0, // 사용 빈도 필드
                                     link: promptData.link || '', // 추가된 link 필드
-                                    createdAt: serverTimestamp(),
-                                    updatedAt: serverTimestamp()
+                                    // createdAt과 updatedAt은 put 함수에서 serverTimestamp()로 자동 설정
                                 });
                             }
                             if (importedData.folders && Array.isArray(importedData.folders)) {
                                 for (const folderData of importedData.folders) {
                                     await dbService.put('folders', {
                                         name: folderData.name,
-                                        createdAt: serverTimestamp(),
-                                        updatedAt: serverTimestamp()
+                                        // createdAt과 updatedAt은 put 함수에서 serverTimestamp()로 자동 설정
                                     });
                                 }
                             }
@@ -501,8 +514,7 @@
                                         name: sequenceData.name,
                                         description: sequenceData.description || '',
                                         promptIds: sequenceData.promptIds || [],
-                                        createdAt: serverTimestamp(),
-                                        updatedAt: serverTimestamp()
+                                        // createdAt과 updatedAt은 put 함수에서 serverTimestamp()로 자동 설정
                                     });
                                 }
                             }
@@ -542,11 +554,12 @@
                                </li>`).join('');
             },
             // 프롬프트 목록 렌더링
-            prompts: async () => {
+            prompts: async (forceRefresh = false) => { // forceRefresh 인자 추가
                 ui.mainHeader.textContent = state.currentFilter.name;
                 let allItems = [];
                 try {
-                    allItems = await dbService.getAll('prompts');
+                    // 데이터 로드 시 forceRefresh 인자 전달
+                    allItems = await dbService.getAll('prompts', forceRefresh);
                     state.prompts = allItems; // 전역 state.prompts 업데이트
                 } catch (e) {
                     console.warn("render.prompts에서 데이터 로드 중 경고:", e); 
@@ -566,7 +579,7 @@
                 // 검색어 필터링 (Fuse.js 사용)
                 const searchTerm = ui.searchInput.value.toLowerCase();
                 if(searchTerm) {
-                    if (!fuse) { // Fuse 인덱스가 없으면 빌드
+                    if (!fuse || forceRefresh) { // Fuse 인덱스가 없거나 강제 새로고침 시 다시 빌드
                         await buildSearchIndex();
                     }
                     // is:template, is:prompt 특별 검색어 처리
@@ -605,11 +618,18 @@
                     const tagsHTML = (p.tags || []).map(tag => `<span class="prompt-tag">#${tag}</span>`).join('');
                     const date = p.updatedAt ? (p.updatedAt instanceof Date ? p.updatedAt.toLocaleString() : p.updatedAt.toDate().toLocaleString()) : 'N/A';
                     
-                    // Link 관련 버튼 조건부 렌더링
-                    const linkButton = p.link ? `<a href="${p.link}" target="_blank" class="visit-link-btn" title="링크 방문"><i class="fa-solid fa-external-link-alt"></i> 방문</a>` : '';
-                    const copyOrUseButton = p.isTemplate ? 
-                                            `<button class="use-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 사용</button>` : 
-                                            `<button class="copy-btn"><i class="fa-regular fa-copy"></i> 복사</button>`;
+                    let buttonsHtml = '';
+                    if (p.isTemplate) {
+                        buttonsHtml += `<button class="use-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 사용</button>`;
+                    } else if (p.link) { // 템플릿이 아니면서 링크가 있는 경우 '방문' 버튼만
+                        buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn" title="링크 방문"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
+                    } else { // 템플릿도 링크도 없는 일반 프롬프트는 '복사' 버튼
+                        buttonsHtml += `<button class="copy-btn"><i class="fa-regular fa-copy"></i> 복사</button>`;
+                    }
+                    // 링크가 있으면서 템플릿인 경우 '방문' 버튼 추가 (순서는 '사용' 버튼 뒤에)
+                    if (p.isTemplate && p.link) {
+                        buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn" title="링크 방문" style="margin-left: 8px;"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
+                    }
 
                     return `
                     <div class="prompt-list-item" data-prompt-id="${p.id}">
@@ -621,8 +641,7 @@
                             ${tagsHTML ? `<div class="prompt-tags">${tagsHTML}</div>` : ''}
                         </div>
                         <div class="prompt-actions">
-                            ${linkButton}
-                            ${copyOrUseButton}
+                            ${buttonsHtml}
                             <button class="edit-btn"><i class="fa-regular fa-edit"></i> 편집</button>
                         </div>
                     </div>`;
@@ -671,7 +690,7 @@
                     </div>
                     <div class="form-group"><label>링크 (URL)</label><input id="link-input" type="url" value="${p.link || ''}" placeholder="예: https://example.com"></div> <div style="display:flex; gap: 24px;">
                         <div class="form-group" style="flex:1;"><label>폴더</label><select id="folder-select"><option value="">미분류</option>${folderOpts}</select></div>
-                        <div class="form-group" style="flex:1;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div>
+                        <div class="form-group" style="flex:1;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div 링크 (URL)>
                     </div>
                     <div class="is-template-toggle"><input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}><label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label></div>
                     ${!isNew ? `
@@ -775,7 +794,7 @@
                 // 내용 입력 시 길이 경고 체크
                 const checkContentSizeWarning = () => {
                     const contentByteLength = new TextEncoder().encode(contentInput.value).length;
-                    const FIREBASE_DOC_LIMIT_BYTES = 1000 * 1024; // 약 1MB (Firestore 문서 크기 제한)
+                    const FIREBASE_DOC_LIMIT_BYTES = 1000 * 1024; // 약 1MB (Firestore 문서 제한)
                     const WARNING_THRESHOLD_BYTES = 900 * 1024; // 900KB 이상일 때 경고
 
                     if (contentByteLength > WARNING_THRESHOLD_BYTES) {
@@ -1231,34 +1250,26 @@
                         return; // 저장 중단
                     }
 
-                    // isFavorite과 usageCount를 항상 명시적으로 초기화
+                    // isFavorite과 usageCount를 기존 값으로 유지
+                    let existingPromptData = { isFavorite: false, usageCount: 0 };
+                    if (id) {
+                        const existingPrompt = await dbService.getById('prompts', id);
+                        if (existingPrompt) {
+                            existingPromptData.isFavorite = existingPrompt.isFavorite !== undefined ? existingPrompt.isFavorite : false;
+                            existingPromptData.usageCount = existingPrompt.usageCount !== undefined ? existingPrompt.usageCount : 0;
+                        }
+                    }
+
                     let data = {
                         title: document.getElementById('title-input').value,
                         content: currentContent,
                         folderId: document.getElementById('folder-select').value || null,
                         tags: tags,
                         isTemplate: document.getElementById('is-template-checkbox').checked,
-                        link: link, // 링크 데이터 추가
-                        updatedAt: serverTimestamp(), // Firestore 서버 타임스탬프 사용
-                        isFavorite: false, // 기본값으로 항상 초기화
-                        usageCount: 0 // 기본값으로 항상 초기화
+                        link: link, 
+                        isFavorite: existingPromptData.isFavorite, // 기존 값 유지
+                        usageCount: existingPromptData.usageCount // 기존 값 유지
                     };
-
-                    // 기존 항목인 경우, 기존 isFavorite과 usageCount 값을 유지
-                    if (id) { 
-                        const existingPrompt = await dbService.getById('prompts', id);
-                        if (existingPrompt) {
-                            // undefined가 아닌 경우에만 기존 값 사용, 아니면 기본값 유지
-                            data.isFavorite = existingPrompt.isFavorite !== undefined ? existingPrompt.isFavorite : false;
-                            data.usageCount = existingPrompt.usageCount !== undefined ? existingPrompt.usageCount : 0;
-                            // createdAt도 기존 항목인 경우 유지
-                            if (existingPrompt.createdAt) {
-                                data.createdAt = existingPrompt.createdAt;
-                            }
-                        }
-                    } else { // 새 항목인 경우
-                        data.createdAt = serverTimestamp(); // 새 항목은 생성 시간 설정
-                    }
                                             
                     try {
                         const savedId = await dbService.put('prompts', { id: id, ...data }); // id를 명시적으로 전달
@@ -1474,7 +1485,7 @@
                 const name = prompt('새 폴더 이름을 입력하세요:');                
                 if (name?.trim()) {                    
                     try {                        
-                        await dbService.put('folders', { name: name.trim(), createdAt: serverTimestamp(), updatedAt: serverTimestamp() });                        
+                        await dbService.put('folders', { name: name.trim() }); // createdAt, updatedAt은 put 함수에서 처리                        
                         await render.folders();                        
                         helpers.showToast('폴더가 생성되었습니다!');                    } catch (error) {                        console.error("폴더 생성 오류:", error);                        helpers.showToast('폴더 생성 오류: ' + error.message);                    }                }            });            ui.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null)); // 새 시퀀스 버튼 이벤트
 
@@ -1522,11 +1533,8 @@
                     name: name.trim(),
                     description: description.trim(),
                     promptIds: promptIds, // 정렬된 ID 배열 저장
-                    updatedAt: serverTimestamp()
                 };
-                if (!id) {
-                    data.createdAt = serverTimestamp();
-                }
+                // createdAt, updatedAt은 put 함수에서 처리
 
                 try {
                     await dbService.put('sequences', { id: id, ...data });
@@ -1590,6 +1598,7 @@
                 <button id="export-data-btn" class="button-like" style="width:100%; padding: 8px; margin-top: 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">데이터 내보내기</button>
                 <input type="file" id="import-data-input" accept=".json" style="display: none;">
                 <button id="import-data-btn" class="button-like" style="width:100%; padding: 8px; margin-top: 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">데이터 가져오기</button>
+                <button id="refresh-data-btn" class="button-like" style="width:100%; padding: 8px; margin-top: 10px; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); border-radius: 4px;">데이터 새로고침</button>
             `;
             ui.sidebarContent.appendChild(dataMgmtSection);
 
@@ -1601,6 +1610,14 @@
                 if (e.target.files.length > 0) {
                     dbService.importData(e.target.files[0]);
                 }
+            });
+            // 새로고침 버튼 이벤트 리스너 추가
+            ui.refreshDataBtn.addEventListener('click', async () => {
+                helpers.showToast('데이터를 새로고침합니다...');
+                await render.folders(true); // 폴더 강제 새로고침
+                await render.sequences(true); // 시퀀스 강제 새로고침
+                await render.prompts(true); // 프롬프트 강제 새로고침
+                helpers.showToast('데이터 새로고침 완료.');
             });
 
             // 전역 단축키 (N: 새 항목, F: 풀스크린 편집 토글)
@@ -2001,6 +2018,20 @@
             font-size: 1rem; /* Adjust icon size */
             width: auto; /* Allow button to size based on content */
             flex-shrink: 0; /* Prevent button from shrinking */
+        }
+
+        /* 데이터 새로고침 버튼 스타일 */
+        #refresh-data-btn {
+            margin-top: 10px;
+            width: 100%;
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px;
+            border-radius: 4px;
+        }
+        #refresh-data-btn:hover {
+            background-color: var(--bg-hover);
         }
     </style>
 </head>
