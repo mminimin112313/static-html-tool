@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>고급 텍스트 정리기 v9.3 (초고도화된 반복 탐지)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family/Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        /* ========================================
+         CSS (스타일) 영역: 앱의 디자인을 담당합니다.
+         ======================================== */
+        :root {
+            --font-family: 'Noto Sans KR', sans-serif;
+            --transition-speed: 0.3s;
+            --border-radius: 12px;
+            --shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        }
+
+        body:not(.dark-mode) {
+            --bg-primary: #f4f7f9; --bg-secondary: #ffffff; --text-primary: #1a202c;
+            --text-secondary: #5a6474; --border-color: #e2e8f0; --accent-color: #3b82f6;
+            --accent-color-hover: #2563eb; --button-text: #ffffff; --success-color: #10b981;
+        }
+
+        body.dark-mode {
+            --bg-primary: #121212; --bg-secondary: #1e1e1e; --text-primary: #f0f0f0;
+            --text-secondary: #a0a0a0; --border-color: #333333; --accent-color: #64b5f6;
+            --accent-color-hover: #5e9ed8; --button-text: #121212; --success-color: #34d399;
+        }
+
+        * { box-sizing: border-box; }
+
+        body {
+            font-family: var(--font-family); background-color: var(--bg-primary);
+            color: var(--text-primary); margin: 0; padding: 1.5rem;
+            transition: background-color var(--transition-speed), color var(--transition-speed);
+        }
+
+        .main-container { max-width: 1200px; margin: 0 auto; display: flex; flex-direction: column; gap: 1.5rem; }
+        header { display: flex; justify-content: space-between; align-items: center; }
+        .title-group h1 { font-size: 1.75rem; margin: 0; font-weight: 700; }
+        .title-group p { margin: 0.25rem 0 0; color: var(--text-secondary); font-size: 0.95rem; }
+
+        #theme-toggle {
+            background: none; border: 1px solid var(--border-color); border-radius: 50%;
+            width: 40px; height: 40px; cursor: pointer; display: flex;
+            justify-content: center; align-items: center;
+            transition: background-color var(--transition-speed), border-color var(--transition-speed);
+        }
+        #theme-toggle:hover { background-color: rgba(128,128,128,0.1); }
+        #theme-toggle svg { width: 20px; height: 20px; fill: var(--text-primary); }
+
+        .editor-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; position: relative; }
+        .panel {
+            background-color: var(--bg-secondary); border-radius: var(--border-radius);
+            box-shadow: var(--shadow); padding: 1.5rem; display: flex; flex-direction: column;
+            border: 2px dashed transparent;
+            transition: border-color var(--transition-speed), background-color var(--transition-speed);
+        }
+        .panel.drag-over { border-color: var(--accent-color); }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
+        .panel-header label { font-size: 1.1rem; font-weight: 500; }
+        .stats { font-size: 0.8rem; color: var(--text-secondary); }
+
+        textarea {
+            width: 100%; flex-grow: 1; padding: 1rem; border: 1px solid var(--border-color);
+            border-radius: var(--border-radius); background-color: var(--bg-primary);
+            color: var(--text-primary); font-size: 1rem; line-height: 1.6; resize: none;
+            transition: background-color var(--transition-speed), color var(--transition-speed), border-color var(--transition-speed);
+        }
+        textarea:focus { outline: 2px solid var(--accent-color); border-color: transparent; }
+
+        .actions-bar {
+            background-color: var(--bg-secondary); border-radius: var(--border-radius);
+            box-shadow: var(--shadow); padding: 1rem; display: flex; justify-content: flex-end;
+            align-items: center; gap: 0.75rem; flex-wrap: wrap;
+        }
+
+        .button {
+            background-color: var(--accent-color); color: var(--button-text); border: none;
+            padding: 0.65rem 1rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem;
+            font-weight: 500; transition: background-color var(--transition-speed), opacity var(--transition-speed);
+            display: inline-flex; align-items: center; gap: 0.5rem;
+        }
+        .button:hover:not(:disabled) { background-color: var(--accent-color-hover); }
+        .button.secondary {
+            background-color: var(--bg-primary); color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+        .button.secondary:hover:not(:disabled) { background-color: rgba(128,128,128,0.1); }
+        .button.success { background-color: var(--success-color); }
+        .button svg { width: 16px; height: 16px; fill: currentColor; }
+        .button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #loading-overlay {
+            position: absolute; inset: 0; background-color: rgba(0, 0, 0, 0.5);
+            color: white; display: flex; justify-content: center; align-items: center;
+            font-size: 1.2rem; z-index: 10; border-radius: var(--border-radius);
+            opacity: 0; visibility: hidden;
+            transition: opacity var(--transition-speed), visibility var(--transition-speed);
+            backdrop-filter: blur(4px);
+        }
+        #loading-overlay.show { opacity: 1; visibility: visible; }
+
+        #toast {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background-color: var(--text-primary); color: var(--bg-primary);
+            padding: 12px 24px; border-radius: 8px; box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+            opacity: 0; visibility: hidden;
+            transition: opacity 0.5s ease, visibility 0.5s ease, transform 0.5s ease;
+            z-index: 1000;
+        }
+        #toast.show { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(-20px); }
+        
+        @media (max-width: 768px) {
+            body { padding: 1rem; }
+            .editor-grid { grid-template-columns: 1fr; }
+            .actions-bar { justify-content: center; }
+        }
+    </style>
+</head>
+<body class="dark-mode">
+    <div class="main-container">
+        <header>
+            <div class="title-group">
+                <h1>고급 텍스트 정리기 v9.3</h1>
+                <p>강화된 정규화 및 군집화 알고리즘으로 반복 구간을 완벽하게 제거합니다.</p>
+            </div>
+            <button id="theme-toggle" title="테마 전환"><svg id="theme-icon" viewBox="0 0 24 24"></svg></button>
+        </header>
+
+        <div class="editor-grid" id="editor-grid">
+            <div id="loading-overlay"></div>
+            <div class="panel" id="input-panel">
+                <div class="panel-header">
+                    <label for="input">원본 입력</label>
+                    <div class="stats" id="inputStats"></div>
+                </div>
+                <textarea id="input" placeholder="이곳에 텍스트를 붙여넣거나 파일을 드래그 앤 드롭하세요..."></textarea>
+            </div>
+            <div class="panel">
+                 <div class="panel-header">
+                    <label for="output">정리 결과</label>
+                    <div class="stats" id="outputStats"></div>
+                </div>
+                <textarea id="output" readonly placeholder="정리된 텍스트가 여기에 표시됩니다..."></textarea>
+            </div>
+        </div>
+
+        <div class="actions-bar">
+            <input type="file" id="fileInput" accept=".txt,.md,.html,text/*" style="display: none;">
+            <button type="button" id="uploadBtn" class="button secondary">
+                <svg viewBox="0 0 24 24"><path d="M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z"/></svg>파일 열기
+            </button>
+            <button type="button" id="clearBtn" class="button secondary">
+                <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41Z"/></svg>초기화
+            </button>
+            <button type="button" id="copyBtn" class="button">
+                <!-- 아이콘과 텍스트는 JS로 제어됩니다 -->
+            </button>
+            <button type="button" id="downloadBtn" class="button">
+                <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>결과 저장
+            </button>
+        </div>
+    </div>
+    <div id="toast"></div>
+
+<script id="cleaner-worker" type="text/worker">
+    // --- Worker Global Scope ---
+    // SA-IS, LCP 등 핵심 알고리즘은 변경되지 않았습니다.
+    function sa_is(T, K) {
+        const n = T.length;
+        if (n === 0) return new Int32Array(0);
+        const SA = new Int32Array(n).fill(-1);
+        const t = new Uint8Array(n);
+        t[n - 1] = 0;
+        for (let i = n - 2; i >= 0; i--) {
+            t[i] = (T[i] < T[i + 1] || (T[i] === T[i + 1] && t[i + 1] === 0)) ? 0 : 1;
+        }
+        const bkt = new Int32Array(K).fill(0);
+        for (let i = 0; i < n; i++) if (T[i] >= 0) bkt[T[i]]++;
+        const getBuckets = () => {
+            const buckets = new Int32Array(K);
+            let sum = 0;
+            for (let i = 0; i < K; i++) { buckets[i] = sum; sum += bkt[i]; }
+            return buckets;
+        };
+        const induce = (LMS) => {
+            const sa = new Int32Array(n).fill(-1);
+            let buckets = getBuckets();
+            for (let i = LMS.length - 1; i >= 0; i--) { const j = LMS[i]; if (j >= 0 && T[j] >= 0) sa[--buckets[T[j]]] = j; }
+            buckets = getBuckets();
+            for (let i = 0; i < n; i++) { const j = sa[i] - 1; if (j >= 0 && t[j] === 1 && T[j] >= 0) sa[buckets[T[j]]++] = j; }
+            buckets = getBuckets();
+            for (let i = n - 1; i >= 0; i--) { const j = sa[i] - 1; if (j >= 0 && t[j] === 0 && (j === 0 || t[j-1] === 1) && T[j] >= 0) sa[--buckets[T[j]]] = j; }
+            return sa;
+        };
+        const lms_idx = [];
+        for (let i = 1; i < n; i++) { if (t[i] === 0 && t[i - 1] === 1) lms_idx.push(i); }
+        const induced_sa = induce(lms_idx);
+        const lms_sfx = induced_sa.filter(v => v > 0 && t[v] === 0 && t[v-1] === 1);
+        const new_T = new Int32Array(lms_sfx.length).fill(-1);
+        let name = 0;
+        if (lms_sfx.length > 0) {
+            new_T[lms_sfx.findIndex(v => v === lms_idx[0])] = 0;
+            for (let i = 1; i < lms_sfx.length; i++) {
+                let prev = lms_sfx[i-1], curr = lms_sfx[i];
+                let diff = false;
+                for(let d = 0; d < n; d++) {
+                    if (T[prev+d] !== T[curr+d] || t[prev+d] !== t[curr+d]) { diff = true; break; }
+                    if (d > 0 && ((t[prev+d] === 0 && t[prev+d-1] === 1) || (t[curr+d] === 0 && t[curr+d-1] === 1))) break;
+                }
+                if(diff) name++;
+                new_T[lms_sfx.findIndex(v => v === curr)] = name;
+            }
+        }
+        let lms_sa;
+        if (name + 1 < lms_sfx.length) {
+            lms_sa = sa_is(new_T, name + 1);
+        } else {
+            lms_sa = new Int32Array(lms_sfx.length);
+            for(let i=0; i<lms_sfx.length; i++) lms_sa[new_T[i]] = i;
+        }
+        const sorted_lms = lms_sa.map(i => lms_idx[i]);
+        return induce(sorted_lms);
+    }
+
+    function buildLCPArray(textInts, sa) {
+        const n = sa.length;
+        if (n === 0) return new Int32Array(0);
+        const lcp = new Int32Array(n).fill(0);
+        const rank = new Int32Array(n);
+        for (let i = 0; i < n; i++) rank[sa[i]] = i;
+        let h = 0;
+        for (let i = 0; i < n; i++) {
+            if (rank[i] > 0) {
+                const j = sa[rank[i] - 1];
+                while (i + h < n && j + h < n && textInts[i + h] === textInts[j + h] && textInts[i+h] !== -1) h++;
+                lcp[rank[i]] = h;
+                if (h > 0) h--;
+            }
+        }
+        return lcp;
+    }
+
+    function findAndMarkRepeatedBlocks(lineCount, sa, lcp, minLines, minRepeats) {
+        const n = lineCount;
+        const lineIsConsumed = new Uint8Array(n).fill(0);
+        if (n === 0) return lineIsConsumed;
+        
+        for (let i = 1; i < n; i++) {
+            if (lcp[i] >= minLines) {
+                let currentLCP = lcp[i];
+                let group = [sa[i-1], sa[i]];
+                let j = i + 1;
+                while (j < n && lcp[j] >= currentLCP) {
+                    group.push(sa[j]);
+                    j++;
+                }
+                
+                if (group.length >= minRepeats) {
+                    for (const startIdx of group) {
+                        for (let l = 0; l < currentLCP; l++) {
+                            if (startIdx + l < n) lineIsConsumed[startIdx + l] = 1;
+                        }
+                    }
+                }
+                i = j - 1;
+            }
+        }
+        return lineIsConsumed;
+    }
+
+    function cleanText(val) {
+        let cleaned = val;
+        cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
+        const entities = { 'amp': '&', 'gt': '>', 'lt': '<', 'quot': '"', 'apos': "'", 'nbsp': ' ' };
+        cleaned = cleaned.replace(/&([a-z\d]+);/gi, (match, entity) => entities[entity.toLowerCase()] || match);
+        cleaned = cleaned.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
+        cleaned = cleaned.replace(/<[^>]*>/g, '');
+        cleaned = cleaned.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1'); 
+        cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+        cleaned = cleaned.replace(/[ \t]*\[\/?cite.*?\][ \t]*/g, '');
+        const fakeSpaceRegex = /[\u00A0\u1680\u180E\u2000-\u200A\u202F\u205F\u3000\u200B\u200C\u200D\uFEFF]/g;
+        cleaned = cleaned.replace(fakeSpaceRegex, ' ');
+        cleaned = cleaned.replace(/^---*|^===*|^___*/gm, '');
+        cleaned = cleaned.split('\n').map(line => line.trim()).join('\n');
+        cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+        return cleaned.trim();
+    }
+
+    self.onmessage = function(e) {
+        const { text, minLines, minRepeats } = e.data;
+        
+        self.postMessage({ type: 'progress', value: 0, stage: '기본 정리 수행 중...' });
+        const preCleanedText = cleanText(text);
+        const originalLines = preCleanedText.split('\n');
+
+        if (originalLines.length < minLines * minRepeats) {
+            self.postMessage({ type: 'result', text: preCleanedText });
+            return;
+        }
+
+        self.postMessage({ type: 'progress', value: 10, stage: '라인 정규화 및 분석...' });
+        // ✨ [개선됨] 정규화 로직 강화: 불필요한 기호, 숫자, 공백을 제거하여 내용의 본질만 비교
+        const normalizedLines = originalLines.map(line => {
+            if (line.trim() === '') return '';
+            let normalized = line.trim();
+            // 리스트 마커 ( *, -, 숫자., 가. 등), 특수문자, 여러 공백을 제거
+            normalized = normalized.replace(/^(?:[\s#*->\d\.]+|[가-힣]\.)\s*/, '').replace(/[\[\]\(\)•#|]/g, '').replace(/\s+/g, ' ');
+            return normalized;
+        });
+
+        const lineMap = new Map();
+        let nextId = 0;
+        const textInts = new Int32Array(normalizedLines.map(line => {
+            if (line === '') return -1; // 빈 라인은 -1로 처리하여 반복에서 제외
+            if (!lineMap.has(line)) lineMap.set(line, nextId++);
+            return lineMap.get(line);
+        }));
+
+        self.postMessage({ type: 'progress', value: 25, stage: 'SA-IS 접미사 배열 생성 중...' });
+        const sa = sa_is(textInts, nextId);
+        
+        self.postMessage({ type: 'progress', value: 65, stage: 'Kasai LCP 배열 생성 중...' });
+        const lcp = buildLCPArray(textInts, sa);
+
+        self.postMessage({ type: 'progress', value: 85, stage: '반복 구간 군집화 및 제거 중...' });
+        // ✨ [개선됨] LCP 배열을 순회하며 반복 그룹을 찾아 마킹하는 로직으로 변경
+        const consumedMask = findAndMarkRepeatedBlocks(originalLines.length, sa, lcp, minLines, minRepeats);
+
+        const newLines = [];
+        for (let i = 0; i < originalLines.length; i++) {
+            if (consumedMask[i] === 0) {
+                newLines.push(originalLines[i]);
+            }
+        }
+        const stage1Text = newLines.join('\n');
+        
+        self.postMessage({ type: 'progress', value: 95, stage: '마무리 정리 중...' });
+        const finalCleanedText = cleanText(stage1Text);
+        
+        self.postMessage({ type: 'result', text: finalCleanedText });
+    };
+</script>
+
+<script>
+// --- Main UI Thread Scope ---
+document.addEventListener('DOMContentLoaded', () => {
+    // --- DOM Element Caching ---
+    const inputPanel = document.getElementById('input-panel');
+    const input = document.getElementById('input');
+    const output = document.getElementById('output');
+    const inputStats = document.getElementById('inputStats');
+    const outputStats = document.getElementById('outputStats');
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const toast = document.getElementById('toast');
+    const fileInput = document.getElementById('fileInput');
+    const allButtons = document.querySelectorAll('button');
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const copyBtn = document.getElementById('copyBtn');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const downloadBtn = document.getElementById('downloadBtn');
+
+    // --- Icon Definitions ---
+    const sunIcon = `<svg viewBox="0 0 24 24"><path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM12 9c1.65 0 3 1.35 3 3s-1.35 3-3 3-3-1.35-3-3 1.35-3 3-3zm0-7v4h-2V2h2zm-8.07 4.93l2.83 2.83-1.41 1.41-2.83-2.83 1.41-1.41zm14.14 0l-2.83 2.83 1.41 1.41 2.83-2.83-1.41-1.41zM22 11v2h-4v-2h4zm-19.07 4.93l2.83-2.83 1.41 1.41-2.83 2.83-1.41-1.41zM4 11v2H0v-2h4zm16.07 4.93l-2.83-2.83-1.41 1.41 2.83 2.83 1.41-1.41zM13 22v-4h-2v4h2z"/></svg>`;
+    const moonIcon = `<svg viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c.83 0 1.64-.11 2.4-.31-.3-.13-.59-.28-.87-.46-1.54-.99-2.53-2.67-2.53-4.51 0-2.24 1.29-4.18 3.16-5.13.25-.13.52-.22.79-.29-.26-4.04-3.52-7.3-7.55-7.3z"/></svg>`;
+    const copyIconDefault = `<svg viewBox="0 0 24 24"><path d="M16 1H4C2.897 1 2 1.897 2 3V17H4V3H16V1ZM20 5H8C6.897 5 6 5.897 6 7V21C6 22.103 6.897 23 8 23H20C21.103 23 22 22.103 22 21V7C22 5.897 21.103 5 20 5ZM20 21H8V7H20V21Z"/></svg>결과 복사`;
+    const copyIconSuccess = `<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/></svg>복사 완료!`;
+
+    // --- State Variables ---
+    let debounceTimer;
+    let cleanerWorker;
+    let originalFilename = '';
+
+    // --- Core Functions ---
+    function applyTheme(isDark) {
+        document.body.classList.toggle('dark-mode', isDark);
+        themeIcon.innerHTML = isDark ? sunIcon : moonIcon;
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+    }
+
+    function setLoading(isLoading, message = "처리 중...") {
+        loadingOverlay.textContent = message;
+        loadingOverlay.classList.toggle('show', isLoading);
+        input.disabled = isLoading;
+        allButtons.forEach(btn => btn.disabled = isLoading);
+    }
+    
+    function startWorker(text) {
+        if (cleanerWorker) cleanerWorker.terminate();
+        
+        try {
+            const workerBlob = new Blob([document.getElementById('cleaner-worker').textContent], { type: 'application/javascript' });
+            cleanerWorker = new Worker(URL.createObjectURL(workerBlob));
+        } catch (e) {
+            console.error("워커 생성 실패:", e);
+            showToast("스크립트 워커 생성에 실패했습니다.");
+            return;
+        }
+        
+        setLoading(true, "워커 준비 중...");
+
+        cleanerWorker.onmessage = (e) => {
+            const { type, text, value, stage } = e.data;
+            if (type === 'progress') {
+                setLoading(true, `${stage} (${value}%)`);
+            } else if (type === 'result') {
+                output.value = text;
+                updateStats(output, outputStats);
+                setLoading(false);
+                cleanerWorker.terminate();
+            }
+        };
+
+        cleanerWorker.onerror = (error) => {
+            console.error('워커 오류:', error);
+            setLoading(false);
+            showToast('처리 중 오류가 발생했습니다: ' + error.message);
+            cleanerWorker.terminate();
+        };
+        
+        // ✨ [개선됨] 5줄 이상의 내용이 3번 이상 반복될 경우 모두 제거
+        cleanerWorker.postMessage({ text: text, minLines: 5, minRepeats: 3 });
+    }
+
+    function updateStats(textarea, statsElement) {
+        const text = textarea.value;
+        if (!text) {
+            statsElement.textContent = '글자: 0 | 단어: 0 | 줄: 0'; return;
+        }
+        const charCount = text.length;
+        const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+        const lineCount = text.split('\n').length;
+        statsElement.textContent = `글자: ${charCount.toLocaleString()} | 단어: ${wordCount.toLocaleString()} | 줄: ${lineCount.toLocaleString()}`;
+    }
+
+    function handleFile(file) {
+        if (!file || (!file.type.startsWith('text/')) && !/\.(txt|md|log|html|htm)$/i.test(file.name)) {
+            showToast('텍스트 또는 HTML 파일만 열 수 있습니다.');
+            return;
+        }
+        
+        setLoading(true, "파일 읽는 중...");
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            input.value = e.target.result;
+            originalFilename = file.name;
+            updateStats(input, inputStats);
+            showToast(`'${file.name}' 파일을 불러왔습니다. 분석을 시작합니다.`);
+            startWorker(input.value);
+        };
+        reader.onerror = () => { setLoading(false); showToast('파일 읽기 오류.'); };
+        reader.readAsText(file, 'UTF-8');
+    }
+
+    function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+
+    async function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+            try {
+                await navigator.clipboard.writeText(text);
+                return true;
+            } catch (err) {
+                console.warn('navigator.clipboard.writeText() 실패, 폴백 메서드를 시도합니다.', err);
+            }
+        }
+
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        textArea.style.position = "fixed";
+        textArea.style.top = "-9999px";
+        textArea.style.left = "-9999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        try {
+            return document.execCommand('copy');
+        } catch (err) {
+            console.error('폴백 복사 방식마저 실패했습니다.', err);
+            return false;
+        } finally {
+            document.body.removeChild(textArea);
+        }
+    }
+
+    // --- Event Listeners ---
+    themeToggle.addEventListener('click', () => {
+        applyTheme(!document.body.classList.contains('dark-mode'));
+    });
+
+    input.addEventListener('input', () => {
+        clearTimeout(debounceTimer);
+        updateStats(input, inputStats);
+        debounceTimer = setTimeout(() => {
+            if (input.value.trim()) {
+                startWorker(input.value);
+            } else {
+                output.value = '';
+                updateStats(output, outputStats);
+            }
+        }, 500);
+    });
+
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    
+    fileInput.addEventListener('change', (event) => {
+        if(event.target.files.length > 0) handleFile(event.target.files[0]);
+        event.target.value = '';
+    });
+
+    downloadBtn.addEventListener('click', () => {
+        const textToSave = output.value;
+        if (!textToSave.trim()) {
+            showToast('저장할 내용이 없습니다.');
+            return;
+        }
+        let filename = 'cleaned_text.txt';
+        if (originalFilename) {
+            const nameWithoutExt = originalFilename.split('.').slice(0, -1).join('.') || originalFilename;
+            filename = `${nameWithoutExt}_cleaned.txt`;
+        }
+        
+        const blob = new Blob([textToSave], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showToast(`'${filename}'으로 저장되었습니다.`);
+    });
+
+    clearBtn.addEventListener('click', () => {
+        if (cleanerWorker) cleanerWorker.terminate();
+        clearTimeout(debounceTimer);
+        input.value = '';
+        output.value = '';
+        originalFilename = '';
+        updateStats(input, inputStats);
+        updateStats(output, outputStats);
+        setLoading(false);
+        input.focus();
+        showToast('초기화되었습니다.');
+    });
+
+    copyBtn.addEventListener('click', async () => {
+        const textToCopy = output.value;
+        if (!textToCopy.trim()) {
+            showToast('복사할 내용이 없습니다.');
+            return;
+        }
+        
+        const success = await copyToClipboard(textToCopy);
+
+        if (success) {
+            showToast('클립보드에 복사되었습니다!');
+            copyBtn.innerHTML = copyIconSuccess;
+            copyBtn.classList.add('success');
+            setTimeout(() => {
+                copyBtn.innerHTML = copyIconDefault;
+                copyBtn.classList.remove('success');
+            }, 2000);
+        } else {
+            showToast('복사에 실패했습니다. 수동으로 복사해주세요.');
+        }
+    });
+
+    // --- Drag and Drop Event Listeners ---
+    inputPanel.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); inputPanel.classList.add('drag-over'); });
+    inputPanel.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); inputPanel.classList.remove('drag-over'); });
+    inputPanel.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        inputPanel.classList.remove('drag-over');
+        if (e.dataTransfer.files.length > 0) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    });
+
+    // --- Initial Setup ---
+    const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    applyTheme(savedTheme === 'dark');
+    updateStats(input, inputStats);
+    updateStats(output, outputStats);
+    copyBtn.innerHTML = copyIconDefault;
+});
+</script>
+</body>
+</html>
