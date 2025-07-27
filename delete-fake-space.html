@@ -2,11 +2,11 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>고급 텍스트 정리기 v9.3 (초고도화된 반복 탐지)</title>
+    <title>고급 텍스트 정리기 v9.6 (롤링 해시 알고리즘)</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family/Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         /* ========================================
          CSS (스타일) 영역: 앱의 디자인을 담당합니다.
@@ -125,8 +125,8 @@
     <div class="main-container">
         <header>
             <div class="title-group">
-                <h1>고급 텍스트 정리기 v9.3</h1>
-                <p>강화된 정규화 및 군집화 알고리즘으로 반복 구간을 완벽하게 제거합니다.</p>
+                <h1>고급 텍스트 정리기 v9.6</h1>
+                <p>롤링 해시(Rabin-Karp) 기반 N-gram 스캔으로 반복 블록을 정밀하게 제거합니다.</p>
             </div>
             <button id="theme-toggle" title="테마 전환"><svg id="theme-icon" viewBox="0 0 24 24"></svg></button>
         </header>
@@ -169,180 +169,157 @@
 
 <script id="cleaner-worker" type="text/worker">
     // --- Worker Global Scope ---
-    // SA-IS, LCP 등 핵심 알고리즘은 변경되지 않았습니다.
-    function sa_is(T, K) {
-        const n = T.length;
-        if (n === 0) return new Int32Array(0);
-        const SA = new Int32Array(n).fill(-1);
-        const t = new Uint8Array(n);
-        t[n - 1] = 0;
-        for (let i = n - 2; i >= 0; i--) {
-            t[i] = (T[i] < T[i + 1] || (T[i] === T[i + 1] && t[i + 1] === 0)) ? 0 : 1;
-        }
-        const bkt = new Int32Array(K).fill(0);
-        for (let i = 0; i < n; i++) if (T[i] >= 0) bkt[T[i]]++;
-        const getBuckets = () => {
-            const buckets = new Int32Array(K);
-            let sum = 0;
-            for (let i = 0; i < K; i++) { buckets[i] = sum; sum += bkt[i]; }
-            return buckets;
-        };
-        const induce = (LMS) => {
-            const sa = new Int32Array(n).fill(-1);
-            let buckets = getBuckets();
-            for (let i = LMS.length - 1; i >= 0; i--) { const j = LMS[i]; if (j >= 0 && T[j] >= 0) sa[--buckets[T[j]]] = j; }
-            buckets = getBuckets();
-            for (let i = 0; i < n; i++) { const j = sa[i] - 1; if (j >= 0 && t[j] === 1 && T[j] >= 0) sa[buckets[T[j]]++] = j; }
-            buckets = getBuckets();
-            for (let i = n - 1; i >= 0; i--) { const j = sa[i] - 1; if (j >= 0 && t[j] === 0 && (j === 0 || t[j-1] === 1) && T[j] >= 0) sa[--buckets[T[j]]] = j; }
-            return sa;
-        };
-        const lms_idx = [];
-        for (let i = 1; i < n; i++) { if (t[i] === 0 && t[i - 1] === 1) lms_idx.push(i); }
-        const induced_sa = induce(lms_idx);
-        const lms_sfx = induced_sa.filter(v => v > 0 && t[v] === 0 && t[v-1] === 1);
-        const new_T = new Int32Array(lms_sfx.length).fill(-1);
-        let name = 0;
-        if (lms_sfx.length > 0) {
-            new_T[lms_sfx.findIndex(v => v === lms_idx[0])] = 0;
-            for (let i = 1; i < lms_sfx.length; i++) {
-                let prev = lms_sfx[i-1], curr = lms_sfx[i];
-                let diff = false;
-                for(let d = 0; d < n; d++) {
-                    if (T[prev+d] !== T[curr+d] || t[prev+d] !== t[curr+d]) { diff = true; break; }
-                    if (d > 0 && ((t[prev+d] === 0 && t[prev+d-1] === 1) || (t[curr+d] === 0 && t[curr+d-1] === 1))) break;
-                }
-                if(diff) name++;
-                new_T[lms_sfx.findIndex(v => v === curr)] = name;
-            }
-        }
-        let lms_sa;
-        if (name + 1 < lms_sfx.length) {
-            lms_sa = sa_is(new_T, name + 1);
-        } else {
-            lms_sa = new Int32Array(lms_sfx.length);
-            for(let i=0; i<lms_sfx.length; i++) lms_sa[new_T[i]] = i;
-        }
-        const sorted_lms = lms_sa.map(i => lms_idx[i]);
-        return induce(sorted_lms);
-    }
 
-    function buildLCPArray(textInts, sa) {
-        const n = sa.length;
-        if (n === 0) return new Int32Array(0);
-        const lcp = new Int32Array(n).fill(0);
-        const rank = new Int32Array(n);
-        for (let i = 0; i < n; i++) rank[sa[i]] = i;
-        let h = 0;
-        for (let i = 0; i < n; i++) {
-            if (rank[i] > 0) {
-                const j = sa[rank[i] - 1];
-                while (i + h < n && j + h < n && textInts[i + h] === textInts[j + h] && textInts[i+h] !== -1) h++;
-                lcp[rank[i]] = h;
-                if (h > 0) h--;
-            }
-        }
-        return lcp;
-    }
-
-    function findAndMarkRepeatedBlocks(lineCount, sa, lcp, minLines, minRepeats) {
-        const n = lineCount;
-        const lineIsConsumed = new Uint8Array(n).fill(0);
-        if (n === 0) return lineIsConsumed;
-        
-        for (let i = 1; i < n; i++) {
-            if (lcp[i] >= minLines) {
-                let currentLCP = lcp[i];
-                let group = [sa[i-1], sa[i]];
-                let j = i + 1;
-                while (j < n && lcp[j] >= currentLCP) {
-                    group.push(sa[j]);
-                    j++;
-                }
-                
-                if (group.length >= minRepeats) {
-                    for (const startIdx of group) {
-                        for (let l = 0; l < currentLCP; l++) {
-                            if (startIdx + l < n) lineIsConsumed[startIdx + l] = 1;
-                        }
-                    }
-                }
-                i = j - 1;
-            }
-        }
-        return lineIsConsumed;
-    }
-
-    function cleanText(val) {
+    // ✨ [1단계 함수] 모든 서식 노이즈를 먼저 제거하는 종합 정리 함수
+    function fullMarkdownCleanup(val) {
         let cleaned = val;
+        // HTML 관련 정리
         cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
         const entities = { 'amp': '&', 'gt': '>', 'lt': '<', 'quot': '"', 'apos': "'", 'nbsp': ' ' };
         cleaned = cleaned.replace(/&([a-z\d]+);/gi, (match, entity) => entities[entity.toLowerCase()] || match);
         cleaned = cleaned.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
         cleaned = cleaned.replace(/<[^>]*>/g, '');
-        cleaned = cleaned.replace(/!\[([^\]]*)\]\([^)]+\)/g, '$1'); 
-        cleaned = cleaned.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
-        cleaned = cleaned.replace(/[ \t]*\[\/?cite.*?\][ \t]*/g, '');
+
+        // 마크다운 링크 및 이미지 정리 (예: [텍스트](URL) -> 텍스트)
+        cleaned = cleaned.replace(/!\[[^\]]*\]\((?:[^)]+)\)/g, ''); // 이미지 태그는 내용 없이 제거
+        cleaned = cleaned.replace(/\[([^\]]+)\]\((?:[^)]+)\)/g, '$1'); // 링크는 텍스트만 남김
+
+        // 마크다운 강조, 헤더, 리스트, 인용, 구분선 등 모든 서식 제거
+        cleaned = cleaned.replace(/(\*\*|__)(.*?)\1/g, '$2'); // Bold
+        cleaned = cleaned.replace(/(\*|_)(.*?)\1/g, '$2');   // Italic
+        cleaned = cleaned.replace(/`([^`]+)`/g, '$1');        // Inline code
+        cleaned = cleaned.replace(/^(?:[#]{1,6}|[*\-+]|[>\s]+|[0-9]+\.)\s*/gm, ''); // Headers, Lists, Blockquotes
+        cleaned = cleaned.replace(/^---*|^===*|^___*/gm, ''); // Horizontal rules
+        
+        // 기타 불필요한 공백 및 문자 정리
         const fakeSpaceRegex = /[\u00A0\u1680\u180E\u2000-\u200A\u202F\u205F\u3000\u200B\u200C\u200D\uFEFF]/g;
         cleaned = cleaned.replace(fakeSpaceRegex, ' ');
-        cleaned = cleaned.replace(/^---*|^===*|^___*/gm, '');
-        cleaned = cleaned.split('\n').map(line => line.trim()).join('\n');
-        cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
-        return cleaned.trim();
+        
+        return cleaned;
+    }
+
+    // 최종 출력 전 공백을 정리하는 함수
+    function finalCleanup(val) {
+        return val.split('\n')
+                  .map(line => line.trim())
+                  .filter(line => line.length > 0) // 빈 줄 완전히 제거
+                  .join('\n')
+                  .replace(/\n{3,}/g, '\n\n'); // 최대 2줄 띄우기
+    }
+    
+    // 문자열을 숫자로 변환하는 간단한 해시 함수
+    function simpleStringHash(str) {
+        let hash = 0;
+        for (let i = 0; i < str.length; i++) {
+            const char = str.charCodeAt(i);
+            hash = (hash << 5) - hash + char;
+            hash |= 0; // 32비트 정수로 변환
+        }
+        return hash;
     }
 
     self.onmessage = function(e) {
         const { text, minLines, minRepeats } = e.data;
-        
-        self.postMessage({ type: 'progress', value: 0, stage: '기본 정리 수행 중...' });
-        const preCleanedText = cleanText(text);
-        const originalLines = preCleanedText.split('\n');
+        const MAX_WINDOW_SIZE = 20;
+
+        // --- 파이프라인 시작 ---
+
+        // 1단계: 마크다운 완전 제거 (특징 정규화)
+        self.postMessage({ type: 'progress', value: 10, stage: '1/2: 마크다운 서식 제거 중...' });
+        const cleanedText = fullMarkdownCleanup(text);
+        const originalLines = cleanedText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
 
         if (originalLines.length < minLines * minRepeats) {
-            self.postMessage({ type: 'result', text: preCleanedText });
+            self.postMessage({ type: 'result', text: finalCleanup(originalLines.join('\n')) });
             return;
         }
 
-        self.postMessage({ type: 'progress', value: 10, stage: '라인 정규화 및 분석...' });
-        // ✨ [개선됨] 정규화 로직 강화: 불필요한 기호, 숫자, 공백을 제거하여 내용의 본질만 비교
-        const normalizedLines = originalLines.map(line => {
-            if (line.trim() === '') return '';
-            let normalized = line.trim();
-            // 리스트 마커 ( *, -, 숫자., 가. 등), 특수문자, 여러 공백을 제거
-            normalized = normalized.replace(/^(?:[\s#*->\d\.]+|[가-힣]\.)\s*/, '').replace(/[\[\]\(\)•#|]/g, '').replace(/\s+/g, ' ');
-            return normalized;
-        });
-
-        const lineMap = new Map();
-        let nextId = 0;
-        const textInts = new Int32Array(normalizedLines.map(line => {
-            if (line === '') return -1; // 빈 라인은 -1로 처리하여 반복에서 제외
-            if (!lineMap.has(line)) lineMap.set(line, nextId++);
-            return lineMap.get(line);
-        }));
-
-        self.postMessage({ type: 'progress', value: 25, stage: 'SA-IS 접미사 배열 생성 중...' });
-        const sa = sa_is(textInts, nextId);
+        // 2단계: 롤링 해시 기반 중복 스캔
+        self.postMessage({ type: 'progress', value: 30, stage: '2/2: 반복 블록 분석 시작...' });
         
-        self.postMessage({ type: 'progress', value: 65, stage: 'Kasai LCP 배열 생성 중...' });
-        const lcp = buildLCPArray(textInts, sa);
+        const lineHashes = originalLines.map(simpleStringHash);
+        const lineToDelete = new Uint8Array(originalLines.length).fill(0);
 
-        self.postMessage({ type: 'progress', value: 85, stage: '반복 구간 군집화 및 제거 중...' });
-        // ✨ [개선됨] LCP 배열을 순회하며 반복 그룹을 찾아 마킹하는 로직으로 변경
-        const consumedMask = findAndMarkRepeatedBlocks(originalLines.length, sa, lcp, minLines, minRepeats);
+        // 큰 창문부터 작은 창문 순으로 스캔 (효율성 및 정확도 향상)
+        for (let n = MAX_WINDOW_SIZE; n >= minLines; n--) {
+            if (originalLines.length < n) continue;
+
+            self.postMessage({ type: 'progress', value: 30 + Math.floor(60 * (MAX_WINDOW_SIZE - n) / (MAX_WINDOW_SIZE - minLines + 1)), stage: `2/2: 반복 블록 분석 중 (창 크기: ${n})` });
+
+            const hashCounts = new Map();
+            const hashToIndices = new Map();
+
+            // 라빈-카프 알고리즘을 위한 상수
+            const prime = 31;
+            const M = 1e9 + 9;
+            let power = 1;
+            for (let i = 0; i < n - 1; i++) {
+                power = (power * prime) % M;
+            }
+
+            // 첫 윈도우의 해시 계산
+            let currentHash = 0;
+            for (let i = 0; i < n; i++) {
+                currentHash = (currentHash * prime + lineHashes[i]) % M;
+            }
+
+            // 슬라이딩 윈도우 시작
+            for (let i = 0; i <= originalLines.length - n; i++) {
+                // 현재 해시가 음수일 경우 양수로 변환
+                const positiveHash = (currentHash < 0) ? (currentHash + M) : currentHash;
+
+                // 해시 정보 저장
+                if (!hashCounts.has(positiveHash)) {
+                    hashCounts.set(positiveHash, 0);
+                    hashToIndices.set(positiveHash, []);
+                }
+                hashCounts.set(positiveHash, hashCounts.get(positiveHash) + 1);
+                hashToIndices.get(positiveHash).push(i);
+
+                // 다음 윈도우를 위한 롤링 해시 계산
+                if (i < originalLines.length - n) {
+                    let oldChar = lineHashes[i];
+                    let newChar = lineHashes[i + n];
+                    
+                    currentHash = (currentHash - oldChar * power) % M;
+                    currentHash = (currentHash * prime + newChar) % M;
+                }
+            }
+
+            // 중복 횟수가 임계값을 넘는 블록을 제거 대상으로 표시
+            for (const [hash, count] of hashCounts) {
+                if (count >= minRepeats) {
+                    const indices = hashToIndices.get(hash);
+                    for (const startIdx of indices) {
+                        // 이미 더 큰 블록의 일부로 제거된 경우는 건너뜀
+                        let alreadyMarked = false;
+                        for (let j = 0; j < n; j++) {
+                            if (lineToDelete[startIdx + j] === 1) {
+                                alreadyMarked = true;
+                                break;
+                            }
+                        }
+                        if (alreadyMarked) continue;
+
+                        for (let j = 0; j < n; j++) {
+                            lineToDelete[startIdx + j] = 1;
+                        }
+                    }
+                }
+            }
+        }
 
         const newLines = [];
         for (let i = 0; i < originalLines.length; i++) {
-            if (consumedMask[i] === 0) {
+            if (lineToDelete[i] === 0) {
                 newLines.push(originalLines[i]);
             }
         }
-        const stage1Text = newLines.join('\n');
         
         self.postMessage({ type: 'progress', value: 95, stage: '마무리 정리 중...' });
-        const finalCleanedText = cleanText(stage1Text);
+        const finalResult = finalCleanup(newLines.join('\n'));
         
-        self.postMessage({ type: 'result', text: finalCleanedText });
+        self.postMessage({ type: 'result', text: finalResult });
     };
 </script>
 
@@ -424,7 +401,7 @@ document.addEventListener('DOMContentLoaded', () => {
             cleanerWorker.terminate();
         };
         
-        // ✨ [개선됨] 5줄 이상의 내용이 3번 이상 반복될 경우 모두 제거
+        // 5줄 이상의 내용이 3번 이상 반복될 경우 모두 제거
         cleanerWorker.postMessage({ text: text, minLines: 5, minRepeats: 3 });
     }
 
