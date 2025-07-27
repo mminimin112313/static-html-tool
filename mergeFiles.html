@@ -1,0 +1,532 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>파일 합치기 - 텍스트 기반 UI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <style>
+        /*
+            DESIGN SYSTEM DEFINITION
+            - Typography
+                - Font Family: 'Poppins', 'Pretendard', sans-serif
+                - H1 (Title): 26px, Bold (700)
+                - Body / Label: 14px, Regular (400)
+            - Colors (CSS Variables)
+                - --color-primary: #007bff
+                - --color-primary-dark: #0056b3
+                - --color-success: #28a745
+                - --color-danger: #dc3545
+                - --color-background: #f8f9fa
+                - --color-surface: #ffffff
+                - --color-text-primary: #212529
+                - --color-text-secondary: #6c757d
+                - --color-border: #dee2e6
+            - Spacing & Sizing
+                - --space-sm: 8px
+                - --space-md: 16px
+                - --space-lg: 24px
+                - --border-radius: 6px
+        */
+
+        :root {
+            --color-primary: #007bff;
+            --color-primary-dark: #0056b3;
+            --color-success: #28a745;
+            --color-danger: #dc3545;
+            --color-background: #f8f9fa;
+            --color-surface: #ffffff;
+            --color-text-primary: #212529;
+            --color-text-secondary: #6c757d;
+            --color-border: #dee2e6;
+            --space-sm: 8px;
+            --space-md: 16px;
+            --space-lg: 24px;
+            --border-radius: 6px;
+            --shadow-md: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Poppins', 'Pretendard', sans-serif;
+            background-color: var(--color-background);
+            color: var(--color-text-primary);
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: var(--space-md);
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 600px;
+            background-color: var(--color-surface);
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-md);
+            padding: var(--space-lg);
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: var(--space-lg);
+        }
+        header h1 {
+            font-size: 26px;
+            font-weight: 700;
+        }
+        header p {
+            color: var(--color-text-secondary);
+            font-size: 14px;
+        }
+
+        /* Main Content Area */
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-lg);
+        }
+        
+        /* Controls Area */
+        .controls-area {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-md);
+            align-items: center;
+            padding-bottom: var(--space-md);
+            border-bottom: 1px solid var(--color-border);
+        }
+        .upload-control {
+            flex-grow: 1;
+        }
+        #fileInput { display: none; }
+        .sort-buttons {
+            display: flex;
+            gap: var(--space-sm);
+        }
+
+        /* File List Area */
+        .file-list-container {
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius);
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+        }
+        #fileList {
+            list-style: none;
+            padding: var(--space-sm);
+            flex-grow: 1;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        #emptyListMessage {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-grow: 1;
+            color: var(--color-text-secondary);
+            padding: var(--space-md);
+            text-align: center;
+        }
+
+        /* Compact File Item (Text-based) */
+        .file-item {
+            display: flex;
+            align-items: center;
+            padding: 6px 10px;
+            background-color: var(--color-surface);
+            border-radius: 4px;
+            margin-bottom: 4px;
+            transition: background-color 0.2s;
+        }
+        .file-item:last-child { margin-bottom: 0; }
+        .file-item:hover { background-color: #f1f3f5; }
+
+        .file-item.sortable-ghost {
+            opacity: 0.4;
+            background-color: #e6f2ff;
+        }
+        .file-item.sortable-chosen {
+            cursor: grabbing;
+            background-color: #e9ecef;
+        }
+
+        .file-item .drag-handle {
+            cursor: grab;
+            color: var(--color-text-secondary);
+            margin-right: 10px;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        .file-item .file-info {
+            flex-grow: 1;
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            overflow: hidden;
+        }
+        .file-item .file-name {
+            font-size: 14px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .file-item .file-size {
+            font-size: 12px;
+            color: var(--color-text-secondary);
+            flex-shrink: 0;
+        }
+        .file-item .remove-btn {
+            margin-left: 10px;
+            color: var(--color-danger);
+            font-weight: bold;
+            cursor: pointer;
+            padding: 2px 4px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .file-item .remove-btn:hover { background-color: #ffe3e3; }
+
+        /* Options & Actions */
+        .options-actions {
+            display: flex;
+            flex-direction: column;
+            gap: var(--space-md);
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-group label {
+            font-weight: 500;
+            margin-bottom: var(--space-sm);
+        }
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius);
+            font-size: 14px;
+        }
+        
+        /* Status and Download Area */
+        #statusMessage {
+            min-height: 1.5em;
+            text-align: center;
+            font-size: 13px;
+        }
+        #statusMessage.success { color: var(--color-success); }
+        #statusMessage.error { color: var(--color-danger); }
+        #statusMessage.info { color: var(--color-text-secondary); }
+
+        #downloadContainer {
+            text-align: center;
+            padding: var(--space-md);
+            background-color: #eaf7ed;
+            border: 1px solid #b8e0c2;
+            border-radius: var(--border-radius);
+        }
+        #downloadContainer .download-text {
+            font-weight: 500;
+            margin-bottom: var(--space-md);
+            color: #155724;
+        }
+
+        /* General Components */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-sm);
+            padding: 8px 14px;
+            border: 1px solid transparent;
+            border-radius: var(--border-radius);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .btn-primary {
+            background-color: var(--color-primary);
+            color: var(--color-surface);
+        }
+        .btn-primary:not(:disabled):hover { background-color: var(--color-primary-dark); }
+        .btn-secondary {
+            background-color: var(--color-surface);
+            color: var(--color-text-primary);
+            border-color: var(--color-border);
+        }
+        .btn-secondary:not(:disabled):hover { background-color: #e9ecef; }
+        .btn-success {
+            background-color: var(--color-success);
+            color: var(--color-surface);
+        }
+        .btn-success:not(:disabled):hover { background-color: #218838; }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <header>
+            <h1>파일 합치기</h1>
+            <p>파일을 추가하고 순서를 정렬한 후, 하나의 파일로 합쳐보세요.</p>
+        </header>
+
+        <main class="main-content">
+            <div class="controls-area">
+                <div class="upload-control">
+                    <label for="fileInput" class="btn btn-secondary">파일 추가</label>
+                    <input type="file" id="fileInput" multiple accept=".txt,.md">
+                </div>
+                <div class="sort-buttons">
+                    <button id="sortByName" title="이름순 정렬" class="btn btn-secondary">[가나다순]</button>
+                    <button id="sortByDate" title="시간순 정렬" class="btn btn-secondary">[시간순]</button>
+                    <button id="clearAll" title="모두 지우기" class="btn btn-secondary">[모두 삭제]</button>
+                </div>
+            </div>
+
+            <div class="file-list-container">
+                <ul id="fileList"></ul>
+                <div id="emptyListMessage">
+                    <span>파일을 추가해주세요.</span>
+                </div>
+            </div>
+
+            <div class="options-actions">
+                <div class="form-group">
+                    <label for="delimiterInput">구분자 입력</label>
+                    <input type="text" id="delimiterInput" placeholder="파일 사이에 삽입될 텍스트 (예: \n---\n)">
+                </div>
+                <button id="mergeButton" class="btn btn-primary">파일 합치기</button>
+            </div>
+            
+            <p id="statusMessage"></p>
+            
+            <div id="downloadContainer" class="hidden">
+                <p class="download-text">✅ 파일이 성공적으로 합쳐졌습니다!</p>
+                <div style="display: flex; gap: 8px;">
+                    <button id="downloadButton" class="btn btn-success" style="flex-grow: 1;">다운로드</button>
+                    <button id="resetButton" class="btn btn-secondary">새로 시작</button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- DOM Elements ---
+            const fileInput = document.getElementById('fileInput');
+            const fileListEl = document.getElementById('fileList');
+            const emptyListMessage = document.getElementById('emptyListMessage');
+            const delimiterInput = document.getElementById('delimiterInput');
+            const mergeButton = document.getElementById('mergeButton');
+            const statusMessage = document.getElementById('statusMessage');
+            const downloadContainer = document.getElementById('downloadContainer');
+            const downloadButton = document.getElementById('downloadButton');
+            const resetButton = document.getElementById('resetButton');
+            const sortByNameBtn = document.getElementById('sortByName');
+            const sortByDateBtn = document.getElementById('sortByDate');
+            const clearAllBtn = document.getElementById('clearAll');
+
+            // --- State ---
+            let state = {
+                files: [],
+                mergedContent: null,
+                mergedFileName: 'merged.txt',
+            };
+            let sortableInstance = null;
+
+            // --- Core Render Function ---
+            function render() {
+                // Render file list
+                fileListEl.innerHTML = '';
+                if (state.files.length === 0) {
+                    emptyListMessage.classList.remove('hidden');
+                } else {
+                    emptyListMessage.classList.add('hidden');
+                    state.files.forEach((file, index) => {
+                        const li = document.createElement('li');
+                        li.className = 'file-item';
+                        li.dataset.index = index;
+                        // UPDATED: Text-based controls
+                        li.innerHTML = `
+                            <span class="drag-handle" title="순서 변경">☰</span>
+                            <div class="file-info">
+                                <span class="file-name" title="${file.name}">${file.name}</span>
+                                <span class="file-size">${(file.size / 1024).toFixed(1)} KB</span>
+                            </div>
+                            <span class="remove-btn" title="파일 제거" data-index="${index}">(x)</span>
+                        `;
+                        fileListEl.appendChild(li);
+                    });
+                }
+                
+                // Update button states
+                const hasFiles = state.files.length > 0;
+                mergeButton.disabled = !hasFiles;
+                sortByNameBtn.disabled = !hasFiles;
+                sortByDateBtn.disabled = !hasFiles;
+                clearAllBtn.disabled = !hasFiles;
+
+                // Show/hide download container
+                if (state.mergedContent !== null) {
+                    downloadContainer.classList.remove('hidden');
+                    mergeButton.classList.add('hidden');
+                } else {
+                    downloadContainer.classList.add('hidden');
+                    mergeButton.classList.remove('hidden');
+                }
+                
+                // Initialize or destroy SortableJS
+                if (hasFiles && !sortableInstance) {
+                    initializeSortable();
+                } else if (!hasFiles && sortableInstance) {
+                    sortableInstance.destroy();
+                    sortableInstance = null;
+                }
+            }
+
+            // --- Helper Functions ---
+            function setStatus(message, type = 'info', duration = 3000) {
+                statusMessage.textContent = message;
+                statusMessage.className = type;
+                if (duration > 0) {
+                    setTimeout(() => {
+                        if (statusMessage.textContent === message) {
+                            statusMessage.textContent = '';
+                        }
+                    }, duration);
+                }
+            }
+            
+            function initializeSortable() {
+                if (sortableInstance) sortableInstance.destroy();
+                sortableInstance = new Sortable(fileListEl, {
+                    animation: 150,
+                    handle: '.drag-handle',
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    onEnd: (evt) => {
+                        const [movedItem] = state.files.splice(evt.oldIndex, 1);
+                        state.files.splice(evt.newIndex, 0, movedItem);
+                        render();
+                        setStatus('순서가 변경되었습니다.', 'info');
+                    },
+                });
+            }
+
+            function resetApp() {
+                state.files = [];
+                state.mergedContent = null;
+                fileInput.value = '';
+                delimiterInput.value = '';
+                render();
+            }
+
+            // --- Event Handlers ---
+            function handleFileAdd(files) {
+                const newFiles = Array.from(files);
+                let addedCount = 0;
+                newFiles.forEach(newFile => {
+                    if (!state.files.some(f => f.name === newFile.name && f.size === newFile.size)) {
+                        state.files.push(newFile);
+                        addedCount++;
+                    }
+                });
+                if (addedCount > 0) setStatus(`${addedCount}개의 새 파일을 추가했습니다.`, 'success');
+                render();
+            }
+
+            async function handleMerge() {
+                setStatus('파일 처리 중...', 'info', 0);
+                mergeButton.disabled = true;
+                
+                const delimiter = delimiterInput.value.replace(/\\n/g, '\n').replace(/\\t/g, '\t');
+                const filePromises = state.files.map(file => file.text());
+
+                try {
+                    const fileContents = await Promise.all(filePromises);
+                    state.mergedContent = fileContents.join(delimiter);
+                    
+                    const firstFile = state.files[0];
+                    const baseName = firstFile.name.lastIndexOf('.') > -1 ? firstFile.name.substring(0, firstFile.name.lastIndexOf('.')) : firstFile.name;
+                    state.mergedFileName = `${baseName}_merged.txt`;
+                    
+                    setStatus('');
+                    render();
+                } catch (error) {
+                    setStatus('파일 처리 중 오류가 발생했습니다.', 'error');
+                    console.error("Error reading files:", error);
+                } finally {
+                    mergeButton.disabled = false;
+                }
+            }
+
+            function handleDownload() {
+                const blob = new Blob([state.mergedContent], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = state.mergedFileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+
+            // --- Event Listeners ---
+            fileInput.addEventListener('change', (e) => handleFileAdd(e.target.files));
+
+            fileListEl.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-btn')) {
+                    const indexToRemove = parseInt(e.target.dataset.index, 10);
+                    state.files.splice(indexToRemove, 1);
+                    render();
+                    setStatus('파일이 제거되었습니다.', 'info');
+                }
+            });
+
+            sortByNameBtn.addEventListener('click', () => {
+                state.files.sort((a, b) => a.name.localeCompare(b.name, 'ko', { numeric: true }));
+                render();
+                setStatus('이름순으로 정렬했습니다.', 'info');
+            });
+
+            sortByDateBtn.addEventListener('click', () => {
+                state.files.sort((a, b) => a.lastModified - b.lastModified);
+                render();
+                setStatus('시간순으로 정렬했습니다.', 'info');
+            });
+            
+            clearAllBtn.addEventListener('click', () => {
+                resetApp();
+                setStatus('모든 파일을 제거했습니다.', 'info');
+            });
+            
+            mergeButton.addEventListener('click', handleMerge);
+            downloadButton.addEventListener('click', handleDownload);
+            resetButton.addEventListener('click', resetApp);
+
+            // --- Initial Render ---
+            render();
+        });
+    </script>
+</body>
+</html>
