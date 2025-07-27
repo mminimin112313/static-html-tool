@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>프롬프트 관리자 프로 (최종)</title>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
@@ -56,11 +56,12 @@
         // IndexedDB 설정 (캐싱 및 버전 관리용)
         // =================================================================
         const INDEXEDDB_NAME = 'PromptManagerCacheDB';
-        const INDEXEDDB_VERSION = 3; // 시퀀스 저장소 추가를 위해 버전 증가
+        const INDEXEDDB_VERSION = 4; // 시퀀스 저장소 및 사용기록 저장소 추가를 위해 버전 증가
         const CACHE_STORE_PROMPTS = 'cachedPrompts';
         const CACHE_STORE_FOLDERS = 'cachedFolders';
         const CACHE_STORE_VERSIONS = 'promptVersions'; // 프롬프트 버전 기록 저장소
         const CACHE_STORE_SEQUENCES = 'cachedSequences'; // 시퀀스 캐시 저장소
+        const CACHE_STORE_USAGE_HISTORY = 'usageHistory'; // 사용 기록 저장소 (새로 추가)
 
         let indexedDbInstance;
 
@@ -89,6 +90,11 @@
                     if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES)) {
                         db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: 'id' });
                     }
+                    // 사용 기록 저장소 생성 및 인덱스 추가 (새로 추가)
+                    if (!db.objectStoreNames.contains(CACHE_STORE_USAGE_HISTORY)) {
+                        const historyStore = db.createObjectStore(CACHE_STORE_USAGE_HISTORY, { keyPath: 'id', autoIncrement: true });
+                        historyStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    }
                 };
 
                 request.onsuccess = (event) => {
@@ -104,12 +110,18 @@
         }
 
         // IndexedDB에서 모든 항목 가져오기
-        async function getFromIndexedDB(storeName) {
+        async function getFromIndexedDB(storeName, indexName = null, query = null) {
             if (!indexedDbInstance) await openIndexedDB();
             return new Promise((resolve, reject) => {
                 const transaction = indexedDbInstance.transaction([storeName], 'readonly');
                 const store = transaction.objectStore(storeName);
-                const request = store.getAll();
+                let request;
+                if (indexName && query) {
+                    const index = store.index(indexName);
+                    request = index.getAll(query);
+                } else {
+                    request = store.getAll();
+                }
                 request.onsuccess = () => resolve(request.result);
                 request.onerror = (event) => reject(event.target.error);
             });
@@ -467,7 +479,6 @@
                         const importedData = JSON.parse(event.target.result);
                         if (importedData.prompts && Array.isArray(importedData.prompts)) {
                             // 기존 데이터 삭제 여부 확인
-                            // Use custom modal for confirmation instead of window.confirm
                             const confirmClear = await helpers.showConfirm('기존 데이터를 모두 지우고 가져오겠습니까? (취소 시 기존 데이터에 추가)');
                             if (confirmClear) {
                                 // Firestore 및 IndexedDB에서 모두 삭제
@@ -550,8 +561,8 @@
                 state.sequences = await dbService.getAll('sequences');
                 ui.sequenceList.innerHTML = state.sequences
                     .map(s => `<li class="nav-item" data-filter-type="sequence" data-seq-id="${s.id}">
-                                 <a><i class="nav-icon fa-solid fa-layer-group"></i> ${s.name}</a>
-                               </li>`).join('');
+                                    <a><i class="nav-icon fa-solid fa-layer-group"></i> ${s.name}</a>
+                                </li>`).join('');
             },
             // 프롬프트 목록 렌더링
             prompts: async (forceRefresh = false) => { // forceRefresh 인자 추가
@@ -675,7 +686,10 @@
                             <button class="save-btn" id="save-prompt-btn" ${isNew ? '' : `data-id="${id}"`}><i class="fa-regular fa-save"></i> 저장</button>
                         </div>
                     </div>
-                    <div class="form-group"><label>제목</label><input id="title-input" value="${p.title || ''}"></div>
+                    <div class="form-group">
+                        <label>제목</label>
+                        <input id="title-input" value="${p.title || ''}">
+                    </div>
                     <div class="form-group">
                         <label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label>
                         <textarea id="content-input">${p.content || ''}</textarea>
@@ -688,11 +702,26 @@
                             경고: 내용이 너무 길어 저장에 실패할 수 있습니다. (Firestore 문서 제한 1MB)
                         </p>
                     </div>
-                    <div class="form-group"><label>링크 (URL)</label><input id="link-input" type="url" value="${p.link || ''}" placeholder="예: https://example.com"></div> <div style="display:flex; gap: 24px;">
-                        <div class="form-group" style="flex:1;"><label>폴더</label><select id="folder-select"><option value="">미분류</option>${folderOpts}</select></div>
-                        <div class="form-group" style="flex:1;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div 링크 (URL)>
+                    <div class="form-group">
+                        <label>링크 (URL)</label>
+                        <input id="link-input" type="url" value="${p.link || ''}" placeholder="예: https://example.com">
+                    </div> 
+                    <div style="display:flex; gap: 24px;">
+                        <div class="form-group" style="flex:1;">
+                            <label>폴더</label>
+                            <select id="folder-select">
+                                <option value="">미분류</option>${folderOpts}
+                            </select>
+                        </div>
+                        <div class="form-group" style="flex:1;">
+                            <label>태그 (쉼표로 구분)</label>
+                            <input id="tags-input" value="${(p.tags || []).join(', ')}">
+                        </div>
                     </div>
-                    <div class="is-template-toggle"><input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}><label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label></div>
+                    <div class="is-template-toggle">
+                        <input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}>
+                        <label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label>
+                    </div>
                     ${!isNew ? `
                     <button id="view-versions-btn" class="button-like" style="margin-top: 20px;"><i class="fa-solid fa-history"></i> 버전 기록 보기</button>
                     <div id="versions-history" style="margin-top: 20px; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px; display:none;">
@@ -838,7 +867,6 @@
                     versionsList.addEventListener('click', async (e) => {
                         const versionId = parseInt(e.target.dataset.versionId, 10);
                         if (e.target.classList.contains('restore-version-btn')) {
-                            // Use custom modal for confirmation instead of window.confirm
                             const confirmed = await helpers.showConfirm('이 버전으로 프롬프트를 복원하시겠습니까? 현재 내용은 덮어씌워집니다.');
                             if (confirmed) {
                                 const versions = await dbService.getPromptVersions(id);
@@ -850,7 +878,6 @@
                                 }
                             }
                         } else if (e.target.classList.contains('delete-version-btn')) {
-                            // Use custom modal for confirmation instead of window.confirm
                             const confirmed = await helpers.showConfirm('이 버전을 삭제하시겠습니까?');
                             if (confirmed) {
                                 await deleteFromIndexedDB(CACHE_STORE_VERSIONS, versionId);
@@ -872,7 +899,8 @@
                     return;
                 }
                 // 템플릿 내용에서 플레이스홀더 추출
-                const placeholders = [...p.content.matchAll(/{{(.*?)}}/g)].map(match => match[1].trim());
+                // {{와 }} 사이에 개행 문자가 없는 경우에만 변수로 인식하도록 변경
+                const placeholders = [...p.content.matchAll(/{{([^\n}]+?)}}/g)].map(match => match[1].trim()); 
                 const uniquePlaceholders = [...new Set(placeholders)];
                                         
                 ui.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
@@ -987,20 +1015,19 @@
 
                         helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
                         
-                        // 사용 빈도 증가
+                        // 사용 빈도 증가 및 사용 기록 저장
                         if (p.id) {
                             const currentUsageCount = p.usageCount || 0;
                             await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1, updatedAt: serverTimestamp() });
                             render.prompts(true); // 목록 새로고침 (캐시 강제 업데이트)
+                            helpers.logUsage('template_generate', p.id, p.title, textToCopy); // 사용 기록 추가
                         }
 
                         // 콜백 함수가 있으면 호출 (시퀀스 실행 중인 경우)
                         if (onCompleteCallback) {
                             onCompleteCallback(); // 다음 프롬프트 실행을 알림
-                        } else {
-                            // 시퀀스 실행 중이 아니면 모달 닫기
-                            ui.templateModal.overlay.classList.remove('show');
                         }
+                        // 모달은 자동으로 닫지 않음 (사용자가 수동으로 닫도록 변경)
 
                     } catch (err) {
                         console.error('텍스트 복사 실패: ', err);
@@ -1145,6 +1172,34 @@
                         }
                     }
                 });
+            },
+            // 사용 기록 페이지 렌더링 (새로 추가)
+            usageHistory: async () => {
+                ui.mainHeader.textContent = '사용 기록';
+                const history = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
+                history.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()); // 최신순 정렬
+
+                if (history.length === 0) {
+                    ui.contentView.innerHTML = `<div class="content-placeholder">사용 기록이 없습니다.</div>`;
+                    return;
+                }
+
+                ui.contentView.innerHTML = `
+                    <div class="usage-history-list">
+                        ${history.map(record => `
+                            <div class="usage-history-item">
+                                <div class="usage-history-header">
+                                    <span class="usage-history-type">${record.type === 'prompt_copy' ? '프롬프트 복사' : record.type === 'template_generate' ? '템플릿 생성' : '시퀀스 실행'}</span>
+                                    <span class="usage-history-time">${record.timestamp.toLocaleString()}</span>
+                                </div>
+                                <div class="usage-history-details">
+                                    <strong>${record.itemName}</strong>
+                                    ${record.contentSnippet ? `<p class="usage-history-snippet">${record.contentSnippet.trim()}...</p>` : ''}
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
             }
         };
 
@@ -1170,6 +1225,9 @@
                     state.currentFilter = { type: 'sequence', id, name: state.sequences.find(s => s.id === id)?.name || '알 수 없는 시퀀스' };
                     // 시퀀스 클릭 시 시퀀스 편집기 바로 열기
                     render.sequenceEditor(id); 
+                } else if (filterType === 'history') { // 사용 기록 메뉴 클릭 시
+                    state.currentFilter = { type: 'history', id: null, name: '사용 기록' };
+                    render.usageHistory();
                 } else {
                     state.currentFilter = { type: filterType, id: null, name: target.textContent.trim() };
                     render.prompts(); // 프롬프트 목록 새로고침
@@ -1201,6 +1259,7 @@
                         document.execCommand('copy');
                         document.body.removeChild(textarea);
                         helpers.showToast('클립보드에 복사되었습니다!');
+                        helpers.logUsage('prompt_copy', p.id, p.title, p.content); // 사용 기록 추가
                     }
                 } else if (e.target.closest('.visit-link-btn')) { // '방문' 링크 버튼 클릭
                     e.preventDefault(); // 기본 <a> 태그 동작 막기 (새 탭으로 열기 위해)
@@ -1270,12 +1329,12 @@
                         isFavorite: existingPromptData.isFavorite, // 기존 값 유지
                         usageCount: existingPromptData.usageCount // 기존 값 유지
                     };
-                                            
+                                                
                     try {
                         const savedId = await dbService.put('prompts', { id: id, ...data }); // id를 명시적으로 전달
                         helpers.showToast(id ? '항목이 업데이트되었습니다!' : '항목이 저장되었습니다!');
 
-                        // 프롬프트 버전 관리: 자동 저장 및 히스토리 (1번)
+                        // 프롬프트 버전 관리: 자동 저장 및 히스토리
                         if (savedId) {
                             const memo = prompt('이 버전에 대한 메모를 남겨주세요 (선택 사항):');
                             await dbService.savePromptVersion(savedId, currentContent, memo || '');
@@ -1294,7 +1353,6 @@
 
                 if (deleteBtn) { // 삭제 버튼 클릭
                     const id = deleteBtn.dataset.id;
-                    // Use custom modal for confirmation instead of window.confirm
                     const confirmed = await helpers.showConfirm('이 항목을 영구적으로 삭제하시겠습니까?');
                     if (confirmed) {
                         try {
@@ -1365,6 +1423,27 @@
                         }
                     };
                 });
+            },
+            // 사용 기록을 IndexedDB에 저장하고 최신 20개 유지 (새로 추가)
+            logUsage: async (type, itemId, itemName, contentSnippet = '') => {
+                if (!indexedDbInstance) await openIndexedDB();
+                const record = {
+                    type,
+                    itemId,
+                    itemName,
+                    timestamp: new Date(),
+                    contentSnippet: contentSnippet.substring(0, 100) // 내용 스니펫을 최대 100자로 제한
+                };
+                await putIntoIndexedDB(CACHE_STORE_USAGE_HISTORY, record);
+
+                // 최신 20개 기록만 유지
+                const allRecords = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
+                if (allRecords.length > 20) {
+                    const sortedRecords = allRecords.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+                    for (let i = 20; i < sortedRecords.length; i++) {
+                        await deleteFromIndexedDB(CACHE_STORE_USAGE_HISTORY, sortedRecords[i].id);
+                    }
+                }
             }
         };
 
@@ -1415,6 +1494,7 @@
                     document.execCommand('copy');
                     document.body.removeChild(textarea);
                     helpers.showToast(`'${currentPrompt.title}' 프롬프트가 클립보드에 복사되었습니다!`);
+                    helpers.logUsage('prompt_copy', currentPrompt.id, currentPrompt.title, currentPrompt.content); // 사용 기록 추가
                 } catch (err) {
                     console.error('텍스트 복사 실패: ', err);
                     helpers.showToast(`'${currentPrompt.title}' 복사 실패. 시퀀스를 중단합니다.`);
@@ -1454,6 +1534,7 @@
             currentSequencePromptIndex = 0;
             ui.sequenceModal.overlay.classList.remove('show'); // 시퀀스 편집 모달 닫기
             helpers.showToast(`'${sequence.name}' 시퀀스를 시작합니다.`);
+            helpers.logUsage('sequence_run', sequenceId, sequence.name); // 사용 기록 추가
             executeNextPromptInSequence(); // 첫 번째 프롬프트 실행 시작
         }
 
@@ -1487,7 +1568,14 @@
                     try {                        
                         await dbService.put('folders', { name: name.trim() }); // createdAt, updatedAt은 put 함수에서 처리                        
                         await render.folders();                        
-                        helpers.showToast('폴더가 생성되었습니다!');                    } catch (error) {                        console.error("폴더 생성 오류:", error);                        helpers.showToast('폴더 생성 오류: ' + error.message);                    }                }            });            ui.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null)); // 새 시퀀스 버튼 이벤트
+                        helpers.showToast('폴더가 생성되었습니다!');                    
+                    } catch (error) {                        
+                        console.error("폴더 생성 오류:", error);                        
+                        helpers.showToast('폴더 생성 오류: ' + error.message);                    
+                    }                
+                }            
+            });            
+            ui.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null)); // 새 시퀀스 버튼 이벤트
 
             ui.libraryList.addEventListener('click', handlers.sidebar);            
             ui.folderList.addEventListener('click', handlers.sidebar);            
@@ -1496,14 +1584,12 @@
             ui.contentView.addEventListener('click', e => { handlers.content(e); handlers.editor(e); });            
             ui.searchInput.addEventListener('input', () => render.prompts()); // 검색 입력 시 프롬프트 목록 새로고침
 
-            // 템플릿 모달 닫기 (시퀀스 실행 중이 아닐 때만)
+            // 템플릿 모달 닫기 (자동 닫힘 방지 후 사용자가 수동으로 닫을 때)
             ui.templateModal.closeBtn.addEventListener('click', () => {
-                if (currentSequencePromptIndex === -1) { // 시퀀스 실행 중이 아닐 때만 일반 닫기
-                    ui.templateModal.overlay.classList.remove('show');
-                }
+                ui.templateModal.overlay.classList.remove('show');
             });            
             ui.templateModal.overlay.addEventListener('click', e => { // 모달 외부 클릭 시 닫기
-                if (e.target === ui.templateModal.overlay && currentSequencePromptIndex === -1) { // 시퀀스 실행 중이 아닐 때만 일반 닫기
+                if (e.target === ui.templateModal.overlay) { 
                     ui.templateModal.overlay.classList.remove('show');
                 }
             });
@@ -1548,7 +1634,6 @@
             });
             ui.sequenceModal.deleteBtn.addEventListener('click', async () => {
                 const id = ui.sequenceModal.deleteBtn.dataset.id;
-                // Use custom modal for confirmation instead of window.confirm
                 const confirmed = await helpers.showConfirm('이 시퀀스를 영구적으로 삭제하시겠습니까?');
                 if (confirmed) {
                     try {
@@ -1667,7 +1752,6 @@
             const provider = new GoogleAuthProvider();            
             signInWithPopup(auth, provider).catch(error => {                
                 console.error("로그인 실패:", error);                
-                // Use custom modal for confirmation instead of alert
                 helpers.showToast("로그인에 실패했습니다. 자세한 내용은 콘솔을 확인해주세요.");
             });        
         });        
@@ -1681,7 +1765,7 @@
         /* 기본 스타일 및 변수 정의 */
         :root{--bg-primary:#131314;--bg-secondary:#1e1f20;--bg-tertiary:#2d2e30;--bg-hover:#3c4043;--text-primary:#e2e2e3;--text-secondary:#bdc1c6;--accent-blue:#8ab4f8;--accent-yellow:#fdd663;--accent-pink:#f28b82;--border-color:#3c4043;--sidebar-width:280px;--header-height:64px}        
         *{margin:0;padding:0;box-sizing:border-box}        
-        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background-color:var(--bg-primary);color:var(--text-primary);display:flex;height:100vh; /* overflow:hidden; */ } /* overflow:hidden 제거 */
+        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background-color:var(--bg-primary);color:var(--text-primary);display:flex;height:100vh;} /* overflow:hidden 제거 */
         button{font-family:inherit; cursor: pointer;}        
         
         /* body에 스크롤 막는 클래스 추가 */
@@ -1738,7 +1822,10 @@
             min-height:0; /* min-height:0 추가 */
             -webkit-overflow-scrolling:touch; /* iOS 부드러운 스크롤 */
         }
-        .content-placeholder{padding:50px 20px;text-align:center;color:var(--text-secondary)}.prompt-list-item{display:flex;align-items:center;padding:16px;border-bottom:1px solid var(--border-color);cursor:pointer;gap:16px}.prompt-list-item:hover{background-color:var(--bg-secondary)}.prompt-list-icon{font-size:1.1rem;color:var(--text-secondary);width:20px}.prompt-title{font-weight:500}.prompt-subtitle{font-size:.8rem;color:var(--text-secondary);margin-top:4px}.prompt-tags{display:flex;gap:6px;margin-top:8px}.prompt-tag{background-color:var(--bg-tertiary);color:var(--text-secondary);font-size:.75rem;padding:2px 6px;border-radius:4px}.prompt-actions{margin-left:auto;display:flex;gap:8px}.prompt-actions button, .prompt-actions a.visit-link-btn{background-color:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px 12px;border-radius:6px; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px;} /* Added a.visit-link-btn */
+        .content-placeholder{padding:50px 20px;text-align:center;color:var(--text-secondary)}
+        /* 프롬프트 목록을 더 얇게 만들기 (패딩 조정) */
+        .prompt-list-item{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;gap:16px}
+        .prompt-list-item:hover{background-color:var(--bg-secondary)}.prompt-list-icon{font-size:1.1rem;color:var(--text-secondary);width:20px}.prompt-title{font-weight:500}.prompt-subtitle{font-size:.8rem;color:var(--text-secondary);margin-top:4px}.prompt-tags{display:flex;gap:6px;margin-top:8px}.prompt-tag{background-color:var(--bg-tertiary);color:var(--text-secondary);font-size:.75rem;padding:2px 6px;border-radius:4px}.prompt-actions{margin-left:auto;display:flex;gap:8px}.prompt-actions button, .prompt-actions a.visit-link-btn{background-color:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px 12px;border-radius:6px; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px;} /* Added a.visit-link-btn */
         .prompt-actions button:hover, .prompt-actions a.visit-link-btn:hover{background-color:var(--bg-hover)}        
         
         /* 편집기 스타일 */
@@ -2033,6 +2120,45 @@
         #refresh-data-btn:hover {
             background-color: var(--bg-hover);
         }
+
+        /* 사용 기록 목록 스타일 */
+        .usage-history-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .usage-history-item {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px 16px;
+        }
+        .usage-history-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        .usage-history-type {
+            font-weight: bold;
+            color: var(--accent-blue);
+        }
+        .usage-history-details strong {
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+        .usage-history-snippet {
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            white-space: pre-wrap;
+            max-height: 60px;
+            overflow: hidden;
+            text-overflow: ellipsis; /* For multiline text overflow */
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -2054,6 +2180,7 @@
                     <li class="nav-item" data-filter-type="favorites"><a><i class="nav-icon fa-solid fa-star"></i> 즐겨찾기</a></li>
                     <li class="nav-item" data-filter-type="templates"><a><i class="nav-icon fa-solid fa-puzzle-piece"></i> 템플릿만</a></li>
                     <li class="nav-item" data-filter-type="prompts"><a><i class="nav-icon fa-solid fa-file-lines"></i> 프롬프트만</a></li>
+                    <li class="nav-item" data-filter-type="history"><a><i class="nav-icon fa-solid fa-history"></i> 사용 기록</a></li> <!-- 사용 기록 메뉴 추가 -->
                 </ul>
                 <h3 class="nav-section-title">폴더</h3>
                 <ul class="nav-list" id="folder-list"></ul>
