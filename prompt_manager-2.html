@@ -56,7 +56,7 @@
         // IndexedDB 설정 (캐싱 및 버전 관리용)
         // =================================================================
         const INDEXEDDB_NAME = 'PromptManagerCacheDB';
-        const INDEXEDDB_VERSION = 4; // 시퀀스 저장소 및 사용기록 저장소 추가를 위해 버전 증가
+        const INDEXEDDB_VERSION = 5; // 사용기록 저장소 스키마 변경을 위해 버전 증가 (variablesUsed 추가)
         const CACHE_STORE_PROMPTS = 'cachedPrompts';
         const CACHE_STORE_FOLDERS = 'cachedFolders';
         const CACHE_STORE_VERSIONS = 'promptVersions'; // 프롬프트 버전 기록 저장소
@@ -65,32 +65,36 @@
 
         let indexedDbInstance;
 
-        // IndexedDB 열기 또는 생성
+        /**
+         * IndexedDB 데이터베이스를 열거나 생성합니다.
+         * @returns {Promise<IDBDatabase>} IndexedDB 데이터베이스 인스턴스.
+         */
         function openIndexedDB() {
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(INDEXEDDB_NAME, INDEXEDDB_VERSION);
 
                 request.onupgradeneeded = (event) => {
                     const db = event.target.result;
-                    // 프롬프트 캐시 저장소 생성
+                    
+                    // 프롬프트 캐시 저장소 생성 또는 가져오기
                     if (!db.objectStoreNames.contains(CACHE_STORE_PROMPTS)) {
                         db.createObjectStore(CACHE_STORE_PROMPTS, { keyPath: 'id' });
                     }
-                    // 폴더 캐시 저장소 생성
+                    // 폴더 캐시 저장소 생성 또는 가져오기
                     if (!db.objectStoreNames.contains(CACHE_STORE_FOLDERS)) {
                         db.createObjectStore(CACHE_STORE_FOLDERS, { keyPath: 'id' });
                     }
-                    // 프롬프트 버전 기록 저장소 생성 및 인덱스 추가
+                    // 프롬프트 버전 기록 저장소 생성 및 인덱스 추가 또는 가져오기
                     if (!db.objectStoreNames.contains(CACHE_STORE_VERSIONS)) {
                         const versionStore = db.createObjectStore(CACHE_STORE_VERSIONS, { keyPath: 'id', autoIncrement: true });
                         versionStore.createIndex('promptId', 'promptId', { unique: false });
                         versionStore.createIndex('timestamp', 'timestamp', { unique: false });
                     }
-                    // 시퀀스 캐시 저장소 생성
+                    // 시퀀스 캐시 저장소 생성 또는 가져오기
                     if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES)) {
                         db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: 'id' });
                     }
-                    // 사용 기록 저장소 생성 및 인덱스 추가 (새로 추가)
+                    // 사용 기록 저장소 생성 및 인덱스 추가 또는 가져오기
                     if (!db.objectStoreNames.contains(CACHE_STORE_USAGE_HISTORY)) {
                         const historyStore = db.createObjectStore(CACHE_STORE_USAGE_HISTORY, { keyPath: 'id', autoIncrement: true });
                         historyStore.createIndex('timestamp', 'timestamp', { unique: false });
@@ -109,7 +113,13 @@
             });
         }
 
-        // IndexedDB에서 모든 항목 가져오기
+        /**
+         * IndexedDB에서 지정된 Object Store의 모든 항목을 가져옵니다.
+         * @param {string} storeName - 데이터를 가져올 Object Store의 이름.
+         * @param {string} [indexName=null] - 사용할 인덱스 이름 (선택 사항).
+         * @param {*} [query=null] - 인덱스 쿼리 (선택 사항).
+         * @returns {Promise<Array<Object>>} 가져온 항목 배열.
+         */
         async function getFromIndexedDB(storeName, indexName = null, query = null) {
             if (!indexedDbInstance) await openIndexedDB();
             return new Promise((resolve, reject) => {
@@ -127,7 +137,12 @@
             });
         }
 
-        // IndexedDB에 항목 추가/업데이트
+        /**
+         * IndexedDB에 항목을 추가하거나 업데이트합니다.
+         * @param {string} storeName - 항목을 저장할 Object Store의 이름.
+         * @param {Object} data - 저장할 데이터 객체. `keyPath`에 해당하는 속성을 포함해야 합니다.
+         * @returns {Promise<any>} 추가 또는 업데이트된 항목의 키.
+         */
         async function putIntoIndexedDB(storeName, data) {
             if (!indexedDbInstance) await openIndexedDB();
             return new Promise((resolve, reject) => {
@@ -139,7 +154,12 @@
             });
         }
 
-        // IndexedDB에서 특정 항목 삭제
+        /**
+         * IndexedDB에서 특정 항목을 삭제합니다.
+         * @param {string} storeName - 항목을 삭제할 Object Store의 이름.
+         * @param {*} id - 삭제할 항목의 키.
+         * @returns {Promise<void>} 삭제 완료 시 resolve.
+         */
         async function deleteFromIndexedDB(storeName, id) {
             if (!indexedDbInstance) await openIndexedDB();
             return new Promise((resolve, reject) => {
@@ -214,7 +234,12 @@
         // (Firebase Firestore & IndexedDB Hybrid Data Service)
         // =================================================================
         const dbService = {
-            // 현재 사용자 UID 기반 컬렉션 참조 가져오기
+            /**
+             * 현재 사용자 UID 기반으로 Firestore 컬렉션 참조를 가져옵니다.
+             * @param {string} collectionName - 컬렉션 이름 ('prompts', 'folders', 'sequences').
+             * @returns {firebase.firestore.CollectionReference} Firestore 컬렉션 참조.
+             * @throws {Error} 사용자가 로그인하지 않은 경우.
+             */
             getCollectionRef: (collectionName) => {
                 if (!currentUser) {
                     console.error("오류: 로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
@@ -222,7 +247,13 @@
                 }
                 return collection(dbFirestore, 'users', currentUser.uid, collectionName);
             },
-            // 특정 문서 참조 가져오기
+            /**
+             * 현재 사용자 UID 기반으로 Firestore 문서 참조를 가져옵니다.
+             * @param {string} collectionName - 컬렉션 이름.
+             * @param {string} id - 문서 ID.
+             * @returns {firebase.firestore.DocumentReference} Firestore 문서 참조.
+             * @throws {Error} 사용자가 로그인하지 않은 경우.
+             */
             getDocRef: (collectionName, id) => {
                 if (!currentUser) {
                     console.error("오류: 로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
@@ -230,7 +261,13 @@
                 }
                 return doc(dbFirestore, 'users', currentUser.uid, collectionName, id);
             },
-            // 모든 문서 가져오기 (캐싱 적용)
+            /**
+             * Firestore 또는 IndexedDB에서 모든 문서를 가져옵니다.
+             * 강제 새로고침 옵션이 없으면 IndexedDB 캐시를 먼저 시도합니다.
+             * @param {string} collectionName - 컬렉션 이름 ('prompts', 'folders', 'sequences').
+             * @param {boolean} [forceRefresh=false] - IndexedDB 캐시를 무시하고 Firestore에서 강제로 가져올지 여부.
+             * @returns {Promise<Array<Object>>} 문서 객체 배열.
+             */
             getAll: async (collectionName, forceRefresh = false) => {
                 if (!currentUser) return [];
 
@@ -288,7 +325,12 @@
                     return []; 
                 }
             },
-            // ID로 특정 문서 가져오기 (캐싱 적용)
+            /**
+             * Firestore 또는 IndexedDB에서 ID로 특정 문서를 가져옵니다.
+             * @param {string} collectionName - 컬렉션 이름.
+             * @param {string} id - 문서 ID.
+             * @returns {Promise<Object|null>} 문서 객체 또는 null.
+             */
             getById: async (collectionName, id) => {
                 if (!currentUser) return null;
 
@@ -335,7 +377,13 @@
                     return null;
                 }
             },
-            // 문서 추가 또는 업데이트 (캐싱 적용)
+            /**
+             * Firestore 및 IndexedDB에 문서를 추가하거나 업데이트합니다.
+             * @param {string} collectionName - 컬렉션 이름.
+             * @param {Object} item - 저장할 항목 데이터. `id` 필드가 있으면 업데이트, 없으면 추가.
+             * @returns {Promise<string>} 저장된 문서의 ID.
+             * @throws {Error} 사용자가 로그인하지 않은 경우 또는 저장 오류 발생 시.
+             */
             put: async (collectionName, item) => {
                 if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 저장할 수 없습니다.");
                 const cleanItem = { ...item };
@@ -384,7 +432,14 @@
                     throw error; 
                 }
             },
-            // 문서 업데이트 (부분 업데이트, 캐싱 적용)
+            /**
+             * Firestore 및 IndexedDB에서 문서를 부분 업데이트합니다.
+             * @param {string} collectionName - 컬렉션 이름.
+             * @param {string} id - 업데이트할 문서의 ID.
+             * @param {Object} data - 업데이트할 필드 객체.
+             * @returns {Promise<void>} 업데이트 완료 시 resolve.
+             * @throws {Error} 사용자가 로그인하지 않은 경우 또는 업데이트 오류 발생 시.
+             */
             update: async (collectionName, id, data) => {
                 if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 업데이트할 수 없습니다.");
                 try {
@@ -407,7 +462,13 @@
                     throw error;
                 }
             },
-            // 문서 삭제 (캐싱 적용)
+            /**
+             * Firestore 및 IndexedDB에서 문서를 삭제합니다.
+             * @param {string} collectionName - 컬렉션 이름.
+             * @param {string} id - 삭제할 문서의 ID.
+             * @returns {Promise<void>} 삭제 완료 시 resolve.
+             * @throws {Error} 사용자가 로그인하지 않은 경우 또는 삭제 오류 발생 시.
+             */
             delete: async (collectionName, id) => {
                 if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 삭제할 수 없습니다.");
                 try {
@@ -425,7 +486,13 @@
                     throw error;
                 }
             },
-            // 프롬프트 버전 저장 (IndexedDB에만 저장)
+            /**
+             * 프롬프트 버전을 IndexedDB에만 저장합니다.
+             * @param {string} promptId - 원본 프롬프트의 ID.
+             * @param {string} content - 저장할 프롬프트 내용.
+             * @param {string} [memo=''] - 버전 기록에 대한 메모.
+             * @returns {Promise<void>} 저장 완료 시 resolve.
+             */
             savePromptVersion: async (promptId, content, memo = '') => {
                 if (!indexedDbInstance) await openIndexedDB();
                 const versionData = {
@@ -437,7 +504,11 @@
                 await putIntoIndexedDB(CACHE_STORE_VERSIONS, versionData);
                 helpers.showToast('프롬프트 버전이 저장되었습니다.');
             },
-            // 특정 프롬프트의 모든 버전 가져오기
+            /**
+             * 특정 프롬프트의 모든 버전 기록을 IndexedDB에서 가져옵니다.
+             * @param {string} promptId - 버전 기록을 가져올 프롬프트의 ID.
+             * @returns {Promise<Array<Object>>} 버전 기록 배열 (최신순).
+             */
             getPromptVersions: async (promptId) => {
                 if (!indexedDbInstance) await openIndexedDB();
                 return new Promise((resolve, reject) => {
@@ -453,7 +524,9 @@
                     request.onerror = (event) => reject(event.target.error);
                 });
             },
-            // 데이터 내보내기 (Firebase + IndexedDB 통합)
+            /**
+             * 모든 데이터를 JSON 파일로 내보냅니다.
+             */
             exportData: async () => {
                 // Firestore에서 강제 새로고침하여 최신 데이터 가져옴
                 const allPrompts = await dbService.getAll('prompts', true); 
@@ -471,7 +544,10 @@
                 URL.revokeObjectURL(url);
                 helpers.showToast('데이터가 내보내기되었습니다.');
             },
-            // 데이터 가져오기 (Firebase + IndexedDB 통합)
+            /**
+             * JSON 파일을 읽어 데이터를 가져옵니다.
+             * @param {File} file - 가져올 JSON 파일.
+             */
             importData: async (file) => {
                 const reader = new FileReader();
                 reader.onload = async (event) => {
@@ -547,7 +623,9 @@
         // UI 렌더링 함수들 (UI Rendering Functions)
         // =================================================================
         const render = {
-            // 폴더 목록 렌더링
+            /**
+             * 폴더 목록을 렌더링합니다.
+             */
             folders: async () => {
                 state.folders = await dbService.getAll('folders');
                 ui.folderList.innerHTML = state.folders.map(f => `
@@ -556,7 +634,9 @@
                     </li>
                 `).join('') + `<li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
             },
-            // 시퀀스 목록 렌더링
+            /**
+             * 시퀀스 목록을 렌더링합니다.
+             */
             sequences: async () => {
                 state.sequences = await dbService.getAll('sequences');
                 ui.sequenceList.innerHTML = state.sequences
@@ -564,7 +644,10 @@
                                     <a><i class="nav-icon fa-solid fa-layer-group"></i> ${s.name}</a>
                                 </li>`).join('');
             },
-            // 프롬프트 목록 렌더링
+            /**
+             * 프롬프트 목록을 렌더링합니다. 필터링 및 검색 기능을 포함합니다.
+             * @param {boolean} [forceRefresh=false] - 데이터 캐시를 강제로 새로고침할지 여부.
+             */
             prompts: async (forceRefresh = false) => { // forceRefresh 인자 추가
                 ui.mainHeader.textContent = state.currentFilter.name;
                 let allItems = [];
@@ -658,7 +741,10 @@
                     </div>`;
                 }).join('');
             },
-            // 프롬프트 편집기 화면 렌더링
+            /**
+             * 프롬프트 편집기 화면을 렌더링합니다.
+             * @param {string|null} id - 편집할 프롬프트의 ID (새 항목인 경우 null).
+             */
             promptEditor: async (id) => {
                 const isNew = id === null;
                 // isFavorite, usageCount, link를 항상 초기화
@@ -753,7 +839,13 @@
                     largeTextFile.click();
                 };
 
-                // 파일 로드 및 처리 로직을 헬퍼 함수로 분리
+                /**
+                 * 파일을 읽어 텍스트 영역에 로드하고, 특정 파일 타입에 대해 이스케이프 처리합니다.
+                 * @param {File} file - 로드할 파일 객체.
+                 * @param {HTMLTextAreaElement} targetTextarea - 텍스트를 로드할 대상 텍스트 영역.
+                 * @param {HTMLElement} [fileNameSpan=null] - 파일 이름을 표시할 span 요소 (선택 사항).
+                 * @returns {Promise<boolean>} 파일 처리 성공 여부.
+                 */
                 const handleFileLoad = async (file, targetTextarea, fileNameSpan = null) => {
                     if (!file) {
                         if (fileNameSpan) fileNameSpan.textContent = '';
@@ -889,14 +981,18 @@
                     });
                 }
             },
-            // 템플릿 사용 모달 렌더링
-            // onCompleteCallback: 템플릿 처리 완료 후 호출될 콜백 함수 (시퀀스 실행 시 사용)
+            /**
+             * 템플릿 사용 모달을 렌더링하고 사용자 입력을 처리합니다.
+             * @param {string} id - 사용할 템플릿 프롬프트의 ID.
+             * @param {Function} [onCompleteCallback=null] - 템플릿 처리 완료 후 호출될 콜백 함수 (주로 시퀀스 실행 시 사용).
+             * @returns {Promise<{inputs: NodeListOf<HTMLTextAreaElement>, preview: HTMLElement, updatePreview: Function}>} 모달 요소 및 프리뷰 업데이트 함수.
+             */
             templateModal: async (id, onCompleteCallback = null) => {
                 const p = await dbService.getById('prompts', id);
                 if (!p) {
                     helpers.showToast('템플릿을 찾을 수 없습니다!');
                     if (onCompleteCallback) onCompleteCallback(true); // 오류 발생 시 시퀀스 종료 신호
-                    return;
+                    return Promise.reject(new Error('Template not found'));
                 }
                 // 템플릿 내용에서 플레이스홀더 추출
                 // {{와 }} 사이에 개행 문자가 없는 경우에만 변수로 인식하도록 변경
@@ -916,133 +1012,159 @@
                     </div>`).join('') + `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${p.content}</div></div>`;
                 ui.templateModal.overlay.classList.add('show');
                                         
-                // Select textarea elements instead of input
-                const inputs = ui.templateModal.body.querySelectorAll('textarea[data-placeholder]');
-                const preview = document.getElementById('template-preview');
-                const updatePreview = () => {
-                    let content = p.content;
-                    inputs.forEach(input => {
-                        const ph = `{{${input.dataset.placeholder}}}`;
-                        const value = input.value;
-                        content = content.replaceAll(ph, value || ph); // 입력 값이 없으면 플레이스홀더 유지
-                    });
-                    preview.textContent = content;
-                };
-                inputs.forEach(input => input.addEventListener('input', updatePreview));
-                updatePreview(); // 초기 미리보기 렌더링
-
-                // File upload logic for template modal
-                const handleModalFileLoad = async (file, targetTextarea) => {
-                    if (!file) return;
-
-                    const MAX_FILE_SIZE_MB = 5;
-                    if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
-                        helpers.showToast(`파일 용량이 너무 큽니다. (${MAX_FILE_SIZE_MB}MB 이하로 업로드해주세요.)`);
-                        return false;
-                    }
-
-                    try {
-                        let raw = await file.text();
-                        let processedText = raw;
-
-                        if (file.name.match(/\.(html?|htm)$/i)) {
-                            processedText = raw.replace(/</g, "&lt;").replace(/>/g, "&gt;");
-                            helpers.showToast('HTML 파일이 이스케이프되어 불러와졌습니다.');
-                        } else if (file.name.match(/\.(json|yaml|yml)$/i)) {
-                            helpers.showToast('파일 내용이 불러와졌습니다.');
-                        } else {
-                            helpers.showToast('파일 내용이 불러와졌습니다.');
-                        }
-
-                        targetTextarea.value = processedText;
-                        updatePreview(); // Update the template preview after loading
-                        return true;
-                    } catch (error) {
-                        console.error("파일 읽기 오류:", error);
-                        helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
-                        return false;
-                    }
-                };
-
-                const fileInputButtons = ui.templateModal.body.querySelectorAll('.file-upload-icon-btn');
-                fileInputButtons.forEach(button => {
-                    button.addEventListener('click', () => {
-                        const targetPh = button.dataset.targetPh;
-                        const fileInput = document.getElementById(`file-ph-${targetPh}`);
-                        fileInput.click();
-                    });
-                });
-
-                inputs.forEach(textarea => {
-                    const ph = textarea.dataset.placeholder;
-                    const fileInput = document.getElementById(`file-ph-${ph}`);
-
-                    // File input change listener
-                    fileInput.addEventListener('change', async (e) => {
-                        const file = e.target.files[0];
-                        if (file) {
-                            await handleModalFileLoad(file, textarea);
-                        }
-                        e.target.value = ''; // Clear file input
-                    });
-
-                    // Drag and drop listeners for each textarea in the modal
-                    textarea.addEventListener('dragover', e => {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'copy';
-                    });
-
-                    textarea.addEventListener('drop', async e => {
-                        e.preventDefault();
-                        const file = e.dataTransfer.files[0];
-                        if (file) {
-                            await handleModalFileLoad(file, textarea);
-                        }
-                    });
-                });
-
-
-                // '생성 및 복사' 버튼 클릭 이벤트
-                ui.templateModal.generateBtn.onclick = async () => {
-                    const textToCopy = preview.textContent;
-                    try {
-                        const textarea = document.createElement('textarea');
-                        textarea.value = textToCopy;
-                        document.body.appendChild(textarea);
-                        textarea.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(textarea);
-
-                        helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
+                // Promise를 반환하여 DOM이 준비된 후에 추가 작업을 할 수 있도록 함
+                return new Promise(resolve => {
+                    // DOM 요소가 완전히 렌더링될 때까지 약간의 지연을 줍니다.
+                    setTimeout(() => {
+                        const inputs = ui.templateModal.body.querySelectorAll('textarea[data-placeholder]');
+                        const preview = document.getElementById('template-preview');
                         
-                        // 사용 빈도 증가 및 사용 기록 저장
-                        if (p.id) {
-                            const currentUsageCount = p.usageCount || 0;
-                            await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1, updatedAt: serverTimestamp() });
-                            render.prompts(true); // 목록 새로고침 (캐시 강제 업데이트)
-                            helpers.logUsage('template_generate', p.id, p.title, textToCopy); // 사용 기록 추가
-                        }
+                        /**
+                         * 템플릿 미리보기를 업데이트합니다.
+                         */
+                        const updatePreview = () => {
+                            let content = p.content;
+                            inputs.forEach(input => {
+                                const ph = `{{${input.dataset.placeholder}}}`;
+                                const value = input.value;
+                                content = content.replaceAll(ph, value || ph); // 입력 값이 없으면 플레이스홀더 유지
+                            });
+                            preview.textContent = content;
+                        };
 
-                        // 콜백 함수가 있으면 호출 (시퀀스 실행 중인 경우)
-                        if (onCompleteCallback) {
-                            onCompleteCallback(); // 다음 프롬프트 실행을 알림
-                        }
-                        // 모달은 자동으로 닫지 않음 (사용자가 수동으로 닫도록 변경)
+                        inputs.forEach(input => input.addEventListener('input', updatePreview));
+                        updatePreview(); // 초기 미리보기 렌더링
 
-                    } catch (err) {
-                        console.error('텍스트 복사 실패: ', err);
-                        helpers.showToast('복사 실패. 다시 시도해 주세요.');
-                        if (onCompleteCallback) onCompleteCallback(true); // 오류 발생 시 시퀀스 종료 신호
-                    }
-                };
+                        /**
+                         * 모달 내 파일 로드 및 처리 로직을 위한 헬퍼 함수.
+                         * @param {File} file - 로드할 파일.
+                         * @param {HTMLTextAreaElement} targetTextarea - 파일 내용을 로드할 텍스트 영역.
+                         * @returns {Promise<boolean>} 파일 로드 성공 여부.
+                         */
+                        const handleModalFileLoad = async (file, targetTextarea) => {
+                            if (!file) return;
 
-                // 모달 닫기 버튼 클릭 시 시퀀스 중단
-                ui.templateModal.closeBtn.onclick = () => {
-                    ui.templateModal.overlay.classList.remove('show');
-                    if (onCompleteCallback) onCompleteCallback(true); // 시퀀스 중단 신호
-                };
+                            const MAX_FILE_SIZE_MB = 5;
+                            if (file.size > MAX_FILE_SIZE_MB * 1024 * 1024) {
+                                helpers.showToast(`파일 용량이 너무 큽니다. (${MAX_FILE_SIZE_MB}MB 이하로 업로드해주세요.)`);
+                                return false;
+                            }
+
+                            try {
+                                let raw = await file.text();
+                                let processedText = raw;
+
+                                if (file.name.match(/\.(html?|htm)$/i)) {
+                                    processedText = raw.replace(/</g, "&lt;").replace(/>/g, "&gt;");
+                                    helpers.showToast('HTML 파일이 이스케이프되어 불러와졌습니다.');
+                                } else if (file.name.match(/\.(json|yaml|yml)$/i)) {
+                                    helpers.showToast('파일 내용이 불러와졌습니다.');
+                                } else {
+                                    helpers.showToast('파일 내용이 불러와졌습니다.');
+                                }
+
+                                targetTextarea.value = processedText;
+                                updatePreview(); // Update the template preview after loading
+                                return true;
+                            } catch (error) {
+                                console.error("파일 읽기 오류:", error);
+                                helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
+                                return false;
+                            }
+                        };
+
+                        const fileInputButtons = ui.templateModal.body.querySelectorAll('.file-upload-icon-btn');
+                        fileInputButtons.forEach(button => {
+                            button.addEventListener('click', () => {
+                                const targetPh = button.dataset.targetPh;
+                                const fileInput = document.getElementById(`file-ph-${targetPh}`);
+                                fileInput.click();
+                            });
+                        });
+
+                        inputs.forEach(textarea => {
+                            const ph = textarea.dataset.placeholder;
+                            const fileInput = document.getElementById(`file-ph-${ph}`);
+
+                            // File input change listener
+                            fileInput.addEventListener('change', async (e) => {
+                                const file = e.target.files[0];
+                                if (file) {
+                                    await handleModalFileLoad(file, textarea);
+                                }
+                                e.target.value = ''; // Clear file input
+                            });
+
+                            // Drag and drop listeners for each textarea in the modal
+                            textarea.addEventListener('dragover', e => {
+                                e.preventDefault();
+                                e.dataTransfer.dropEffect = 'copy';
+                            });
+
+                            textarea.addEventListener('drop', async e => {
+                                e.preventDefault();
+                                const file = e.dataTransfer.files[0];
+                                if (file) {
+                                    await handleModalFileLoad(file, textarea);
+                                }
+                            });
+                        });
+
+
+                        // '생성 및 복사' 버튼 클릭 이벤트
+                        ui.templateModal.generateBtn.onclick = async () => {
+                            const textToCopy = preview.textContent;
+                            const variablesUsed = {}; // 사용된 변수 값들을 저장할 객체
+                            inputs.forEach(input => {
+                                variablesUsed[input.dataset.placeholder] = input.value;
+                            });
+
+                            try {
+                                const textarea = document.createElement('textarea');
+                                textarea.value = textToCopy;
+                                document.body.appendChild(textarea);
+                                textarea.select();
+                                document.execCommand('copy');
+                                document.body.removeChild(textarea);
+
+                                helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
+                                
+                                // 사용 빈도 증가 및 사용 기록 저장
+                                if (p.id) {
+                                    const currentUsageCount = p.usageCount || 0;
+                                    await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1, updatedAt: serverTimestamp() });
+                                    render.prompts(true); // 목록 새로고침 (캐시 강제 업데이트)
+                                    // 사용 기록에 generatedContent와 variablesUsed를 함께 저장
+                                    helpers.logUsage('template_generate', p.id, p.title, textToCopy, variablesUsed); 
+                                }
+
+                                // 콜백 함수가 있으면 호출 (시퀀스 실행 중인 경우)
+                                if (onCompleteCallback) {
+                                    onCompleteCallback(); // 다음 프롬프트 실행을 알림
+                                }
+                                // 모달은 자동으로 닫지 않음 (사용자가 수동으로 닫도록 변경)
+
+                            } catch (err) {
+                                console.error('텍스트 복사 실패: ', err);
+                                helpers.showToast('복사 실패. 다시 시도해 주세요.');
+                                if (onCompleteCallback) onCompleteCallback(true); // 오류 발생 시 시퀀스 종료 신호
+                            }
+                        };
+
+                        // 모달 닫기 버튼 클릭 시 시퀀스 중단
+                        ui.templateModal.closeBtn.onclick = () => {
+                            ui.templateModal.overlay.classList.remove('show');
+                            if (onCompleteCallback) onCompleteCallback(true); // 시퀀스 중단 신호
+                        };
+
+                        resolve({ inputs, preview, updatePreview }); // 모달이 렌더링된 후 필요한 요소 반환
+                    }, 50); // 작은 지연
+                });
             },
-            // 시퀀스 편집기 모달 렌더링
+            /**
+             * 시퀀스 편집기 모달을 렌더링합니다.
+             * @param {string|null} id - 편집할 시퀀스의 ID (새 항목인 경우 null).
+             */
             sequenceEditor: async (id) => {
                 const isNew = id === null;
                 let s = { name: '', description: '', promptIds: [] };
@@ -1173,7 +1295,9 @@
                     }
                 });
             },
-            // 사용 기록 페이지 렌더링 (새로 추가)
+            /**
+             * 사용 기록 페이지를 렌더링합니다.
+             */
             usageHistory: async () => {
                 ui.mainHeader.textContent = '사용 기록';
                 const history = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
@@ -1187,7 +1311,7 @@
                 ui.contentView.innerHTML = `
                     <div class="usage-history-list">
                         ${history.map(record => `
-                            <div class="usage-history-item">
+                            <div class="usage-history-item" data-record-id="${record.id}" data-record-type="${record.type}">
                                 <div class="usage-history-header">
                                     <span class="usage-history-type">${record.type === 'prompt_copy' ? '프롬프트 복사' : record.type === 'template_generate' ? '템플릿 생성' : '시퀀스 실행'}</span>
                                     <span class="usage-history-time">${record.timestamp.toLocaleString()}</span>
@@ -1195,6 +1319,11 @@
                                 <div class="usage-history-details">
                                     <strong>${record.itemName}</strong>
                                     ${record.contentSnippet ? `<p class="usage-history-snippet">${record.contentSnippet.trim()}...</p>` : ''}
+                                </div>
+                                <div class="usage-history-actions">
+                                    <button class="reuse-history-btn button-like">
+                                        <i class="fa-solid fa-redo"></i> 재사용
+                                    </button>
                                 </div>
                             </div>
                         `).join('')}
@@ -1207,7 +1336,10 @@
         // 이벤트 핸들러 (Event Handlers)
         // =================================================================
         const handlers = {
-            // 사이드바 메뉴 클릭 이벤트
+            /**
+             * 사이드바 메뉴 항목 클릭 이벤트 처리.
+             * @param {Event} e - 클릭 이벤트 객체.
+             */
             sidebar: (e) => {
                 const target = e.target.closest('.nav-item');
                 if (!target) return;
@@ -1238,56 +1370,115 @@
                     document.body.classList.remove('no-scroll'); // 사이드바 닫힐 때 스크롤 허용
                 }
             },
-            // 메인 콘텐츠 영역 클릭 이벤트 (프롬프트 목록 항목, 버튼 등)
+            /**
+             * 메인 콘텐츠 영역 클릭 이벤트 처리 (프롬프트 목록 항목, 버튼 등).
+             * @param {Event} e - 클릭 이벤트 객체.
+             */
             content: async (e) => {
                 const promptItem = e.target.closest('.prompt-list-item');
-                if (!promptItem) return;
-                const promptId = promptItem.dataset.promptId;
-                                        
-                if (e.target.closest('.edit-btn')) { // 편집 버튼 클릭
-                    render.promptEditor(promptId);
-                } else if (e.target.closest('.use-btn')) { // 템플릿 사용 버튼 클릭
-                    render.templateModal(promptId);
-                } else if (e.target.closest('.copy-btn')) { // 복사 버튼 클릭
-                    const p = await dbService.getById('prompts', promptId);
-                    if (p) {
-                        // navigator.clipboard.writeText 대신 document.execCommand('copy') 사용
-                        const textarea = document.createElement('textarea');
-                        textarea.value = p.content;
-                        document.body.appendChild(textarea);
-                        textarea.select();
-                        document.execCommand('copy');
-                        document.body.removeChild(textarea);
-                        helpers.showToast('클립보드에 복사되었습니다!');
-                        helpers.logUsage('prompt_copy', p.id, p.title, p.content); // 사용 기록 추가
-                    }
-                } else if (e.target.closest('.visit-link-btn')) { // '방문' 링크 버튼 클릭
-                    e.preventDefault(); // 기본 <a> 태그 동작 막기 (새 탭으로 열기 위해)
-                    const p = await dbService.getById('prompts', promptId);
-                    if (p && p.link) {
-                        window.open(p.link, '_blank');
-                        helpers.showToast('링크를 새 탭에서 엽니다.');
-                    }
-                }
-                else if (e.target.closest('.fav-icon')) { // 즐겨찾기 아이콘 클릭
-                    const p = await dbService.getById('prompts', promptId);
-                    if (p) {
-                        await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite, updatedAt: serverTimestamp() });
-                        helpers.showToast(!p.isFavorite ? '즐겨찾기에 추가되었습니다.' : '즐겨찾기에서 제거되었습니다.');
-                        render.prompts(); // 즐겨찾기 상태 변경 후 목록 새로고침
-                    }
-                } else if (promptItem) { // 프롬프트 목록 항목 자체 클릭 (편집 버튼이 아닌 경우)
-                    // 항목 자체 클릭 시 링크가 있다면 링크로 이동, 없다면 편집 모드로
-                    const p = await dbService.getById('prompts', promptId);
-                    if (p && p.link) {
-                        window.open(p.link, '_blank');
-                        helpers.showToast('링크를 새 탭에서 엽니다.');
-                    } else {
+                const historyItem = e.target.closest('.usage-history-item'); // 사용 기록 항목 추가
+                
+                if (promptItem) {
+                    const promptId = promptItem.dataset.promptId;
+                                            
+                    if (e.target.closest('.edit-btn')) { // 편집 버튼 클릭
                         render.promptEditor(promptId);
+                    } else if (e.target.closest('.use-btn')) { // 템플릿 사용 버튼 클릭
+                        render.templateModal(promptId);
+                    } else if (e.target.closest('.copy-btn')) { // 복사 버튼 클릭
+                        const p = await dbService.getById('prompts', promptId);
+                        if (p) {
+                            // navigator.clipboard.writeText 대신 document.execCommand('copy') 사용
+                            const textarea = document.createElement('textarea');
+                            textarea.value = p.content;
+                            document.body.appendChild(textarea);
+                            textarea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textarea);
+                            helpers.showToast('클립보드에 복사되었습니다!');
+                            // 사용 기록 추가
+                            helpers.logUsage('prompt_copy', p.id, p.title, p.content); 
+                        }
+                    } else if (e.target.closest('.visit-link-btn')) { // '방문' 링크 버튼 클릭
+                        e.preventDefault(); // 기본 <a> 태그 동작 막기 (새 탭으로 열기 위해)
+                        const p = await dbService.getById('prompts', promptId);
+                        if (p && p.link) {
+                            window.open(p.link, '_blank');
+                            helpers.showToast('링크를 새 탭에서 엽니다.');
+                        }
+                    }
+                    else if (e.target.closest('.fav-icon')) { // 즐겨찾기 아이콘 클릭
+                        const p = await dbService.getById('prompts', promptId);
+                        if (p) {
+                            await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite, updatedAt: serverTimestamp() });
+                            helpers.showToast(!p.isFavorite ? '즐겨찾기에 추가되었습니다.' : '즐겨찾기에서 제거되었습니다.');
+                            render.prompts(); // 즐겨찾기 상태 변경 후 목록 새로고침
+                        }
+                    } else if (promptItem) { // 프롬프트 목록 항목 자체 클릭 (편집 버튼이 아닌 경우)
+                        // 항목 자체 클릭 시 링크가 있다면 링크로 이동, 없다면 편집 모드로
+                        const p = await dbService.getById('prompts', promptId);
+                        if (p && p.link) {
+                            window.open(p.link, '_blank');
+                            helpers.showToast('링크를 새 탭에서 엽니다.');
+                        } else {
+                            render.promptEditor(promptId);
+                        }
+                    }
+                } else if (historyItem) { // 사용 기록 항목 클릭
+                    if (e.target.closest('.reuse-history-btn')) { // 재사용 버튼 클릭
+                        const recordId = parseInt(historyItem.dataset.recordId, 10);
+                        const recordType = historyItem.dataset.recordType;
+                        const historyRecord = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY, null, recordId); // 특정 recordId로 단일 항목 가져오기
+                        const record = historyRecord[0]; // getAll이 배열을 반환하므로 첫 번째 요소 사용
+
+                        if (!record) {
+                            helpers.showToast('사용 기록을 찾을 수 없습니다.');
+                            return;
+                        }
+
+                        if (record.type === 'prompt_copy') {
+                            try {
+                                const textarea = document.createElement('textarea');
+                                textarea.value = record.content;
+                                document.body.appendChild(textarea);
+                                textarea.select();
+                                document.execCommand('copy');
+                                document.body.removeChild(textarea);
+                                helpers.showToast('프롬프트가 클립보드에 복사되었습니다!');
+                            } catch (err) {
+                                console.error('텍스트 복사 실패: ', err);
+                                helpers.showToast('복사 실패. 다시 시도해 주세요.');
+                            }
+                        } else if (record.type === 'template_generate') {
+                            const originalTemplate = await dbService.getById('prompts', record.itemId);
+                            if (!originalTemplate) {
+                                helpers.showToast('원본 템플릿을 찾을 수 없습니다. (삭제되었을 수 있습니다.)');
+                                return;
+                            }
+                            
+                            // 템플릿 모달을 열고, 모달이 완전히 렌더링된 후에 변수를 채웁니다.
+                            const { inputs, preview, updatePreview } = await render.templateModal(originalTemplate.id);
+
+                            if (record.variablesUsed) {
+                                for (const placeholder in record.variablesUsed) {
+                                    const value = record.variablesUsed[placeholder];
+                                    // querySelector를 사용하여 데이터-플레이스홀더 속성으로 요소를 찾음
+                                    const inputElement = ui.templateModal.body.querySelector(`textarea[data-placeholder="${placeholder}"]`);
+                                    if (inputElement) {
+                                        inputElement.value = value;
+                                    }
+                                }
+                                updatePreview(); // 변수 채운 후 미리보기 업데이트
+                            }
+                            helpers.showToast('템플릿이 미리 채워져 모달에 로드되었습니다!');
+                        }
                     }
                 }
             },
-            // 편집기 화면 내 버튼 클릭 이벤트 (저장, 삭제)
+            /**
+             * 편집기 화면 내 버튼 클릭 이벤트 처리 (저장, 삭제).
+             * @param {Event} e - 클릭 이벤트 객체.
+             */
             editor: async (e) => {
                 const saveBtn = e.target.closest('.save-btn');
                 const deleteBtn = e.target.closest('.delete-btn');
@@ -1373,20 +1564,29 @@
         // 헬퍼 함수 (Helper Functions)
         // =================================================================
         const helpers = {
-            // 토스트 알림 표시
+            /**
+             * 사용자에게 짧은 토스트 알림 메시지를 표시합니다.
+             * @param {string} msg - 표시할 메시지.
+             */
             showToast: (msg) => {
                 ui.toast.textContent = msg;
                 ui.toast.classList.add('show');
                 setTimeout(() => ui.toast.classList.remove('show'), 3000);
             },
-            // 시퀀스 실행 중단 및 초기화
+            /**
+             * 시퀀스 실행을 중단하고 상태를 초기화합니다.
+             */
             resetSequenceExecution: () => {
                 activeSequencePrompts = [];
                 currentSequencePromptIndex = -1;
                 ui.templateModal.overlay.classList.remove('show'); // 혹시 열려있는 템플릿 모달 닫기
                 helpers.showToast('시퀀스 실행이 종료되었습니다.');
             },
-            // Custom confirmation dialog
+            /**
+             * 사용자에게 사용자 정의 확인 대화 상자를 표시합니다.
+             * @param {string} message - 확인 메시지.
+             * @returns {Promise<boolean>} 사용자가 '확인'을 클릭하면 true, '취소'를 클릭하면 false.
+             */
             showConfirm: (message) => {
                 return new Promise(resolve => {
                     const modalOverlay = document.createElement('div');
@@ -1424,15 +1624,25 @@
                     };
                 });
             },
-            // 사용 기록을 IndexedDB에 저장하고 최신 20개 유지 (새로 추가)
-            logUsage: async (type, itemId, itemName, contentSnippet = '') => {
+            /**
+             * 사용 기록을 IndexedDB에 저장하고 최신 20개 기록만 유지합니다.
+             * @param {'prompt_copy'|'template_generate'|'sequence_run'} type - 사용 기록의 타입.
+             * @param {string} itemId - 관련된 프롬프트 또는 시퀀스의 ID.
+             * @param {string} itemName - 관련된 프롬프트 또는 시퀀스의 이름.
+             * @param {string} [content=''] - 프롬프트 내용 또는 생성된 내용 (스니펫용).
+             * @param {Object} [variablesUsed=null] - 템플릿 사용 시 채워진 변수들.
+             * @returns {Promise<void>}
+             */
+            logUsage: async (type, itemId, itemName, content = '', variablesUsed = null) => {
                 if (!indexedDbInstance) await openIndexedDB();
                 const record = {
                     type,
-                    itemId,
+                    itemId, // promptId or sequenceId
                     itemName,
                     timestamp: new Date(),
-                    contentSnippet: contentSnippet.substring(0, 100) // 내용 스니펫을 최대 100자로 제한
+                    content: content, // 전체 내용 저장 (재사용 시 필요)
+                    contentSnippet: content.substring(0, 100), // 내용 스니펫을 최대 100자로 제한 (표시용)
+                    variablesUsed: variablesUsed // 템플릿 사용 시 채워진 변수들
                 };
                 await putIntoIndexedDB(CACHE_STORE_USAGE_HISTORY, record);
 
@@ -1450,6 +1660,9 @@
         // =================================================================
         // Fuse.js 검색 인덱스 빌드
         // =================================================================
+        /**
+         * Fuse.js 검색 인덱스를 빌드합니다.
+         */
         async function buildSearchIndex() {
             const data = await dbService.getAll('prompts'); // 모든 프롬프트 가져오기
             fuse = new Fuse(data, { 
@@ -1464,7 +1677,10 @@
         // 시퀀스 실행 로직
         // =================================================================
 
-        // 시퀀스의 다음 프롬프트를 실행하는 함수
+        /**
+         * 시퀀스의 다음 프롬프트를 실행합니다.
+         * @param {boolean} [forceStop=false] - 시퀀스 실행을 강제로 중단할지 여부.
+         */
         async function executeNextPromptInSequence(forceStop = false) {
             if (forceStop || currentSequencePromptIndex >= activeSequencePrompts.length) {
                 // 시퀀스 종료 또는 강제 중단
@@ -1494,7 +1710,8 @@
                     document.execCommand('copy');
                     document.body.removeChild(textarea);
                     helpers.showToast(`'${currentPrompt.title}' 프롬프트가 클립보드에 복사되었습니다!`);
-                    helpers.logUsage('prompt_copy', currentPrompt.id, currentPrompt.title, currentPrompt.content); // 사용 기록 추가
+                    // 사용 기록 추가
+                    helpers.logUsage('prompt_copy', currentPrompt.id, currentPrompt.title, currentPrompt.content); 
                 } catch (err) {
                     console.error('텍스트 복사 실패: ', err);
                     helpers.showToast(`'${currentPrompt.title}' 복사 실패. 시퀀스를 중단합니다.`);
@@ -1510,7 +1727,10 @@
             }
         }
 
-        // 시퀀스 실행 시작 함수
+        /**
+         * 시퀀스 실행을 시작합니다.
+         * @param {string} sequenceId - 실행할 시퀀스의 ID.
+         */
         async function startSequenceExecution(sequenceId) {
             const sequence = await dbService.getById('sequences', sequenceId);
             if (!sequence || !sequence.promptIds || sequence.promptIds.length === 0) {
@@ -1534,7 +1754,8 @@
             currentSequencePromptIndex = 0;
             ui.sequenceModal.overlay.classList.remove('show'); // 시퀀스 편집 모달 닫기
             helpers.showToast(`'${sequence.name}' 시퀀스를 시작합니다.`);
-            helpers.logUsage('sequence_run', sequenceId, sequence.name); // 사용 기록 추가
+            // 사용 기록 추가
+            helpers.logUsage('sequence_run', sequenceId, sequence.name); 
             executeNextPromptInSequence(); // 첫 번째 프롬프트 실행 시작
         }
 
@@ -1542,7 +1763,9 @@
         // =================================================================
         // 앱 초기화 및 인증 로직 (App Initialization and Authentication Logic)
         // =================================================================
-        // initializeAppLogic 함수를 async로 선언하여 내부의 await를 사용
+        /**
+         * 애플리케이션의 핵심 로직을 초기화합니다. IndexedDB 초기화, 데이터 로드, 이벤트 리스너 설정 등을 포함합니다.
+         */
         async function initializeAppLogic() {            
             // IndexedDB 초기화
             await openIndexedDB();
@@ -1581,7 +1804,11 @@
             ui.folderList.addEventListener('click', handlers.sidebar);            
             ui.sequenceList.addEventListener('click', handlers.sidebar); // 시퀀스 목록 클릭 이벤트
 
-            ui.contentView.addEventListener('click', e => { handlers.content(e); handlers.editor(e); });            
+            // 메인 콘텐츠 영역 클릭 이벤트는 재사용 버튼도 처리해야 하므로 위임 패턴을 유지
+            ui.contentView.addEventListener('click', handlers.content); 
+            // 편집기 내 버튼은 여전히 editor 핸들러 사용
+            ui.contentView.addEventListener('click', handlers.editor);
+
             ui.searchInput.addEventListener('input', () => render.prompts()); // 검색 입력 시 프롬프트 목록 새로고침
 
             // 템플릿 모달 닫기 (자동 닫힘 방지 후 사용자가 수동으로 닫을 때)
@@ -2132,6 +2359,9 @@
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 12px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
         .usage-history-header {
             display: flex;
@@ -2139,7 +2369,7 @@
             align-items: center;
             font-size: 0.85rem;
             color: var(--text-secondary);
-            margin-bottom: 8px;
+            margin-bottom: 0; /* Padding moved to gap */
         }
         .usage-history-type {
             font-weight: bold;
@@ -2158,6 +2388,15 @@
             overflow: hidden;
             text-overflow: ellipsis; /* For multiline text overflow */
             margin-top: 4px;
+        }
+        .usage-history-actions {
+            display: flex;
+            justify-content: flex-end;
+            margin-top: 8px;
+        }
+        .usage-history-actions .reuse-history-btn {
+            padding: 6px 10px;
+            font-size: 0.8rem;
         }
     </style>
 </head>
