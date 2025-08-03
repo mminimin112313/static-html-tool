@@ -3,13 +3,350 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>프롬프트 관리자(수정)</title>
+    <title>프롬프트 관리자 프로 (최종)</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 
-   <script type="module">
+    <style>
+        /* 기본 스타일 및 변수 정의 */
+        :root {
+            --bg-primary: #131314;
+            --bg-secondary: #1e1f20;
+            --bg-tertiary: #2d2e30;
+            --bg-hover: #3c4043;
+            --text-primary: #e2e2e3;
+            --text-secondary: #bdc1c6;
+            --accent-blue: #8ab4f8;
+            --accent-yellow: #fdd663;
+            --accent-pink: #f28b82;
+            --border-color: #3c4043;
+            --sidebar-width: 280px;
+            --header-height: 64px;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden; /* 메인 레이아웃 스크롤 방지 */
+        }
+
+        body.no-scroll { overflow: hidden; }
+
+        button, input, textarea, select { font-family: inherit; }
+        button { cursor: pointer; }
+
+        /* 공용 버튼 스타일 */
+        .button-like {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            transition: background-color 0.2s;
+        }
+        .button-like:hover { background-color: var(--bg-hover); }
+
+        /* 사이드바 */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--bg-secondary);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            height: 100%;
+            transition: left 0.3s ease-in-out;
+            z-index: 1000;
+        }
+        .sidebar-content {
+            flex-grow: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        #auth-section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        #login-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--accent-blue);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        #user-profile {
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+        #user-profile img { width: 32px; height: 32px; border-radius: 50%; }
+        #user-profile p { font-size: .9rem; flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #logout-btn { background: none; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 6px 10px; border-radius: 6px; }
+
+        .new-prompt-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 10px 16px;
+            font-size: .9rem;
+            margin: 16px;
+        }
+        .new-prompt-btn:hover { background-color: #282a2c; }
+
+        .nav-section-title { font-size: .9rem; color: var(--text-secondary); padding: 16px 16px 8px; font-weight: 500; }
+        .nav-list { list-style: none; }
+        .nav-item a { display: flex; align-items: center; gap: 16px; padding: 10px 16px; color: var(--text-primary); text-decoration: none; border-radius: 4px; font-size: .9rem; cursor: pointer; }
+        .nav-item a:hover { background-color: var(--bg-tertiary); }
+        .nav-item.active a { background-color: var(--accent-blue); color: var(--bg-primary); }
+        .nav-icon { width: 24px; text-align: center; font-size: 1rem; }
+        
+        .new-folder-btn {
+            width: calc(100% - 32px);
+            margin: 10px 16px;
+            padding: 10px;
+            background: none;
+            border: 1px dashed var(--border-color);
+            color: var(--text-secondary);
+            border-radius: 4px;
+        }
+        .new-folder-btn:hover { background-color: var(--bg-tertiary); }
+
+        /* 데이터 관리 섹션 */
+        #data-management-section {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+            margin-top: auto; /* 사이드바 하단에 고정 */
+        }
+        #data-management-section .button-like {
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        /* 메인 콘텐츠 */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .main-header {
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            height: var(--header-height);
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--border-color);
+            gap: 16px;
+        }
+        #mobile-menu-toggle { display: none; }
+        .main-header h1 { font-size: 1.4rem; font-weight: 500; flex-grow: 1; }
+        .search-wrapper { position: relative; }
+        .search-input {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 8px 16px 8px 36px;
+            font-size: 1rem;
+            width: 300px;
+        }
+        .search-wrapper .fa-magnifying-glass { position: absolute; left: 12px; top: 11px; color: var(--text-secondary); }
+
+        .content-view {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        .content-placeholder { padding: 50px 20px; text-align: center; color: var(--text-secondary); }
+
+        /* 프롬프트 목록 */
+        .prompt-list-item { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border-color); cursor: pointer; gap: 16px; }
+        .prompt-list-item:hover { background-color: var(--bg-secondary); }
+        .prompt-list-icon { font-size: 1.1rem; color: var(--text-secondary); width: 20px; }
+        .fav-icon.active { color: var(--accent-yellow) !important; }
+        .prompt-title { font-weight: 500; }
+        .prompt-subtitle { font-size: .8rem; color: var(--text-secondary); margin-top: 4px; }
+        .prompt-tags { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .prompt-tag { background-color: var(--bg-tertiary); color: var(--text-secondary); font-size: .75rem; padding: 2px 6px; border-radius: 4px; }
+        .prompt-actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+        .prompt-actions button, .prompt-actions a {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .prompt-actions button:hover, .prompt-actions a:hover { background-color: var(--bg-hover); }
+
+        /* 편집기 */
+        .editor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+        .editor-actions button { margin-left: 8px; }
+        .editor-actions .save-btn { background-color: var(--accent-blue); color: var(--bg-primary); border: none; }
+        .editor-actions .delete-btn { color: var(--accent-pink); border-color: var(--accent-pink); }
+        .form-group { margin-bottom: 24px; }
+        .form-group label { display: block; font-size: .9rem; color: var(--text-secondary); margin-bottom: 8px; }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 12px;
+            font-size: 1rem;
+        }
+        .form-group textarea { height: 300px; resize: vertical; }
+        .is-template-toggle { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: .9rem; }
+
+        /* 모달 */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity .3s, visibility .3s; }
+        .modal-overlay.show { opacity: 1; visibility: visible; }
+        .modal-content { background-color: var(--bg-secondary); padding: 24px; border-radius: 8px; width: 90%; max-width: 600px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .modal-header h3 { color: var(--accent-blue); }
+        .modal-header .close-btn { background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; }
+        .modal-body { max-height: 60vh; overflow-y: auto; }
+        .modal-preview { background-color: var(--bg-primary); padding: 12px; border-radius: 4px; margin-top: 16px; white-space: pre-wrap; font-family: monospace; max-height: 150px; overflow-y: auto; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+        .modal-footer .generate-btn { background-color: var(--accent-blue); color: var(--bg-primary); border: none; }
+        
+        /* 시퀀스 모달 */
+        #sequence-modal-overlay .modal-content { max-width: 700px; }
+        #sequence-modal-overlay .modal-footer { justify-content: space-between; }
+        .sequence-sortable-list { min-height: 100px; border: 1px dashed var(--border-color); border-radius: 8px; padding: 10px; background-color: var(--bg-primary); display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; }
+        .sequence-sortable-item { display: flex; align-items: center; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; cursor: grab; }
+        .sequence-sortable-item .drag-handle { color: var(--text-secondary); margin-right: 10px; }
+        .sequence-sortable-item span { flex-grow: 1; }
+        .sequence-sortable-item .remove-from-sequence-btn { background: none; border: none; color: var(--text-secondary); margin-left: auto; padding: 4px; }
+        .sortable-ghost { opacity: 0.4; }
+
+        /* 토스트 */
+        .toast { position: fixed; bottom: 20px; right: 20px; background-color: var(--bg-tertiary); color: var(--text-primary); padding: 12px 20px; border-radius: 6px; border-left: 4px solid var(--accent-blue); opacity: 0; visibility: hidden; transition: all .3s; transform: translateY(20px); z-index: 2000; }
+        .toast.show { opacity: 1; visibility: visible; transform: translateY(0); }
+
+        /* 반응형 */
+        @media (max-width: 768px) {
+            body { flex-direction: column; }
+            .sidebar { position: fixed; left: -100%; height: 100%; }
+            .sidebar.open { left: 0; }
+            #mobile-menu-toggle { display: block; background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; }
+            .main-content { width: 100%; }
+            .main-header { flex-wrap: wrap; height: auto; padding: 16px; }
+            .search-wrapper { width: 100%; order: 3; }
+            .search-input { width: 100%; }
+            .prompt-list-item { flex-wrap: wrap; }
+            .prompt-actions { width: 100%; justify-content: flex-end; margin-top: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div id="auth-section">
+            <button id="login-btn"><i class="fa-brands fa-google"></i> Google 계정으로 로그인</button>
+            <div id="user-profile">
+                <img id="user-photo" src="" alt="사용자 사진">
+                <p id="user-email"></p>
+                <button id="logout-btn" title="로그아웃"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+            </div>
+        </div>
+        <div class="sidebar-content" id="sidebar-content" style="display:none;">
+            <button class="new-prompt-btn" id="new-prompt-btn"><i class="fa-solid fa-plus"></i> 새 항목</button>
+            <nav class="sidebar-nav">
+                <h3 class="nav-section-title">라이브러리</h3>
+                <ul class="nav-list" id="library-list">
+                    <li class="nav-item active" data-filter-type="all"><a><i class="nav-icon fa-solid fa-book-bookmark"></i> 모든 항목</a></li>
+                    <li class="nav-item" data-filter-type="favorites"><a><i class="nav-icon fa-solid fa-star"></i> 즐겨찾기</a></li>
+                    <li class="nav-item" data-filter-type="templates"><a><i class="nav-icon fa-solid fa-puzzle-piece"></i> 템플릿만</a></li>
+                    <li class="nav-item" data-filter-type="prompts"><a><i class="nav-icon fa-solid fa-file-lines"></i> 프롬프트만</a></li>
+                    <li class="nav-item" data-filter-type="history"><a><i class="nav-icon fa-solid fa-history"></i> 사용 기록</a></li>
+                </ul>
+                <h3 class="nav-section-title">폴더</h3>
+                <ul class="nav-list" id="folder-list"></ul>
+                <button class="new-folder-btn" id="new-folder-btn"><i class="fa-solid fa-folder-plus"></i> 새 폴더</button>
+                
+                <h3 class="nav-section-title">시퀀스</h3>
+                <ul class="nav-list" id="sequence-list"></ul>
+                <button id="new-sequence-btn" class="new-folder-btn"><i class="fa-solid fa-layer-group"></i> 새 시퀀스</button>
+            </nav>
+            <div id="data-management-section">
+                 <h3 class="nav-section-title" style="padding: 0;">데이터 관리</h3>
+                 <button id="export-data-btn" class="button-like">데이터 내보내기</button>
+                 <input type="file" id="import-data-input" accept=".json" style="display: none;">
+                 <button id="import-data-btn" class="button-like">데이터 가져오기</button>
+            </div>
+        </div>
+        <button id="sidebar-close-btn" style="display: none;"><i class="fa-solid fa-times"></i></button>
+    </aside>
+
+    <main class="main-content">
+        <header class="main-header">
+            <button id="mobile-menu-toggle"><i class="fa-solid fa-bars"></i></button>
+            <h1 id="main-header-title">환영합니다</h1>
+            <div class="search-wrapper">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" class="search-input" id="search-input" placeholder="검색...">
+            </div>
+        </header>
+        <div class="content-view" id="content-view">
+            <div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>
+        </div>
+    </main>
+
+    <div class="modal-overlay" id="template-modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="template-modal-title">템플릿 사용</h3>
+                <button class="close-btn" id="template-modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" id="template-modal-body"></div>
+            <div class="modal-footer">
+                <button id="template-modal-generate-btn" class="generate-btn button-like"><i class="fa-solid fa-wand-magic-sparkles"></i> 생성 및 복사</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-overlay" id="sequence-modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="sequence-modal-title">새 시퀀스 생성</h3>
+                <button class="close-btn" id="sequence-modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" id="sequence-modal-body"></div>
+            <div class="modal-footer">
+                <div>
+                  <button id="sequence-modal-save-btn" class="generate-btn button-like"><i class="fa-regular fa-save"></i> 저장</button>
+                  <button id="sequence-modal-run-btn" class="button-like"><i class="fa-solid fa-play"></i> 실행</button>
+                </div>
+                <button id="sequence-modal-delete-btn" class="button-like" style="color: var(--accent-pink); border-color: var(--accent-pink);"><i class="fa-regular fa-trash-can"></i> 삭제</button>
+            </div>
+        </div>
+    </div>
+        
+    <div class="toast" id="toast"></div>
+
+<script type="module">
     // Firebase SDK 모듈 임포트
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
     import { 
@@ -23,7 +360,6 @@
         getFirestore, 
         collection, 
         doc, 
-        getDocs, 
         setDoc, 
         addDoc, 
         deleteDoc, 
@@ -32,7 +368,7 @@
         updateDoc,
         query,
         orderBy,
-        onSnapshot // 실시간 리스너를 위해 onSnapshot 임포트
+        onSnapshot
     } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
     // Firebase 프로젝트 설정
@@ -51,7 +387,7 @@
     const auth = getAuth(app);
     const dbFirestore = getFirestore(app);
     let currentUser = null;
-    let unsubscribeListeners = {}; // 실시간 리스너 구독 해제 함수들을 저장할 객체
+    let unsubscribeListeners = {};
 
     // =================================================================
     // IndexedDB 설정
@@ -74,13 +410,13 @@
                 if (!db.objectStoreNames.contains(CACHE_STORE_PROMPTS)) db.createObjectStore(CACHE_STORE_PROMPTS, { keyPath: 'id' });
                 if (!db.objectStoreNames.contains(CACHE_STORE_FOLDERS)) db.createObjectStore(CACHE_STORE_FOLDERS, { keyPath: 'id' });
                 if (!db.objectStoreNames.contains(CACHE_STORE_VERSIONS)) {
-                    const versionStore = db.createObjectStore(CACHE_STORE_VERSIONS, { keyPath: 'id', autoIncrement: true });
-                    versionStore.createIndex('promptId', 'promptId', { unique: false });
+                    const vs = db.createObjectStore(CACHE_STORE_VERSIONS, { keyPath: 'id', autoIncrement: true });
+                    vs.createIndex('promptId', 'promptId', { unique: false });
                 }
                 if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES)) db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: 'id' });
                 if (!db.objectStoreNames.contains(CACHE_STORE_USAGE_HISTORY)) {
-                    const historyStore = db.createObjectStore(CACHE_STORE_USAGE_HISTORY, { keyPath: 'id', autoIncrement: true });
-                    historyStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    const hs = db.createObjectStore(CACHE_STORE_USAGE_HISTORY, { keyPath: 'id', autoIncrement: true });
+                    hs.createIndex('timestamp', 'timestamp', { unique: false });
                 }
             };
             request.onsuccess = (event) => {
@@ -94,17 +430,12 @@
     async function getFromIndexedDB(storeName, indexName = null, queryVal = null) {
         if (!indexedDbInstance) await openIndexedDB();
         return new Promise((resolve, reject) => {
-            const transaction = indexedDbInstance.transaction([storeName], 'readonly');
-            const store = transaction.objectStore(storeName);
+            const tx = indexedDbInstance.transaction([storeName], 'readonly');
+            const store = tx.objectStore(storeName);
             let request;
-            if (indexName && queryVal !== null) {
-                request = store.index(indexName).getAll(queryVal);
-            } else if (queryVal !== null) {
-                 request = store.get(queryVal);
-            }
-            else {
-                request = store.getAll();
-            }
+            if (indexName && queryVal !== null) request = store.index(indexName).getAll(queryVal);
+            else if (queryVal !== null) request = store.get(queryVal);
+            else request = store.getAll();
             request.onsuccess = () => resolve(request.result);
             request.onerror = (event) => reject(event.target.error);
         });
@@ -112,8 +443,8 @@
 
     async function putIntoIndexedDB(storeName, data) {
         if (!indexedDbInstance) await openIndexedDB();
-        const transaction = indexedDbInstance.transaction([storeName], 'readwrite');
-        const store = transaction.objectStore(storeName);
+        const tx = indexedDbInstance.transaction([storeName], 'readwrite');
+        const store = tx.objectStore(storeName);
         return new Promise((resolve, reject) => {
             const request = store.put(data);
             request.onsuccess = () => resolve(request.result);
@@ -123,8 +454,8 @@
 
     async function deleteFromIndexedDB(storeName, id) {
         if (!indexedDbInstance) await openIndexedDB();
-        const transaction = indexedDbInstance.transaction([storeName], 'readwrite');
-        const store = transaction.objectStore(storeName);
+        const tx = indexedDbInstance.transaction([storeName], 'readwrite');
+        const store = tx.objectStore(storeName);
         return new Promise((resolve, reject) => {
             const request = store.delete(id);
             request.onsuccess = () => resolve();
@@ -135,7 +466,7 @@
     // =================================================================
     // UI 요소 및 상태 관리
     // =================================================================
-    const ui = {
+    const uiElements = {
         contentView: document.getElementById('content-view'),
         mainHeader: document.getElementById('main-header-title'),
         folderList: document.getElementById('folder-list'),
@@ -171,6 +502,10 @@
         sidebarCloseBtn: document.getElementById('sidebar-close-btn'),
         sequenceList: document.getElementById('sequence-list'),
         newSequenceBtn: document.getElementById('new-sequence-btn'),
+        dataMgmtSection: document.getElementById('data-management-section'),
+        exportDataBtn: document.getElementById('export-data-btn'),
+        importDataBtn: document.getElementById('import-data-btn'),
+        importDataInput: document.getElementById('import-data-input'),
     };
 
     let state = {
@@ -178,7 +513,6 @@
         prompts: [],
         folders: [],
         sequences: [],
-        searchResults: null
     };
 
     let fuse = null;
@@ -187,7 +521,7 @@
     let sequenceSortableInstance = null;
 
     // =================================================================
-    // 데이터 서비스 (Firestore + IndexedDB)
+    // 데이터 서비스
     // =================================================================
     const dbService = {
         getCollectionRef: (name) => collection(dbFirestore, 'users', currentUser.uid, name),
@@ -196,53 +530,34 @@
         listenToCollection: (collectionName, callback) => {
             if (!currentUser) return;
             if (unsubscribeListeners[collectionName]) unsubscribeListeners[collectionName]();
-
             const q = query(dbService.getCollectionRef(collectionName), orderBy("updatedAt", "desc"));
             unsubscribeListeners[collectionName] = onSnapshot(q, (snapshot) => {
                 const data = snapshot.docs.map(doc => {
-                    const docData = doc.data();
-                    if (docData.createdAt?.toDate) docData.createdAt = docData.createdAt.toDate();
-                    if (docData.updatedAt?.toDate) docData.updatedAt = docData.updatedAt.toDate();
-                    return { id: doc.id, ...docData };
+                    const d = doc.data();
+                    if (d.createdAt?.toDate) d.createdAt = d.createdAt.toDate();
+                    if (d.updatedAt?.toDate) d.updatedAt = d.updatedAt.toDate();
+                    return { id: doc.id, ...d };
                 });
-
-                callback(data); // 상태 업데이트 및 UI 렌더링 트리거
-
-                // IndexedDB 캐시 업데이트
-                (async () => {
-                    const storeName = { prompts: CACHE_STORE_PROMPTS, folders: CACHE_STORE_FOLDERS, sequences: CACHE_STORE_SEQUENCES }[collectionName];
-                    if (!storeName) return;
-                    if (!indexedDbInstance) await openIndexedDB();
-                    const tx = indexedDbInstance.transaction(storeName, 'readwrite');
-                    const store = tx.objectStore(storeName);
-                    await new Promise(res => { const req = store.clear(); req.onsuccess = res; });
-                    for (const item of data) await new Promise(res => { const req = store.put(item); req.onsuccess = res; });
-                })();
-            }, (error) => console.error(`Error listening to ${collectionName}:`, error));
+                callback(data);
+            }, (error) => console.error(`Listen error on ${collectionName}:`, error));
         },
 
         getById: async (collectionName, id) => {
-            if (!currentUser) return null;
             const item = state[collectionName].find(p => p.id === id);
-            if (item) return { ...item }; // Return a copy to prevent mutation issues
-
+            if (item) return { ...item };
             try {
                 const docSnap = await getDoc(dbService.getDocRef(collectionName, id));
                 if (docSnap.exists()) {
-                    const data = docSnap.data();
-                    if (data.createdAt?.toDate) data.createdAt = data.createdAt.toDate();
-                    if (data.updatedAt?.toDate) data.updatedAt = data.updatedAt.toDate();
-                    return { id: docSnap.id, ...data };
+                    const d = docSnap.data();
+                    if (d.createdAt?.toDate) d.createdAt = d.createdAt.toDate();
+                    if (d.updatedAt?.toDate) d.updatedAt = d.updatedAt.toDate();
+                    return { id: docSnap.id, ...d };
                 }
                 return null;
-            } catch (error) {
-                console.error(`Firestore getById error:`, error);
-                return null;
-            }
+            } catch (error) { return null; }
         },
 
         put: async (collectionName, item) => {
-            if (!currentUser) throw new Error("Not logged in.");
             const { id, ...data } = item;
             data.updatedAt = serverTimestamp();
             if (!id) {
@@ -261,24 +576,23 @@
     };
 
     // =================================================================
-    // UI 렌더링 함수
+    // 렌더링 함수
     // =================================================================
     const render = {
         folders: () => {
-            ui.folderList.innerHTML = state.folders.map(f => `
+            uiElements.folderList.innerHTML = state.folders.map(f => `
                 <li class="nav-item" data-filter-type="folder" data-folder-id="${f.id}">
                     <a><i class="nav-icon fa-regular fa-folder"></i> ${helpers.escapeHTML(f.name)}</a>
-                </li>
-            `).join('') + `<li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
+                </li>`).join('') + `<li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
         },
         sequences: () => {
-            ui.sequenceList.innerHTML = state.sequences.map(s => `
+            uiElements.sequenceList.innerHTML = state.sequences.map(s => `
                 <li class="nav-item" data-filter-type="sequence" data-seq-id="${s.id}">
                     <a><i class="nav-icon fa-solid fa-layer-group"></i> ${helpers.escapeHTML(s.name)}</a>
                 </li>`).join('');
         },
         prompts: () => {
-            ui.mainHeader.textContent = state.currentFilter.name;
+            uiElements.mainHeader.textContent = state.currentFilter.name;
             let filtered = state.prompts;
             const { type, id } = state.currentFilter;
 
@@ -288,7 +602,7 @@
             else if (type === 'templates') filtered = state.prompts.filter(p => p.isTemplate);
             else if (type === 'prompts') filtered = state.prompts.filter(p => !p.isTemplate);
 
-            const searchTerm = ui.searchInput.value.toLowerCase();
+            const searchTerm = uiElements.searchInput.value.toLowerCase();
             if (searchTerm) {
                 if (!fuse) buildSearchIndex();
                 const searchResults = fuse.search(searchTerm).map(r => r.item);
@@ -297,11 +611,11 @@
             }
 
             if (filtered.length === 0) {
-                ui.contentView.innerHTML = `<div class="content-placeholder">항목을 찾을 수 없습니다.</div>`;
+                uiElements.contentView.innerHTML = `<div class="content-placeholder">항목을 찾을 수 없습니다.</div>`;
                 return;
             }
 
-            ui.contentView.innerHTML = filtered.map(p => {
+            uiElements.contentView.innerHTML = filtered.map(p => {
                 const icon = p.isTemplate ? 'fa-puzzle-piece' : 'fa-file-lines';
                 const tagsHTML = (p.tags || []).map(tag => `<span class="prompt-tag">#${helpers.escapeHTML(tag)}</span>`).join('');
                 const date = p.updatedAt ? p.updatedAt.toLocaleString() : 'N/A';
@@ -316,8 +630,8 @@
                 return `
                 <div class="prompt-list-item" data-prompt-id="${p.id}">
                     <i class="prompt-list-icon fa-solid ${icon}" style="color: ${p.isTemplate ? 'var(--accent-blue)' : 'var(--text-secondary)'}"></i>
-                    <i class="prompt-list-icon fa-solid fa-star fav-icon ${p.isFavorite ? 'active' : ''}" style="color: ${p.isFavorite ? 'var(--accent-yellow)' : 'var(--text-secondary)'}"></i>
-                    <div style="flex-grow:1;">
+                    <i class="prompt-list-icon fa-solid fa-star fav-icon ${p.isFavorite ? 'active' : ''}"></i>
+                    <div style="flex-grow:1;" class="prompt-info">
                         <div class="prompt-title">${helpers.escapeHTML(p.title)}</div>
                         <div class="prompt-subtitle">업데이트: ${date}</div>
                         ${tagsHTML ? `<div class="prompt-tags">${tagsHTML}</div>` : ''}
@@ -336,21 +650,21 @@
 
             const folderOpts = state.folders.map(f => `<option value="${f.id}" ${f.id === p.folderId ? 'selected' : ''}>${helpers.escapeHTML(f.name)}</option>`).join('');
             
-            ui.mainHeader.textContent = isNew ? '새 항목' : `편집: ${p.title}`;
-            ui.contentView.innerHTML = `
+            uiElements.mainHeader.textContent = isNew ? '새 항목' : `편집: ${p.title}`;
+            uiElements.contentView.innerHTML = `
                 <div class="editor-header">
                     <h2>${isNew ? '새 항목 생성' : '항목 편집'}</h2>
                     <div class="editor-actions">
-                        ${!isNew ? `<button class="delete-btn" data-id="${id}"><i class="fa-regular fa-trash-can"></i> 삭제</button>` : ''}
-                        <button class="save-btn" data-id="${id || ''}"><i class="fa-regular fa-save"></i> 저장</button>
+                        ${!isNew ? `<button class="delete-btn button-like" data-id="${id}"><i class="fa-regular fa-trash-can"></i> 삭제</button>` : ''}
+                        <button class="save-btn button-like" data-id="${id || ''}"><i class="fa-regular fa-save"></i> 저장</button>
                     </div>
                 </div>
                 <div class="form-group"><label>제목</label><input id="title-input" value="${helpers.escapeHTML(p.title || '')}"></div>
                 <div class="form-group"><label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label><textarea id="content-input">${helpers.escapeHTML(p.content || '')}</textarea></div>
                 <div class="form-group"><label>링크 (URL)</label><input id="link-input" type="url" value="${helpers.escapeHTML(p.link || '')}"></div>
-                <div style="display:flex; gap: 24px;"><div class="form-group" style="flex:1;"><label>폴더</label><select id="folder-select"><option value="">미분류</option>${folderOpts}</select></div><div class="form-group" style="flex:1;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div></div>
+                <div style="display:flex; gap: 24px; flex-wrap: wrap;"><div class="form-group" style="flex:1; min-width: 200px;"><label>폴더</label><select id="folder-select"><option value="">미분류</option>${folderOpts}</select></div><div class="form-group" style="flex:1; min-width: 200px;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div></div>
                 <div class="is-template-toggle"><input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}><label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label></div>
-                ${!isNew ? `<button id="view-versions-btn" class="button-like" style="margin-top: 20px;"><i class="fa-solid fa-history"></i> 버전 기록 보기</button><div id="versions-history" style="display:none; margin-top:10px;"></div>` : ''}
+                ${!isNew ? `<button id="view-versions-btn" class="button-like" style="margin-top: 20px;"><i class="fa-solid fa-history"></i> 버전 기록 보기</button><div id="versions-history" style="display:none; margin-top:10px; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px;"></div>` : ''}
             `;
         },
         templateModal: async (id, onCompleteCallback = null) => {
@@ -358,15 +672,15 @@
             if (!p) { helpers.showToast('템플릿을 찾을 수 없습니다!'); if (onCompleteCallback) onCompleteCallback(true); return; }
 
             const placeholders = [...new Set([...p.content.matchAll(/{{([^\n}]+?)}}/g)].map(match => match[1].trim()))];
-            ui.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
-            ui.templateModal.body.innerHTML = placeholders.map(ph => `
+            uiElements.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
+            uiElements.templateModal.body.innerHTML = placeholders.map(ph => `
                 <div class="form-group">
                     <label for="ph-${ph}">${ph.replace(/_/g, ' ')}</label>
                     <textarea id="ph-${ph}" data-placeholder="${ph}" rows="1"></textarea>
                 </div>`).join('') + `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${helpers.escapeHTML(p.content)}</div></div>`;
-            ui.templateModal.overlay.classList.add('show');
+            uiElements.templateModal.overlay.classList.add('show');
 
-            const inputs = ui.templateModal.body.querySelectorAll('textarea[data-placeholder]');
+            const inputs = uiElements.templateModal.body.querySelectorAll('textarea[data-placeholder]');
             const preview = document.getElementById('template-preview');
             const updatePreview = () => {
                 let content = p.content;
@@ -378,37 +692,36 @@
             inputs.forEach(input => input.addEventListener('input', updatePreview));
             updatePreview();
 
-            ui.templateModal.generateBtn.onclick = async () => {
+            uiElements.templateModal.generateBtn.onclick = async () => {
                 const textToCopy = preview.textContent;
                 helpers.copyToClipboard(textToCopy);
                 helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
                 const currentUsageCount = p.usageCount || 0;
                 await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1 });
                 if (onCompleteCallback) onCompleteCallback();
+                else uiElements.templateModal.overlay.classList.remove('show');
             };
-            ui.templateModal.closeBtn.onclick = () => {
-                ui.templateModal.overlay.classList.remove('show');
+            uiElements.templateModal.closeBtn.onclick = () => {
+                uiElements.templateModal.overlay.classList.remove('show');
                 if (onCompleteCallback) onCompleteCallback(true);
             };
         },
         sequenceEditor: async (id) => {
-            // 시퀀스 편집기 로직은 복잡하므로 이전 버전의 완전한 코드를 유지합니다.
             const isNew = id === null;
             let s = isNew ? { name: '', description: '', promptIds: [] } : await dbService.getById('sequences', id);
             if (!s) { helpers.showToast('시퀀스를 찾을 수 없습니다!'); return; }
 
-            ui.sequenceModal.title.textContent = isNew ? '새 시퀀스 생성' : `시퀀스 편집: ${s.name}`;
-            ui.sequenceModal.body.innerHTML = `
+            uiElements.sequenceModal.title.textContent = isNew ? '새 시퀀스 생성' : `시퀀스 편집: ${s.name}`;
+            uiElements.sequenceModal.body.innerHTML = `
                 <div class="form-group"><label>이름</label><input id="sequence-name-input" value="${helpers.escapeHTML(s.name || '')}"></div>
                 <div class="form-group"><label>설명</label><textarea id="sequence-description-input">${helpers.escapeHTML(s.description || '')}</textarea></div>
                 <div class="form-group"><label>프롬프트 선택</label><select id="sequence-prompts-select" multiple size="8">${state.prompts.map(p => `<option value="${p.id}">${helpers.escapeHTML(p.title)}</option>`).join('')}</select></div>
-                <div class="form-group"><label>시퀀스 순서 (드래그 & 드롭)</label><div id="sequence-sortable-list" class="sequence-sortable-list"></div></div>
-            `;
-            ui.sequenceModal.overlay.classList.add('show');
-            ui.sequenceModal.saveBtn.dataset.id = id || '';
-            ui.sequenceModal.runBtn.dataset.id = id || '';
-            ui.sequenceModal.deleteBtn.dataset.id = id || '';
-            ui.sequenceModal.deleteBtn.style.display = isNew ? 'none' : 'inline-block';
+                <div class="form-group"><label>시퀀스 순서 (드래그 & 드롭)</label><div id="sequence-sortable-list" class="sequence-sortable-list"></div></div>`;
+            uiElements.sequenceModal.overlay.classList.add('show');
+            uiElements.sequenceModal.saveBtn.dataset.id = id || '';
+            uiElements.sequenceModal.runBtn.dataset.id = id || '';
+            uiElements.sequenceModal.deleteBtn.dataset.id = id || '';
+            uiElements.sequenceModal.deleteBtn.style.display = isNew ? 'none' : 'inline-block';
 
             const selectEl = document.getElementById('sequence-prompts-select');
             const sortableList = document.getElementById('sequence-sortable-list');
@@ -429,22 +742,15 @@
 
             if (sequenceSortableInstance) sequenceSortableInstance.destroy();
             sequenceSortableInstance = Sortable.create(sortableList, {
-                animation: 150,
-                handle: '.drag-handle',
-                onEnd: () => {
-                    s.promptIds = Array.from(sortableList.children).map(item => item.dataset.promptId);
-                }
+                animation: 150, handle: '.drag-handle', onEnd: () => { s.promptIds = Array.from(sortableList.children).map(item => item.dataset.promptId); }
             });
 
             selectEl.onchange = () => {
                 const selectedIds = new Set(Array.from(selectEl.selectedOptions).map(opt => opt.value));
                 s.promptIds = s.promptIds.filter(id => selectedIds.has(id));
-                selectedIds.forEach(id => {
-                    if (!s.promptIds.includes(id)) s.promptIds.push(id);
-                });
+                selectedIds.forEach(id => { if (!s.promptIds.includes(id)) s.promptIds.push(id); });
                 updateSortableList();
             };
-
             sortableList.onclick = (e) => {
                 if (e.target.closest('.remove-from-sequence-btn')) {
                     const item = e.target.closest('.sequence-sortable-item');
@@ -456,88 +762,13 @@
     };
 
     // =================================================================
-    // 이벤트 핸들러
-    // =================================================================
-    const handlers = {
-        // [수정] 모든 클릭 이벤트를 하나의 핸들러에서 위임 처리
-        contentViewClick: async (e) => {
-            const promptItem = e.target.closest('.prompt-list-item');
-            const editorSaveBtn = e.target.closest('.save-btn');
-            const editorDeleteBtn = e.target.closest('.delete-btn');
-            const viewVersionsBtn = e.target.closest('#view-versions-btn');
-
-            // 프롬프트 목록 아이템 내부 버튼 클릭 처리
-            if (promptItem) {
-                const promptId = promptItem.dataset.promptId;
-                const p = await dbService.getById('prompts', promptId);
-                if (!p) return;
-
-                if (e.target.closest('.edit-btn')) render.promptEditor(promptId);
-                else if (e.target.closest('.copy-btn')) {
-                    helpers.copyToClipboard(p.content);
-                    helpers.showToast('클립보드에 복사되었습니다!');
-                } else if (e.target.closest('.use-btn')) {
-                    render.templateModal(promptId);
-                } else if (e.target.closest('.fav-icon')) {
-                    await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite });
-                    helpers.showToast(!p.isFavorite ? '즐겨찾기 추가' : '즐겨찾기 해제');
-                } else if (!e.target.closest('.prompt-actions')) { // 버튼 영역이 아닌 곳을 클릭하면 편집
-                    render.promptEditor(promptId);
-                }
-                return;
-            }
-
-            // 편집기 저장 버튼
-            if (editorSaveBtn) {
-                const id = editorSaveBtn.dataset.id || null;
-                let existingData = {};
-                if(id) existingData = await dbService.getById('prompts', id);
-
-                const data = {
-                    title: document.getElementById('title-input').value,
-                    content: document.getElementById('content-input').value,
-                    folderId: document.getElementById('folder-select').value || null,
-                    tags: document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean),
-                    isTemplate: document.getElementById('is-template-checkbox').checked,
-                    link: document.getElementById('link-input').value.trim(),
-                    isFavorite: existingData.isFavorite || false,
-                    usageCount: existingData.usageCount || 0,
-                };
-                const savedId = await dbService.put('prompts', { id, ...data });
-                helpers.showToast('저장되었습니다!');
-                await dbService.savePromptVersion(savedId, data.content, '수동 저장');
-                state.currentFilter = { type: 'all', id: null, name: '모든 항목' };
-                render.prompts();
-                return;
-            }
-
-            // 편집기 삭제 버튼
-            if (editorDeleteBtn) {
-                const id = editorDeleteBtn.dataset.id;
-                if (await helpers.showConfirm('정말로 삭제하시겠습니까?')) {
-                    await dbService.delete('prompts', id);
-                    helpers.showToast('삭제되었습니다.');
-                    state.currentFilter = { type: 'all', id: null, name: '모든 항목' };
-                    render.prompts();
-                }
-                return;
-            }
-
-            // 버전 기록 보기 버튼
-            if(viewVersionsBtn) {
-                 // 버전 기록 관련 로직 추가
-            }
-        },
-    };
-
-    // =================================================================
     // 헬퍼 함수
     // =================================================================
     const helpers = {
         showToast: (msg) => {
-            ui.toast.textContent = msg;
-            ui.toast.classList.add('show');
-            setTimeout(() => ui.toast.classList.remove('show'), 3000);
+            uiElements.toast.textContent = msg;
+            uiElements.toast.classList.add('show');
+            setTimeout(() => uiElements.toast.classList.remove('show'), 3000);
         },
         escapeHTML: (str) => {
             const p = document.createElement('p');
@@ -545,12 +776,12 @@
             return p.innerHTML;
         },
         copyToClipboard: (text) => {
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            document.body.appendChild(textarea);
-            textarea.select();
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
             document.execCommand('copy');
-            document.body.removeChild(textarea);
+            document.body.removeChild(ta);
         },
         showConfirm: (message) => {
             return new Promise(resolve => {
@@ -558,10 +789,10 @@
                 modal.className = 'modal-overlay show';
                 modal.innerHTML = `
                     <div class="modal-content" style="max-width: 400px;">
-                        <div class="modal-body" style="padding-top: 20px;">${message}</div>
+                        <div class="modal-body" style="padding: 20px 0;">${message}</div>
                         <div class="modal-footer">
                             <button id="confirm-cancel" class="button-like">취소</button>
-                            <button id="confirm-ok" class="generate-btn">확인</button>
+                            <button id="confirm-ok" class="generate-btn button-like">확인</button>
                         </div>
                     </div>`;
                 document.body.appendChild(modal);
@@ -572,13 +803,13 @@
         resetSequenceExecution: () => {
             activeSequencePrompts = [];
             currentSequencePromptIndex = -1;
-            ui.templateModal.overlay.classList.remove('show');
+            uiElements.templateModal.overlay.classList.remove('show');
             helpers.showToast('시퀀스 실행이 종료되었습니다.');
         }
     };
 
     // =================================================================
-    // 시퀀스 실행 로직
+    // 시퀀스 실행
     // =================================================================
     async function executeNextPromptInSequence(forceStop = false) {
         if (forceStop || currentSequencePromptIndex >= activeSequencePrompts.length) {
@@ -587,11 +818,11 @@
         const currentPrompt = activeSequencePrompts[currentSequencePromptIndex];
         currentSequencePromptIndex++;
         if (currentPrompt.isTemplate) {
-            render.templateModal(currentPrompt.id, executeNextPromptInSequence);
+            await render.templateModal(currentPrompt.id, (isStopped) => executeNextPromptInSequence(isStopped));
         } else {
             helpers.copyToClipboard(currentPrompt.content);
             helpers.showToast(`'${currentPrompt.title}'가 복사되었습니다.`);
-            setTimeout(() => executeNextPromptInSequence(), 1000);
+            setTimeout(() => executeNextPromptInSequence(), 1200);
         }
     }
 
@@ -608,11 +839,10 @@
         if (activeSequencePrompts.length === 0) return helpers.showToast('실행할 유효한 프롬프트가 없습니다.');
 
         currentSequencePromptIndex = 0;
-        ui.sequenceModal.overlay.classList.remove('show');
+        uiElements.sequenceModal.overlay.classList.remove('show');
         helpers.showToast(`'${sequence.name}' 시퀀스를 시작합니다.`);
-        executeNextPromptInSequence();
+        await executeNextPromptInSequence();
     }
-
 
     // =================================================================
     // 검색 인덱스 빌드
@@ -622,595 +852,174 @@
     }
 
     // =================================================================
-    // 앱 초기화 및 인증
+    // 앱 초기화 및 이벤트 리스너 설정
     // =================================================================
-    async function initializeAppLogic() {
-        await openIndexedDB();
-        ui.sidebarContent.style.display = 'flex';
-        ui.contentView.innerHTML = '<div class="content-placeholder">데이터를 불러오는 중...</div>';
+    function setupEventListeners() {
+        uiElements.contentView.addEventListener('click', async (e) => {
+            const promptItem = e.target.closest('.prompt-list-item');
+            const editorSaveBtn = e.target.closest('.save-btn');
+            const editorDeleteBtn = e.target.closest('.delete-btn');
 
-        // 실시간 리스너 설정
-        dbService.listenToCollection('folders', (data) => { state.folders = data; render.folders(); });
-        dbService.listenToCollection('sequences', (data) => { state.sequences = data; render.sequences(); });
-        dbService.listenToCollection('prompts', (data) => { state.prompts = data; buildSearchIndex(); render.prompts(); });
+            if (promptItem) {
+                const promptId = promptItem.dataset.promptId;
+                if (e.target.closest('.edit-btn')) return render.promptEditor(promptId);
+                if (e.target.closest('.copy-btn')) {
+                    const p = await dbService.getById('prompts', promptId);
+                    if(p) { helpers.copyToClipboard(p.content); helpers.showToast('클립보드에 복사되었습니다!'); }
+                }
+                else if (e.target.closest('.use-btn')) return render.templateModal(promptId);
+                else if (e.target.closest('.fav-icon')) {
+                    const p = await dbService.getById('prompts', promptId);
+                    if(p) { await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite }); }
+                }
+                else if (e.target.closest('.prompt-info')) return render.promptEditor(promptId);
+                return;
+            }
 
-        // 이벤트 리스너 설정
-        ui.contentView.addEventListener('click', handlers.contentViewClick);
-        ui.searchInput.addEventListener('input', () => render.prompts());
+            if (editorSaveBtn) {
+                const id = editorSaveBtn.dataset.id || null;
+                let existingData = {};
+                if(id) existingData = await dbService.getById('prompts', id) || {};
+                const data = {
+                    title: document.getElementById('title-input').value,
+                    content: document.getElementById('content-input').value,
+                    folderId: document.getElementById('folder-select').value || null,
+                    tags: document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean),
+                    isTemplate: document.getElementById('is-template-checkbox').checked,
+                    link: document.getElementById('link-input').value.trim(),
+                    isFavorite: existingData.isFavorite || false,
+                    usageCount: existingData.usageCount || 0,
+                };
+                const savedId = await dbService.put('prompts', { id, ...data });
+                helpers.showToast('저장되었습니다!');
+                await dbService.savePromptVersion(savedId, data.content, '수동 저장');
+                state.currentFilter = { type: 'all', id: null, name: '모든 항목' };
+            }
+
+            if (editorDeleteBtn) {
+                const id = editorDeleteBtn.dataset.id;
+                if (await helpers.showConfirm('정말로 삭제하시겠습니까?')) {
+                    await dbService.delete('prompts', id);
+                    helpers.showToast('삭제되었습니다.');
+                    state.currentFilter = { type: 'all', id: null, name: '모든 항목' };
+                }
+            }
+        });
         
-        ui.newPromptBtn.addEventListener('click', () => render.promptEditor(null));
-        ui.newFolderBtn.addEventListener('click', async () => {
+        uiElements.searchInput.addEventListener('input', () => render.prompts());
+        uiElements.newPromptBtn.addEventListener('click', () => render.promptEditor(null));
+        uiElements.newFolderBtn.addEventListener('click', async () => {
             const name = prompt('새 폴더 이름을 입력하세요:');
             if (name?.trim()) await dbService.put('folders', { name: name.trim() });
         });
-        ui.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null));
+        uiElements.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null));
         
-        // 사이드바 필터링
-        ui.libraryList.addEventListener('click', (e) => {
+        const setFilter = (type, id, name) => {
+            state.currentFilter = { type, id, name };
+            document.querySelectorAll('.sidebar .nav-item.active').forEach(el => el.classList.remove('active'));
+            const target = document.querySelector(`.nav-item[data-filter-type="${type}"]` + (id ? `[data-folder-id="${id}"]` : ''));
+            if(target) target.classList.add('active');
+            render.prompts();
+        };
+
+        uiElements.libraryList.addEventListener('click', (e) => {
             const target = e.target.closest('.nav-item');
-            if(target) {
-                state.currentFilter = { type: target.dataset.filterType, id: null, name: target.textContent.trim() };
-                render.prompts();
-            }
+            if(target) setFilter(target.dataset.filterType, null, target.textContent.trim());
         });
-        ui.folderList.addEventListener('click', async (e) => {
+        uiElements.folderList.addEventListener('click', (e) => {
             const target = e.target.closest('.nav-item');
-            if(target) {
-                const folderId = target.dataset.folderId;
-                const folder = await dbService.getById('folders', folderId);
-                state.currentFilter = { type: 'folder', id: folderId, name: folder?.name || '폴더' };
-                render.prompts();
-            }
+            if(target) setFilter('folder', target.dataset.folderId, target.textContent.trim());
         });
-        ui.sequenceList.addEventListener('click', (e) => {
+        uiElements.sequenceList.addEventListener('click', (e) => {
             const target = e.target.closest('.nav-item');
             if(target) render.sequenceEditor(target.dataset.seqId);
         });
 
-        // 시퀀스 모달 버튼
-        ui.sequenceModal.saveBtn.onclick = async () => {
-            const id = ui.sequenceModal.saveBtn.dataset.id || null;
-            const name = document.getElementById('sequence-name-input').value;
-            const description = document.getElementById('sequence-description-input').value;
-            const promptIds = Array.from(document.getElementById('sequence-sortable-list').children).map(item => item.dataset.promptId);
-            if (!name.trim()) return helpers.showToast('시퀀스 이름을 입력해주세요.');
-            await dbService.put('sequences', { id, name, description, promptIds });
+        uiElements.sequenceModal.saveBtn.onclick = async () => {
+            const id = uiElements.sequenceModal.saveBtn.dataset.id || null;
+            const data = {
+                name: document.getElementById('sequence-name-input').value,
+                description: document.getElementById('sequence-description-input').value,
+                promptIds: Array.from(document.getElementById('sequence-sortable-list').children).map(item => item.dataset.promptId)
+            };
+            if (!data.name.trim()) return helpers.showToast('시퀀스 이름을 입력해주세요.');
+            await dbService.put('sequences', { id, ...data });
             helpers.showToast('시퀀스가 저장되었습니다.');
-            ui.sequenceModal.overlay.classList.remove('show');
+            uiElements.sequenceModal.overlay.classList.remove('show');
         };
-        ui.sequenceModal.runBtn.onclick = () => startSequenceExecution(ui.sequenceModal.runBtn.dataset.id);
-        ui.sequenceModal.deleteBtn.onclick = async () => {
-            const id = ui.sequenceModal.deleteBtn.dataset.id;
+        uiElements.sequenceModal.runBtn.onclick = () => startSequenceExecution(uiElements.sequenceModal.runBtn.dataset.id);
+        uiElements.sequenceModal.deleteBtn.onclick = async () => {
+            const id = uiElements.sequenceModal.deleteBtn.dataset.id;
             if (await helpers.showConfirm('이 시퀀스를 삭제하시겠습니까?')) {
                 await dbService.delete('sequences', id);
-                helpers.showToast('시퀀스가 삭제되었습니다.');
-                ui.sequenceModal.overlay.classList.remove('show');
+                helpers.showToast('삭제되었습니다.');
+                uiElements.sequenceModal.overlay.classList.remove('show');
             }
         };
-        ui.sequenceModal.closeBtn.onclick = () => ui.sequenceModal.overlay.classList.remove('show');
+        uiElements.sequenceModal.closeBtn.onclick = () => uiElements.sequenceModal.overlay.classList.remove('show');
+
+        uiElements.exportDataBtn.onclick = async () => {
+            const data = { prompts: state.prompts, folders: state.folders, sequences: state.sequences };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `prompt_manager_backup_${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        };
+        uiElements.importDataBtn.onclick = () => uiElements.importDataInput.click();
+        uiElements.importDataInput.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (await helpers.showConfirm('데이터를 가져옵니다. 기존 데이터를 모두 삭제할까요?')) {
+                await Promise.all([
+                    ...state.prompts.map(p => dbService.delete('prompts', p.id)),
+                    ...state.folders.map(f => dbService.delete('folders', f.id)),
+                    ...state.sequences.map(s => dbService.delete('sequences', s.id)),
+                ]);
+            }
+            if (data.folders) await Promise.all(data.folders.map(f => dbService.put('folders', { ...f, id: null })));
+            if (data.prompts) await Promise.all(data.prompts.map(p => dbService.put('prompts', { ...p, id: null })));
+            if (data.sequences) await Promise.all(data.sequences.map(s => dbService.put('sequences', { ...s, id: null })));
+            helpers.showToast('데이터 가져오기 완료!');
+        };
+    }
+
+    async function initializeAppLogic() {
+        await openIndexedDB();
+        uiElements.sidebarContent.style.display = 'flex';
+        uiElements.contentView.innerHTML = '<div class="content-placeholder">데이터를 불러오는 중...</div>';
+
+        dbService.listenToCollection('folders', (data) => { state.folders = data; render.folders(); });
+        dbService.listenToCollection('sequences', (data) => { state.sequences = data; render.sequences(); });
+        dbService.listenToCollection('prompts', (data) => { state.prompts = data; buildSearchIndex(); render.prompts(); });
+        
+        setupEventListeners();
     }
 
     onAuthStateChanged(auth, async user => {
         if (user) {
             currentUser = user;
-            ui.loginBtn.style.display = 'none';
-            ui.userProfile.style.display = 'flex';
-            ui.userEmail.textContent = user.displayName || user.email;
-            ui.userPhoto.src = user.photoURL || `https://via.placeholder.com/32`;
+            uiElements.loginBtn.style.display = 'none';
+            uiElements.userProfile.style.display = 'flex';
+            uiElements.userEmail.textContent = user.displayName || user.email;
+            uiElements.userPhoto.src = user.photoURL || `https://via.placeholder.com/32`;
             initializeAppLogic();
         } else {
             Object.values(unsubscribeListeners).forEach(unsub => unsub());
             unsubscribeListeners = {};
             currentUser = null;
-            ui.loginBtn.style.display = 'block';
-            ui.userProfile.style.display = 'none';
-            ui.sidebarContent.style.display = 'none';
-            ui.contentView.innerHTML = '<div class="content-placeholder">로그인해주세요.</div>';
+            uiElements.loginBtn.style.display = 'block';
+            uiElements.userProfile.style.display = 'none';
+            uiElements.sidebarContent.style.display = 'none';
+            uiElements.contentView.innerHTML = '<div class="content-placeholder">로그인해주세요.</div>';
         }
     });
 
-    ui.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
-    ui.logoutBtn.addEventListener('click', () => signOut(auth));
-
+    uiElements.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
+    uiElements.logoutBtn.addEventListener('click', () => signOut(auth));
 </script>
-
-
-    <style>        
-        /* 기본 스타일 및 변수 정의 */
-        :root{--bg-primary:#131314;--bg-secondary:#1e1f20;--bg-tertiary:#2d2e30;--bg-hover:#3c4043;--text-primary:#e2e2e3;--text-secondary:#bdc1c6;--accent-blue:#8ab4f8;--accent-yellow:#fdd663;--accent-pink:#f28b82;--border-color:#3c4043;--sidebar-width:280px;--header-height:64px}        
-        *{margin:0;padding:0;box-sizing:border-box}        
-        body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background-color:var(--bg-primary);color:var(--text-primary);display:flex;height:100vh;} /* overflow:hidden 제거 */
-        button{font-family:inherit; cursor: pointer;}        
-        
-        /* body에 스크롤 막는 클래스 추가 */
-        body.no-scroll {
-            overflow: hidden;
-        }
-
-        /* 인증 섹션 스타일 */
-        #auth-section{padding:16px;border-bottom:1px solid var(--border-color); display:flex; flex-direction:column; align-items:center; gap: 10px;}        
-        #login-btn{width:100%;padding:10px;background-color:var(--accent-blue);color:var(--bg-primary);border:none;border-radius:6px;font-weight:500}        
-        #user-profile{display:none;align-items:center;gap:10px; width:100%;}        
-        #user-profile img{width:32px;height:32px;border-radius:50%}        
-        #user-profile p{font-size:.9rem;flex-grow:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}        
-        #logout-btn{background:none;border:1px solid var(--border-color);color:var(--text-secondary);padding:6px 10px;border-radius:6px; flex-shrink: 0;}        
-        
-        /* 사이드바 스타일 */
-        .sidebar{width:var(--sidebar-width);background-color:var(--bg-secondary);display:flex;flex-direction:column;flex-shrink:0;height:100%}.sidebar-content{flex-grow:1;overflow-y:auto; min-height:0;} /* min-height:0 추가 */
-        .new-prompt-btn{display:flex;align-items:center;gap:12px;background-color:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:24px;padding:10px 16px;font-size:.9rem;cursor:pointer;margin:8px 16px;white-space:nowrap}.new-prompt-btn:hover{background-color:#282a2c}.nav-section-title{font-size:.9rem;color:var(--text-secondary);padding:16px 16px 8px;font-weight:500}.nav-list{list-style:none}.nav-item a{display:flex;align-items:center;gap:16px;padding:10px 16px;color:var(--text-primary);text-decoration:none;border-radius:4px;font-size:.9rem;white-space:nowrap;cursor:pointer}.nav-item a:hover{background-color:var(--bg-tertiary)}.nav-item.active a{background-color:var(--accent-blue);color:var(--bg-primary)}.nav-icon{width:24px;text-align:center;font-size:1rem}.new-folder-btn{width:calc(100% - 32px);margin:10px 16px;padding:10px;background:none;border:1px dashed var(--border-color);color:var(--text-secondary);border-radius:4px}.new-folder-btn:hover{background-color:var(--bg-tertiary)}        
-        
-        /* 메인 콘텐츠 스타일 */
-        .main-content{flex-grow:1;display:flex;flex-direction:column; min-height:0;} /* min-height:0 추가 */
-        /* Adjusted main-header for top search bar */
-        .main-header{
-            display: flex;
-            flex-direction: column; /* Stack items vertically */
-            align-items: flex-start; /* Align items to the start */
-            padding: 16px 24px 0; /* Padding top and sides, no padding bottom */
-            height: auto; /* Height adapts to content */
-            flex-shrink: 0;
-            border-bottom: 1px solid var(--border-color);
-            gap: 10px; /* Space between title/toggle and search bar */
-        }
-        .main-header-top-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            width: 100%;
-            padding-bottom: 16px; /* Padding below the title/toggle row */
-        }
-        .main-header h1{font-size:1.4rem;font-weight:500; margin: 0;} /* Reset margin */
-        .search-wrapper{
-            position:relative;
-            width: 100%; /* Make search bar full width within header */
-            margin-bottom: 16px; /* Space below search bar */
-        }        
-        .search-input{background-color:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:8px 16px 8px 36px;font-size:1rem; width: 100%;}
-        .search-wrapper .fa-magnifying-glass{position:absolute;left:12px;top:11px;color:var(--text-secondary)}        
-        
-        /* 콘텐츠 뷰 및 목록 항목 스타일 */
-        .content-view{
-            flex:1 1 auto; /* flex-grow:1; 대신 flex:1 1 auto; 사용 */
-            overflow-y:auto;
-            padding:24px;
-            min-height:0; /* min-height:0 추가 */
-            -webkit-overflow-scrolling:touch; /* iOS 부드러운 스크롤 */
-        }
-        .content-placeholder{padding:50px 20px;text-align:center;color:var(--text-secondary)}
-        /* 프롬프트 목록을 더 얇게 만들기 (패딩 조정) */
-        .prompt-list-item{display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border-color);cursor:pointer;gap:16px}
-        .prompt-list-item:hover{background-color:var(--bg-secondary)}.prompt-list-icon{font-size:1.1rem;color:var(--text-secondary);width:20px}.prompt-title{font-weight:500}.prompt-subtitle{font-size:.8rem;color:var(--text-secondary);margin-top:4px}.prompt-tags{display:flex;gap:6px;margin-top:8px}.prompt-tag{background-color:var(--bg-tertiary);color:var(--text-secondary);font-size:.75rem;padding:2px 6px;border-radius:4px}.prompt-actions{margin-left:auto;display:flex;gap:8px}.prompt-actions button, .prompt-actions a.visit-link-btn{background-color:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);padding:8px 12px;border-radius:6px; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px;} /* Added a.visit-link-btn */
-        .prompt-actions button:hover, .prompt-actions a.visit-link-btn:hover{background-color:var(--bg-hover)}        
-        
-        /* 편집기 스타일 */
-        .editor-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}.editor-actions button{background-color:var(--bg-tertiary);border:1px solid var(--border-color);color:var(--text-primary);padding:10px 16px;border-radius:6px;margin-left:8px}.editor-actions button.save-btn{background-color:var(--accent-blue);color:var(--bg-primary);border:none}.editor-actions button.delete-btn{color:var(--accent-pink);border-color:var(--accent-pink)}        
-        .form-group{margin-bottom:24px}.form-group label{display:block;font-size:.9rem;color:var(--text-secondary);margin-bottom:8px}.form-group input,.form-group textarea,.form-group select{width:100%;background-color:var(--bg-secondary);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);padding:12px;font-size:1rem;font-family:inherit}.form-group textarea{height:300px;resize:vertical}        
-        .is-template-toggle{display:flex;align-items:center;gap:10px;margin-top:16px;font-size:.9rem}        
-        
-        /* 모달 스타일 */
-        .modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background-color:rgba(0,0,0,0.7);display:flex;justify-content:center;align-items:center;z-index:1000;opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s}.modal-overlay.show{opacity:1;visibility:visible}.modal-content{background-color:var(--bg-secondary);padding:24px;border-radius:8px;width:90%;max-width:600px;box-shadow:0 5px 15px rgba(0,0,0,0.3)}.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}.modal-header h3{color:var(--accent-blue)}.modal-header .close-btn{background:none;border:none;color:var(--text-secondary);font-size:1.5rem;cursor:pointer}.modal-body{max-height:60vh;overflow-y:auto}.modal-body .form-group label{font-weight:500;color:var(--accent-blue);}.modal-preview{background-color:var(--bg-primary);padding:12px;border-radius:4px;margin-top:16px;white-space:pre-wrap;font-family:monospace;max-height:150px;overflow-y:auto}.modal-footer{display:flex;justify-content:flex-end;gap:10px;margin-top:24px}.modal-footer button{padding:10px 16px;border-radius:6px;cursor:pointer;border:none}.modal-footer .generate-btn{background-color:var(--accent-blue);color:var(--bg-primary)}        
-        
-        /* 토스트 알림 스타일 */
-        .toast{position:fixed;bottom:20px;right:20px;background-color:var(--bg-tertiary);color:var(--text-primary);padding:12px 20px;border-radius:6px;border-left:4px solid var(--accent-blue);opacity:0;visibility:hidden;transition:opacity .3s,visibility .3s,transform .3s;transform:translateY(20px);z-index:2000}.toast.show{opacity:1;visibility:visible;transform:translateY(0)}    
-        
-        /* 풀스크린 편집 모드 (24번) */
-        body.fullscreen-editor-mode {
-            overflow: hidden; /* 스크롤바 숨김 */
-        }
-        .main-content .content-view.fullscreen-editor {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            padding: 20px;
-            background-color: var(--bg-primary);
-            z-index: 999; /* 다른 요소 위에 표시 */
-            overflow-y: auto;
-        }
-        /* 풀스크린 시 사이드바 숨김 (모바일에서는 햄버거 메뉴로 제어) */
-        body.fullscreen-editor-mode .sidebar { 
-            display: none; 
-        }
-        /* 풀스크린 시 검색창 숨김 (모바일에서는 다시 표시될 수 있음) */
-        body.fullscreen-editor-mode .main-header .search-wrapper {
-            display: none; 
-        }
-
-        /* 반응형 디자인 개선 (26번) */
-        /* 모바일 햄버거 메뉴 버튼은 데스크탑에서 숨김 */
-        #mobile-menu-toggle {
-            display: none; 
-        }
-
-        @media (max-width: 768px) {
-            /* 모바일에서 햄버거 메뉴 버튼 표시 */
-            #mobile-menu-toggle {
-                display: block; 
-                background: none;
-                border: none;
-                color: var(--text-secondary);
-                font-size: 1.5rem;
-                cursor: pointer;
-                padding: 8px;
-            }
-            #mobile-menu-toggle:hover {
-                background-color: var(--bg-tertiary);
-                border-radius: 50%;
-            }
-
-            .sidebar {
-                position: fixed;
-                top: 0;
-                left: -100%; /* 기본적으로 숨김 */
-                height: 100%;
-                width: 250px; /* 모바일 사이드바 너비 */
-                z-index: 1000;
-                transition: left 0.3s ease-in-out;
-            }
-            .sidebar.open {
-                left: 0; /* 열릴 때 표시 */
-            }
-
-            /* 사이드바 닫기 버튼 (모바일에서만 표시) */
-            #sidebar-close-btn {
-                display: block;
-                background: none;
-                border: none;
-                color: var(--text-secondary);
-                font-size: 1.8rem;
-                cursor: pointer;
-                padding: 8px;
-                position: absolute;
-                top: 10px;
-                right: 10px;
-                z-index: 1001;
-            }
-            #sidebar-close-btn:hover {
-                background-color: var(--bg-tertiary);
-                border-radius: 50%;
-            }
-            
-            .main-content {
-                width: 100%;
-            }
-            .main-header {
-                padding: 16px; /* 모바일 헤더 패딩 조정 */
-                flex-direction: column; /* 스택 유지 */
-                align-items: flex-start;
-                gap: 15px;
-            }
-            .main-header-top-row {
-                padding-bottom: 0; /* 모바일에서는 추가 패딩 없음 */
-            }
-            .main-header h1 {
-                font-size: 1.2rem;
-                flex-grow: 1; /* 제목이 남은 공간 차지 */
-            }
-            .main-header .search-wrapper {
-                width: 100%; /* 검색창 너비 조정 */
-                margin-bottom: 0; /* 모바일에서는 검색창 아래 여백 없음 */
-            }
-            .search-input {
-                width: 100%;
-            }
-            .prompt-list-item {
-                flex-wrap: wrap; /* 작은 화면에서 항목 줄바꿈 */
-            }
-            .prompt-actions {
-                width: 100%; /* 버튼이 아래로 내려오도록 */
-                justify-content: flex-end; /* 오른쪽 정렬 */
-                margin-top: 10px;
-            }
-            .editor-header {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 15px;
-            }
-            .editor-actions {
-                width: 100%;
-                justify-content: flex-end;
-            }
-
-            /* 풀스크린 모드에서 사이드바 숨김 (모바일) */
-            body.fullscreen-editor-mode .sidebar { 
-                display: none; 
-            }
-            /* 풀스크린 모드에서 모바일 검색창도 숨김 */
-            body.fullscreen-editor-mode .main-header .search-wrapper {
-                display: none;
-            }
-        }
-        /* 버튼 공통 스타일 (버전 기록 버튼 등) */
-        .button-like {
-            background-color: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 10px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            font-size: 0.9rem;
-            white-space: nowrap; /* 버튼 텍스트 줄바꿈 방지 */
-        }
-        .button-like:hover {
-            background-color: var(--bg-hover);
-        }
-        /* 시퀀스 모달을 위한 추가 스타일 */
-        .modal-sequence-content {
-            background-color: var(--bg-secondary);
-            padding: 24px;
-            border-radius: 8px;
-            width: 90%;
-            max-width: 700px; /* 템플릿 모달보다 약간 넓게 */
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        }
-        .modal-sequence-footer {
-            display: flex;
-            justify-content: space-between; /* 저장/실행 버튼과 삭제 버튼 분리 */
-            gap: 10px;
-            margin-top: 24px;
-        }
-        .modal-sequence-footer .left-actions {
-            display: flex;
-            gap: 10px;
-        }
-        .modal-sequence-footer .delete-btn {
-            background: none;
-            color: var(--accent-pink);
-            border: 1px solid var(--accent-pink);
-            padding: 10px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-
-        /* 파일 업로드 섹션 스타일 (메인 편집기) */
-        .file-upload-section {
-            display: flex;
-            align-items: center;
-            margin-top: 10px;
-            gap: 10px;
-        }
-        .file-upload-section .button-like {
-            padding: 8px 12px;
-            font-size: 0.85rem;
-        }
-
-        /* Sortable.js를 위한 시퀀스 프롬프트 목록 스타일 */
-        .sequence-sortable-list {
-            min-height: 100px; /* 드래그 앤 드롭 영역 확보 */
-            border: 1px dashed var(--border-color);
-            border-radius: 8px;
-            padding: 10px;
-            background-color: var(--bg-primary);
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-            overflow-y: auto;
-            max-height: 250px;
-            min-height: 0; /* min-height:0 추가 */
-        }
-        .sequence-sortable-item {
-            display: flex;
-            align-items: center;
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            padding: 8px 12px;
-            font-size: 0.95rem;
-            cursor: grab; /* 드래그 가능함을 나타냄 */
-            gap: 10px;
-        }
-        .sequence-sortable-item:active {
-            cursor: grabbing;
-        }
-        .sequence-sortable-item .drag-handle {
-            cursor: grab;
-            color: var(--text-secondary);
-            font-size: 1.1rem;
-            margin-right: 5px;
-        }
-        .sequence-sortable-item span {
-            flex-grow: 1;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-        .sequence-sortable-item .remove-from-sequence-btn {
-            background: none;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 1rem;
-            padding: 4px;
-            border-radius: 4px;
-            cursor: pointer;
-            line-height: 1; /* 아이콘 정렬 */
-        }
-        .sequence-sortable-item .remove-from-sequence-btn:hover {
-            background-color: var(--bg-hover);
-            color: var(--accent-pink);
-        }
-        /* Sortable.js 고스트 클래스 */
-        .sortable-ghost {
-            opacity: 0.4;
-            background-color: var(--accent-blue);
-            border: 1px dashed var(--accent-blue);
-        }
-
-        /* New style for template input with file button in modal */
-        .template-input-with-file {
-            display: flex;
-            align-items: center;
-            gap: 8px; /* Space between textarea and button */
-        }
-
-        .template-input-with-file textarea {
-            flex-grow: 1; /* Allow textarea to take available space */
-            min-width: 0; /* Prevent flex item from overflowing */
-            height: auto; /* Allow textarea to adjust height based on rows */
-            resize: vertical; /* Allow vertical resize */
-        }
-
-        .file-upload-icon-btn {
-            padding: 8px 10px; /* Adjust padding for icon-only button */
-            font-size: 1rem; /* Adjust icon size */
-            width: auto; /* Allow button to size based on content */
-            flex-shrink: 0; /* Prevent button from shrinking */
-        }
-
-        /* 데이터 새로고침 버튼 스타일 */
-        #refresh-data-btn {
-            margin-top: 10px;
-            width: 100%;
-            background-color: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            padding: 8px;
-            border-radius: 4px;
-        }
-        #refresh-data-btn:hover {
-            background-color: var(--bg-hover);
-        }
-
-        /* 사용 기록 목록 스타일 */
-        .usage-history-list {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .usage-history-item {
-            background-color: var(--bg-secondary);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 12px 16px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-        .usage-history-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.85rem;
-            color: var(--text-secondary);
-            margin-bottom: 0; /* Padding moved to gap */
-        }
-        .usage-history-type {
-            font-weight: bold;
-            color: var(--accent-blue);
-        }
-        .usage-history-details strong {
-            color: var(--text-primary);
-            font-size: 1rem;
-        }
-        .usage-history-snippet {
-            font-family: monospace;
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            white-space: pre-wrap;
-            max-height: 60px;
-            overflow: hidden;
-            text-overflow: ellipsis; /* For multiline text overflow */
-            margin-top: 4px;
-        }
-        .usage-history-actions {
-            display: flex;
-            justify-content: flex-end;
-            margin-top: 8px;
-        }
-        .usage-history-actions .reuse-history-btn {
-            padding: 6px 10px;
-            font-size: 0.8rem;
-        }
-    </style>
-</head>
-<body>
-    <aside class="sidebar" id="sidebar">
-        <div id="auth-section">
-            <button id="login-btn"><i class="fa-brands fa-google"></i> Google 계정으로 로그인</button>
-            <div id="user-profile">
-                <img id="user-photo" src="" alt="사용자 사진">
-                <p id="user-email"></p>
-                <button id="logout-btn" title="로그아웃"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
-            </div>
-        </div>
-        <div class="sidebar-content" id="sidebar-content" style="display:none;">
-            <button class="new-prompt-btn" id="new-prompt-btn"><i class="fa-solid fa-plus"></i> 새 항목</button>
-            <nav class="sidebar-nav">
-                <h3 class="nav-section-title">라이브러리</h3>
-                <ul class="nav-list" id="library-list">
-                    <li class="nav-item active" data-filter-type="all"><a><i class="nav-icon fa-solid fa-book-bookmark"></i> 모든 항목</a></li>
-                    <li class="nav-item" data-filter-type="favorites"><a><i class="nav-icon fa-solid fa-star"></i> 즐겨찾기</a></li>
-                    <li class="nav-item" data-filter-type="templates"><a><i class="nav-icon fa-solid fa-puzzle-piece"></i> 템플릿만</a></li>
-                    <li class="nav-item" data-filter-type="prompts"><a><i class="nav-icon fa-solid fa-file-lines"></i> 프롬프트만</a></li>
-                    <li class="nav-item" data-filter-type="history"><a><i class="nav-icon fa-solid fa-history"></i> 사용 기록</a></li> <!-- 사용 기록 메뉴 추가 -->
-                </ul>
-                <h3 class="nav-section-title">폴더</h3>
-                <ul class="nav-list" id="folder-list"></ul>
-                <button class="new-folder-btn" id="new-folder-btn"><i class="fa-solid fa-folder-plus"></i> 새 폴더</button>
-                
-                <h3 class="nav-section-title">시퀀스</h3>
-                <ul class="nav-list" id="sequence-list"></ul>
-                <button id="new-sequence-btn" class="new-folder-btn">
-                    <i class="fa-solid fa-layer-group"></i> 새 시퀀스
-                </button>
-            </nav>
-        </div>
-        <button id="sidebar-close-btn" style="display: none;"><i class="fa-solid fa-times"></i></button>
-    </aside>
-
-    <main class="main-content">
-        <header class="main-header">
-            <div class="main-header-top-row">
-                <button id="mobile-menu-toggle"><i class="fa-solid fa-bars"></i></button>
-                <h1 id="main-header-title">환영합니다</h1>
-            </div>
-            <div class="search-wrapper">
-                <i class="fa-solid fa-magnifying-glass"></i>
-                <input type="text" class="search-input" id="search-input" placeholder="검색...">
-            </div>
-        </header>
-        <div class="content-view" id="content-view">
-            <div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>
-        </div>
-    </main>
-
-    <div class="modal-overlay" id="template-modal-overlay">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 id="template-modal-title">템플릿 사용</h3>
-                <button class="close-btn" id="template-modal-close-btn">&times;</button>
-            </div>
-            <div class="modal-body" id="template-modal-body">
-                </div>
-            <div class="modal-footer">
-                <button id="template-modal-generate-btn" class="generate-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 생성 및 복사</button>
-            </div>
-        </div>
-    </div>
-    
-    <div class="modal-overlay" id="sequence-modal-overlay">
-        <div class="modal-sequence-content">
-            <div class="modal-header">
-                <h3 id="sequence-modal-title">새 시퀀스 생성</h3>
-                <button class="close-btn" id="sequence-modal-close-btn">&times;</button>
-            </div>
-            <div class="modal-body" id="sequence-modal-body">
-                </div>
-            <div class="modal-sequence-footer">
-                <div class="left-actions">
-                    <button id="sequence-modal-save-btn" class="generate-btn"><i class="fa-regular fa-save"></i> 저장</button>
-                    <button id="sequence-modal-run-btn" class="button-like"><i class="fa-solid fa-play"></i> 실행</button>
-                </div>
-                <button id="sequence-modal-delete-btn" class="delete-btn" style="display: none;"><i class="fa-regular fa-trash-can"></i> 삭제</button>
-            </div>
-        </div>
-    </div>
-        
-    <div class="toast" id="toast"></div>
-
 </body>
 </html>
