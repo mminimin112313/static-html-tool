@@ -9,7 +9,7 @@
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
 
-    <script type="module">
+   <script type="module">
     // Firebase SDK 모듈 임포트
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
     import { 
@@ -54,7 +54,7 @@
     let unsubscribeListeners = {}; // 실시간 리스너 구독 해제 함수들을 저장할 객체
 
     // =================================================================
-    // IndexedDB 설정 (캐싱 및 버전 관리용)
+    // IndexedDB 설정
     // =================================================================
     const INDEXEDDB_NAME = 'PromptManagerCacheDB';
     const INDEXEDDB_VERSION = 5;
@@ -69,51 +69,40 @@
     function openIndexedDB() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(INDEXEDDB_NAME, INDEXEDDB_VERSION);
-
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
-                if (!db.objectStoreNames.contains(CACHE_STORE_PROMPTS)) {
-                    db.createObjectStore(CACHE_STORE_PROMPTS, { keyPath: 'id' });
-                }
-                if (!db.objectStoreNames.contains(CACHE_STORE_FOLDERS)) {
-                    db.createObjectStore(CACHE_STORE_FOLDERS, { keyPath: 'id' });
-                }
+                if (!db.objectStoreNames.contains(CACHE_STORE_PROMPTS)) db.createObjectStore(CACHE_STORE_PROMPTS, { keyPath: 'id' });
+                if (!db.objectStoreNames.contains(CACHE_STORE_FOLDERS)) db.createObjectStore(CACHE_STORE_FOLDERS, { keyPath: 'id' });
                 if (!db.objectStoreNames.contains(CACHE_STORE_VERSIONS)) {
                     const versionStore = db.createObjectStore(CACHE_STORE_VERSIONS, { keyPath: 'id', autoIncrement: true });
                     versionStore.createIndex('promptId', 'promptId', { unique: false });
-                    versionStore.createIndex('timestamp', 'timestamp', { unique: false });
                 }
-                if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES)) {
-                    db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: 'id' });
-                }
+                if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES)) db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: 'id' });
                 if (!db.objectStoreNames.contains(CACHE_STORE_USAGE_HISTORY)) {
                     const historyStore = db.createObjectStore(CACHE_STORE_USAGE_HISTORY, { keyPath: 'id', autoIncrement: true });
                     historyStore.createIndex('timestamp', 'timestamp', { unique: false });
                 }
             };
-
             request.onsuccess = (event) => {
                 indexedDbInstance = event.target.result;
                 resolve(indexedDbInstance);
             };
-
-            request.onerror = (event) => {
-                console.error("IndexedDB 열기 오류:", event.target.errorCode);
-                reject(event.target.errorCode);
-            };
+            request.onerror = (event) => reject(event.target.errorCode);
         });
     }
 
-    async function getFromIndexedDB(storeName, indexName = null, query = null) {
+    async function getFromIndexedDB(storeName, indexName = null, queryVal = null) {
         if (!indexedDbInstance) await openIndexedDB();
         return new Promise((resolve, reject) => {
             const transaction = indexedDbInstance.transaction([storeName], 'readonly');
             const store = transaction.objectStore(storeName);
             let request;
-            if (indexName && query !== null) { // query can be 0 or other falsy values
-                const index = store.index(indexName);
-                request = index.getAll(query);
-            } else {
+            if (indexName && queryVal !== null) {
+                request = store.index(indexName).getAll(queryVal);
+            } else if (queryVal !== null) {
+                 request = store.get(queryVal);
+            }
+            else {
                 request = store.getAll();
             }
             request.onsuccess = () => resolve(request.result);
@@ -123,9 +112,9 @@
 
     async function putIntoIndexedDB(storeName, data) {
         if (!indexedDbInstance) await openIndexedDB();
+        const transaction = indexedDbInstance.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
         return new Promise((resolve, reject) => {
-            const transaction = indexedDbInstance.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
             const request = store.put(data);
             request.onsuccess = () => resolve(request.result);
             request.onerror = (event) => reject(event.target.error);
@@ -134,9 +123,9 @@
 
     async function deleteFromIndexedDB(storeName, id) {
         if (!indexedDbInstance) await openIndexedDB();
+        const transaction = indexedDbInstance.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
         return new Promise((resolve, reject) => {
-            const transaction = indexedDbInstance.transaction([storeName], 'readwrite');
-            const store = transaction.objectStore(storeName);
             const request = store.delete(id);
             request.onsuccess = () => resolve();
             request.onerror = (event) => reject(event.target.error);
@@ -144,7 +133,7 @@
     }
 
     // =================================================================
-    // UI 요소 참조 및 상태 관리
+    // UI 요소 및 상태 관리
     // =================================================================
     const ui = {
         contentView: document.getElementById('content-view'),
@@ -198,257 +187,83 @@
     let sequenceSortableInstance = null;
 
     // =================================================================
-    // Firebase Firestore & IndexedDB 하이브리드 데이터 서비스
+    // 데이터 서비스 (Firestore + IndexedDB)
     // =================================================================
     const dbService = {
-        getCollectionRef: (collectionName) => {
-            if (!currentUser) throw new Error("로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
-            return collection(dbFirestore, 'users', currentUser.uid, collectionName);
-        },
-        getDocRef: (collectionName, id) => {
-            if (!currentUser) throw new Error("로그인되지 않았습니다. Firestore에 접근할 수 없습니다.");
-            return doc(dbFirestore, 'users', currentUser.uid, collectionName, id);
-        },
-        /**
-         * [신규] 컬렉션에 대한 실시간 리스너를 설정합니다.
-         * 데이터 변경 시 콜백을 실행하고 IndexedDB 캐시를 업데이트합니다.
-         * @param {string} collectionName - 수신 대기할 컬렉션 이름.
-         * @param {Function} callback - 데이터가 변경될 때마다 호출될 콜백 함수.
-         */
+        getCollectionRef: (name) => collection(dbFirestore, 'users', currentUser.uid, name),
+        getDocRef: (name, id) => doc(dbFirestore, 'users', currentUser.uid, name, id),
+
         listenToCollection: (collectionName, callback) => {
             if (!currentUser) return;
-            // 기존 리스너가 있으면 구독 해제
-            if (unsubscribeListeners[collectionName]) {
-                unsubscribeListeners[collectionName]();
-            }
+            if (unsubscribeListeners[collectionName]) unsubscribeListeners[collectionName]();
 
             const q = query(dbService.getCollectionRef(collectionName), orderBy("updatedAt", "desc"));
-
-            const unsubscribe = onSnapshot(q, (snapshot) => {
+            unsubscribeListeners[collectionName] = onSnapshot(q, (snapshot) => {
                 const data = snapshot.docs.map(doc => {
                     const docData = doc.data();
-                    // Firestore Timestamp를 Date 객체로 변환
-                    if (docData.createdAt && docData.createdAt.toDate) docData.createdAt = docData.createdAt.toDate();
-                    if (docData.updatedAt && docData.updatedAt.toDate) docData.updatedAt = docData.updatedAt.toDate();
+                    if (docData.createdAt?.toDate) docData.createdAt = docData.createdAt.toDate();
+                    if (docData.updatedAt?.toDate) docData.updatedAt = docData.updatedAt.toDate();
                     return { id: doc.id, ...docData };
                 });
 
-                // 백그라운드에서 IndexedDB 캐시 업데이트
+                callback(data); // 상태 업데이트 및 UI 렌더링 트리거
+
+                // IndexedDB 캐시 업데이트
                 (async () => {
-                    let cacheStoreName;
-                    if (collectionName === 'prompts') cacheStoreName = CACHE_STORE_PROMPTS;
-                    else if (collectionName === 'folders') cacheStoreName = CACHE_STORE_FOLDERS;
-                    else if (collectionName === 'sequences') cacheStoreName = CACHE_STORE_SEQUENCES;
-                    else return;
-
-                    try {
-                        if (!indexedDbInstance) await openIndexedDB();
-                        const transaction = indexedDbInstance.transaction([cacheStoreName], 'readwrite');
-                        const store = transaction.objectStore(cacheStoreName);
-                        // clear()가 Promise를 반환하지 않으므로 onsuccess 사용
-                        const clearRequest = store.clear();
-                        clearRequest.onsuccess = () => {
-                             for (const item of data) {
-                                store.put(item);
-                            }
-                            console.log(`Real-time update for ${collectionName} cached to IndexedDB.`);
-                        };
-                        clearRequest.onerror = (e) => console.error("IndexedDB clear error:", e);
-                    } catch (e) {
-                        console.error("IndexedDB cache update from snapshot error:", e);
-                    }
+                    const storeName = { prompts: CACHE_STORE_PROMPTS, folders: CACHE_STORE_FOLDERS, sequences: CACHE_STORE_SEQUENCES }[collectionName];
+                    if (!storeName) return;
+                    if (!indexedDbInstance) await openIndexedDB();
+                    const tx = indexedDbInstance.transaction(storeName, 'readwrite');
+                    const store = tx.objectStore(storeName);
+                    await new Promise(res => { const req = store.clear(); req.onsuccess = res; });
+                    for (const item of data) await new Promise(res => { const req = store.put(item); req.onsuccess = res; });
                 })();
-
-                // 콜백 함수를 호출하여 UI 업데이트 트리거
-                callback(data);
-
-            }, (error) => {
-                console.error(`Error listening to ${collectionName}:`, error);
-                helpers.showToast(`실시간 동기화 오류: ${error.message}`);
-            });
-
-            // 구독 해제 함수 저장
-            unsubscribeListeners[collectionName] = unsubscribe;
+            }, (error) => console.error(`Error listening to ${collectionName}:`, error));
         },
-        getAll: async (collectionName, forceRefresh = false) => {
-            if (!currentUser) return [];
-            let cacheStoreName;
-            if (collectionName === 'prompts') cacheStoreName = CACHE_STORE_PROMPTS;
-            else if (collectionName === 'folders') cacheStoreName = CACHE_STORE_FOLDERS;
-            else if (collectionName === 'sequences') cacheStoreName = CACHE_STORE_SEQUENCES;
-            else throw new Error(`알 수 없는 컬렉션 이름: ${collectionName}`);
 
-            if (!forceRefresh) {
-                try {
-                    const cachedData = await getFromIndexedDB(cacheStoreName);
-                    if (cachedData.length > 0) {
-                        console.log(`IndexedDB에서 ${collectionName} 데이터 로드됨.`);
-                        return cachedData;
-                    }
-                } catch (e) {
-                    console.warn(`IndexedDB에서 ${collectionName} 데이터 로드 실패, Firestore 시도:`, e);
-                }
-            }
-            try {
-                const q = query(dbService.getCollectionRef(collectionName), orderBy("updatedAt", "desc"));
-                const snapshot = await getDocs(q);
-                const firestoreData = snapshot.docs.map(doc => {
-                    const data = doc.data();
-                    if (data.createdAt && data.createdAt.toDate) data.createdAt = data.createdAt.toDate();
-                    if (data.updatedAt && data.updatedAt.toDate) data.updatedAt = data.updatedAt.toDate();
-                    return { id: doc.id, ...data };
-                });
-                return firestoreData;
-            } catch (error) {
-                console.error(`Firestore ${collectionName} 데이터 가져오기 오류:`, error);
-                helpers.showToast(`데이터 로드 실패: ${error.message}`);
-                return [];
-            }
-        },
         getById: async (collectionName, id) => {
-            // 이 함수는 주로 편집기에서 단일 항목을 가져올 때 사용되므로 캐시 우선 로직 유지
             if (!currentUser) return null;
             const item = state[collectionName].find(p => p.id === id);
-            if (item) return item;
+            if (item) return { ...item }; // Return a copy to prevent mutation issues
 
-            // 캐시에 없으면 Firestore에서 직접 가져오기 (만약을 대비)
             try {
                 const docSnap = await getDoc(dbService.getDocRef(collectionName, id));
                 if (docSnap.exists()) {
-                    const firestoreDoc = { id: docSnap.id, ...docSnap.data() };
-                    if (firestoreDoc.createdAt && firestoreDoc.createdAt.toDate) firestoreDoc.createdAt = firestoreDoc.createdAt.toDate();
-                    if (firestoreDoc.updatedAt && firestoreDoc.updatedAt.toDate) firestoreDoc.updatedAt = firestoreDoc.updatedAt.toDate();
-                    return firestoreDoc;
+                    const data = docSnap.data();
+                    if (data.createdAt?.toDate) data.createdAt = data.createdAt.toDate();
+                    if (data.updatedAt?.toDate) data.updatedAt = data.updatedAt.toDate();
+                    return { id: docSnap.id, ...data };
                 }
                 return null;
             } catch (error) {
-                console.error(`Firestore ${collectionName}:${id} 데이터 가져오기 오류:`, error);
+                console.error(`Firestore getById error:`, error);
                 return null;
             }
         },
+
         put: async (collectionName, item) => {
-            // 생성, 수정 로직은 그대로 유지. onSnapshot이 변경사항을 감지하여 UI를 업데이트함.
-            if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 저장할 수 없습니다.");
-            const cleanItem = { ...item };
-            const itemId = cleanItem.id;
-            delete cleanItem.id;
-
-            try {
-                const timestampedItem = { 
-                    ...cleanItem,
-                    updatedAt: serverTimestamp() 
-                };
-                if (!itemId) {
-                    timestampedItem.createdAt = serverTimestamp();
-                }
-
-                if (typeof itemId === 'string' && itemId.trim().length > 0 && itemId !== 'null') {
-                    await setDoc(dbService.getDocRef(collectionName, itemId), timestampedItem, { merge: true });
-                    return itemId;
-                } else {
-                    const docRef = await addDoc(dbService.getCollectionRef(collectionName), timestampedItem);
-                    return docRef.id;
-                }
-            } catch (error) {
-                console.error(`Firestore ${collectionName} 데이터 저장 오류:`, error);
-                helpers.showToast(`데이터 저장 실패: ${error.message}`);
-                throw error;
+            if (!currentUser) throw new Error("Not logged in.");
+            const { id, ...data } = item;
+            data.updatedAt = serverTimestamp();
+            if (!id) {
+                data.createdAt = serverTimestamp();
+                const docRef = await addDoc(dbService.getCollectionRef(collectionName), data);
+                return docRef.id;
+            } else {
+                await setDoc(dbService.getDocRef(collectionName, id), data, { merge: true });
+                return id;
             }
         },
-        update: async (collectionName, id, data) => {
-            if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 업데이트할 수 없습니다.");
-            try {
-                const updateData = { ...data, updatedAt: serverTimestamp() };
-                await updateDoc(dbService.getDocRef(collectionName, id), updateData);
-            } catch (error) {
-                console.error(`Firestore ${collectionName}:${id} 데이터 업데이트 오류:`, error);
-                helpers.showToast(`데이터 업데이트 실패: ${error.message}`);
-                throw error;
-            }
-        },
-        delete: async (collectionName, id) => {
-            if (!currentUser) throw new Error("로그인되지 않았습니다. 데이터를 삭제할 수 없습니다.");
-            try {
-                await deleteDoc(dbService.getDocRef(collectionName, id));
-            } catch (error) {
-                console.error(`Firestore ${collectionName}:${id} 데이터 삭제 오류:`, error);
-                helpers.showToast(`데이터 삭제 실패: ${error.message}`);
-                throw error;
-            }
-        },
-        savePromptVersion: async (promptId, content, memo = '') => {
-            if (!indexedDbInstance) await openIndexedDB();
-            const versionData = {
-                promptId: promptId,
-                content: content,
-                timestamp: new Date(),
-                memo: memo
-            };
-            await putIntoIndexedDB(CACHE_STORE_VERSIONS, versionData);
-            helpers.showToast('프롬프트 버전이 저장되었습니다.');
-        },
-        getPromptVersions: (promptId) => getFromIndexedDB(CACHE_STORE_VERSIONS, 'promptId', promptId).then(versions => versions.sort((a, b) => b.timestamp - a.timestamp)),
-        exportData: async () => {
-            const data = { prompts: state.prompts, folders: state.folders, sequences: state.sequences };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `prompt_manager_backup_${new Date().toISOString().slice(0,10)}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            helpers.showToast('데이터가 내보내기되었습니다.');
-        },
-        importData: async (file) => {
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const importedData = JSON.parse(event.target.result);
-                     if (!importedData.prompts || !Array.isArray(importedData.prompts)) {
-                        throw new Error("유효하지 않은 JSON 데이터 형식입니다.");
-                    }
-                    const confirmClear = await helpers.showConfirm('기존 데이터를 모두 지우고 가져오겠습니까? (취소 시 기존 데이터에 추가)');
-                    if (confirmClear) {
-                        // Batch delete would be more efficient, but for simplicity, we delete one by one.
-                        await Promise.all([
-                            ...state.prompts.map(p => dbService.delete('prompts', p.id)),
-                            ...state.folders.map(f => dbService.delete('folders', f.id)),
-                            ...state.sequences.map(s => dbService.delete('sequences', s.id))
-                        ]);
-                        helpers.showToast('기존 데이터가 지워졌습니다.');
-                    }
-                    
-                    // Batch write would be more efficient here as well.
-                    if (importedData.folders) {
-                        await Promise.all(importedData.folders.map(folder => dbService.put('folders', { name: folder.name })));
-                    }
-                    if (importedData.prompts) {
-                        await Promise.all(importedData.prompts.map(prompt => dbService.put('prompts', { ...prompt, id: null })));
-                    }
-                    if (importedData.sequences) {
-                        await Promise.all(importedData.sequences.map(sequence => dbService.put('sequences', { ...sequence, id: null })));
-                    }
-
-                    helpers.showToast('데이터가 성공적으로 가져오기되었습니다!');
-                    // Data will be re-rendered automatically by the onSnapshot listeners.
-                } catch (e) {
-                    console.error("데이터 가져오기 오류:", e);
-                    helpers.showToast('데이터 가져오기 실패: ' + e.message);
-                }
-            };
-            reader.readAsText(file);
-        }
+        update: (name, id, data) => dbService.put(name, { id, ...data }),
+        delete: (name, id) => deleteDoc(dbService.getDocRef(name, id)),
+        savePromptVersion: (promptId, content, memo = '') => putIntoIndexedDB(CACHE_STORE_VERSIONS, { promptId, content, timestamp: new Date(), memo }),
+        getPromptVersions: (promptId) => getFromIndexedDB(CACHE_STORE_VERSIONS, 'promptId', promptId).then(v => v.sort((a, b) => b.timestamp - a.timestamp)),
     };
 
     // =================================================================
-    // UI 렌더링 함수들
+    // UI 렌더링 함수
     // =================================================================
     const render = {
-        /**
-         * 폴더 목록을 렌더링합니다. 이제 state.folders를 직접 사용합니다.
-         */
         folders: () => {
             ui.folderList.innerHTML = state.folders.map(f => `
                 <li class="nav-item" data-filter-type="folder" data-folder-id="${f.id}">
@@ -456,59 +271,35 @@
                 </li>
             `).join('') + `<li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
         },
-        /**
-         * 시퀀스 목록을 렌더링합니다. 이제 state.sequences를 직접 사용합니다.
-         */
         sequences: () => {
-            ui.sequenceList.innerHTML = state.sequences
-                .map(s => `<li class="nav-item" data-filter-type="sequence" data-seq-id="${s.id}">
-                            <a><i class="nav-icon fa-solid fa-layer-group"></i> ${helpers.escapeHTML(s.name)}</a>
-                        </li>`).join('');
+            ui.sequenceList.innerHTML = state.sequences.map(s => `
+                <li class="nav-item" data-filter-type="sequence" data-seq-id="${s.id}">
+                    <a><i class="nav-icon fa-solid fa-layer-group"></i> ${helpers.escapeHTML(s.name)}</a>
+                </li>`).join('');
         },
-        /**
-         * 프롬프트 목록을 렌더링합니다. 이제 state.prompts를 직접 사용합니다.
-         */
         prompts: () => {
             ui.mainHeader.textContent = state.currentFilter.name;
-            let allItems = state.prompts;
-            let filtered = allItems;
-
+            let filtered = state.prompts;
             const { type, id } = state.currentFilter;
-            if (type === 'folder') filtered = allItems.filter(p => p.folderId === id);
-            else if (type === 'uncategorized') filtered = allItems.filter(p => !p.folderId);
-            else if (type === 'favorites') filtered = allItems.filter(p => p.isFavorite);
-            else if (type === 'templates') filtered = allItems.filter(p => p.isTemplate);
-            else if (type === 'prompts') filtered = allItems.filter(p => !p.isTemplate);
+
+            if (type === 'folder') filtered = state.prompts.filter(p => p.folderId === id);
+            else if (type === 'uncategorized') filtered = state.prompts.filter(p => !p.folderId);
+            else if (type === 'favorites') filtered = state.prompts.filter(p => p.isFavorite);
+            else if (type === 'templates') filtered = state.prompts.filter(p => p.isTemplate);
+            else if (type === 'prompts') filtered = state.prompts.filter(p => !p.isTemplate);
 
             const searchTerm = ui.searchInput.value.toLowerCase();
             if (searchTerm) {
-                if (!fuse) {
-                    buildSearchIndex();
-                }
-                if (searchTerm.startsWith('is:template')) {
-                    filtered = filtered.filter(p => p.isTemplate);
-                } else if (searchTerm.startsWith('is:prompt')) {
-                    filtered = filtered.filter(p => !p.isTemplate);
-                } else if (searchTerm.startsWith('#')) {
-                    const tag = searchTerm.slice(1);
-                    filtered = filtered.filter(p => p.tags?.some(t => t.toLowerCase().includes(tag)));
-                } else {
-                    state.searchResults = fuse.search(searchTerm).map(r => r.item);
-                    // Filter the search results based on the current view (e.g., folder)
-                    const currentFilteredIds = new Set(filtered.map(p => p.id));
-                    filtered = state.searchResults.filter(p => currentFilteredIds.has(p.id));
-                }
-            } else {
-                state.searchResults = null;
+                if (!fuse) buildSearchIndex();
+                const searchResults = fuse.search(searchTerm).map(r => r.item);
+                const filteredIds = new Set(filtered.map(p => p.id));
+                filtered = searchResults.filter(p => filteredIds.has(p.id));
             }
 
             if (filtered.length === 0) {
                 ui.contentView.innerHTML = `<div class="content-placeholder">항목을 찾을 수 없습니다.</div>`;
                 return;
             }
-            
-            // 정렬은 onSnapshot 쿼리에서 이미 처리되었으므로 제거 가능
-            // filtered.sort((a, b) => (b.updatedAt?.getTime() || 0) - (a.updatedAt?.getTime() || 0));
 
             ui.contentView.innerHTML = filtered.map(p => {
                 const icon = p.isTemplate ? 'fa-puzzle-piece' : 'fa-file-lines';
@@ -516,16 +307,11 @@
                 const date = p.updatedAt ? p.updatedAt.toLocaleString() : 'N/A';
                 
                 let buttonsHtml = '';
-                if (p.isTemplate) {
-                    buttonsHtml += `<button class="use-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 사용</button>`;
-                } else if (p.link) {
-                    buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn" title="링크 방문"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
-                } else {
-                    buttonsHtml += `<button class="copy-btn"><i class="fa-regular fa-copy"></i> 복사</button>`;
-                }
-                if (p.isTemplate && p.link) {
-                    buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn" title="링크 방문" style="margin-left: 8px;"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
-                }
+                if (p.isTemplate) buttonsHtml += `<button class="use-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 사용</button>`;
+                else if (p.link) buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
+                else buttonsHtml += `<button class="copy-btn"><i class="fa-regular fa-copy"></i> 복사</button>`;
+                
+                if (p.isTemplate && p.link) buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn" style="margin-left: 8px;"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
 
                 return `
                 <div class="prompt-list-item" data-prompt-id="${p.id}">
@@ -544,21 +330,9 @@
             }).join('');
         },
         promptEditor: async (id) => {
-            // ... (이하 promptEditor, templateModal, sequenceEditor, usageHistory 로직은 기존과 거의 동일)
-            // getById를 사용하여 데이터를 가져오는 부분은 state에서 먼저 찾아보고 없으면 Firestore에서 가져오도록 수정되었습니다.
-            // 전체 코드는 너무 길어 생략하지만, 핵심 로직은 dbService.getById를 통해 유지됩니다.
             const isNew = id === null;
-            let p = { title: '', content: '', folderId: null, tags: [], isFavorite: false, isTemplate: false, usageCount: 0, link: '' };
-            if (!isNew) {
-                const fetchedPrompt = await dbService.getById('prompts', id);
-                if (fetchedPrompt) {
-                    p = fetchedPrompt;
-                } else {
-                    helpers.showToast('항목을 찾을 수 없습니다!');
-                    render.prompts();
-                    return;
-                }
-            }
+            let p = isNew ? { title: '', content: '', folderId: null, tags: [], isFavorite: false, isTemplate: false, link: '' } : await dbService.getById('prompts', id);
+            if (!p) { helpers.showToast('항목을 찾을 수 없습니다!'); return render.prompts(); }
 
             const folderOpts = state.folders.map(f => `<option value="${f.id}" ${f.id === p.folderId ? 'selected' : ''}>${helpers.escapeHTML(f.name)}</option>`).join('');
             
@@ -568,88 +342,157 @@
                     <h2>${isNew ? '새 항목 생성' : '항목 편집'}</h2>
                     <div class="editor-actions">
                         ${!isNew ? `<button class="delete-btn" data-id="${id}"><i class="fa-regular fa-trash-can"></i> 삭제</button>` : ''}
-                        <button class="save-btn" id="save-prompt-btn" ${isNew ? '' : `data-id="${id}"`}><i class="fa-regular fa-save"></i> 저장</button>
+                        <button class="save-btn" data-id="${id || ''}"><i class="fa-regular fa-save"></i> 저장</button>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label>제목</label>
-                    <input id="title-input" value="${helpers.escapeHTML(p.title || '')}">
-                </div>
-                <div class="form-group">
-                    <label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label>
-                    <textarea id="content-input">${helpers.escapeHTML(p.content || '')}</textarea>
-                    <!-- 파일 업로드 UI 등 나머지 부분은 기존과 동일하게 유지 -->
-                </div>
-                <!-- 나머지 폼 그룹들... -->
+                <div class="form-group"><label>제목</label><input id="title-input" value="${helpers.escapeHTML(p.title || '')}"></div>
+                <div class="form-group"><label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label><textarea id="content-input">${helpers.escapeHTML(p.content || '')}</textarea></div>
+                <div class="form-group"><label>링크 (URL)</label><input id="link-input" type="url" value="${helpers.escapeHTML(p.link || '')}"></div>
+                <div style="display:flex; gap: 24px;"><div class="form-group" style="flex:1;"><label>폴더</label><select id="folder-select"><option value="">미분류</option>${folderOpts}</select></div><div class="form-group" style="flex:1;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div></div>
+                <div class="is-template-toggle"><input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}><label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label></div>
+                ${!isNew ? `<button id="view-versions-btn" class="button-like" style="margin-top: 20px;"><i class="fa-solid fa-history"></i> 버전 기록 보기</button><div id="versions-history" style="display:none; margin-top:10px;"></div>` : ''}
             `;
-             // ... (이하 편집기 UI 생성 및 이벤트 리스너 로직은 기존과 동일)
         },
-        // templateModal, sequenceEditor, usageHistory 등 나머지 렌더링 함수는 기존 코드와 거의 동일하게 유지됩니다.
-        // getById를 통해 데이터를 가져오므로 큰 변경이 필요 없습니다.
+        templateModal: async (id, onCompleteCallback = null) => {
+            const p = await dbService.getById('prompts', id);
+            if (!p) { helpers.showToast('템플릿을 찾을 수 없습니다!'); if (onCompleteCallback) onCompleteCallback(true); return; }
+
+            const placeholders = [...new Set([...p.content.matchAll(/{{([^\n}]+?)}}/g)].map(match => match[1].trim()))];
+            ui.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
+            ui.templateModal.body.innerHTML = placeholders.map(ph => `
+                <div class="form-group">
+                    <label for="ph-${ph}">${ph.replace(/_/g, ' ')}</label>
+                    <textarea id="ph-${ph}" data-placeholder="${ph}" rows="1"></textarea>
+                </div>`).join('') + `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${helpers.escapeHTML(p.content)}</div></div>`;
+            ui.templateModal.overlay.classList.add('show');
+
+            const inputs = ui.templateModal.body.querySelectorAll('textarea[data-placeholder]');
+            const preview = document.getElementById('template-preview');
+            const updatePreview = () => {
+                let content = p.content;
+                inputs.forEach(input => {
+                    content = content.replaceAll(`{{${input.dataset.placeholder}}}`, input.value || `{{${input.dataset.placeholder}}}`);
+                });
+                preview.textContent = content;
+            };
+            inputs.forEach(input => input.addEventListener('input', updatePreview));
+            updatePreview();
+
+            ui.templateModal.generateBtn.onclick = async () => {
+                const textToCopy = preview.textContent;
+                helpers.copyToClipboard(textToCopy);
+                helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
+                const currentUsageCount = p.usageCount || 0;
+                await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1 });
+                if (onCompleteCallback) onCompleteCallback();
+            };
+            ui.templateModal.closeBtn.onclick = () => {
+                ui.templateModal.overlay.classList.remove('show');
+                if (onCompleteCallback) onCompleteCallback(true);
+            };
+        },
+        sequenceEditor: async (id) => {
+            // 시퀀스 편집기 로직은 복잡하므로 이전 버전의 완전한 코드를 유지합니다.
+            const isNew = id === null;
+            let s = isNew ? { name: '', description: '', promptIds: [] } : await dbService.getById('sequences', id);
+            if (!s) { helpers.showToast('시퀀스를 찾을 수 없습니다!'); return; }
+
+            ui.sequenceModal.title.textContent = isNew ? '새 시퀀스 생성' : `시퀀스 편집: ${s.name}`;
+            ui.sequenceModal.body.innerHTML = `
+                <div class="form-group"><label>이름</label><input id="sequence-name-input" value="${helpers.escapeHTML(s.name || '')}"></div>
+                <div class="form-group"><label>설명</label><textarea id="sequence-description-input">${helpers.escapeHTML(s.description || '')}</textarea></div>
+                <div class="form-group"><label>프롬프트 선택</label><select id="sequence-prompts-select" multiple size="8">${state.prompts.map(p => `<option value="${p.id}">${helpers.escapeHTML(p.title)}</option>`).join('')}</select></div>
+                <div class="form-group"><label>시퀀스 순서 (드래그 & 드롭)</label><div id="sequence-sortable-list" class="sequence-sortable-list"></div></div>
+            `;
+            ui.sequenceModal.overlay.classList.add('show');
+            ui.sequenceModal.saveBtn.dataset.id = id || '';
+            ui.sequenceModal.runBtn.dataset.id = id || '';
+            ui.sequenceModal.deleteBtn.dataset.id = id || '';
+            ui.sequenceModal.deleteBtn.style.display = isNew ? 'none' : 'inline-block';
+
+            const selectEl = document.getElementById('sequence-prompts-select');
+            const sortableList = document.getElementById('sequence-sortable-list');
+            
+            const updateSortableList = () => {
+                sortableList.innerHTML = '';
+                s.promptIds.forEach(promptId => {
+                    const prompt = state.prompts.find(p => p.id === promptId);
+                    if (prompt) {
+                        sortableList.insertAdjacentHTML('beforeend', `<div class="sequence-sortable-item" data-prompt-id="${prompt.id}"><i class="fa-solid fa-grip-vertical drag-handle"></i><span>${helpers.escapeHTML(prompt.title)}</span><button class="remove-from-sequence-btn"><i class="fa-solid fa-times"></i></button></div>`);
+                        const option = selectEl.querySelector(`option[value="${prompt.id}"]`);
+                        if (option) option.selected = true;
+                    }
+                });
+            };
+            
+            updateSortableList();
+
+            if (sequenceSortableInstance) sequenceSortableInstance.destroy();
+            sequenceSortableInstance = Sortable.create(sortableList, {
+                animation: 150,
+                handle: '.drag-handle',
+                onEnd: () => {
+                    s.promptIds = Array.from(sortableList.children).map(item => item.dataset.promptId);
+                }
+            });
+
+            selectEl.onchange = () => {
+                const selectedIds = new Set(Array.from(selectEl.selectedOptions).map(opt => opt.value));
+                s.promptIds = s.promptIds.filter(id => selectedIds.has(id));
+                selectedIds.forEach(id => {
+                    if (!s.promptIds.includes(id)) s.promptIds.push(id);
+                });
+                updateSortableList();
+            };
+
+            sortableList.onclick = (e) => {
+                if (e.target.closest('.remove-from-sequence-btn')) {
+                    const item = e.target.closest('.sequence-sortable-item');
+                    s.promptIds = s.promptIds.filter(id => id !== item.dataset.promptId);
+                    updateSortableList();
+                }
+            };
+        },
     };
 
     // =================================================================
     // 이벤트 핸들러
     // =================================================================
     const handlers = {
-        // 기존 핸들러 로직은 대부분 그대로 유지됩니다.
-        // 데이터 변경은 dbService를 통해 이루어지고, UI는 onSnapshot 리스너에 의해 자동으로 업데이트됩니다.
-        // 따라서 핸들러에서 render.prompts(true)와 같이 강제 새로고침을 호출할 필요가 없습니다.
-        sidebar: (e) => {
-            const target = e.target.closest('.nav-item');
-            if (!target) return;
-            document.querySelectorAll('.sidebar-nav .nav-item.active').forEach(el => el.classList.remove('active'));
-            target.classList.add('active');
-            
-            const { filterType, folderId, seqId } = target.dataset;
-            if (filterType === 'folder') {
-                state.currentFilter = { type: 'folder', id: folderId, name: state.folders.find(f => f.id === folderId)?.name || '알 수 없는 폴더' };
-                render.prompts();
-            } else if (filterType === 'sequence') {
-                render.sequenceEditor(seqId);
-            } else if (filterType === 'history') {
-                state.currentFilter = { type: 'history', id: null, name: '사용 기록' };
-                render.usageHistory();
-            } else {
-                state.currentFilter = { type: filterType, id: null, name: target.textContent.trim() };
-                render.prompts();
-            }
-            if (window.innerWidth <= 768) {
-                ui.sidebar.classList.remove('open');
-                document.body.classList.remove('no-scroll');
-            }
-        },
-        content: async (e) => {
+        // [수정] 모든 클릭 이벤트를 하나의 핸들러에서 위임 처리
+        contentViewClick: async (e) => {
             const promptItem = e.target.closest('.prompt-list-item');
-            if (!promptItem) return;
+            const editorSaveBtn = e.target.closest('.save-btn');
+            const editorDeleteBtn = e.target.closest('.delete-btn');
+            const viewVersionsBtn = e.target.closest('#view-versions-btn');
 
-            const promptId = promptItem.dataset.promptId;
-            const p = await dbService.getById('prompts', promptId);
-            if (!p) return;
+            // 프롬프트 목록 아이템 내부 버튼 클릭 처리
+            if (promptItem) {
+                const promptId = promptItem.dataset.promptId;
+                const p = await dbService.getById('prompts', promptId);
+                if (!p) return;
 
-            if (e.target.closest('.edit-btn')) {
-                render.promptEditor(promptId);
-            } else if (e.target.closest('.copy-btn')) {
-                helpers.copyToClipboard(p.content);
-                helpers.showToast('클립보드에 복사되었습니다!');
-                helpers.logUsage('prompt_copy', p.id, p.title, p.content);
-            } else if (e.target.closest('.use-btn')) {
-                render.templateModal(promptId);
-            } else if (e.target.closest('.fav-icon')) {
-                await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite });
-                helpers.showToast(!p.isFavorite ? '즐겨찾기에 추가되었습니다.' : '즐겨찾기에서 제거되었습니다.');
-                // UI는 onSnapshot에 의해 자동 업데이트됨
-            } else {
-                // 항목 자체 클릭 시 편집
-                render.promptEditor(promptId);
+                if (e.target.closest('.edit-btn')) render.promptEditor(promptId);
+                else if (e.target.closest('.copy-btn')) {
+                    helpers.copyToClipboard(p.content);
+                    helpers.showToast('클립보드에 복사되었습니다!');
+                } else if (e.target.closest('.use-btn')) {
+                    render.templateModal(promptId);
+                } else if (e.target.closest('.fav-icon')) {
+                    await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite });
+                    helpers.showToast(!p.isFavorite ? '즐겨찾기 추가' : '즐겨찾기 해제');
+                } else if (!e.target.closest('.prompt-actions')) { // 버튼 영역이 아닌 곳을 클릭하면 편집
+                    render.promptEditor(promptId);
+                }
+                return;
             }
-        },
-        editor: async (e) => {
-            const saveBtn = e.target.closest('.save-btn');
-            const deleteBtn = e.target.closest('.delete-btn');
 
-            if (saveBtn) {
-                const id = saveBtn.dataset.id || null;
+            // 편집기 저장 버튼
+            if (editorSaveBtn) {
+                const id = editorSaveBtn.dataset.id || null;
+                let existingData = {};
+                if(id) existingData = await dbService.getById('prompts', id);
+
                 const data = {
                     title: document.getElementById('title-input').value,
                     content: document.getElementById('content-input').value,
@@ -657,37 +500,34 @@
                     tags: document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean),
                     isTemplate: document.getElementById('is-template-checkbox').checked,
                     link: document.getElementById('link-input').value.trim(),
+                    isFavorite: existingData.isFavorite || false,
+                    usageCount: existingData.usageCount || 0,
                 };
-                
-                if (id) { // 기존 항목 업데이트 시 isFavorite, usageCount 유지
-                    const existingPrompt = await dbService.getById('prompts', id);
-                    data.isFavorite = existingPrompt.isFavorite || false;
-                    data.usageCount = existingPrompt.usageCount || 0;
-                }
-                
                 const savedId = await dbService.put('prompts', { id, ...data });
-                helpers.showToast(id ? '항목이 업데이트되었습니다!' : '항목이 저장되었습니다!');
-                
-                if (savedId) {
-                    const memo = prompt('이 버전에 대한 메모를 남겨주세요 (선택 사항):');
-                    await dbService.savePromptVersion(savedId, data.content, memo || '');
-                }
-                
+                helpers.showToast('저장되었습니다!');
+                await dbService.savePromptVersion(savedId, data.content, '수동 저장');
                 state.currentFilter = { type: 'all', id: null, name: '모든 항목' };
-                // UI는 onSnapshot에 의해 자동 업데이트되므로 render.prompts() 호출 불필요
+                render.prompts();
+                return;
             }
 
-            if (deleteBtn) {
-                const id = deleteBtn.dataset.id;
-                const confirmed = await helpers.showConfirm('이 항목을 영구적으로 삭제하시겠습니까?');
-                if (confirmed) {
+            // 편집기 삭제 버튼
+            if (editorDeleteBtn) {
+                const id = editorDeleteBtn.dataset.id;
+                if (await helpers.showConfirm('정말로 삭제하시겠습니까?')) {
                     await dbService.delete('prompts', id);
-                    helpers.showToast('항목이 삭제되었습니다.');
+                    helpers.showToast('삭제되었습니다.');
                     state.currentFilter = { type: 'all', id: null, name: '모든 항목' };
-                    // UI는 onSnapshot에 의해 자동 업데이트됨
+                    render.prompts();
                 }
+                return;
             }
-        }
+
+            // 버전 기록 보기 버튼
+            if(viewVersionsBtn) {
+                 // 버전 기록 관련 로직 추가
+            }
+        },
     };
 
     // =================================================================
@@ -712,85 +552,142 @@
             document.execCommand('copy');
             document.body.removeChild(textarea);
         },
-        // ... (showConfirm, logUsage 등 나머지 헬퍼 함수는 기존과 동일)
+        showConfirm: (message) => {
+            return new Promise(resolve => {
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay show';
+                modal.innerHTML = `
+                    <div class="modal-content" style="max-width: 400px;">
+                        <div class="modal-body" style="padding-top: 20px;">${message}</div>
+                        <div class="modal-footer">
+                            <button id="confirm-cancel" class="button-like">취소</button>
+                            <button id="confirm-ok" class="generate-btn">확인</button>
+                        </div>
+                    </div>`;
+                document.body.appendChild(modal);
+                modal.querySelector('#confirm-ok').onclick = () => { modal.remove(); resolve(true); };
+                modal.querySelector('#confirm-cancel').onclick = () => { modal.remove(); resolve(false); };
+            });
+        },
+        resetSequenceExecution: () => {
+            activeSequencePrompts = [];
+            currentSequencePromptIndex = -1;
+            ui.templateModal.overlay.classList.remove('show');
+            helpers.showToast('시퀀스 실행이 종료되었습니다.');
+        }
     };
 
     // =================================================================
-    // Fuse.js 검색 인덱스 빌드
+    // 시퀀스 실행 로직
+    // =================================================================
+    async function executeNextPromptInSequence(forceStop = false) {
+        if (forceStop || currentSequencePromptIndex >= activeSequencePrompts.length) {
+            return helpers.resetSequenceExecution();
+        }
+        const currentPrompt = activeSequencePrompts[currentSequencePromptIndex];
+        currentSequencePromptIndex++;
+        if (currentPrompt.isTemplate) {
+            render.templateModal(currentPrompt.id, executeNextPromptInSequence);
+        } else {
+            helpers.copyToClipboard(currentPrompt.content);
+            helpers.showToast(`'${currentPrompt.title}'가 복사되었습니다.`);
+            setTimeout(() => executeNextPromptInSequence(), 1000);
+        }
+    }
+
+    async function startSequenceExecution(sequenceId) {
+        const sequence = await dbService.getById('sequences', sequenceId);
+        if (!sequence || !sequence.promptIds?.length) return helpers.showToast('실행할 프롬프트가 없습니다.');
+        
+        activeSequencePrompts = [];
+        for (const pid of sequence.promptIds) {
+            const p = await dbService.getById('prompts', pid);
+            if (p) activeSequencePrompts.push(p);
+        }
+        
+        if (activeSequencePrompts.length === 0) return helpers.showToast('실행할 유효한 프롬프트가 없습니다.');
+
+        currentSequencePromptIndex = 0;
+        ui.sequenceModal.overlay.classList.remove('show');
+        helpers.showToast(`'${sequence.name}' 시퀀스를 시작합니다.`);
+        executeNextPromptInSequence();
+    }
+
+
+    // =================================================================
+    // 검색 인덱스 빌드
     // =================================================================
     function buildSearchIndex() {
-        fuse = new Fuse(state.prompts, {
-            keys: ['title', 'content', 'tags'],
-            includeScore: true,
-            threshold: 0.3
-        });
-        console.log("Fuse.js 검색 인덱스 빌드 완료.");
+        fuse = new Fuse(state.prompts, { keys: ['title', 'content', 'tags'], includeScore: true, threshold: 0.3 });
     }
 
     // =================================================================
-    // 앱 초기화 및 인증 로직
+    // 앱 초기화 및 인증
     // =================================================================
     async function initializeAppLogic() {
         await openIndexedDB();
-
         ui.sidebarContent.style.display = 'flex';
-        ui.sidebarContent.style.flexDirection = 'column';
         ui.contentView.innerHTML = '<div class="content-placeholder">데이터를 불러오는 중...</div>';
 
         // 실시간 리스너 설정
-        dbService.listenToCollection('folders', (foldersData) => {
-            state.folders = foldersData;
-            render.folders();
-        });
+        dbService.listenToCollection('folders', (data) => { state.folders = data; render.folders(); });
+        dbService.listenToCollection('sequences', (data) => { state.sequences = data; render.sequences(); });
+        dbService.listenToCollection('prompts', (data) => { state.prompts = data; buildSearchIndex(); render.prompts(); });
 
-        dbService.listenToCollection('sequences', (sequencesData) => {
-            state.sequences = sequencesData;
-            render.sequences();
-        });
-
-        dbService.listenToCollection('prompts', (promptsData) => {
-            state.prompts = promptsData;
-            buildSearchIndex();
-            render.prompts(); // 현재 필터에 맞춰 프롬프트 목록 다시 렌더링
-        });
-
-        // 이벤트 리스너 설정 (기존과 동일)
+        // 이벤트 리스너 설정
+        ui.contentView.addEventListener('click', handlers.contentViewClick);
+        ui.searchInput.addEventListener('input', () => render.prompts());
+        
         ui.newPromptBtn.addEventListener('click', () => render.promptEditor(null));
         ui.newFolderBtn.addEventListener('click', async () => {
             const name = prompt('새 폴더 이름을 입력하세요:');
-            if (name?.trim()) {
-                await dbService.put('folders', { name: name.trim() });
-                helpers.showToast('폴더가 생성되었습니다!');
-            }
+            if (name?.trim()) await dbService.put('folders', { name: name.trim() });
         });
         ui.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null));
-        ui.libraryList.addEventListener('click', handlers.sidebar);
-        ui.folderList.addEventListener('click', handlers.sidebar);
-        ui.sequenceList.addEventListener('click', handlers.sidebar);
-        ui.contentView.addEventListener('click', handlers.content);
-        ui.contentView.addEventListener('click', handlers.editor);
-        ui.searchInput.addEventListener('input', () => render.prompts());
         
-        // 데이터 관리 섹션 동적 생성 (새로고침 버튼 제거)
-        const dataMgmtSection = document.createElement('div');
-        dataMgmtSection.style = "padding: 16px; border-top: 1px solid var(--border-color); margin-top: 20px;";
-        dataMgmtSection.innerHTML = `
-            <h3 class="nav-section-title" style="padding: 0;">데이터 관리</h3>
-            <button id="export-data-btn" class="button-like" style="width:100%; margin-top: 10px;">데이터 내보내기</button>
-            <input type="file" id="import-data-input" accept=".json" style="display: none;">
-            <button id="import-data-btn" class="button-like" style="width:100%; margin-top: 10px;">데이터 가져오기</button>
-        `;
-        ui.sidebarContent.appendChild(dataMgmtSection);
-
-        document.getElementById('export-data-btn').addEventListener('click', dbService.exportData);
-        document.getElementById('import-data-btn').addEventListener('click', () => {
-            document.getElementById('import-data-input').click();
-        });
-        document.getElementById('import-data-input').addEventListener('change', (e) => {
-            if (e.target.files.length > 0) {
-                dbService.importData(e.target.files[0]);
+        // 사이드바 필터링
+        ui.libraryList.addEventListener('click', (e) => {
+            const target = e.target.closest('.nav-item');
+            if(target) {
+                state.currentFilter = { type: target.dataset.filterType, id: null, name: target.textContent.trim() };
+                render.prompts();
             }
         });
+        ui.folderList.addEventListener('click', async (e) => {
+            const target = e.target.closest('.nav-item');
+            if(target) {
+                const folderId = target.dataset.folderId;
+                const folder = await dbService.getById('folders', folderId);
+                state.currentFilter = { type: 'folder', id: folderId, name: folder?.name || '폴더' };
+                render.prompts();
+            }
+        });
+        ui.sequenceList.addEventListener('click', (e) => {
+            const target = e.target.closest('.nav-item');
+            if(target) render.sequenceEditor(target.dataset.seqId);
+        });
+
+        // 시퀀스 모달 버튼
+        ui.sequenceModal.saveBtn.onclick = async () => {
+            const id = ui.sequenceModal.saveBtn.dataset.id || null;
+            const name = document.getElementById('sequence-name-input').value;
+            const description = document.getElementById('sequence-description-input').value;
+            const promptIds = Array.from(document.getElementById('sequence-sortable-list').children).map(item => item.dataset.promptId);
+            if (!name.trim()) return helpers.showToast('시퀀스 이름을 입력해주세요.');
+            await dbService.put('sequences', { id, name, description, promptIds });
+            helpers.showToast('시퀀스가 저장되었습니다.');
+            ui.sequenceModal.overlay.classList.remove('show');
+        };
+        ui.sequenceModal.runBtn.onclick = () => startSequenceExecution(ui.sequenceModal.runBtn.dataset.id);
+        ui.sequenceModal.deleteBtn.onclick = async () => {
+            const id = ui.sequenceModal.deleteBtn.dataset.id;
+            if (await helpers.showConfirm('이 시퀀스를 삭제하시겠습니까?')) {
+                await dbService.delete('sequences', id);
+                helpers.showToast('시퀀스가 삭제되었습니다.');
+                ui.sequenceModal.overlay.classList.remove('show');
+            }
+        };
+        ui.sequenceModal.closeBtn.onclick = () => ui.sequenceModal.overlay.classList.remove('show');
     }
 
     onAuthStateChanged(auth, async user => {
@@ -800,33 +697,23 @@
             ui.userProfile.style.display = 'flex';
             ui.userEmail.textContent = user.displayName || user.email;
             ui.userPhoto.src = user.photoURL || `https://via.placeholder.com/32`;
-            await initializeAppLogic();
+            initializeAppLogic();
         } else {
-            // 로그아웃 시 모든 실시간 리스너 구독 해제
-            Object.values(unsubscribeListeners).forEach(unsubscribe => unsubscribe());
+            Object.values(unsubscribeListeners).forEach(unsub => unsub());
             unsubscribeListeners = {};
-
             currentUser = null;
             ui.loginBtn.style.display = 'block';
             ui.userProfile.style.display = 'none';
             ui.sidebarContent.style.display = 'none';
-            ui.contentView.innerHTML = '<div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>';
-            ui.mainHeader.textContent = "환영합니다";
+            ui.contentView.innerHTML = '<div class="content-placeholder">로그인해주세요.</div>';
         }
     });
 
-    ui.loginBtn.addEventListener('click', () => {
-        const provider = new GoogleAuthProvider();
-        signInWithPopup(auth, provider).catch(error => {
-            console.error("로그인 실패:", error);
-            helpers.showToast("로그인에 실패했습니다. 자세한 내용은 콘솔을 확인해주세요.");
-        });
-    });
+    ui.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
+    ui.logoutBtn.addEventListener('click', () => signOut(auth));
 
-    ui.logoutBtn.addEventListener('click', () => {
-        signOut(auth);
-    });
 </script>
+
 
     <style>        
         /* 기본 스타일 및 변수 정의 */
