@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Splitter Pro - Redesigned</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        /*
+            DESIGN SYSTEM DEFINITION
+            - Typography: 'Poppins', sans-serif
+            - Core Palette:
+                --color-primary: #4A90E2 (Action Blue)
+                --color-secondary: #50E3C2 (Success Green)
+                --color-background: #F4F7F9
+                --color-surface: #FFFFFF
+                --color-text-primary: #333D4B
+                --color-text-secondary: #8B95A1
+                --color-border: #E5E9F2
+                --color-error: #D9534F
+            - Spacing (8pt Grid System):
+                --space-1: 8px, --space-2: 16px, --space-3: 24px, --space-4: 32px
+            - Rounded Corners:
+                --border-radius-sm: 4px
+                --border-radius-md: 8px
+        */
+
+        :root {
+            --color-primary: #4A90E2;
+            --color-primary-dark: #357ABD;
+            --color-secondary: #50E3C2;
+            --color-secondary-dark: #38A89D;
+            --color-background: #F4F7F9;
+            --color-surface: #FFFFFF;
+            --color-text-primary: #333D4B;
+            --color-text-secondary: #8B95A1;
+            --color-border: #E5E9F2;
+            --color-error: #D9534F;
+
+            --font-size-xl: 2rem;
+            --font-size-lg: 1.25rem;
+            --font-size-md: 1rem;
+            --font-size-sm: 0.875rem;
+
+            --space-1: 8px;
+            --space-2: 16px;
+            --space-3: 24px;
+            --space-4: 32px;
+            --space-5: 40px;
+            --space-6: 48px;
+
+            --border-radius-sm: 4px;
+            --border-radius-md: 8px;
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        /* --- Base & Reset --- */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            background-color: var(--color-background);
+            color: var(--color-text-primary);
+            line-height: 1.6;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* --- Layout --- */
+        .page-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: var(--space-4);
+        }
+
+        .main-header {
+            text-align: center;
+            margin-bottom: var(--space-5);
+        }
+
+        .main-header h1 {
+            font-size: var(--font-size-xl);
+            font-weight: 700;
+            margin-bottom: var(--space-1);
+        }
+
+        .main-header p {
+            font-size: var(--font-size-md);
+            color: var(--color-text-secondary);
+        }
+
+        .workflow-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: var(--space-4);
+        }
+
+        @media (min-width: 992px) {
+            .workflow-grid {
+                grid-template-columns: 1fr 1.2fr;
+            }
+        }
+
+        .control-panel, .results-panel {
+            background-color: var(--color-surface);
+            border-radius: var(--border-radius-md);
+            box-shadow: var(--shadow-sm);
+            padding: var(--space-4);
+            transition: all 0.3s ease;
+        }
+
+        .panel-section {
+            margin-bottom: var(--space-4);
+        }
+
+        .panel-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .panel-title {
+            font-size: var(--font-size-lg);
+            font-weight: 600;
+            margin-bottom: var(--space-2);
+            display: flex;
+            align-items: center;
+        }
+
+        .panel-title .step-number {
+            background-color: var(--color-primary);
+            color: white;
+            border-radius: 50%;
+            width: 28px;
+            height: 28px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: var(--font-size-sm);
+            font-weight: 700;
+            margin-right: var(--space-2);
+        }
+
+        /* --- Components --- */
+        .input-group label {
+            display: block;
+            font-weight: 500;
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            margin-bottom: var(--space-1);
+        }
+
+        .input-field, .textarea-field {
+            width: 100%;
+            padding: var(--space-2);
+            border: 1px solid var(--color-border);
+            border-radius: var(--border-radius-md);
+            font-size: var(--font-size-md);
+            font-family: inherit;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .input-field:focus, .textarea-field:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.2);
+        }
+
+        .textarea-field {
+            min-height: 200px;
+            resize: vertical;
+        }
+
+        .file-drop-zone {
+            border: 2px dashed var(--color-border);
+            border-radius: var(--border-radius-md);
+            padding: var(--space-4);
+            text-align: center;
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        .file-drop-zone.drag-over {
+            background-color: #e9f2fe;
+            border-color: var(--color-primary);
+        }
+        .file-drop-zone p {
+            color: var(--color-text-secondary);
+            font-size: var(--font-size-sm);
+        }
+        .file-drop-zone .file-name {
+            font-weight: 600;
+            color: var(--color-primary);
+            margin-top: var(--space-1);
+        }
+        .file-drop-zone input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: var(--space-2) var(--space-3);
+            border: none;
+            border-radius: var(--border-radius-md);
+            font-size: var(--font-size-md);
+            font-weight: 600;
+            font-family: inherit;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+            text-decoration: none;
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn-primary {
+            background-color: var(--color-primary);
+            color: white;
+        }
+        .btn-primary:hover:not(:disabled) {
+            background-color: var(--color-primary-dark);
+        }
+
+        .btn-secondary {
+            background-color: var(--color-secondary);
+            color: white;
+        }
+        .btn-secondary:hover:not(:disabled) {
+            background-color: var(--color-secondary-dark);
+        }
+        
+        .btn-icon {
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: var(--space-1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-icon:hover {
+            background-color: var(--color-background);
+        }
+        .btn-icon svg {
+            width: 20px;
+            height: 20px;
+            fill: var(--color-text-secondary);
+        }
+
+
+        /* --- Results Panel --- */
+        .results-placeholder {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+            color: var(--color-text-secondary);
+        }
+        .results-placeholder svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: var(--space-2);
+            opacity: 0.5;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-3);
+            flex-wrap: wrap;
+            gap: var(--space-2);
+        }
+        .results-summary {
+            font-weight: 500;
+        }
+
+        .chunks-container {
+            max-height: 500px;
+            overflow-y: auto;
+            padding-right: var(--space-1);
+        }
+
+        .chunk-card {
+            background-color: var(--color-background);
+            border-radius: var(--border-radius-md);
+            padding: var(--space-2);
+            margin-bottom: var(--space-2);
+            border-left: 4px solid var(--color-secondary);
+            animation: fadeIn 0.5s ease;
+        }
+        .chunk-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-1);
+        }
+        .chunk-title {
+            font-weight: 600;
+        }
+        .chunk-stats {
+            font-size: var(--font-size-sm);
+            color: var(--color-text-secondary);
+            background-color: #e5e9f2;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+        .chunk-content {
+            font-size: var(--font-size-sm);
+            background-color: var(--color-surface);
+            padding: var(--space-2);
+            border-radius: var(--border-radius-sm);
+            max-height: 100px;
+            overflow-y: hidden;
+            white-space: pre-wrap;
+            word-break: break-all;
+            position: relative;
+        }
+        .chunk-content::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: linear-gradient(to top, var(--color-surface), transparent);
+        }
+
+        /* --- Status & Helpers --- */
+        .status-box {
+            padding: var(--space-2);
+            margin-top: var(--space-2);
+            text-align: center;
+            font-size: var(--font-size-sm);
+            border-radius: var(--border-radius-md);
+            display: none;
+        }
+        .status-box.success {
+            background-color: #e4f9f3;
+            color: #059669;
+            display: block;
+        }
+        .status-box.error {
+            background-color: #fdecec;
+            color: var(--color-error);
+            display: block;
+        }
+        .hidden {
+            display: none !important;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+    </style>
+</head>
+<body>
+
+    <div class="page-container">
+        <header class="main-header">
+            <h1>Text Splitter Pro</h1>
+            <p>텍스트를 원하는 글자 수 기준으로 나누고 ZIP 파일로 다운로드하세요.</p>
+        </header>
+
+        <main class="workflow-grid">
+            <div class="control-panel">
+                <section class="panel-section">
+                    <h2 class="panel-title"><span class="step-number">1</span>텍스트 준비</h2>
+                    <div class="file-drop-zone" id="fileDropZone">
+                        <input type="file" id="fileUpload" accept=".txt">
+                        <p id="dropZoneText">여기에 .txt 파일을 드래그하거나 클릭하여 업로드하세요.</p>
+                        <p class="file-name" id="fileNameDisplay"></p>
+                    </div>
+                    <p style="text-align:center; color: var(--color-text-secondary); margin: var(--space-1) 0;">또는</p>
+                    <textarea id="textInput" class="textarea-field" placeholder="여기에 텍스트를 붙여넣으세요..."></textarea>
+                </section>
+                
+                <section class="panel-section">
+                    <h2 class="panel-title"><span class="step-number">2</span>분할 기준 설정</h2>
+                    <div class="input-group">
+                        <label for="charLimit">청크 당 최대 글자 수</label>
+                        <input type="number" id="charLimit" class="input-field" value="20000">
+                    </div>
+                </section>
+
+                <button id="splitButton" class="btn btn-primary">
+                    텍스트 나누기
+                </button>
+                <div id="statusBox" class="status-box"></div>
+            </div>
+
+            <div class="results-panel" id="resultsPanel">
+                <div class="results-placeholder" id="resultsPlaceholder">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6C4.9 2 4 2.9 4 4V20C4 21.1 4.9 22 6 22H18C19.1 22 20 21.1 20 20V8L14 2ZM18 20H6V4H13V9H18V20Z"/></svg>
+                    <p>분할된 텍스트 청크가 여기에 표시됩니다.</p>
+                </div>
+                <div class="hidden" id="resultsContent">
+                    <div class="results-header">
+                        <p class="results-summary" id="resultsSummary"></p>
+                        <button id="downloadButton" class="btn btn-secondary">ZIP으로 다운로드</button>
+                    </div>
+                    <div class="chunks-container" id="chunksContainer">
+                        <!-- Chunks will be dynamically inserted here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- DOM Element References ---
+        const charLimitInput = document.getElementById('charLimit');
+        const fileUploadInput = document.getElementById('fileUpload');
+        const textInput = document.getElementById('textInput');
+        const splitButton = document.getElementById('splitButton');
+        const downloadButton = document.getElementById('downloadButton');
+        const chunksContainer = document.getElementById('chunksContainer');
+        const statusBox = document.getElementById('statusBox');
+        const fileDropZone = document.getElementById('fileDropZone');
+        const dropZoneText = document.getElementById('dropZoneText');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const resultsPlaceholder = document.getElementById('resultsPlaceholder');
+        const resultsContent = document.getElementById('resultsContent');
+        const resultsSummary = document.getElementById('resultsSummary');
+
+        // --- Global state ---
+        let textChunks = [];
+        let originalFilename = null;
+
+        // --- Event Listeners ---
+        splitButton.addEventListener('click', handleSplit);
+        downloadButton.addEventListener('click', handleDownload);
+        
+        // File Drop Zone Logic
+        fileDropZone.addEventListener('click', () => fileUploadInput.click());
+        fileDropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileDropZone.classList.add('drag-over');
+        });
+        fileDropZone.addEventListener('dragleave', () => {
+            fileDropZone.classList.remove('drag-over');
+        });
+        fileDropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileDropZone.classList.remove('drag-over');
+            const files = e.dataTransfer.files;
+            if (files.length) {
+                fileUploadInput.files = files;
+                handleFileUpload({ target: fileUploadInput });
+            }
+        });
+        fileUploadInput.addEventListener('change', handleFileUpload);
+        
+        // Clear filename if user types manually
+        textInput.addEventListener('input', () => {
+            if (originalFilename) {
+                originalFilename = null;
+                fileNameDisplay.textContent = '';
+                dropZoneText.textContent = '여기에 .txt 파일을 드래그하거나 클릭하여 업로드하세요.';
+            }
+        });
+
+        // --- Core Functions ---
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (file.type !== "text/plain") {
+                showStatus(".txt 파일만 업로드할 수 있습니다.", "error");
+                fileUploadInput.value = "";
+                return;
+            }
+            originalFilename = file.name.replace(/\.[^/.]+$/, "");
+            
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                textInput.value = e.target.result;
+                dropZoneText.textContent = '파일이 성공적으로 로드되었습니다:';
+                fileNameDisplay.textContent = file.name;
+                showStatus(`'${file.name}' 파일을 성공적으로 불러왔습니다.`, "success");
+            };
+            reader.onerror = () => showStatus("파일을 읽는 중 오류가 발생했습니다.", "error");
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        function handleSplit() {
+            const limit = parseInt(charLimitInput.value, 10);
+            const text = textInput.value;
+
+            if (isNaN(limit) || limit <= 0) {
+                showStatus("최대 글자 수는 0보다 큰 숫자여야 합니다.", "error");
+                return;
+            }
+            if (!text.trim()) {
+                showStatus("분할할 텍스트를 입력하거나 파일을 업로드하세요.", "error");
+                return;
+            }
+
+            setButtonLoading(splitButton, true, '나누는 중...');
+            
+            // Use setTimeout to allow UI to update before heavy processing
+            setTimeout(() => {
+                try {
+                    textChunks = [];
+                    let chunkStartIndex = 0;
+
+                    while (chunkStartIndex < text.length) {
+                        let searchEndIndex = chunkStartIndex + limit;
+                        
+                        if (searchEndIndex >= text.length) {
+                            textChunks.push(text.substring(chunkStartIndex));
+                            break;
+                        }
+
+                        let chunkEndIndex = text.lastIndexOf('\n', searchEndIndex);
+
+                        if (chunkEndIndex <= chunkStartIndex) {
+                            chunkEndIndex = text.indexOf('\n', searchEndIndex);
+                            if (chunkEndIndex === -1) {
+                                textChunks.push(text.substring(chunkStartIndex));
+                                break;
+                            }
+                        }
+                        
+                        textChunks.push(text.substring(chunkStartIndex, chunkEndIndex));
+                        chunkStartIndex = chunkEndIndex + 1;
+                    }
+
+                    displayChunks();
+                    showStatus(`${textChunks.length}개의 청크로 분할되었습니다.`, "success");
+                
+                } catch (error) {
+                    console.error("Splitting error:", error);
+                    showStatus("텍스트 분할 중 오류가 발생했습니다.", "error");
+                } finally {
+                    setButtonLoading(splitButton, false, '텍스트 나누기');
+                }
+            }, 50);
+        }
+
+        function displayChunks() {
+            chunksContainer.innerHTML = '';
+            if (textChunks.length === 0) {
+                resultsPlaceholder.classList.remove('hidden');
+                resultsContent.classList.add('hidden');
+                return;
+            }
+
+            resultsPlaceholder.classList.add('hidden');
+            resultsContent.classList.remove('hidden');
+            
+            const totalChars = textChunks.reduce((sum, chunk) => sum + chunk.length, 0);
+            resultsSummary.textContent = `${textChunks.length}개 청크로 분할됨 (총 ${totalChars.toLocaleString()}자)`;
+
+            const fragment = document.createDocumentFragment();
+            textChunks.forEach((chunk, index) => {
+                const baseFilename = originalFilename || 'chunk';
+                const chunkFilename = `${baseFilename}_${index + 1}.txt`;
+
+                const card = document.createElement('div');
+                card.className = 'chunk-card';
+                card.innerHTML = `
+                    <div class="chunk-card-header">
+                        <span class="chunk-title">${chunkFilename}</span>
+                        <div>
+                            <span class="chunk-stats">${chunk.length.toLocaleString()}자</span>
+                            <button class="btn-icon copy-btn" title="청크 내용 복사">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4C2.9 1 2 1.9 2 3V17H4V3H16V1ZM19 5H8C6.9 5 6 5.9 6 7V21C6 22.1 6.9 23 8 23H19C20.1 23 21 22.1 21 21V7C21 5.9 20.1 5 19 5ZM19 21H8V7H19V21Z"/></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="chunk-content">${chunk}</div>
+                `;
+                card.querySelector('.copy-btn').addEventListener('click', () => copyToClipboard(chunk, chunkFilename));
+                fragment.appendChild(card);
+            });
+            chunksContainer.appendChild(fragment);
+        }
+
+        function handleDownload() {
+            if (textChunks.length === 0) {
+                showStatus("다운로드할 데이터가 없습니다.", "error");
+                return;
+            }
+
+            setButtonLoading(downloadButton, true, '압축 중...');
+
+            const baseFilename = originalFilename || 'divided_text';
+            const zip = new JSZip();
+            
+            textChunks.forEach((chunk, index) => {
+                zip.file(`${baseFilename}_chunk_${index + 1}.txt`, chunk);
+            });
+
+            zip.generateAsync({ type: "blob" })
+                .then((content) => {
+                    saveAs(content, `${baseFilename}_chunks.zip`);
+                    setButtonLoading(downloadButton, false, 'ZIP으로 다운로드');
+                })
+                .catch(error => {
+                    console.error("Zipping error:", error);
+                    showStatus("ZIP 파일 생성 중 오류가 발생했습니다.", "error");
+                    setButtonLoading(downloadButton, false, 'ZIP으로 다운로드');
+                });
+        }
+        
+        function copyToClipboard(text, filename) {
+            // Using a textarea element for robust clipboard copying
+            const textArea = document.createElement("textarea");
+            textArea.value = text;
+            textArea.style.position = "fixed"; // Avoid scrolling to bottom
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                showStatus(`'${filename}'의 내용이 클립보드에 복사되었습니다.`, "success");
+            } catch (err) {
+                showStatus("클립보드 복사에 실패했습니다.", "error");
+            }
+            document.body.removeChild(textArea);
+        }
+
+        // --- UI Helper Functions ---
+
+        function showStatus(message, type = 'info') {
+            statusBox.textContent = message;
+            statusBox.className = 'status-box'; // Reset classes
+            statusBox.classList.add(type);
+
+            setTimeout(() => {
+                if (statusBox.textContent === message) {
+                    statusBox.className = 'status-box';
+                }
+            }, 4000);
+        }
+
+        function setButtonLoading(button, isLoading, loadingText) {
+            button.disabled = isLoading;
+            if (isLoading) {
+                button.dataset.originalText = button.textContent;
+                button.innerHTML = `
+                    <svg style="width:20px; height:20px; margin-right:8px;" class="animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" style="opacity:0.25;"></circle>
+                        <path fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" style="opacity:0.75;"></path>
+                    </svg>
+                    ${loadingText}
+                `;
+            } else {
+                button.innerHTML = button.dataset.originalText;
+            }
+        }
+    });
+    </script>
+</body>
+</html>
