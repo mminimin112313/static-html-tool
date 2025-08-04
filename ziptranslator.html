@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>eBook 번역 관리 도구 v6.1 (File Selection Hotfix)</title>
+    <title>eBook 번역 관리 도구 v6.2 (Prompt UX Enhanced)</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -23,9 +23,8 @@
         .btn-danger:hover { filter: brightness(0.9); }
         .btn-secondary { background-color: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-color); }
         .btn-secondary:hover { background-color: var(--bg-hover); }
-        .btn-warning { background-color: var(--accent-yellow); color: var(--bg-primary); }
-        .btn-warning:hover { filter: brightness(0.9); }
-        input[type="text"], textarea { background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 0.5rem 0.75rem; }
+        .btn-icon { padding: 0.5rem; }
+        input[type="text"], textarea { background-color: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 0.5rem 0.75rem; }
         input[type="text"]:focus, textarea:focus { outline: none; border-color: var(--accent-blue); box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.3); }
         #app { display: flex; flex-direction: column; height: 100%; }
         header { height: var(--header-height); background-color: var(--bg-secondary); border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
@@ -48,7 +47,7 @@
         .editor-panes { display: flex; flex-grow: 1; min-height: 0; }
         .editor-pane { width: 50%; display: flex; flex-direction: column; padding: 1rem; }
         .editor-pane:first-child { border-right: 1px solid var(--border-color); }
-        .editor-pane textarea, .editor-pane .text-display { flex-grow: 1; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 0.75rem; overflow-y: auto; }
+        .editor-pane textarea, .editor-pane .text-display { flex-grow: 1; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 0.75rem; overflow-y: auto; white-space: pre-wrap; }
         .modal-backdrop { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background-color: rgba(0,0,0,0.7); z-index: 50; }
         .modal-content { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 0.75rem; }
         @keyframes toast-in { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
@@ -61,7 +60,6 @@
     </style>
 </head>
 <body>
-
     <div id="app">
         <div id="loading-view" class="modal-backdrop hidden">
             <div class="flex flex-col items-center justify-center">
@@ -77,6 +75,20 @@
                 <div class="flex justify-end space-x-4">
                     <button id="confirm-cancel-btn" class="btn btn-secondary">취소</button>
                     <button id="confirm-ok-btn" class="btn btn-danger">삭제</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="prompt-modal" class="modal-backdrop hidden">
+            <div class="modal-content w-full max-w-2xl p-6 flex flex-col">
+                <h3 class="text-lg font-bold mb-4">프롬프트 템플릿 설정</h3>
+                <p class="text-sm text-[var(--text-secondary)] mb-4">
+                    `{{text}}`를 원문이 들어갈 위치에 사용하세요. 이 프롬프트는 현재 프로젝트에만 저장됩니다.
+                </p>
+                <textarea id="prompt-modal-textarea" class="w-full h-48 min-h-32 text-sm" rows="8"></textarea>
+                <div class="flex justify-end space-x-4 mt-6">
+                    <button data-action="close-prompt-modal" class="btn btn-secondary">취소</button>
+                    <button data-action="save-prompt" class="btn btn-primary">저장</button>
                 </div>
             </div>
         </div>
@@ -100,12 +112,14 @@
         <div id="workspace-view" class="view">
             <header class="flex justify-between items-center px-4">
                 <div class="flex items-center gap-2">
-                    <button id="back-to-dashboard-btn" class="p-2 rounded-full hover:bg-[var(--bg-hover)]"><i class="bi bi-arrow-left text-xl"></i></button>
+                    <button data-action="back-to-dashboard" class="p-2 rounded-full hover:bg-[var(--bg-hover)]"><i class="bi bi-arrow-left text-xl"></i></button>
                     <h2 id="workspace-project-name" class="text-lg font-bold"></h2>
                 </div>
                 <div class="flex items-center space-x-2">
-                    <button id="export-btn" class="btn btn-secondary"><i class="bi bi-box-arrow-down"></i>내보내기</button>
-                    <button id="save-translation-btn" class="btn btn-primary"><i class="bi bi-check-lg"></i>저장</button>
+                    <button data-action="copy-prompt" class="btn btn-secondary"><i class="bi bi-clipboard"></i>프롬프트 복사</button>
+                    <button data-action="export" class="btn btn-secondary"><i class="bi bi-box-arrow-down"></i>내보내기</button>
+                    <button data-action="save-translation" class="btn btn-primary"><i class="bi bi-check-lg"></i>저장</button>
+                    <button data-action="open-prompt-modal" class="btn btn-secondary btn-icon" title="프롬프트 설정"><i class="bi bi-gear-fill"></i></button>
                 </div>
             </header>
             <main>
@@ -114,18 +128,14 @@
                     <div id="file-list" class="p-2"></div>
                 </aside>
                 <div class="editor-container">
-                    <div class="p-4 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
-                        <label for="prompt-template-input" class="block text-sm font-medium mb-1 text-[var(--text-secondary)]">프롬프트 템플릿</label>
-                        <input type="text" id="prompt-template-input" class="w-full">
-                    </div>
-                    <div class="editor-panes">
+                    <div class="editor-panes p-2">
                         <section class="editor-pane">
                             <h3 class="text-lg font-semibold mb-2 flex-shrink-0">원문: <span id="original-file-name" class="font-normal text-[var(--text-secondary)]"></span></h3>
-                            <pre id="original-text" class="text-display whitespace-pre-wrap text-sm leading-relaxed"></pre>
+                            <div id="original-text" class="text-display"></div>
                         </section>
                         <section class="editor-pane">
                             <h3 class="text-lg font-semibold mb-2 flex-shrink-0">번역문</h3>
-                            <textarea id="translated-text" class="text-sm leading-relaxed" placeholder="여기에 번역문을 입력하세요..."></textarea>
+                            <textarea id="translated-text" class="text-sm" placeholder="여기에 번역문을 입력하세요..."></textarea>
                         </section>
                     </div>
                 </div>
@@ -134,14 +144,9 @@
     </div>
    
     <div id="toast-container" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-[100] space-y-2"></div>
-
-    <script id="worker" type="javascript/worker">
-        self.importScripts('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
-        self.onmessage=async e=>{const{type:r,payload:s}=e.data;"PROCESS_ZIP"===r&&async function(e){const r=new JSZip;try{self.postMessage({type:"PROGRESS",payload:"ZIP 파일 로딩 중..."});const s=await r.loadAsync(e);self.postMessage({type:"PROGRESS",payload:"파일 목록 분석 중..."});const t=[];s.forEach((e,r)=>{r.dir||!e.toLowerCase().endsWith(".txt")||t.push(r)});const o=t.length,a=[];for(let e=0;e<o;e++){const r=t[e],s=await r.async("string");a.push({name:r.name,originalText:s}),(e+1)%10==0||e+1===o&&self.postMessage({type:"PROGRESS",payload:`파일 처리 중... (${e+1}/${o})`})}self.postMessage({type:"SUCCESS",payload:{files:a}})}catch(e){self.postMessage({type:"ERROR",payload:e.message})}}(s.file)};
-    </script>
+    <script id="worker" type="javascript/worker">self.importScripts('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');self.onmessage=async e=>{const{type:r,payload:s}=e.data;"PROCESS_ZIP"===r&&async function(e){const r=new JSZip;try{self.postMessage({type:"PROGRESS",payload:"ZIP 파일 로딩 중..."});const s=await r.loadAsync(e);self.postMessage({type:"PROGRESS",payload:"파일 목록 분석 중..."});const t=[];s.forEach((e,r)=>{r.dir||!e.toLowerCase().endsWith(".txt")||t.push(r)});const o=t.length,a=[];for(let e=0;e<o;e++){const r=t[e],s=await r.async("string");a.push({name:r.name,originalText:s}),(e+1)%10==0||e+1===o&&self.postMessage({type:"PROGRESS",payload:`파일 처리 중... (${e+1}/${o})`})}self.postMessage({type:"SUCCESS",payload:{files:a}})}catch(e){self.postMessage({type:"ERROR",payload:e.message})}}(s.file)};</script>
 
     <script type="module">
-        // --- DOM Elements ---
         const $ = (selector) => document.querySelector(selector);
         const dom = {
             app: $('#app'),
@@ -149,388 +154,113 @@
             loading: { view: $('#loading-view'), message: $('#loading-message') },
             dashboard: { projectList: $('#project-list'), noProjectMessage: $('#no-project-message'), zipFileInput: $('#zip-file-input') },
             workspace: {
-                projectName: $('#workspace-project-name'), fileList: $('#file-list'), promptTemplate: $('#prompt-template-input'),
+                projectName: $('#workspace-project-name'), fileList: $('#file-list'), 
                 originalFileName: $('#original-file-name'), originalText: $('#original-text'), translatedText: $('#translated-text')
             },
-            confirm: {
-                modal: $('#confirm-modal'), title: $('#confirm-title'), message: $('#confirm-message'),
-                okBtn: $('#confirm-ok-btn'), cancelBtn: $('#confirm-cancel-btn')
-            },
+            confirm: { modal: $('#confirm-modal'), title: $('#confirm-title'), message: $('#confirm-message'), okBtn: $('#confirm-ok-btn'), cancelBtn: $('#confirm-cancel-btn') },
+            promptModal: { view: $('#prompt-modal'), textarea: $('#prompt-modal-textarea')},
             toastContainer: $('#toast-container')
         };
-
-        // --- Database Layer ---
-        const dbManager = {
-            db: null,
-            initDB() {
-                return new Promise((resolve, reject) => {
-                    const request = indexedDB.open('eBookTranslatorDB_v6', 1);
-                    request.onerror = e => reject(`IndexedDB Error: ${e.target.errorCode}`);
-                    request.onsuccess = e => { this.db = e.target.result; resolve(this.db); };
-                    request.onupgradeneeded = e => {
-                        const db = e.target.result;
-                        if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
-                        if (!db.objectStoreNames.contains('files')) {
-                            const fileStore = db.createObjectStore('files', { keyPath: ['projectId', 'name'] });
-                            fileStore.createIndex('by_project', 'projectId', { unique: false });
-                        }
-                    };
-                });
-            },
-            get(storeName, key) { return new Promise((r, j) => { const req = this.db.transaction(storeName).objectStore(storeName).get(key); req.onsuccess = () => r(req.result); req.onerror = () => j(req.error); }); },
-            getAll(storeName) { return new Promise((r, j) => { const req = this.db.transaction(storeName).objectStore(storeName).getAll(); req.onsuccess = () => r(req.result); req.onerror = () => j(req.error); }); },
-            put(storeName, data) { return new Promise((r, j) => { const tx = this.db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).put(data); tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); }); },
-            delete(storeName, key) { return new Promise((r, j) => { const tx = this.db.transaction(storeName, 'readwrite'); tx.objectStore(storeName).delete(key); tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); }); },
-            getFilesForProject(projectId) { return new Promise((r, j) => { const req = this.db.transaction('files').objectStore('files').index('by_project').getAll(projectId); req.onsuccess = () => r(req.result); req.onerror = () => j(req.error); }); },
-            async deleteProjectAndFiles(projectId) {
-                const files = await this.getFilesForProject(projectId);
-                const tx = this.db.transaction(['projects', 'files'], 'readwrite');
-                const fileStore = tx.objectStore('files');
-                files.forEach(file => fileStore.delete([file.projectId, file.name]));
-                tx.objectStore('projects').delete(projectId);
-                return new Promise((r, j) => { tx.oncomplete = () => r(); tx.onerror = () => j(tx.error); });
-            }
-        };
+        const dbManager={db:null,initDB(){return new Promise((e,t)=>{const o=indexedDB.open("eBookTranslatorDB_v6",1);o.onerror=e=>t(`IndexedDB Error: ${e.target.errorCode}`),o.onsuccess=t=>{this.db=t.target.result,e(this.db)},o.onupgradeneeded=e=>{const t=e.target.result;t.objectStoreNames.contains("projects")||t.createObjectStore("projects",{keyPath:"id"}),t.objectStoreNames.contains("files")||t.createObjectStore("files",{keyPath:["projectId","name"]}).createIndex("by_project","projectId",{unique:!1})}})},get(e,t){return new Promise((o,r)=>{const n=this.db.transaction(e).objectStore(e).get(t);n.onsuccess=()=>o(n.result),n.onerror=()=>r(n.error)})},getAll(e){return new Promise((t,o)=>{const r=this.db.transaction(e).objectStore(e).getAll();r.onsuccess=()=>t(r.result),r.onerror=()=>o(r.error)})},put(e,t){return new Promise((o,r)=>{const n=this.db.transaction(e,"readwrite");n.objectStore(e).put(t),n.oncomplete=()=>o(),n.onerror=()=>r(n.error)})},delete(e,t){return new Promise((o,r)=>{const n=this.db.transaction(e,"readwrite");n.objectStore(e).delete(t),n.oncomplete=()=>o(),n.onerror=()=>r(n.error)})},getFilesForProject(e){return new Promise((t,o)=>{const r=this.db.transaction("files").objectStore("files").index("by_project").getAll(e);r.onsuccess=()=>t(r.result),r.onerror=()=>o(r.error)})},async deleteProjectAndFiles(e){const t=await this.getFilesForProject(e),o=this.db.transaction(["projects","files"],"readwrite"),r=o.objectStore("files");t.forEach(t=>r.delete([t.projectId,t.name])),o.objectStore("projects").delete(e);return new Promise((e,t)=>{o.oncomplete=()=>e(),o.onerror=()=>t(o.error)})}};
         
-        // --- Web Worker ---
         let worker;
-        function setupWorker() {
-            const script = $('#worker').textContent;
-            worker = new Worker(URL.createObjectURL(new Blob([script], { type: 'application/javascript' })));
-            worker.onmessage = (e) => {
-                const { type, payload } = e.data;
-                if (type === 'PROGRESS') actions.setLoading(true, payload);
-                if (type === 'ERROR') actions.handleError(`Worker Error: ${payload}`);
-                if (type === 'SUCCESS') actions.createProject(dom.dashboard.zipFileInput.files[0], payload.files);
-            };
-        }
+        function setupWorker(){const e=$("#worker").textContent;worker=new Worker(URL.createObjectURL(new Blob([e],{type:"application/javascript"}))),worker.onmessage=e=>{const{type:t,payload:o}=e.data;"PROGRESS"===t?actions.setLoading(!0,o):"ERROR"===t?actions.handleError(`Worker Error: ${o}`):"SUCCESS"===t&&actions.createProject(dom.dashboard.zipFileInput.files[0],o.files)}}
 
-        // --- Application State ---
         const state = {
-            currentView: 'dashboard', // 'dashboard' or 'workspace'
+            currentView: 'dashboard',
             isLoading: true,
             loadingMessage: '초기화 중...',
             projects: [],
+            isPromptModalOpen: false, // NEW
             workspace: {
-                projectId: null,
-                projectName: '',
-                files: [],
-                currentFile: null,
-                promptTemplate: ''
+                projectId: null, projectName: '', files: [],
+                currentFile: null, promptTemplate: ''
             }
         };
 
-        // --- Render Function (The heart of the UI) ---
         function render() {
-            // Render Loading
             dom.loading.view.classList.toggle('hidden', !state.isLoading);
             if(state.isLoading) dom.loading.message.textContent = state.loadingMessage;
+            
+            dom.promptModal.view.classList.toggle('hidden', !state.isPromptModalOpen); // NEW
+            if(state.isPromptModalOpen) dom.promptModal.textarea.value = state.workspace.promptTemplate;
 
-            // Render Views
             for(const viewKey in dom.views) {
                 dom.views[viewKey].classList.toggle('hidden', state.currentView !== viewKey);
             }
-
-            // Render content based on the current view
-            if (state.currentView === 'dashboard') {
-                renderDashboard();
-            } else if (state.currentView === 'workspace') {
-                renderWorkspace();
-            }
+            if (state.currentView === 'dashboard') renderDashboard();
+            else if (state.currentView === 'workspace') renderWorkspace();
         }
         
-        function renderDashboard() {
-            const { projects } = state;
-            dom.dashboard.projectList.innerHTML = '';
-            dom.dashboard.noProjectMessage.classList.toggle('hidden', projects.length > 0);
-
-            if (projects.length > 0) {
-                projects.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-                projects.forEach(p => {
-                    const card = document.createElement('div');
-                    card.className = 'card p-4';
-                    const progress = p.totalFiles > 0 ? Math.round((p.translatedFiles / p.totalFiles) * 100) : 0;
-                    card.innerHTML = `
+        function renderDashboard(){const{projects:e}=state;dom.dashboard.projectList.innerHTML="",dom.dashboard.noProjectMessage.classList.toggle("hidden",e.length>0),e.length>0&&(e.sort((e,t)=>new Date(t.createdAt)-new Date(e.createdAt)),e.forEach(e=>{const t=document.createElement("div");t.className="card p-4";const o=e.totalFiles>0?Math.round(e.translatedFiles/e.totalFiles*100):0;t.innerHTML=`
                         <div class="flex-grow">
                             <div class="flex justify-between items-start gap-2">
-                                <h3 class="text-lg font-bold truncate" title="${p.name}">${p.name}</h3>
-                                <button data-action="delete" data-project-id="${p.id}" class="p-1 text-[var(--text-secondary)] hover:text-[var(--accent-pink)] rounded-full flex-shrink-0"><i class="bi bi-trash3"></i></button>
+                                <h3 class="text-lg font-bold truncate" title="${e.name}">${e.name}</h3>
+                                <button data-action="delete-project" data-project-id="${e.id}" class="p-1 text-[var(--text-secondary)] hover:text-[var(--accent-pink)] rounded-full flex-shrink-0"><i class="bi bi-trash3"></i></button>
                             </div>
-                            <p class="text-sm text-[var(--text-secondary)] mt-1 mb-3">생성일: ${new Date(p.createdAt).toLocaleDateString()}</p>
+                            <p class="text-sm text-[var(--text-secondary)] mt-1 mb-3">생성일: ${new Date(e.createdAt).toLocaleDateString()}</p>
                         </div>
                         <div class="mt-auto">
-                            <div class="flex justify-between text-sm font-medium"><p>진행률</p><p>${progress}% (${p.translatedFiles}/${p.totalFiles})</p></div>
-                            <div class="w-full progress-bar-bg rounded-full h-2 mt-1"><div class="progress-bar h-2 rounded-full" style="width: ${progress}%"></div></div>
-                            <button data-action="open" data-project-id="${p.id}" class="btn btn-primary w-full mt-4">작업 시작</button>
-                        </div>`;
-                    dom.dashboard.projectList.appendChild(card);
-                });
-            }
-        }
+                            <div class="flex justify-between text-sm font-medium"><p>진행률</p><p>${o}% (${e.translatedFiles}/${e.totalFiles})</p></div>
+                            <div class="w-full progress-bar-bg rounded-full h-2 mt-1"><div class="progress-bar h-2 rounded-full" style="width: ${o}%"></div></div>
+                            <button data-action="open-workspace" data-project-id="${e.id}" class="btn btn-primary w-full mt-4">작업 시작</button>
+                        </div>`,dom.dashboard.projectList.appendChild(t)}))}
+        function renderWorkspace(){const{projectName:e,files:t,currentFile:o}=state.workspace;dom.workspace.projectName.textContent=e;const r={};t.forEach(e=>{let t=r;e.name.split("/").forEach((o,n,s)=>{n===s.length-1?t[o]=e:(t[o]=t[o]||{},t=t[o])})}),dom.workspace.fileList.innerHTML=buildFileTreeHTML(r),o?(dom.workspace.originalFileName.textContent=o.name.split("/").pop(),dom.workspace.originalText.textContent=o.originalText,dom.workspace.translatedText.value=o.translatedText||"",dom.workspace.translatedText.disabled=!1,dom.workspace.fileList.querySelector(`[data-file-name="${CSS.escape(o.name)}"]`)?.classList.add("selected")):(dom.workspace.originalFileName.textContent="",dom.workspace.originalText.textContent="좌측 목록에서 파일을 선택하세요.",dom.workspace.translatedText.value="",dom.workspace.translatedText.disabled=!0)}
+        function buildFileTreeHTML(e){let t='<ul class="space-y-1">';return Object.keys(e).sort((t,o)=>{const r=!e[t].name,n=!e[o].name;return r&&!n?-1:!r&&n?1:t.localeCompare(o)}).forEach(o=>{e[o].name?t+=`<li><div class="file-item" data-action="select-file" data-file-name="${e[o].name}"><i class="bi bi-check-circle-fill status-icon ${"translated"===e[o].status?"status-translated":"status-untranslated"}"></i><span class="text-sm truncate" title="${o}">${o}</span></div></li>`:t+=`<li><details open><summary class="dir-item"><i class="bi bi-folder-fill text-[var(--accent-yellow)]"></i><span class="font-medium text-sm">${o}</span></summary><div class="pl-4">${buildFileTreeHTML(e[o])}</div></details></li>`}),t+"</ul>"}
 
-        function renderWorkspace() {
-            const { projectName, files, currentFile, promptTemplate } = state.workspace;
-            dom.workspace.projectName.textContent = projectName;
-            dom.workspace.promptTemplate.value = promptTemplate;
+        function setState(newState){for(const key in newState){if(key==='workspace'&&typeof newState[key]==='object'&&newState[key]!==null&&!Array.isArray(newState[key])){state.workspace={...state.workspace,...newState[key]}}else{state[key]=newState[key]}}render()}
 
-            // Render File List
-            const fileTree = {};
-            files.forEach(file => {
-                let current = fileTree;
-                file.name.split('/').forEach((part, i, arr) => {
-                    if (i === arr.length - 1) current[part] = file;
-                    else { current[part] = current[part] || {}; current = current[part]; }
-                });
-            });
-            dom.workspace.fileList.innerHTML = buildFileTreeHTML(fileTree);
-            
-            // Render Editor
-            if (currentFile) {
-                dom.workspace.originalFileName.textContent = currentFile.name.split('/').pop();
-                dom.workspace.originalText.textContent = currentFile.originalText;
-                dom.workspace.translatedText.value = currentFile.translatedText || '';
-                dom.workspace.translatedText.disabled = false;
-                const selectedEl = dom.workspace.fileList.querySelector(`[data-file-name="${CSS.escape(currentFile.name)}"]`);
-                if (selectedEl) selectedEl.classList.add('selected');
-            } else {
-                dom.workspace.originalFileName.textContent = '';
-                dom.workspace.originalText.textContent = '좌측 목록에서 파일을 선택하세요.';
-                dom.workspace.translatedText.value = '';
-                dom.workspace.translatedText.disabled = true;
-            }
-        }
-
-        function buildFileTreeHTML(node) {
-            let html = '<ul class="space-y-1">';
-            Object.keys(node).sort((a,b)=>{const aIsDir=!node[a].name,bIsDir=!node[b].name;if(aIsDir&&!bIsDir)return-1;if(!aIsDir&&bIsDir)return 1;return a.localeCompare(b)}).forEach(key=>{
-                if (!node[key].name) { // isDir
-                    html += `<li><details open><summary class="dir-item"><i class="bi bi-folder-fill text-[var(--accent-yellow)]"></i><span class="font-medium text-sm">${key}</span></summary><div class="pl-4">${buildFileTreeHTML(node[key])}</div></details></li>`;
-                } else { // isFile
-                    const file = node[key];
-                    const iconClass = file.status === 'translated' ? 'status-translated' : 'status-untranslated';
-                    html += `<li><div class="file-item" data-action="select-file" data-file-name="${file.name}"><i class="bi bi-check-circle-fill status-icon ${iconClass}"></i><span class="text-sm truncate" title="${key}">${key}</span></div></li>`;
-                }
-            });
-            return html + '</ul>';
-        }
-
-        // --- State Modifier (FIXED) ---
-        /**
-         * [수정됨] 애플리케이션의 상태를 안전하게 업데이트하고 UI를 다시 렌더링합니다.
-         * 중첩된 'workspace' 객체를 덮어쓰지 않고 병합하도록 수정하여 데이터 유실 버그를 해결했습니다.
-         */
-        function setState(newState) {
-            for (const key in newState) {
-                if (key === 'workspace' && typeof newState[key] === 'object' && newState[key] !== null && !Array.isArray(newState[key])) {
-                    // 'workspace' 키의 경우, 기존 상태와 새로운 상태를 병합하여 데이터 유실을 방지합니다.
-                    state.workspace = { ...state.workspace, ...newState[key] };
-                } else {
-                    // 다른 모든 키의 경우, 값을 직접 할당합니다.
-                    state[key] = newState[key];
-                }
-            }
-            render();
-        }
-
-        // --- Actions (User interactions and data logic) ---
         const actions = {
-            setLoading(isLoading, message = '') {
-                setState({ isLoading, loadingMessage: message });
-            },
-            showToast(message, type = 'success') {
-                const toast = document.createElement('div');
-                toast.className = `toast toast-${type}`;
-                toast.textContent = message;
-                dom.toastContainer.appendChild(toast);
-                setTimeout(() => toast.remove(), 3000);
-            },
-            async showConfirm(title, message) {
-                dom.confirm.title.textContent = title;
-                dom.confirm.message.textContent = message;
-                dom.confirm.modal.classList.remove('hidden');
-                return new Promise(resolve => {
-                    const cleanup = (result) => {
-                        dom.confirm.modal.classList.add('hidden');
-                        dom.confirm.okBtn.onclick = null;
-                        dom.confirm.cancelBtn.onclick = null;
-                        resolve(result);
-                    };
-                    dom.confirm.okBtn.onclick = () => cleanup(true);
-                    dom.confirm.cancelBtn.onclick = () => cleanup(false);
-                });
-            },
-            handleError(error, userMessage = '오류가 발생했습니다.') {
-                console.error(error);
-                this.setLoading(false);
-                this.showToast(userMessage, 'error');
-            },
-            async init() {
-                try {
-                    await dbManager.initDB();
-                    setupWorker();
-                    this.setLoading(true, '프로젝트 목록 로딩 중...');
-                    await this.loadDashboard();
-                } catch (e) {
-                    this.handleError(e, '애플리케이션 초기화 실패');
-                }
-            },
-            async loadDashboard() {
-                this.setLoading(true, '대시보드 로딩 중...');
-                const projects = await dbManager.getAll('projects');
-                for(const p of projects) {
-                    const files = await dbManager.getFilesForProject(p.id);
-                    p.totalFiles = files.length;
-                    p.translatedFiles = files.filter(f => f.status === 'translated').length;
-                }
-                setState({ currentView: 'dashboard', isLoading: false, projects });
-            },
-            async openWorkspace(projectId) {
-                this.setLoading(true, '작업 공간 로딩 중...');
-                try {
-                    const project = await dbManager.get('projects', projectId);
-                    const files = await dbManager.getFilesForProject(projectId);
-                    setState({
-                        currentView: 'workspace',
-                        isLoading: false,
-                        workspace: {
-                            projectId: project.id,
-                            projectName: project.name,
-                            files: files,
-                            currentFile: null, // Reset current file
-                            promptTemplate: project.promptTemplate || '다음 텍스트를 한국어로 번역해줘: <<원문>>'
-                        }
-                    });
-                } catch(e) { this.handleError(e, '프로젝트를 여는 데 실패했습니다.')}
-            },
-            selectFile(fileName) {
-                const file = state.workspace.files.find(f => f.name === fileName);
-                if (file) setState({ workspace: { currentFile: file } });
-            },
-            async saveCurrentFile(moveToNext = false) {
-                const { currentFile } = state.workspace;
-                const { translatedText } = dom.workspace;
-                if (!currentFile) return;
-
-                const newText = translatedText.value;
-
-                if(currentFile.translatedText === newText) {
-                    if(moveToNext) this.selectNextUntranslated();
-                    return;
-                }
-
-                const updatedFile = { ...currentFile, translatedText: newText, status: newText.trim() ? 'translated' : 'untranslated' };
-
-                await dbManager.put('files', updatedFile);
-                this.showToast(`${updatedFile.name.split('/').pop()} 저장 완료!`, 'success');
-
-                const newFiles = state.workspace.files.map(f => f.name === updatedFile.name ? updatedFile : f);
-                setState({ workspace: { files: newFiles, currentFile: updatedFile } });
-
-                if (moveToNext) this.selectNextUntranslated();
-            },
-            selectNextUntranslated() {
-                const { files, currentFile } = state.workspace;
-                const currentIndex = files.findIndex(f => f.name === currentFile.name);
-                const nextFile = [...files.slice(currentIndex + 1), ...files.slice(0, currentIndex + 1)].find(f => f.status === 'untranslated');
-                if (nextFile) {
-                    this.selectFile(nextFile.name);
-                } else {
-                    this.showToast('모든 파일 번역 완료! 🎉', 'info');
-                }
-            },
-            async savePromptTemplate() {
-                const { projectId, promptTemplate } = state.workspace;
-                const newTemplate = dom.workspace.promptTemplate.value;
-                if (promptTemplate === newTemplate) return;
-
-                const project = await dbManager.get('projects', projectId);
+            setLoading(isLoading, message = '') { setState({ isLoading, loadingMessage: message }) },
+            showToast(message, type = 'success') { const e=document.createElement("div");e.className=`toast toast-${type}`,e.textContent=message,dom.toastContainer.appendChild(e),setTimeout(()=>e.remove(),3e3) },
+            async showConfirm(title, message) { dom.confirm.title.textContent=title,dom.confirm.message.textContent=message,dom.confirm.modal.classList.remove("hidden");return new Promise(e=>{const t=o=>{dom.confirm.modal.classList.add("hidden"),dom.confirm.okBtn.onclick=null,dom.confirm.cancelBtn.onclick=null,e(o)};dom.confirm.okBtn.onclick=()=>t(!0),dom.confirm.cancelBtn.onclick=()=>t(!1)}) },
+            handleError(error, userMessage = '오류가 발생했습니다.') { console.error(error);this.setLoading(false);this.showToast(userMessage, 'error') },
+            async init() { try{await dbManager.initDB(),setupWorker(),this.setLoading(true,'프로젝트 목록 로딩 중...'),await this.loadDashboard()}catch(e){this.handleError(e,"애플리케이션 초기화 실패")} },
+            async loadDashboard() { this.setLoading(true,'대시보드 로딩 중...');const e=await dbManager.getAll("projects");for(const t of e){const o=await dbManager.getFilesForProject(t.id);t.totalFiles=o.length,t.translatedFiles=o.filter(e=>"translated"===e.status).length}setState({currentView:'dashboard',isLoading:!1,projects:e,isPromptModalOpen:!1}) },
+            async openWorkspace(projectId) { this.setLoading(true,'작업 공간 로딩 중...');try{const e=await dbManager.get("projects",projectId),t=await dbManager.getFilesForProject(projectId);setState({currentView:"workspace",isLoading:!1,workspace:{projectId:e.id,projectName:e.name,files:t,currentFile:null,promptTemplate:e.promptTemplate||"다음 텍스트를 한국어로 번역해줘: {{text}}"}})}catch(e){this.handleError(e,"프로젝트를 여는 데 실패했습니다.")} },
+            selectFile(fileName) { const e=state.workspace.files.find(e=>e.name===fileName);e&&setState({workspace:{currentFile:e}}) },
+            async saveCurrentFile(moveToNext=!1) { const{currentFile:e}=state.workspace,{translatedText:t}=dom.workspace;if(!e)return;const o=t.value;if(e.translatedText===o)return void(moveToNext&&this.selectNextUntranslated());const r={...e,translatedText:o,status:o.trim()?"translated":"untranslated"};await dbManager.put("files",r),this.showToast(`${r.name.split("/").pop()} 저장 완료!`,"success");const n=state.workspace.files.map(t=>t.name===r.name?r:t);setState({workspace:{files:n,currentFile:r}}),moveToNext&&this.selectNextUntranslated() },
+            selectNextUntranslated() { const{files:e,currentFile:t}=state.workspace,o=e.findIndex(e=>e.name===t.name),r=[...e.slice(o+1),...e.slice(0,o+1)].find(e=>"untranslated"===e.status);r?this.selectFile(r.name):this.showToast("모든 파일 번역 완료! 🎉","info") },
+            async createProject(zipFile, files) { try{const e=`proj_${Date.now()}`,t=zipFile.name.replace(/\.zip$/i,"")||"새 프로젝트",o={id:e,name:t,createdAt:new Date().toISOString(),promptTemplate:"다음 텍스트를 한국어로 번역해줘: {{text}}"};await dbManager.put("projects",o);const r=files.map(t=>({...t,projectId:e,translatedText:"",status:"untranslated"}));for(const n of r)await dbManager.put("files",n);this.showToast(`'${t}' 프로젝트 생성 완료.`,"success"),await this.loadDashboard()}catch(e){this.handleError(e,"프로젝트 생성 실패")}finally{dom.dashboard.zipFileInput.value=""} },
+            async deleteProject(projectId) { const e=state.projects.find(e=>e.id===projectId);if(!e)return;const t=await this.showConfirm("프로젝트 삭제",`'${e.name}' 프로젝트와 모든 파일을 정말 삭제하시겠습니까?`);t&&(this.setLoading(true,`'${e.name}' 삭제 중...`),await dbManager.deleteProjectAndFiles(projectId),this.showToast(`'${e.name}' 삭제 완료.`,"info"),await this.loadDashboard()) },
+            async exportTranslations() { const{projectId:e,projectName:t,files:o}=state.workspace;if(!e)return;this.setLoading(true,"텍스트 파일 생성 중...");o.sort((e,t)=>e.name.localeCompare(t.name,void 0,{numeric:!0}));let r=`프로젝트: ${t}\n내보내기 날짜: ${new Date().toLocaleString()}\n========================================\n\n`;o.forEach(e=>{r+=`--- 파일: ${e.name} ---\n${e.translatedText||"[번역되지 않음]"}\n\n`});const n=new Blob([r],{type:"text/plain;charset=utf-8"}),s=URL.createObjectURL(n),a=document.createElement("a");a.href=s,a.download=`${t}_번역본.txt`,a.click(),URL.revokeObjectURL(s),a.remove(),this.setLoading(false),this.showToast("번역본을 내보냈습니다.","info")},
+            // --- NEW & UPDATED PROMPT ACTIONS ---
+            openPromptModal() { setState({ isPromptModalOpen: true }) },
+            closePromptModal() { setState({ isPromptModalOpen: false }) },
+            async savePrompt() {
+                const newTemplate = dom.promptModal.textarea.value;
+                if (state.workspace.promptTemplate === newTemplate) return this.closePromptModal();
+                const project = await dbManager.get('projects', state.workspace.projectId);
                 project.promptTemplate = newTemplate;
                 await dbManager.put('projects', project);
-                setState({ workspace: { promptTemplate: newTemplate } });
+                setState({ workspace: { promptTemplate: newTemplate }, isPromptModalOpen: false });
                 this.showToast('프롬프트 템플릿 저장 완료', 'info');
             },
-            async createProject(zipFile, files) {
+            async copyPrompt() {
+                const { currentFile, promptTemplate } = state.workspace;
+                if (!currentFile) return this.showToast('먼저 파일을 선택해주세요.', 'error');
+                const prompt = promptTemplate.replace(/\{\{text\}\}/g, currentFile.originalText);
                 try {
-                    const newProjectId = `proj_${Date.now()}`;
-                    const projectName = zipFile.name.replace(/\.zip$/i, '') || '새 프로젝트';
-                    const newProject = { id: newProjectId, name: projectName, createdAt: new Date().toISOString(), promptTemplate: '다음 텍스트를 한국어로 번역해줘: <<원문>>' };
-                    
-                    await dbManager.put('projects', newProject);
-
-                    const filesToSave = files.map(f => ({ ...f, projectId: newProjectId, translatedText: '', status: 'untranslated' }));
-                    for(const file of filesToSave) {
-                        await dbManager.put('files', file);
-                    }
-
-                    this.showToast(`'${projectName}' 프로젝트 생성 완료.`, 'success');
-                    await this.loadDashboard(); // Reload dashboard to show the new project
-                } catch(e) { this.handleError(e, '프로젝트 생성 실패'); }
-                finally { dom.dashboard.zipFileInput.value = ''; }
-            },
-            async deleteProject(projectId) {
-                const project = state.projects.find(p => p.id === projectId);
-                if (!project) return;
-                const ok = await this.showConfirm('프로젝트 삭제', `'${project.name}' 프로젝트와 모든 파일을 정말 삭제하시겠습니까?`);
-                if (ok) {
-                    this.setLoading(true, `'${project.name}' 삭제 중...`);
-                    await dbManager.deleteProjectAndFiles(projectId);
-                    this.showToast(`'${project.name}' 삭제 완료.`, 'info');
-                    await this.loadDashboard();
+                    await navigator.clipboard.writeText(prompt);
+                    this.showToast('프롬프트가 클립보드에 복사되었습니다.');
+                } catch(err) {
+                    this.handleError(err, '클립보드 복사 실패');
                 }
-            },
-            async exportTranslations() {
-                const { projectId, projectName, files } = state.workspace;
-                if (!projectId) return;
-                this.setLoading(true, '텍스트 파일 생성 중...');
-                files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-                let textContent = `프로젝트: ${projectName}\n내보내기 날짜: ${new Date().toLocaleString()}\n========================================\n\n`;
-                files.forEach(f => { textContent += `--- 파일: ${f.name} ---\n${f.translatedText||"[번역되지 않음]"}\n\n`; });
-                const blob = new Blob([textContent], { type: "text/plain;charset=utf-8" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `${projectName}_번역본.txt`;
-                a.click();
-                URL.revokeObjectURL(url);
-                a.remove();
-                this.setLoading(false);
-                this.showToast('번역본을 내보냈습니다.', 'info');
             }
         };
 
-        // --- Event Listeners ---
         dom.app.addEventListener('click', (e) => {
             const target = e.target.closest('[data-action]');
             if (!target) return;
-
             const { action, projectId, fileName } = target.dataset;
-
-            switch (action) {
-                case 'open': actions.openWorkspace(projectId); break;
-                case 'delete': actions.deleteProject(projectId); break;
-                case 'select-file': actions.selectFile(fileName); break;
-            }
+            if (actions[action]) actions[action](projectId || fileName);
+            else if(action === 'delete-project') actions.deleteProject(projectId); // Special case due to legacy naming
         });
         
-        $('#new-project-btn').addEventListener('click', () => dom.dashboard.zipFileInput.click());
-        dom.dashboard.zipFileInput.addEventListener('change', (e) => {
-             if (e.target.files.length) worker.postMessage({ type: 'PROCESS_ZIP', payload: { file: e.target.files[0] } });
-        });
-        $('#back-to-dashboard-btn').addEventListener('click', () => actions.loadDashboard());
-        $('#save-translation-btn').addEventListener('click', () => actions.saveCurrentFile(true));
-        dom.workspace.promptTemplate.addEventListener('blur', () => actions.savePromptTemplate());
-        $('#export-btn').addEventListener('click', () => actions.exportTranslations());
-        
-        // --- [BUGFIX] Add listener to handle disabled translatedText area ---
-        dom.workspace.translatedText.addEventListener('input', () => {
-            if (dom.workspace.translatedText.disabled) {
-                actions.showToast('먼저 파일을 선택해주세요.', 'error');
-            }
-        });
+        $('#new-project-btn').addEventListener('click',()=>dom.dashboard.zipFileInput.click());
+        dom.dashboard.zipFileInput.addEventListener('change', (e) => { e.target.files.length && worker.postMessage({ type: 'PROCESS_ZIP', payload: { file: e.target.files[0] } }) });
 
-        // --- App Initialization ---
         actions.init();
-
     </script>
 </body>
 </html>
