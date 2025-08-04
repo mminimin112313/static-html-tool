@@ -496,10 +496,12 @@
         exportDataBtn: document.getElementById('export-data-btn'),
         importDataBtn: document.getElementById('import-data-btn'),
         importDataInput: document.getElementById('import-data-input'),
+        sortSelect: document.getElementById('sort-select'), // 정렬 드롭다운 추가
     };
 
     let state = {
         currentFilter: { type: 'all', id: null, name: '모든 항목' },
+        currentSortOrder: 'updatedAt_desc', // 정렬 상태 추가
         prompts: [],
         folders: [],
         sequences: [],
@@ -517,10 +519,10 @@
         getCollectionRef: (name) => collection(dbFirestore, 'users', currentUser.uid, name),
         getDocRef: (name, id) => doc(dbFirestore, 'users', currentUser.uid, name, id),
 
-        listenToCollection: (collectionName, callback) => {
+        listenToCollection: (collectionName, orderByField, orderByDirection, callback) => {
             if (!currentUser) return;
             if (unsubscribeListeners[collectionName]) unsubscribeListeners[collectionName]();
-            const q = query(dbService.getCollectionRef(collectionName), orderBy("updatedAt", "desc"));
+            const q = query(dbService.getCollectionRef(collectionName), orderBy(orderByField, orderByDirection));
             unsubscribeListeners[collectionName] = onSnapshot(q, (snapshot) => {
                 const data = snapshot.docs.map(doc => {
                     const d = doc.data();
@@ -575,7 +577,7 @@
                     <a style="display: flex; align-items: center; width: 100%;">
                         <i class="nav-icon fa-regular fa-folder"></i>
                         <span class="folder-name" style="flex-grow: 1;">${helpers.escapeHTML(f.name)}</span>
-                        <button class="edit-folder-btn" data-folder-id="${f.id}" data-folder-name="${helpers.escapeHTML(f.name)}" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; margin-left: auto;">
+                        <button class="edit-folder-btn" data-folder-id="${f.id}" data-folder-name="${helpers.escapeHTML(f.name)}" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; margin-left: auto; display: none;">
                             <i class="fa-solid fa-pencil"></i>
                         </button>
                     </a>
@@ -792,8 +794,9 @@
                 helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
                 const currentUsageCount = p.usageCount || 0;
                 await dbService.update('prompts', p.id, { usageCount: currentUsageCount + 1 });
-                if (onCompleteCallback) onCompleteCallback();
-                else uiElements.templateModal.overlay.classList.remove('show');
+                if (onCompleteCallback) {
+                    onCompleteCallback();
+                }
             };
             uiElements.templateModal.closeBtn.onclick = () => {
                 uiElements.templateModal.overlay.classList.remove('show');
@@ -964,6 +967,23 @@
     // =================================================================
     // 앱 초기화 및 이벤트 리스너 설정
     // =================================================================
+    function setupPromptsListener() {
+        const [field, direction] = state.currentSortOrder.split('_');
+        
+        // 이름순 정렬은 Firestore에서 지원하지 않으므로, updatedAt으로 데이터를 받은 후 클라이언트에서 정렬합니다.
+        const firestoreField = (field === 'title') ? 'updatedAt' : field;
+        const firestoreDirection = (field === 'title') ? 'desc' : direction;
+
+        dbService.listenToCollection('prompts', firestoreField, firestoreDirection, (data) => {
+            state.prompts = data;
+            if (state.currentSortOrder === 'title_asc') {
+                state.prompts.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+            }
+            buildSearchIndex();
+            render.prompts();
+        });
+    }
+
     function setupEventListeners() {
         const setFilter = (type, id, name) => {
             state.currentFilter = { type, id, name };
@@ -983,7 +1003,12 @@
                 if (e.target.closest('.edit-btn')) return render.promptEditor(promptId);
                 if (e.target.closest('.copy-btn')) {
                     const p = await dbService.getById('prompts', promptId);
-                    if(p) { helpers.copyToClipboard(p.content); helpers.showToast('클립보드에 복사되었습니다!'); }
+                    if(p) { 
+                        helpers.copyToClipboard(p.content); 
+                        helpers.showToast('클립보드에 복사되었습니다!'); 
+                        // 최근 사용으로 기록하기 위해 updatedAt 업데이트
+                        await dbService.update('prompts', promptId, { usageCount: (p.usageCount || 0) + 1 });
+                    }
                 }
                 else if (e.target.closest('.use-btn')) return render.templateModal(promptId);
                 else if (e.target.closest('.fav-icon')) {
@@ -1050,11 +1075,25 @@
                 return;
             }
             const target = e.target.closest('.nav-item');
-            if(target) setFilter(target.dataset.filterType === 'uncategorized' ? 'uncategorized' : 'folder', target.dataset.folderId, target.textContent.trim());
+            if(target) setFilter(target.dataset.filterType === 'uncategorized' ? 'uncategorized' : 'folder', target.dataset.folderId, target.querySelector('.folder-name')?.textContent.trim() || '미분류');
         });
+        uiElements.folderList.addEventListener('mouseover', (e) => {
+            const item = e.target.closest('.nav-item[data-folder-id]');
+            if (item) item.querySelector('.edit-folder-btn').style.display = 'inline-block';
+        });
+        uiElements.folderList.addEventListener('mouseout', (e) => {
+            const item = e.target.closest('.nav-item[data-folder-id]');
+            if (item) item.querySelector('.edit-folder-btn').style.display = 'none';
+        });
+
         uiElements.sequenceList.addEventListener('click', (e) => {
             const target = e.target.closest('.nav-item');
             if(target) render.sequenceEditor(target.dataset.seqId);
+        });
+
+        uiElements.sortSelect.addEventListener('change', (e) => {
+            state.currentSortOrder = e.target.value;
+            setupPromptsListener();
         });
 
         uiElements.sequenceModal.saveBtn.onclick = async () => {
@@ -1108,7 +1147,6 @@
             helpers.showToast('데이터 가져오기 완료!');
         };
         
-        // 모바일 사이드바 토글
         uiElements.mobileMenuToggle.onclick = () => uiElements.sidebar.classList.toggle('open');
         uiElements.sidebarCloseBtn.onclick = () => uiElements.sidebar.classList.remove('open');
 
@@ -1119,9 +1157,9 @@
         uiElements.sidebarContent.style.display = 'flex';
         uiElements.contentView.innerHTML = '<div class="content-placeholder">데이터를 불러오는 중...</div>';
 
-        dbService.listenToCollection('folders', (data) => { state.folders = data; render.folders(); });
-        dbService.listenToCollection('sequences', (data) => { state.sequences = data; render.sequences(); });
-        dbService.listenToCollection('prompts', (data) => { state.prompts = data; buildSearchIndex(); render.prompts(); });
+        dbService.listenToCollection('folders', 'updatedAt', 'desc', (data) => { state.folders = data; render.folders(); });
+        dbService.listenToCollection('sequences', 'updatedAt', 'desc', (data) => { state.sequences = data; render.sequences(); });
+        setupPromptsListener();
         
         setupEventListeners();
     }
