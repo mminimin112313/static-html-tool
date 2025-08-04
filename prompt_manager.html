@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>프롬프트 관리자 프로 (최종)</title>
+    <title>프롬프트 관리자 프로 (c)</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
@@ -268,6 +268,50 @@
         .sequence-sortable-item .remove-from-sequence-btn { background: none; border: none; color: var(--text-secondary); margin-left: auto; padding: 4px; }
         .sortable-ghost { opacity: 0.4; }
 
+        /* 통계 대시보드 스타일 */
+        .statistics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .stat-card {
+            background-color: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        .stat-card h3 {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+        }
+        .stat-card .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--accent-blue);
+        }
+        .stat-card .stat-details {
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+        .stat-card ul {
+            list-style: none;
+            padding: 0;
+            margin-top: 10px;
+        }
+        .stat-card li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+        }
+        .stat-card li:last-child {
+            border-bottom: none;
+        }
+        .stat-card .count {
+            color: var(--text-secondary);
+        }
+
         /* 토스트 */
         .toast { position: fixed; bottom: 20px; right: 20px; background-color: var(--bg-tertiary); color: var(--text-primary); padding: 12px 20px; border-radius: 6px; border-left: 4px solid var(--accent-blue); opacity: 0; visibility: hidden; transition: all .3s; transform: translateY(20px); z-index: 2000; }
         .toast.show { opacity: 1; visibility: visible; transform: translateY(0); }
@@ -305,6 +349,7 @@
                     <li class="nav-item" data-filter-type="favorites"><a><i class="nav-icon fa-solid fa-star"></i> 즐겨찾기</a></li>
                     <li class="nav-item" data-filter-type="templates"><a><i class="nav-icon fa-solid fa-puzzle-piece"></i> 템플릿만</a></li>
                     <li class="nav-item" data-filter-type="prompts"><a><i class="nav-icon fa-solid fa-file-lines"></i> 프롬프트만</a></li>
+                    <li class="nav-item" data-filter-type="statistics"><a><i class="nav-icon fa-solid fa-chart-pie"></i> 통계</a></li>
                     <li class="nav-item" data-filter-type="history"><a><i class="nav-icon fa-solid fa-history"></i> 사용 기록</a></li>
                 </ul>
                 <h3 class="nav-section-title">폴더</h3>
@@ -337,6 +382,7 @@
                 <div class="sort-wrapper">
                     <select id="sort-select" class="button-like" style="padding: 8px 12px;">
                         <option value="updatedAt_desc">최근 사용순</option>
+                        <option value="usageCount_desc">사용 횟수순</option>
                         <option value="createdAt_desc">최신 등록순</option>
                         <option value="createdAt_asc">오래된 등록순</option>
                         <option value="title_asc">이름순</option>
@@ -901,6 +947,51 @@
                 }
             };
         },
+        statisticsDashboard: () => {
+            uiElements.mainHeader.textContent = '통계';
+            const totalPrompts = state.prompts.length;
+            const totalFolders = state.folders.length;
+            const templateCount = state.prompts.filter(p => p.isTemplate).length;
+            const regularPromptCount = totalPrompts - templateCount;
+
+            const topUsedPrompts = [...state.prompts]
+                .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
+                .slice(0, 5);
+            
+            const folderPromptCounts = state.folders
+                .map(folder => ({
+                    name: folder.name,
+                    count: state.prompts.filter(p => p.folderId === folder.id).length
+                }))
+                .sort((a, b) => b.count - a.count)
+                .slice(0, 5);
+
+            uiElements.contentView.innerHTML = `
+                <div class="statistics-grid">
+                    <div class="stat-card">
+                        <h3>총 프롬프트</h3>
+                        <div class="stat-number">${totalPrompts}</div>
+                        <div class="stat-details">템플릿: ${templateCount} / 일반: ${regularPromptCount}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>총 폴더</h3>
+                        <div class="stat-number">${totalFolders}</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>가장 많이 사용된 프롬프트 TOP 5</h3>
+                        <ul>
+                            ${topUsedPrompts.map(p => `<li><span>${helpers.escapeHTML(p.title)}</span> <span class="count">${p.usageCount || 0}회</span></li>`).join('') || '<li>데이터가 없습니다.</li>'}
+                        </ul>
+                    </div>
+                    <div class="stat-card">
+                        <h3>프롬프트가 가장 많은 폴더 TOP 5</h3>
+                        <ul>
+                            ${folderPromptCounts.map(f => `<li><span>${helpers.escapeHTML(f.name)}</span> <span class="count">${f.count}개</span></li>`).join('') || '<li>데이터가 없습니다.</li>'}
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
     };
 
     // =================================================================
@@ -1015,7 +1106,7 @@
     function setupPromptsListener() {
         const [field, direction] = state.currentSortOrder.split('_');
         
-        // 이름순 정렬은 Firestore에서 지원하지 않으므로, updatedAt으로 데이터를 받은 후 클라이언트에서 정렬합니다.
+        // 이름순 정렬은 Firestore에서 직접 지원하지 않으므로, updatedAt으로 데이터를 받은 후 클라이언트에서 정렬합니다.
         const firestoreField = (field === 'title') ? 'updatedAt' : field;
         const firestoreDirection = (field === 'title') ? 'desc' : direction;
 
@@ -1025,7 +1116,10 @@
                 state.prompts.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
             }
             buildSearchIndex();
-            render.prompts();
+            // 현재 필터가 통계 뷰가 아닐 때만 프롬프트 목록을 다시 렌더링
+            if (state.currentFilter.type !== 'statistics') {
+                render.prompts();
+            }
         });
     }
 
@@ -1035,7 +1129,12 @@
             document.querySelectorAll('.sidebar .nav-item.active').forEach(el => el.classList.remove('active'));
             const target = document.querySelector(`.nav-item[data-filter-type="${type}"]` + (id ? `[data-folder-id="${id}"]` : ''));
             if(target) target.classList.add('active');
-            render.prompts();
+            
+            if (type === 'statistics') {
+                render.statisticsDashboard();
+            } else {
+                render.prompts();
+            }
         };
 
         uiElements.contentView.addEventListener('click', async (e) => {
