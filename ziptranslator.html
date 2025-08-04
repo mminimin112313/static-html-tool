@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>eBook 번역 관리 도구 v6.0 (State-Driven)</title>
+    <title>eBook 번역 관리 도구 v6.1 (File Selection Hotfix)</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -290,7 +290,7 @@
                 dom.workspace.originalText.textContent = currentFile.originalText;
                 dom.workspace.translatedText.value = currentFile.translatedText || '';
                 dom.workspace.translatedText.disabled = false;
-                const selectedEl = dom.workspace.fileList.querySelector(`[data-file-name="${currentFile.name}"]`);
+                const selectedEl = dom.workspace.fileList.querySelector(`[data-file-name="${CSS.escape(currentFile.name)}"]`);
                 if (selectedEl) selectedEl.classList.add('selected');
             } else {
                 dom.workspace.originalFileName.textContent = '';
@@ -314,12 +314,20 @@
             return html + '</ul>';
         }
 
-        // --- State Modifier ---
+        // --- State Modifier (FIXED) ---
+        /**
+         * [수정됨] 애플리케이션의 상태를 안전하게 업데이트하고 UI를 다시 렌더링합니다.
+         * 중첩된 'workspace' 객체를 덮어쓰지 않고 병합하도록 수정하여 데이터 유실 버그를 해결했습니다.
+         */
         function setState(newState) {
-            Object.assign(state, newState);
-            // Deep merge for workspace to avoid overwriting nested properties
-            if (newState.workspace) {
-                 state.workspace = { ...state.workspace, ...newState.workspace };
+            for (const key in newState) {
+                if (key === 'workspace' && typeof newState[key] === 'object' && newState[key] !== null && !Array.isArray(newState[key])) {
+                    // 'workspace' 키의 경우, 기존 상태와 새로운 상태를 병합하여 데이터 유실을 방지합니다.
+                    state.workspace = { ...state.workspace, ...newState[key] };
+                } else {
+                    // 다른 모든 키의 경우, 값을 직접 할당합니다.
+                    state[key] = newState[key];
+                }
             }
             render();
         }
@@ -399,26 +407,24 @@
                 if (file) setState({ workspace: { currentFile: file } });
             },
             async saveCurrentFile(moveToNext = false) {
-                const { currentFile, translatedText } = dom.workspace;
-                if (!state.workspace.currentFile) return;
+                const { currentFile } = state.workspace;
+                const { translatedText } = dom.workspace;
+                if (!currentFile) return;
 
-                const file = state.workspace.currentFile;
                 const newText = translatedText.value;
 
-                if(file.translatedText === newText) {
+                if(currentFile.translatedText === newText) {
                     if(moveToNext) this.selectNextUntranslated();
                     return;
                 }
 
-                file.translatedText = newText;
-                file.status = newText.trim() ? 'translated' : 'untranslated';
+                const updatedFile = { ...currentFile, translatedText: newText, status: newText.trim() ? 'translated' : 'untranslated' };
 
-                await dbManager.put('files', file);
-                this.showToast(`${file.name.split('/').pop()} 저장 완료!`, 'success');
+                await dbManager.put('files', updatedFile);
+                this.showToast(`${updatedFile.name.split('/').pop()} 저장 완료!`, 'success');
 
-                // Re-render with updated file info
-                const newFiles = state.workspace.files.map(f => f.name === file.name ? file : f);
-                setState({ workspace: { files: newFiles } });
+                const newFiles = state.workspace.files.map(f => f.name === updatedFile.name ? updatedFile : f);
+                setState({ workspace: { files: newFiles, currentFile: updatedFile } });
 
                 if (moveToNext) this.selectNextUntranslated();
             },
@@ -514,6 +520,13 @@
         $('#save-translation-btn').addEventListener('click', () => actions.saveCurrentFile(true));
         dom.workspace.promptTemplate.addEventListener('blur', () => actions.savePromptTemplate());
         $('#export-btn').addEventListener('click', () => actions.exportTranslations());
+        
+        // --- [BUGFIX] Add listener to handle disabled translatedText area ---
+        dom.workspace.translatedText.addEventListener('input', () => {
+            if (dom.workspace.translatedText.disabled) {
+                actions.showToast('먼저 파일을 선택해주세요.', 'error');
+            }
+        });
 
         // --- App Initialization ---
         actions.init();
