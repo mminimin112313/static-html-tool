@@ -572,7 +572,13 @@
         folders: () => {
             uiElements.folderList.innerHTML = state.folders.map(f => `
                 <li class="nav-item" data-filter-type="folder" data-folder-id="${f.id}">
-                    <a><i class="nav-icon fa-regular fa-folder"></i> ${helpers.escapeHTML(f.name)}</a>
+                    <a style="display: flex; align-items: center; width: 100%;">
+                        <i class="nav-icon fa-regular fa-folder"></i>
+                        <span class="folder-name" style="flex-grow: 1;">${helpers.escapeHTML(f.name)}</span>
+                        <button class="edit-folder-btn" data-folder-id="${f.id}" data-folder-name="${helpers.escapeHTML(f.name)}" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; margin-left: auto;">
+                            <i class="fa-solid fa-pencil"></i>
+                        </button>
+                    </a>
                 </li>`).join('') + `<li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
         },
         sequences: () => {
@@ -700,20 +706,12 @@
             };
 
             const handleFileLoad = async (file) => {
-                if (!file) return;
-                if (file.size > 5 * 1024 * 1024) { // 5MB limit
-                    helpers.showToast('파일 크기는 5MB를 초과할 수 없습니다.');
-                    return;
-                }
-                loadedFileNameSpan.textContent = file.name;
-                try {
-                    const text = await file.text();
-                    contentInput.value = text;
+                const content = await helpers.loadFileAsText(file);
+                if (content !== null) {
+                    contentInput.value = content;
                     checkContentSizeWarning();
+                    loadedFileNameSpan.textContent = file.name;
                     helpers.showToast('파일 내용을 불러왔습니다.');
-                } catch (error) {
-                    helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
-                    console.error("File read error:", error);
                 }
             };
 
@@ -731,7 +729,7 @@
                 }
             });
             contentInput.addEventListener('input', checkContentSizeWarning);
-            checkContentSizeWarning(); // 초기 로드 시 확인
+            checkContentSizeWarning();
         },
         templateModal: async (id, onCompleteCallback = null) => {
             const p = await dbService.getById('prompts', id);
@@ -742,12 +740,18 @@
             uiElements.templateModal.body.innerHTML = placeholders.map(ph => `
                 <div class="form-group">
                     <label for="ph-${ph}">${ph.replace(/_/g, ' ')}</label>
-                    <textarea id="ph-${ph}" data-placeholder="${ph}" rows="1"></textarea>
+                    <div style="display: flex; gap: 8px;">
+                        <textarea id="ph-${ph}" data-placeholder="${ph}" rows="1" style="flex-grow: 1; resize: vertical;"></textarea>
+                        <input type="file" class="template-file-input" data-target-id="ph-${ph}" style="display: none;" accept=".txt,.html,.md,.json,.csv,.js,.css,text/*">
+                        <button class="template-file-upload-btn button-like" data-target-id="ph-${ph}" title="파일에서 불러오기" style="flex-shrink: 0; padding: 8px 12px;"><i class="fa-solid fa-file-arrow-up"></i></button>
+                    </div>
                 </div>`).join('') + `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${helpers.escapeHTML(p.content)}</div></div>`;
             uiElements.templateModal.overlay.classList.add('show');
 
-            const inputs = uiElements.templateModal.body.querySelectorAll('textarea[data-placeholder]');
+            const modalBody = uiElements.templateModal.body;
+            const inputs = modalBody.querySelectorAll('textarea[data-placeholder]');
             const preview = document.getElementById('template-preview');
+            
             const updatePreview = () => {
                 let content = p.content;
                 inputs.forEach(input => {
@@ -755,8 +759,32 @@
                 });
                 preview.textContent = content;
             };
+
             inputs.forEach(input => input.addEventListener('input', updatePreview));
             updatePreview();
+
+            modalBody.addEventListener('click', (e) => {
+                const uploadBtn = e.target.closest('.template-file-upload-btn');
+                if (uploadBtn) {
+                    const targetId = uploadBtn.dataset.targetId;
+                    modalBody.querySelector(`.template-file-input[data-target-id="${targetId}"]`).click();
+                }
+            });
+
+            modalBody.addEventListener('change', async (e) => {
+                const fileInput = e.target.closest('.template-file-input');
+                if (fileInput && fileInput.files.length > 0) {
+                    const targetId = fileInput.dataset.targetId;
+                    const textarea = modalBody.querySelector(`#${targetId}`);
+                    const file = fileInput.files[0];
+                    const content = await helpers.loadFileAsText(file);
+                    if (content !== null) {
+                        textarea.value = content;
+                        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    fileInput.value = '';
+                }
+            });
 
             uiElements.templateModal.generateBtn.onclick = async () => {
                 const textToCopy = preview.textContent;
@@ -871,6 +899,22 @@
             currentSequencePromptIndex = -1;
             uiElements.templateModal.overlay.classList.remove('show');
             helpers.showToast('시퀀스 실행이 종료되었습니다.');
+        },
+        loadFileAsText: (file) => {
+            return new Promise((resolve) => {
+                if (!file) return resolve(null);
+                if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                    helpers.showToast('파일 크기는 5MB를 초과할 수 없습니다.');
+                    return resolve(null);
+                }
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = () => {
+                    helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
+                    resolve(null);
+                };
+                reader.readAsText(file);
+            });
         }
     };
 
@@ -921,6 +965,14 @@
     // 앱 초기화 및 이벤트 리스너 설정
     // =================================================================
     function setupEventListeners() {
+        const setFilter = (type, id, name) => {
+            state.currentFilter = { type, id, name };
+            document.querySelectorAll('.sidebar .nav-item.active').forEach(el => el.classList.remove('active'));
+            const target = document.querySelector(`.nav-item[data-filter-type="${type}"]` + (id ? `[data-folder-id="${id}"]` : ''));
+            if(target) target.classList.add('active');
+            render.prompts();
+        };
+
         uiElements.contentView.addEventListener('click', async (e) => {
             const promptItem = e.target.closest('.prompt-list-item');
             const editorSaveBtn = e.target.closest('.save-btn');
@@ -980,19 +1032,23 @@
         });
         uiElements.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null));
         
-        const setFilter = (type, id, name) => {
-            state.currentFilter = { type, id, name };
-            document.querySelectorAll('.sidebar .nav-item.active').forEach(el => el.classList.remove('active'));
-            const target = document.querySelector(`.nav-item[data-filter-type="${type}"]` + (id ? `[data-folder-id="${id}"]` : ''));
-            if(target) target.classList.add('active');
-            render.prompts();
-        };
-
         uiElements.libraryList.addEventListener('click', (e) => {
             const target = e.target.closest('.nav-item');
             if(target) setFilter(target.dataset.filterType, null, target.textContent.trim());
         });
         uiElements.folderList.addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-folder-btn');
+            if (editBtn) {
+                e.stopPropagation();
+                const folderId = editBtn.dataset.folderId;
+                const currentName = editBtn.dataset.folderName;
+                const newName = prompt('새 폴더 이름을 입력하세요:', currentName);
+                if (newName && newName.trim() && newName.trim() !== currentName) {
+                    dbService.update('folders', folderId, { name: newName.trim() });
+                    helpers.showToast('폴더 이름이 변경되었습니다.');
+                }
+                return;
+            }
             const target = e.target.closest('.nav-item');
             if(target) setFilter(target.dataset.filterType === 'uncategorized' ? 'uncategorized' : 'folder', target.dataset.folderId, target.textContent.trim());
         });
@@ -1092,5 +1148,6 @@
     uiElements.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
     uiElements.logoutBtn.addEventListener('click', () => signOut(auth));
 </script>
+
 </body>
 </html>
