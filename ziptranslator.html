@@ -3,11 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>eBook 번역 관리 도구 v5.2 (Dark Mode)</title>
+    <title>eBook 번역 관리 도구 v5.3</title>
+    <!-- Bootstrap Icons CDN 추가 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <style>
-        /* 1. 다크모드 테마 및 기본 스타일 정의 */
+        /* 1. 다크모드 테마 및 전체 레이아웃 재설계 */
         :root {
             --bg-primary: #131314;
             --bg-secondary: #1e1f20;
@@ -20,114 +22,134 @@
             --accent-yellow-rgb: 253, 214, 99;
             --accent-pink: #f28b82;
             --border-color: #3c4043;
+            --header-height: 60px;
+            --sidebar-width: 280px;
         }
 
         body { 
-            font-family: 'Pretendard', sans-serif; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
             background-color: var(--bg-primary); 
             color: var(--text-primary);
+            font-size: 16px;
         }
 
-        /* 컴포넌트 스타일 */
-        .card { 
-            background-color: var(--bg-secondary); 
-            border: 1px solid var(--border-color);
-            transition: all 0.2s ease-in-out; 
-        }
-        .card:hover { 
-            transform: translateY(-5px); 
-            border-color: var(--accent-blue);
-        }
+        /* 기본 컴포넌트 스타일 */
         .btn { 
-            padding: 0.6rem 1.2rem; 
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 1rem; 
             border-radius: 0.5rem; 
             font-weight: 600; 
             transition: all 0.2s ease-in-out; 
-            border: none;
+            border: 1px solid transparent;
             cursor: pointer;
         }
+        .btn i { font-size: 1.1rem; }
         .btn-primary { background-color: var(--accent-blue); color: var(--bg-primary); }
         .btn-primary:hover { filter: brightness(0.9); }
         .btn-danger { background-color: var(--accent-pink); color: var(--bg-primary); }
         .btn-danger:hover { filter: brightness(0.9); }
-        .btn-secondary { background-color: var(--bg-tertiary); color: var(--text-primary); }
+        .btn-secondary { background-color: var(--bg-tertiary); color: var(--text-primary); border-color: var(--border-color); }
         .btn-secondary:hover { background-color: var(--bg-hover); }
         .btn-warning { background-color: var(--accent-yellow); color: var(--bg-primary); }
         .btn-warning:hover { filter: brightness(0.9); }
 
-        .progress-bar-bg { background-color: var(--bg-tertiary); }
-        .progress-bar { background-color: var(--accent-blue); }
-
-        .sidebar { scrollbar-width: thin; scrollbar-color: var(--bg-hover) var(--bg-secondary); }
-        .sidebar::-webkit-scrollbar { width: 8px; }
-        .sidebar::-webkit-scrollbar-track { background: var(--bg-secondary); }
-        .sidebar::-webkit-scrollbar-thumb { background-color: var(--bg-hover); border-radius: 10px; border: 2px solid var(--bg-secondary); }
-        
-        .status-untranslated { color: var(--text-secondary); }
-        .status-translated { color: var(--accent-blue); }
-
-        .modal-backdrop { background-color: rgba(0,0,0,0.7); }
-        .modal-content { background: var(--bg-secondary); border: 1px solid var(--border-color); }
-        .file-item.copied-prompt { background-color: rgba(var(--accent-yellow-rgb), 0.1); }
-        .file-item:hover, .file-item.selected { background-color: var(--bg-hover); }
-
-        /* 입력 필드 스타일 */
         input[type="text"], textarea {
-            background-color: var(--bg-primary);
+            background-color: var(--bg-tertiary);
             color: var(--text-primary);
             border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            padding: 0.5rem 0.75rem;
         }
         input[type="text"]:focus, textarea:focus {
             outline: none;
             border-color: var(--accent-blue);
             box-shadow: 0 0 0 2px rgba(138, 180, 248, 0.3);
         }
-        textarea#translated-text { background-color: var(--bg-tertiary); }
+
+        /* 레이아웃 재정의 */
+        #app { display: flex; flex-direction: column; min-height: 100vh; }
+        header { 
+            height: var(--header-height); 
+            background-color: var(--bg-secondary); 
+            border-bottom: 1px solid var(--border-color);
+            flex-shrink: 0;
+        }
         
-        /* 헤더, 메인, 사이드바 레이아웃 스타일 */
-        header { background-color: var(--bg-secondary); box-shadow: 0 1px 2px 0 rgba(0,0,0,0.3); }
-        aside { background-color: var(--bg-secondary); border-right: 1px solid var(--border-color); }
-        section .bg-gray-100 { background-color: var(--bg-primary); border: 1px solid var(--border-color); }
-        #no-project-message h3 { color: var(--text-primary); }
-        #no-project-message p, #no-project-message svg { color: var(--text-secondary); }
-
-
-        /* 2. 토스트 메시지 위치 및 애니메이션 변경 */
-        @keyframes toast-in {
-            from { transform: translateY(100%); opacity: 0; }
-            to { transform: translateY(0); opacity: 1; }
+        /* 대시보드 */
+        #dashboard-view main { padding: 1.5rem; }
+        .card { 
+            background-color: var(--bg-secondary); 
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            transition: all 0.2s ease-in-out; 
+            display: flex;
+            flex-direction: column;
         }
-        @keyframes toast-out {
-            from { transform: translateY(0); opacity: 1; }
-            to { transform: translateY(100%); opacity: 0; }
+        .card:hover { transform: translateY(-4px); border-color: var(--accent-blue); }
+        .progress-bar-bg { background-color: var(--bg-tertiary); }
+        .progress-bar { background-color: var(--accent-blue); }
+
+        /* 작업 공간 */
+        #workspace-view { display: flex; flex-direction: column; flex-grow: 1; }
+        #workspace-view > main { display: flex; flex-grow: 1; overflow: hidden; }
+        aside { 
+            width: var(--sidebar-width);
+            background-color: var(--bg-secondary); 
+            border-right: 1px solid var(--border-color);
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
         }
+        #file-list { overflow-y: auto; }
+        .file-item, .dir-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem; border-radius: 0.375rem; cursor: pointer; }
+        .file-item:hover, .dir-item:hover { background-color: var(--bg-hover); }
+        .file-item.selected { background-color: var(--accent-blue) !important; color: var(--bg-primary); font-weight: 600; }
+        .file-item.selected .status-icon { color: var(--bg-primary); }
+        .file-item.copied-prompt { border-left: 3px solid var(--accent-yellow); }
+        .status-icon.status-translated { color: var(--accent-blue); }
+        .status-icon.status-untranslated { color: var(--text-secondary); }
+
+        .editor-container { display: flex; flex-direction: column; flex-grow: 1; overflow: hidden; }
+        .editor-panes { display: flex; flex-grow: 1; min-height: 0; }
+        .editor-pane { width: 50%; display: flex; flex-direction: column; padding: 1rem; }
+        .editor-pane:first-child { border-right: 1px solid var(--border-color); }
+        .editor-pane textarea, .editor-pane .text-display { flex-grow: 1; background-color: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 0.375rem; padding: 0.75rem; overflow-y: auto; }
+        
+        /* 모달 및 토스트 */
+        .modal-backdrop { background-color: rgba(0,0,0,0.7); }
+        .modal-content { background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 0.75rem; }
+        
+        @keyframes toast-in { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes toast-out { from { transform: translateY(0); opacity: 1; } to { transform: translateY(100%); opacity: 0; } }
         .toast {
             animation: toast-in 0.4s ease, toast-out 0.4s ease 2.6s forwards;
-            min-width: 280px;
-            max-width: 90%;
-            text-align: center;
-            color: var(--bg-primary);
-            border-radius: 0.75rem;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            padding: 0.75rem 1.25rem;
+            min-width: 280px; max-width: 90%;
+            text-align: center; color: var(--bg-primary);
+            border-radius: 0.5rem; box-shadow: 0 4px 15px rgba(0,0,0,0.3);
             font-weight: 600;
         }
         .toast.toast-success { background-color: var(--accent-blue); }
         .toast.toast-error { background-color: var(--accent-pink); }
-        .toast.toast-info { background-color: var(--bg-tertiary); color: var(--text-primary); }
+        .toast.toast-info { background-color: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); }
     </style>
 </head>
-<body class="text-gray-800">
+<body>
 
-    <div id="app" class="min-h-screen">
+    <div id="app">
+        <!-- 로딩 뷰 -->
         <div id="loading-view" class="fixed inset-0 bg-black bg-opacity-75 flex-col items-center justify-center z-50 hidden">
             <div class="w-16 h-16 border-4 border-t-4 border-t-[var(--accent-blue)] border-[var(--border-color)] rounded-full animate-spin"></div>
             <p id="loading-message" class="text-white text-xl mt-4">프로젝트 처리 중...</p>
         </div>
         
+        <!-- 커스텀 확인 대화상자 -->
         <div id="confirm-modal" class="modal-backdrop hidden">
-            <div class="modal-content w-full max-w-md p-6 rounded-lg">
+            <div class="modal-content w-full max-w-md p-6">
                 <h3 id="confirm-title" class="text-lg font-bold mb-4"></h3>
-                <p id="confirm-message" class="mb-6 text-secondary"></p>
+                <p id="confirm-message" class="mb-6 text-[var(--text-secondary)]"></p>
                 <div class="flex justify-end space-x-4">
                     <button id="confirm-cancel-btn" class="btn btn-secondary">취소</button>
                     <button id="confirm-ok-btn" class="btn btn-danger">삭제</button>
@@ -135,72 +157,60 @@
             </div>
         </div>
 
-        <div id="dashboard-view">
-            <header class="sticky top-0 z-10">
-                <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-                    <h1 class="text-2xl font-bold">eBook 번역 대시보드</h1>
-                    <button id="new-project-btn" class="btn btn-primary">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline-block mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
-                        새 프로젝트 시작
-                    </button>
-                    <input type="file" id="zip-file-input" class="hidden" accept=".zip">
-                </div>
+        <!-- 대시보드 뷰 -->
+        <div id="dashboard-view" class="flex flex-col h-full">
+            <header class="flex justify-between items-center px-6">
+                <h1 class="text-xl font-bold">eBook 번역 대시보드</h1>
+                <button id="new-project-btn" class="btn btn-primary"><i class="bi bi-plus-lg"></i>새 프로젝트</button>
+                <input type="file" id="zip-file-input" class="hidden" accept=".zip">
             </header>
-            <main>
-                <div class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-                    <div id="project-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                        </div>
-                     <div id="no-project-message" class="text-center py-12 hidden">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" />
-                        </svg>
-                        <h3 class="mt-2 text-sm font-medium">프로젝트 없음</h3>
-                        <p class="mt-1 text-sm">새 프로젝트를 시작하여 번역 작업을 시작하세요.</p>
-                    </div>
+            <main class="flex-grow overflow-y-auto">
+                <div id="project-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <!-- 프로젝트 카드가 여기에 동적으로 추가됩니다. -->
+                </div>
+                <div id="no-project-message" class="text-center py-12 hidden">
+                    <i class="bi bi-folder-x text-5xl text-[var(--text-secondary)]"></i>
+                    <h3 class="mt-4 text-lg font-medium">프로젝트 없음</h3>
+                    <p class="mt-1 text-[var(--text-secondary)]">새 프로젝트를 시작하여 번역 작업을 시작하세요.</p>
                 </div>
             </main>
         </div>
 
-        <div id="workspace-view" class="hidden h-screen flex flex-col">
-            <header class="flex-shrink-0">
-                <div class="max-w-full mx-auto py-3 px-4 sm:px-6 lg:px-8 flex justify-between items-center">
-                    <div class="flex items-center space-x-4">
-                        <button id="back-to-dashboard-btn" class="p-2 rounded-full hover:bg-[var(--bg-hover)]">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                        </button>
-                        <h2 id="workspace-project-name" class="text-xl font-bold"></h2>
-                    </div>
-                    <div class="flex items-center space-x-4">
-                        <button id="export-btn" class="btn btn-secondary">내보내기</button>
-                        <button id="copy-prompt-btn" class="btn btn-secondary">프롬프트 복사</button>
-                        <button id="save-translation-btn" class="btn btn-primary">저장</button>
-                    </div>
+        <!-- 번역 작업 공간 뷰 -->
+        <div id="workspace-view" class="hidden">
+            <header class="flex justify-between items-center px-4">
+                <div class="flex items-center gap-2">
+                    <button id="back-to-dashboard-btn" class="p-2 rounded-full hover:bg-[var(--bg-hover)]">
+                        <i class="bi bi-arrow-left text-xl"></i>
+                    </button>
+                    <h2 id="workspace-project-name" class="text-lg font-bold"></h2>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <button id="export-btn" class="btn btn-secondary"><i class="bi bi-box-arrow-down"></i>내보내기</button>
+                    <button id="copy-prompt-btn" class="btn btn-secondary"><i class="bi bi-clipboard"></i>프롬프트 복사</button>
+                    <button id="save-translation-btn" class="btn btn-primary"><i class="bi bi-check-lg"></i>저장</button>
                 </div>
             </header>
-            <main class="flex-grow flex overflow-hidden">
-                <aside class="w-1/4 flex flex-col">
+            <main>
+                <aside>
                     <div class="p-4 border-b border-[var(--border-color)]">
                         <h3 class="font-semibold">파일 목록</h3>
                     </div>
-                    <div id="file-list" class="flex-grow overflow-y-auto sidebar p-2">
-                        </div>
+                    <div id="file-list" class="p-2"></div>
                 </aside>
-
-                <div class="w-3/4 flex flex-col overflow-hidden">
+                <div class="editor-container">
                     <div class="p-4 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]">
-                        <label for="prompt-template-input" class="block text-sm font-medium mb-1">프롬프트 템플릿 ( `&lt;&lt;원문&gt;&gt;` 변수 사용)</label>
-                        <input type="text" id="prompt-template-input" class="w-full p-2 rounded-md shadow-sm" placeholder="예: 다음 텍스트를 한국어로 번역해줘: <<원문>>">
+                        <label for="prompt-template-input" class="block text-sm font-medium mb-1 text-[var(--text-secondary)]">프롬프트 템플릿 ( `&lt;&lt;원문&gt;&gt;` 변수 사용)</label>
+                        <input type="text" id="prompt-template-input" class="w-full" placeholder="예: 다음 텍스트를 한국어로 번역해줘: <<원문>>">
                     </div>
-                    <div class="flex-grow flex min-h-0">
-                        <section class="w-1/2 p-4 flex flex-col">
+                    <div class="editor-panes">
+                        <section class="editor-pane">
                             <h3 class="text-lg font-semibold mb-2 flex-shrink-0">원문: <span id="original-file-name" class="font-normal text-[var(--text-secondary)]"></span></h3>
-                            <div class="flex-grow rounded-md p-3 overflow-y-auto bg-gray-100">
-                                <pre id="original-text" class="whitespace-pre-wrap text-sm leading-relaxed"></pre>
-                            </div>
+                            <pre id="original-text" class="text-display whitespace-pre-wrap text-sm leading-relaxed"></pre>
                         </section>
-                        <section class="w-1/2 p-4 flex flex-col">
+                        <section class="editor-pane">
                             <h3 class="text-lg font-semibold mb-2 flex-shrink-0">번역문</h3>
-                            <textarea id="translated-text" class="flex-grow w-full rounded-md p-3 text-sm leading-relaxed" placeholder="여기에 번역문을 입력하세요..."></textarea>
+                            <textarea id="translated-text" class="text-sm leading-relaxed" placeholder="여기에 번역문을 입력하세요..."></textarea>
                         </section>
                     </div>
                 </div>
@@ -212,365 +222,234 @@
 
     <script id="worker" type="javascript/worker">
         self.importScripts('https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js');
-        self.onmessage = async (e) => {
-            const { type, payload } = e.data;
-            if (type === 'PROCESS_ZIP') {
-                const { file } = payload;
-                const zip = new JSZip();
-                try {
-                    self.postMessage({ type: 'PROGRESS', payload: 'ZIP 파일 로딩 중...' });
-                    const content = await zip.loadAsync(file);
-                    self.postMessage({ type: 'PROGRESS', payload: '파일 목록 분석 중...' });
-                    const filesToProcess = [];
-                    content.forEach((relativePath, zipEntry) => {
-                        if (!zipEntry.dir && relativePath.toLowerCase().endsWith('.txt')) {
-                            filesToProcess.push(zipEntry);
-                        }
-                    });
-                    const totalFiles = filesToProcess.length;
-                    const extractedFiles = [];
-                    for (let i = 0; i < totalFiles; i++) {
-                        const zipEntry = filesToProcess[i];
-                        const text = await zipEntry.async('string');
-                        extractedFiles.push({ name: zipEntry.name, originalText: text });
-                        if ((i + 1) % 10 === 0 || i + 1 === totalFiles) {
-                           self.postMessage({ type: 'PROGRESS', payload: `파일 처리 중... (${i + 1}/${totalFiles})` });
-                        }
-                    }
-                    self.postMessage({ type: 'SUCCESS', payload: { files: extractedFiles } });
-                } catch (error) {
-                    self.postMessage({ type: 'ERROR', payload: error.message });
-                }
-            }
-        };
+        self.onmessage=async e=>{const{type:r,payload:s}=e.data;"PROCESS_ZIP"===r&&async function(e){const r=new JSZip;try{self.postMessage({type:"PROGRESS",payload:"ZIP 파일 로딩 중..."});const s=await r.loadAsync(e);self.postMessage({type:"PROGRESS",payload:"파일 목록 분석 중..."});const t=[];s.forEach((e,r)=>{r.dir||!e.toLowerCase().endsWith(".txt")||t.push(r)});const o=t.length,a=[];for(let e=0;e<o;e++){const r=t[e],s=await r.async("string");a.push({name:r.name,originalText:s}),(e+1)%10==0||e+1===o&&self.postMessage({type:"PROGRESS",payload:`파일 처리 중... (${e+1}/${o})`})}self.postMessage({type:"SUCCESS",payload:{files:a}})}catch(e){self.postMessage({type:"ERROR",payload:e.message})}}(s.file)};
     </script>
 
     <script type="module">
-        // --- 상수 및 변수 선언 (동일) ---
-        const DB_NAME = 'eBookTranslatorDB';
-        const DB_VERSION = 1;
-        const PROJECTS_STORE = 'projects';
-        const FILES_STORE = 'files';
+        const DB_NAME = 'eBookTranslatorDB', DB_VERSION = 1, PROJECTS_STORE = 'projects', FILES_STORE = 'files';
+        let db, worker, currentProjectId = null, currentFile = null;
+        const workspaceFileMap = new Map();
 
-        let db;
-        let worker;
-        let currentProjectId = null;
-        let currentFile = null;
-        let workspaceFileMap = new Map();
+        const $ = (selector) => document.querySelector(selector);
+        const $$ = (selector) => document.querySelectorAll(selector);
 
-        // --- DOM 요소 (동일) ---
         const views = {
-            loading: document.getElementById('loading-view'),
-            dashboard: document.getElementById('dashboard-view'),
-            workspace: document.getElementById('workspace-view'),
+            loading: $('#loading-view'),
+            dashboard: $('#dashboard-view'),
+            workspace: $('#workspace-view'),
         };
-        const loadingMessage = document.getElementById('loading-message');
-        const newProjectBtn = document.getElementById('new-project-btn');
-        const zipFileInput = document.getElementById('zip-file-input');
-        const projectList = document.getElementById('project-list');
-        const noProjectMessage = document.getElementById('no-project-message');
-        const backToDashboardBtn = document.getElementById('back-to-dashboard-btn');
-        const workspaceProjectName = document.getElementById('workspace-project-name');
-        const fileListContainer = document.getElementById('file-list');
-        const originalFileName = document.getElementById('original-file-name');
-        const originalTextEl = document.getElementById('original-text');
-        const translatedTextEl = document.getElementById('translated-text');
-        const saveTranslationBtn = document.getElementById('save-translation-btn');
-        const copyPromptBtn = document.getElementById('copy-prompt-btn');
-        const exportBtn = document.getElementById('export-btn');
-        const promptTemplateInput = document.getElementById('prompt-template-input');
-        const confirmModal = document.getElementById('confirm-modal');
-        const confirmOkBtn = document.getElementById('confirm-ok-btn');
-        const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
-        const toastContainer = document.getElementById('toast-container');
+        const dom = {
+            loadingMessage: $('#loading-message'), newProjectBtn: $('#new-project-btn'), zipFileInput: $('#zip-file-input'),
+            projectList: $('#project-list'), noProjectMessage: $('#no-project-message'), backToDashboardBtn: $('#back-to-dashboard-btn'),
+            workspaceProjectName: $('#workspace-project-name'), fileListContainer: $('#file-list'), originalFileName: $('#original-file-name'),
+            originalTextEl: $('#original-text'), translatedTextEl: $('#translated-text'), saveTranslationBtn: $('#save-translation-btn'),
+            copyPromptBtn: $('#copy-prompt-btn'), exportBtn: $('#export-btn'), promptTemplateInput: $('#prompt-template-input'),
+            confirmModal: $('#confirm-modal'), confirmOkBtn: $('#confirm-ok-btn'), confirmCancelBtn: $('#confirm-cancel-btn'),
+            toastContainer: $('#toast-container')
+        };
         
-        // --- 유틸리티 (동일) ---
         const utils = {
             async copyToClipboard(text) {
                 if (navigator.clipboard && window.isSecureContext) {
-                    try {
-                        await navigator.clipboard.writeText(text);
-                        return true;
-                    } catch (err) {
-                        console.error('navigator.clipboard.writeText 실패:', err);
-                    }
+                    try { await navigator.clipboard.writeText(text); return true; } catch (err) { console.error('Clipboard API failed:', err); }
                 }
                 const textArea = document.createElement("textarea");
                 textArea.value = text;
-                textArea.style.position = "fixed";
-                textArea.style.top = "-9999px";
-                textArea.style.left = "-9999px";
+                textArea.style.position = "fixed"; textArea.style.top = "-9999px";
                 document.body.appendChild(textArea);
-                textArea.focus();
-                textArea.select();
-                let success = false;
-                try {
-                    success = document.execCommand('copy');
-                } catch (err) {
-                    console.error('document.execCommand 실패:', err);
-                    success = false;
-                }
-                document.body.removeChild(textArea);
-                return success;
+                textArea.focus(); textArea.select();
+                try { return document.execCommand('copy'); } catch (err) { return false; } finally { document.body.removeChild(textArea); }
             }
         };
         
-        // --- DB 관리 (동일) ---
         const dbManager = {
-            initDB() {
-                return new Promise((resolve, reject) => {
-                    const request = indexedDB.open(DB_NAME, DB_VERSION);
-                    request.onerror = (event) => reject("IndexedDB 열기 실패: " + event.target.errorCode);
-                    request.onsuccess = (event) => { db = event.target.result; resolve(db); };
-                    request.onupgradeneeded = (event) => {
-                        const dbInstance = event.target.result;
-                        if (!dbInstance.objectStoreNames.contains(PROJECTS_STORE)) {
-                            dbInstance.createObjectStore(PROJECTS_STORE, { keyPath: 'id' });
-                        }
-                        if (!dbInstance.objectStoreNames.contains(FILES_STORE)) {
-                            const fileStore = dbInstance.createObjectStore(FILES_STORE, { keyPath: ['projectId', 'name'] });
-                            fileStore.createIndex('by_project', 'projectId', { unique: false });
-                        }
-                    };
-                });
-            },
-            addProject(project) { return new Promise((resolve, reject) => { const tx = db.transaction([PROJECTS_STORE], 'readwrite'); tx.objectStore(PROJECTS_STORE).add(project); tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(e.target.error); }); },
-            getProjects() { return new Promise((resolve, reject) => { const req = db.transaction([PROJECTS_STORE], 'readonly').objectStore(PROJECTS_STORE).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = (e) => reject(e.target.error); }); },
-            getProject(id) { return new Promise((resolve, reject) => { const req = db.transaction([PROJECTS_STORE], 'readonly').objectStore(PROJECTS_STORE).get(id); req.onsuccess = () => resolve(req.result); req.onerror = (e) => reject(e.target.error); }); },
-            updateProject(project) { return new Promise((resolve, reject) => { const tx = db.transaction([PROJECTS_STORE], 'readwrite'); tx.objectStore(PROJECTS_STORE).put(project); tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(e.target.error); }); },
-            deleteProject(id) {
-                return new Promise((resolve, reject) => {
-                    const tx = db.transaction([PROJECTS_STORE, FILES_STORE], 'readwrite');
-                    tx.objectStore(PROJECTS_STORE).delete(id);
-                    const cursorRequest = tx.objectStore(FILES_STORE).index('by_project').openCursor(IDBKeyRange.only(id));
-                    cursorRequest.onsuccess = (e) => { const cursor = e.target.result; if (cursor) { cursor.delete(); cursor.continue(); } };
-                    tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(e.target.error);
-                });
-            },
-            addFiles(files) {
-                 return new Promise((resolve, reject) => {
-                    if (files.length === 0) { resolve(); return; }
-                    const tx = db.transaction([FILES_STORE], 'readwrite');
-                    const store = tx.objectStore(FILES_STORE);
-                    files.forEach(file => store.add(file));
-                    tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(e.target.error);
-                });
-            },
-            getFilesForProject(projectId) { return new Promise((resolve, reject) => { const req = db.transaction([FILES_STORE], 'readonly').objectStore(FILES_STORE).index('by_project').getAll(projectId); req.onsuccess = () => resolve(req.result); req.onerror = (e) => reject(e.target.error); }); },
-            updateFile(file) { return new Promise((resolve, reject) => { const tx = db.transaction([FILES_STORE], 'readwrite'); tx.objectStore(FILES_STORE).put(file); tx.oncomplete = () => resolve(); tx.onerror = (e) => reject(e.target.error); }); }
+            initDB:()=>new Promise((r,e)=>{const t=indexedDB.open(DB_NAME,DB_VERSION);t.onerror=t=>e("IndexedDB failed: "+t.target.errorCode),t.onsuccess=e=>{db=e.target.result,r(db)},t.onupgradeneeded=e=>{const r=e.target.result;r.objectStoreNames.contains(PROJECTS_STORE)||r.createObjectStore(PROJECTS_STORE,{keyPath:"id"}),r.objectStoreNames.contains(FILES_STORE)||r.createObjectStore(FILES_STORE,{keyPath:["projectId","name"]}).createIndex("by_project","projectId",{unique:!1})}}),
+            addProject:e=>new Promise((r,t)=>{const s=db.transaction([PROJECTS_STORE],"readwrite");s.objectStore(PROJECTS_STORE).add(e),s.oncomplete=()=>r(),s.onerror=e=>t(e.target.error)}),
+            getProjects:()=>new Promise((r,e)=>{const t=db.transaction([PROJECTS_STORE],"readonly").objectStore(PROJECTS_STORE).getAll();t.onsuccess=()=>r(t.result),t.onerror=r=>e(r.target.error)}),
+            getProject:e=>new Promise((r,t)=>{const s=db.transaction([PROJECTS_STORE],"readonly").objectStore(PROJECTS_STORE).get(e);s.onsuccess=()=>r(s.result),s.onerror=e=>t(e.target.error)}),
+            updateProject:e=>new Promise((r,t)=>{const s=db.transaction([PROJECTS_STORE],"readwrite");s.objectStore(PROJECTS_STORE).put(e),s.oncomplete=()=>r(),s.onerror=e=>t(e.target.error)}),
+            deleteProject:e=>new Promise((r,t)=>{const s=db.transaction([PROJECTS_STORE,FILES_STORE],"readwrite");s.objectStore(PROJECTS_STORE).delete(e);const o=s.objectStore(FILES_STORE).index("by_project").openCursor(IDBKeyRange.only(e));o.onsuccess=e=>{const r=e.target.result;r&&(r.delete(),r.continue())},s.oncomplete=()=>r(),s.onerror=e=>t(e.target.error)}),
+            addFiles:e=>new Promise((r,t)=>{if(0===e.length)return void r();const s=db.transaction([FILES_STORE],"readwrite");e.forEach(e=>s.objectStore(FILES_STORE).add(e)),s.oncomplete=()=>r(),s.onerror=e=>t(e.target.error)}),
+            getFilesForProject:e=>new Promise((r,t)=>{const s=db.transaction([FILES_STORE],"readonly").objectStore(FILES_STORE).index("by_project").getAll(e);s.onsuccess=()=>r(s.result),s.onerror=e=>t(e.target.error)}),
+            updateFile:e=>new Promise((r,t)=>{const s=db.transaction([FILES_STORE],"readwrite");s.objectStore(FILES_STORE).put(e),s.oncomplete=()=>r(),s.onerror=e=>t(e.target.error)})
         };
 
-        // --- UI 렌더링 (일부 수정) ---
         const uiManager = {
-            switchView(viewName) { /* 동일 */ Object.values(views).forEach(v => v.classList.add('hidden')); if (views[viewName]) views[viewName].classList.remove('hidden'); },
-            showLoading(message) { /* 동일 */ loadingMessage.textContent = message; views.loading.classList.remove('hidden'); views.loading.classList.add('flex'); },
-            hideLoading() { /* 동일 */ views.loading.classList.add('hidden'); views.loading.classList.remove('flex'); },
+            switchView(viewName) { Object.values(views).forEach(v => v.classList.add('hidden')); if (views[viewName]) views[viewName].classList.remove('hidden'); },
+            showLoading(message) { dom.loadingMessage.textContent = message; views.loading.classList.remove('hidden'); views.loading.classList.add('flex'); },
+            hideLoading() { views.loading.classList.add('hidden'); views.loading.classList.remove('flex'); },
             async renderDashboard() {
                 const projects = await dbManager.getProjects();
-                projectList.innerHTML = '';
-                if (projects.length === 0) {
-                    noProjectMessage.classList.remove('hidden');
-                } else {
-                    noProjectMessage.classList.add('hidden');
+                dom.projectList.innerHTML = '';
+                if (projects.length === 0) { dom.noProjectMessage.classList.remove('hidden'); }
+                else {
+                    dom.noProjectMessage.classList.add('hidden');
                     projects.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
                     for (const project of projects) {
                         const files = await dbManager.getFilesForProject(project.id);
-                        const totalFiles = files.length;
-                        const translatedFiles = files.filter(f => f.status === 'translated').length;
-                        const progress = totalFiles > 0 ? Math.round((translatedFiles / totalFiles) * 100) : 0;
+                        const total = files.length, translated = files.filter(f => f.status === 'translated').length;
+                        const progress = total > 0 ? Math.round((translated / total) * 100) : 0;
                         const card = document.createElement('div');
-                        card.className = 'card p-6';
+                        card.className = 'card p-4';
                         card.innerHTML = `
-                            <div class="flex justify-between items-start">
-                                <h3 class="text-xl font-bold mb-2 truncate" title="${project.name}">${project.name}</h3>
-                                <button data-project-id="${project.id}" class="delete-project-btn p-2 text-[var(--text-secondary)] hover:text-[var(--accent-pink)] rounded-full flex-shrink-0">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clip-rule="evenodd" /></svg>
-                                </button>
+                            <div class="flex justify-between items-start gap-2">
+                                <h3 class="text-lg font-bold truncate" title="${project.name}">${project.name}</h3>
+                                <button data-project-id="${project.id}" class="delete-project-btn p-1 text-[var(--text-secondary)] hover:text-[var(--accent-pink)] rounded-full flex-shrink-0"><i class="bi bi-trash3"></i></button>
                             </div>
-                            <p class="text-sm text-[var(--text-secondary)] mb-4">생성일: ${new Date(project.createdAt).toLocaleDateString()}</p>
-                            <div class="mb-2">
-                                <div class="flex justify-between text-sm font-medium">
-                                    <span>진행률</span>
-                                    <span>${progress}% (${translatedFiles}/${totalFiles})</span>
-                                </div>
-                                <div class="w-full progress-bar-bg rounded-full h-2.5 mt-1">
-                                    <div class="progress-bar h-2.5 rounded-full" style="width: ${progress}%"></div>
-                                </div>
+                            <p class="text-sm text-[var(--text-secondary)] mt-1 mb-3">생성일: ${new Date(project.createdAt).toLocaleDateString()}</p>
+                            <div class="mb-4 mt-auto">
+                                <div class="flex justify-between text-sm font-medium"><p>진행률</p><p>${progress}% (${translated}/${total})</p></div>
+                                <div class="w-full progress-bar-bg rounded-full h-2 mt-1"><div class="progress-bar h-2 rounded-full" style="width: ${progress}%"></div></div>
                             </div>
-                            <div class="mt-6 text-right">
-                                <button data-project-id="${project.id}" class="open-project-btn btn btn-primary">작업 시작</button>
-                            </div>`;
-                        projectList.appendChild(card);
+                            <button data-project-id="${project.id}" class="open-project-btn btn btn-primary w-full">작업 시작</button>`;
+                        dom.projectList.appendChild(card);
                     }
                 }
                 this.switchView('dashboard');
             },
-            async renderWorkspace(projectId) { /* 동일 */
+            async renderWorkspace(projectId) {
                 currentProjectId = projectId;
                 const project = await dbManager.getProject(projectId);
                 const files = await dbManager.getFilesForProject(projectId);
-                workspaceProjectName.textContent = project.name;
-                promptTemplateInput.value = project.promptTemplate || '다음 텍스트를 한국어로 번역해줘: <<원문>>';
+                dom.workspaceProjectName.textContent = project.name;
+                dom.promptTemplateInput.value = project.promptTemplate || '다음 텍스트를 한국어로 번역해줘: <<원문>>';
                 workspaceFileMap.clear();
                 files.forEach(file => workspaceFileMap.set(file.name, file));
                 const fileTree = {};
                 files.forEach(file => {
-                    let currentLevel = fileTree;
-                    const pathParts = file.name.split('/');
-                    pathParts.forEach((part, index) => {
-                        if (index === pathParts.length - 1) currentLevel[part] = file;
-                        else { if (!currentLevel[part]) currentLevel[part] = {}; currentLevel = currentLevel[part]; }
+                    let current = fileTree;
+                    file.name.split('/').forEach((part, i, arr) => {
+                        if (i === arr.length - 1) current[part] = file;
+                        else { current[part] = current[part] || {}; current = current[part]; }
                     });
                 });
-                fileListContainer.innerHTML = this.buildFileTreeHTML(fileTree);
+                dom.fileListContainer.innerHTML = this.buildFileTreeHTML(fileTree);
                 this.clearWorkspaceView();
                 this.switchView('workspace');
             },
-            buildFileTreeHTML(node, path = '') { /* 아이콘 색상 변수 사용하도록 수정 */
+            buildFileTreeHTML(node, path = '', depth = 0) {
                 let html = '<ul class="space-y-1">';
-                Object.keys(node).sort((a, b) => { const aIsDir = typeof node[a] === 'object' && node[a] !== null && !node[a].name; const bIsDir = typeof node[b] === 'object' && node[b] !== null && !node[b].name; if (aIsDir && !bIsDir) return -1; if (!aIsDir && bIsDir) return 1; return a.localeCompare(b); }).forEach(key => {
-                    const currentPath = path ? `${path}/${key}` : key;
-                    const isDir = typeof node[key] === 'object' && node[key] !== null && !node[key].name;
+                Object.keys(node).sort((a,b)=>{const aIsDir=typeof node[a].name==="undefined",bIsDir=typeof node[b].name==="undefined";if(aIsDir&&!bIsDir)return-1;if(!aIsDir&&bIsDir)return 1;return a.localeCompare(b)}).forEach(key=>{
+                    const isDir = typeof node[key].name === "undefined";
                     if (isDir) {
-                        html += `<li><details open><summary class="flex items-center p-1 rounded cursor-pointer hover:bg-[var(--bg-hover)]"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1 text-[var(--accent-yellow)]" viewBox="0 0 20 20" fill="currentColor"><path d="M2 6a2 2 0 012-2h5l2 2h5a2 2 0 012 2v6a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" /></svg><span class="font-medium text-sm">${key}</span></summary><div class="ml-4">${this.buildFileTreeHTML(node[key], currentPath)}</div></details></li>`;
+                        html += `<li><details open><summary class="dir-item"><i class="bi bi-folder-fill text-[var(--accent-yellow)]"></i><span class="font-medium text-sm">${key}</span></summary><div style="padding-left: 1rem;">${this.buildFileTreeHTML(node[key], path, depth + 1)}</div></details></li>`;
                     } else {
                         const file = node[key];
                         const iconClass = file.status === 'translated' ? 'status-translated' : 'status-untranslated';
-                        const iconPath = file.status === 'translated' ? 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' : 'M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 5.555a.5.5 0 01.9 0v3.9a.5.5 0 01-.45.495l-2.438.406a.5.5 0 01-.555-.555l.406-2.438A.5.5 0 019.555 6.45V5.555z';
-                        const promptCopiedClass = file.promptCopied ? 'copied-prompt' : '';
-                        html += `<li class="file-item p-1 rounded cursor-pointer flex items-center ${promptCopiedClass}" data-project-id="${file.projectId}" data-file-name="${file.name}"><svg xmlns="http://www.w3.org/2000/svg" id="status-icon-${file.name.replace(/[^a-zA-Z0-9]/g, '-')}" class="status-icon flex-shrink-0 mr-2 ${iconClass}" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="${iconPath}" clip-rule="evenodd" /></svg><span class="text-sm truncate" title="${key}">${key}</span></li>`;
+                        const promptClass = file.promptCopied ? 'copied-prompt' : '';
+                        html += `<li><div class="file-item ${promptClass}" data-file-name="${file.name}"><i class="bi bi-check-circle-fill status-icon ${iconClass}"></i><span class="text-sm truncate" title="${key}">${key}</span></div></li>`;
                     }
                 });
                 return html + '</ul>';
             },
-            updateFileStatusIcon(fileName, status) { /* 동일 */
-                const icon = document.getElementById(`status-icon-${fileName.replace(/[^a-zA-Z0-9]/g, '-')}`);
-                if (icon) {
-                    const iconClass = status === 'translated' ? 'status-translated' : 'status-untranslated';
-                    const iconPath = status === 'translated' ? 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' : 'M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 5.555a.5.5 0 01.9 0v3.9a.5.5 0 01-.45.495l-2.438.406a.5.5 0 01-.555-.555l.406-2.438A.5.5 0 019.555 6.45V5.555z';
-                    icon.classList.remove('status-translated', 'status-untranslated'); icon.classList.add(iconClass); icon.querySelector('path').setAttribute('d', iconPath);
+            updateFileStatusIcon(fileName, status) {
+                const fileItem = dom.fileListContainer.querySelector(`[data-file-name="${fileName}"]`);
+                if(fileItem) {
+                    const icon = fileItem.querySelector('.status-icon');
+                    icon.classList.toggle('status-translated', status === 'translated');
+                    icon.classList.toggle('status-untranslated', status !== 'translated');
                 }
             },
-            updatePromptCopiedIndicator(fileName, isCopied) { /* 동일 */
-                const fileItem = fileListContainer.querySelector(`[data-file-name="${fileName}"]`);
-                if(fileItem) isCopied ? fileItem.classList.add('copied-prompt') : fileItem.classList.remove('copied-prompt');
+            updatePromptCopiedIndicator(fileName, isCopied) {
+                const fileItem = dom.fileListContainer.querySelector(`[data-file-name="${fileName}"]`);
+                if(fileItem) fileItem.classList.toggle('copied-prompt', isCopied);
             },
-            clearWorkspaceView() { /* 동일 */
-                currentFile = null; originalFileName.textContent = ''; originalTextEl.textContent = '좌측 목록에서 번역할 파일을 선택하세요.'; translatedTextEl.value = ''; copyPromptBtn.className = 'btn btn-secondary';
+            clearWorkspaceView() {
+                currentFile = null; dom.originalFileName.textContent = ''; dom.originalTextEl.textContent = '파일을 선택하세요.'; dom.translatedTextEl.value = '';
+                dom.copyPromptBtn.className = 'btn btn-secondary';
             },
-            showConfirm(title, message) { /* 동일 */
+            showConfirm(title, message) {
                 return new Promise(resolve => {
-                    document.getElementById('confirm-title').textContent = title; document.getElementById('confirm-message').textContent = message; confirmModal.classList.remove('hidden');
+                    $('#confirm-title').textContent = title; $('#confirm-message').textContent = message; dom.confirmModal.classList.remove('hidden');
                     const onOk = () => { cleanup(); resolve(true); }; const onCancel = () => { cleanup(); resolve(false); };
-                    const cleanup = () => { confirmOkBtn.removeEventListener('click', onOk); confirmCancelBtn.removeEventListener('click', onCancel); confirmModal.classList.add('hidden'); };
-                    confirmOkBtn.addEventListener('click', onOk, { once: true }); confirmCancelBtn.addEventListener('click', onCancel, { once: true });
+                    const cleanup = () => { dom.confirmOkBtn.removeEventListener('click', onOk); dom.confirmCancelBtn.removeEventListener('click', onCancel); dom.confirmModal.classList.add('hidden'); };
+                    dom.confirmOkBtn.addEventListener('click', onOk, { once: true }); dom.confirmCancelBtn.addEventListener('click', onCancel, { once: true });
                 });
             },
             showToast(message, type = 'success', duration = 3000) {
                 const toast = document.createElement('div');
-                toast.className = `toast p-4 toast-${type}`;
+                toast.className = `toast toast-${type}`;
                 toast.textContent = message;
-                toastContainer.appendChild(toast);
-                setTimeout(() => { toast.remove(); }, duration);
+                dom.toastContainer.appendChild(toast);
+                setTimeout(() => toast.remove(), duration);
             }
         };
 
-        // --- 이벤트 핸들러 (수정) ---
         const eventHandlers = {
-            init() { /* 동일 */
-                newProjectBtn.addEventListener('click', () => zipFileInput.click());
-                zipFileInput.addEventListener('change', this.handleFileSelect.bind(this));
-                projectList.addEventListener('click', (e) => { const openBtn = e.target.closest('.open-project-btn'); const deleteBtn = e.target.closest('.delete-project-btn'); if (openBtn) uiManager.renderWorkspace(openBtn.dataset.projectId); if (deleteBtn) this.handleDeleteProject(deleteBtn.dataset.projectId); });
-                backToDashboardBtn.addEventListener('click', async () => { currentProjectId = null; uiManager.showLoading('대시보드 로딩 중...'); await uiManager.renderDashboard(); uiManager.hideLoading(); });
-                fileListContainer.addEventListener('click', (e) => { const fileItem = e.target.closest('.file-item'); if (fileItem) this.handleFileSelectInWorkspace(fileItem.dataset.projectId, fileItem.dataset.fileName); });
-                saveTranslationBtn.addEventListener('click', this.handleSaveTranslation.bind(this));
-                copyPromptBtn.addEventListener('click', this.handleCopyPrompt.bind(this));
-                exportBtn.addEventListener('click', this.handleExport.bind(this));
-                promptTemplateInput.addEventListener('blur', this.handleSavePromptTemplate.bind(this));
+            init() {
+                dom.newProjectBtn.addEventListener('click', () => dom.zipFileInput.click());
+                dom.zipFileInput.addEventListener('change', this.handleFileSelect);
+                dom.projectList.addEventListener('click', (e) => {
+                    const openBtn = e.target.closest('.open-project-btn');
+                    const deleteBtn = e.target.closest('.delete-project-btn');
+                    if (openBtn) uiManager.renderWorkspace(openBtn.dataset.projectId);
+                    if (deleteBtn) this.handleDeleteProject(deleteBtn.dataset.projectId);
+                });
+                dom.backToDashboardBtn.addEventListener('click', async () => { currentProjectId = null; uiManager.showLoading('대시보드 로딩 중...'); await uiManager.renderDashboard(); uiManager.hideLoading(); });
+                dom.fileListContainer.addEventListener('click', (e) => { const fileItem = e.target.closest('.file-item'); if (fileItem) this.handleFileSelectInWorkspace(fileItem.dataset.fileName); });
+                dom.saveTranslationBtn.addEventListener('click', this.handleSaveTranslation);
+                dom.copyPromptBtn.addEventListener('click', this.handleCopyPrompt);
+                dom.exportBtn.addEventListener('click', this.handleExport);
+                dom.promptTemplateInput.addEventListener('blur', this.handleSavePromptTemplate);
             },
-            async handleFileSelect(event) { /* 동일 */ const file = event.target.files[0]; if (!file) return; uiManager.showLoading('프로젝트 생성 중...'); worker.postMessage({ type: 'PROCESS_ZIP', payload: { file } }); zipFileInput.value = ''; },
-            async handleDeleteProject(projectId) { /* 동일 */
-                const project = await dbManager.getProject(projectId);
-                const confirmed = await uiManager.showConfirm('프로젝트 삭제', `정말로 '${project.name}' 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`);
-                if (confirmed) { await dbManager.deleteProject(projectId); uiManager.showToast(`'${project.name}' 프로젝트가 삭제되었습니다.`, 'info'); uiManager.renderDashboard(); }
-            },
-            async handleFileSelectInWorkspace(projectId, fileName) { /* 선택된 파일 클래스 추가 로직 */
-                if (currentFile && translatedTextEl.value !== (currentFile.translatedText || '')) { await this.handleSaveTranslation(false); }
+            handleFileSelect: async (event) => { const file = event.target.files[0]; if (!file) return; uiManager.showLoading('프로젝트 생성 중...'); worker.postMessage({ type: 'PROCESS_ZIP', payload: { file } }); dom.zipFileInput.value = ''; },
+            handleDeleteProject: async (projectId) => { const p = await dbManager.getProject(projectId); const ok = await uiManager.showConfirm('프로젝트 삭제', `'${p.name}' 프로젝트를 삭제하시겠습니까?`); if (ok) { await dbManager.deleteProject(projectId); uiManager.showToast(`'${p.name}' 삭제 완료.`, 'info'); uiManager.renderDashboard(); } },
+            handleFileSelectInWorkspace: async (fileName) => {
+                if (currentFile && dom.translatedTextEl.value !== (currentFile.translatedText || '')) await eventHandlers.handleSaveTranslation(false);
                 const file = workspaceFileMap.get(fileName);
                 if (file) {
-                    currentFile = file; originalFileName.textContent = currentFile.name; originalTextEl.textContent = currentFile.originalText; translatedTextEl.value = currentFile.translatedText || '';
-                    document.querySelectorAll('.file-item.selected').forEach(el => el.classList.remove('selected'));
-                    const fileItem = fileListContainer.querySelector(`[data-file-name="${fileName}"]`);
-                    if(fileItem) fileItem.classList.add('selected');
-                    copyPromptBtn.className = `btn ${currentFile.promptCopied ? 'btn-warning' : 'btn-secondary'}`;
+                    currentFile = file; dom.originalFileName.textContent = file.name; dom.originalTextEl.textContent = file.originalText; dom.translatedTextEl.value = file.translatedText || '';
+                    $$('.file-item.selected').forEach(el => el.classList.remove('selected'));
+                    dom.fileListContainer.querySelector(`[data-file-name="${fileName}"]`)?.classList.add('selected');
+                    dom.copyPromptBtn.className = `btn ${file.promptCopied ? 'btn-warning' : 'btn-secondary'}`;
                 }
             },
-            async handleSaveTranslation(moveToNext = true) { /* 동일 */
-                if (!currentFile) { if (moveToNext === true) uiManager.showToast('저장할 파일이 선택되지 않았습니다.', 'error'); return; };
-                const newText = translatedTextEl.value; const originalTranslatedText = currentFile.translatedText || '';
-                if (newText === originalTranslatedText && moveToNext) return;
-                const newStatus = newText.trim() ? 'translated' : 'untranslated';
-                currentFile.translatedText = newText; currentFile.status = newStatus;
+            handleSaveTranslation: async (moveToNext = true) => {
+                if (!currentFile) { if (moveToNext) uiManager.showToast('저장할 파일이 없습니다.', 'error'); return; }
+                const newText = dom.translatedTextEl.value, oldText = currentFile.translatedText || '';
+                if (newText === oldText && moveToNext) return;
+                currentFile.translatedText = newText; currentFile.status = newText.trim() ? 'translated' : 'untranslated';
                 await dbManager.updateFile(currentFile);
-                uiManager.updateFileStatusIcon(currentFile.name, newStatus); uiManager.showToast(`'${currentFile.name}' 저장 완료!`, 'success');
-                workspaceFileMap.get(currentFile.name).status = newStatus; workspaceFileMap.get(currentFile.name).translatedText = newText;
+                uiManager.updateFileStatusIcon(currentFile.name, currentFile.status);
+                if(newText !== oldText) uiManager.showToast(`'${currentFile.name.split('/').pop()}' 저장 완료!`, 'success');
+                workspaceFileMap.set(currentFile.name, currentFile);
                 if (moveToNext) {
-                    const fileItems = Array.from(fileListContainer.querySelectorAll('.file-item')); const fileNamesInOrder = fileItems.map(item => item.dataset.fileName); const currentIndex = fileNamesInOrder.indexOf(currentFile.name);
-                    if (currentIndex !== -1) {
-                        for (let i = currentIndex + 1; i < fileNamesInOrder.length; i++) { const nextFileName = fileNamesInOrder[i]; if (workspaceFileMap.get(nextFileName)?.status === 'untranslated') { this.handleFileSelectInWorkspace(currentProjectId, nextFileName); return; } }
-                        for (let i = 0; i < currentIndex; i++) { const nextFileName = fileNamesInOrder[i]; if (workspaceFileMap.get(nextFileName)?.status === 'untranslated') { this.handleFileSelectInWorkspace(currentProjectId, nextFileName); return; } }
-                    }
-                    uiManager.showToast('모든 파일의 번역이 완료되었습니다!', 'info');
+                    const files = Array.from($$('.file-item')).map(el => el.dataset.fileName);
+                    const idx = files.indexOf(currentFile.name);
+                    const nextFile = [...files.slice(idx + 1), ...files.slice(0, idx)].find(f => workspaceFileMap.get(f)?.status === 'untranslated');
+                    if (nextFile) eventHandlers.handleFileSelectInWorkspace(nextFile);
+                    else uiManager.showToast('모든 파일 번역 완료!', 'info');
                 }
             },
-            async handleSavePromptTemplate() { /* 동일 */
-                if (!currentProjectId) return; const project = await dbManager.getProject(currentProjectId); const newTemplate = promptTemplateInput.value; if (project.promptTemplate === newTemplate) return;
-                project.promptTemplate = newTemplate; await dbManager.updateProject(project); uiManager.showToast('프롬프트 템플릿이 저장되었습니다.');
-            },
-            async handleCopyPrompt() { /* 동일 */
-                if (!currentFile || !currentFile.originalText) { uiManager.showToast('프롬프트를 복사할 파일이 선택되지 않았습니다.', 'error'); return; }
-                if (!currentFile.promptCopied) {
-                    currentFile.promptCopied = true; await dbManager.updateFile(currentFile); workspaceFileMap.get(currentFile.name).promptCopied = true;
-                    copyPromptBtn.className = 'btn btn-warning'; uiManager.updatePromptCopiedIndicator(currentFile.name, true);
-                }
-                const template = promptTemplateInput.value || '<<원문>>'; const promptText = template.replace('<<원문>>', currentFile.originalText);
-                const success = await utils.copyToClipboard(promptText);
-                if (success) uiManager.showToast('프롬프트가 클립보드에 복사되었습니다.');
-                else uiManager.showToast('클립보드 복사에 실패했습니다. 브라우저 권한을 확인해주세요.', 'error');
-            },
-            async handleExport() { /* 동일 */
-                if (!currentProjectId) return; uiManager.showLoading('내보내기 파일 생성 중...');
-                const project = await dbManager.getProject(currentProjectId); const files = await dbManager.getFilesForProject(currentProjectId);
-                const sortedFiles = files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-                let fullText = `프로젝트: ${project.name}\n내보내기 날짜: ${new Date().toLocaleString()}\n========================================\n\n`;
-                sortedFiles.forEach(file => { fullText += `--- 파일: ${file.name} ---\n${file.translatedText || "[번역되지 않음]"}\n\n`; });
-                const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' }); const url = URL.createObjectURL(blob);
-                const a = document.createElement('a'); a.href = url; a.download = `${project.name}_번역본.txt`; document.body.appendChild(a);
-                a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
-                uiManager.hideLoading(); uiManager.showToast('번역본이 텍스트 파일로 내보내졌습니다.', 'info');
-            }
+            handleSavePromptTemplate: async () => { if (!currentProjectId) return; const p = await dbManager.getProject(currentProjectId); const t = dom.promptTemplateInput.value; if (p.promptTemplate === t) return; p.promptTemplate = t; await dbManager.updateProject(p); uiManager.showToast('프롬프트 템플릿 저장됨.'); },
+            handleCopyPrompt: async () => { if (!currentFile) { uiManager.showToast('파일을 선택하세요.', 'error'); return; } if (!currentFile.promptCopied) { currentFile.promptCopied = true; await dbManager.updateFile(currentFile); workspaceFileMap.get(currentFile.name).promptCopied = true; dom.copyPromptBtn.className = 'btn btn-warning'; uiManager.updatePromptCopiedIndicator(currentFile.name, true); } const t = dom.promptTemplateInput.value || '<<원문>>', p = t.replace('<<원문>>', currentFile.originalText); if (await utils.copyToClipboard(p)) uiManager.showToast('프롬프트 복사 완료.'); else uiManager.showToast('복사 실패.', 'error'); },
+            handleExport: async () => { if (!currentProjectId) return; uiManager.showLoading('내보내기 파일 생성 중...'); const p = await dbManager.getProject(currentProjectId), files = await dbManager.getFilesForProject(currentProjectId); files.sort((a, b) => a.name.localeCompare(b.name, void 0, { numeric: !0 })); let text = `프로젝트: ${p.name}\n내보내기 날짜: ${new Date().toLocaleString()}\n========================================\n\n`; files.forEach(f => { text += `--- 파일: ${f.name} ---\n${f.translatedText||"[번역되지 않음]"}\n\n` }); const blob = new Blob([text], { type: "text/plain;charset=utf-8" }), url = URL.createObjectURL(blob), a = document.createElement("a"); a.href = url, a.download = `${p.name}_번역본.txt`, document.body.appendChild(a), a.click(), document.body.removeChild(a), URL.revokeObjectURL(url), uiManager.hideLoading(), uiManager.showToast('번역본이 텍스트 파일로 내보내졌습니다.', 'info'); }
         };
 
-        // --- 웹 워커 메시지 핸들링 및 초기화 (프롬프트 내용만 간소화) ---
-        function setupWorker() { /* 동일 */
-            const workerScript = document.getElementById('worker').textContent; const workerBlob = new Blob([workerScript], { type: 'application/javascript' }); worker = new Worker(URL.createObjectURL(workerBlob));
+        function setupWorker() {
+            const script = $('#worker').textContent;
+            worker = new Worker(URL.createObjectURL(new Blob([script], { type: 'application/javascript' })));
             worker.onmessage = async (e) => {
                 const { type, payload } = e.data;
-                switch (type) {
-                    case 'PROGRESS': uiManager.showLoading(payload); break;
-                    case 'SUCCESS':
-                        const newProjectId = `proj_${Date.now()}`; const zipFile = zipFileInput.files[0]; const projectName = zipFile ? zipFile.name.replace(/\.zip$/i, '') : '새 프로젝트';
-                        const newProject = { id: newProjectId, name: projectName, createdAt: new Date(), promptTemplate: '다음 텍스트를 한국어로 번역해줘: <<원문>>' };
-                        const filesToSave = payload.files.map(f => ({ ...f, projectId: newProjectId, translatedText: '', status: 'untranslated', promptCopied: false }));
-                        await dbManager.addProject(newProject); await dbManager.addFiles(filesToSave); uiManager.hideLoading();
-                        uiManager.showToast(`'${projectName}' 프로젝트가 성공적으로 생성되었습니다.`, 'success'); await uiManager.renderDashboard(); break;
-                    case 'ERROR': console.error('Worker Error:', payload); uiManager.hideLoading(); uiManager.showToast(`파일 처리 중 오류 발생: ${payload}`, 'error'); break;
+                if (type === 'PROGRESS') return uiManager.showLoading(payload);
+                if (type === 'ERROR') { uiManager.hideLoading(); return uiManager.showToast(`파일 처리 오류: ${payload}`, 'error'); }
+                if (type === 'SUCCESS') {
+                    const newProjectId = `proj_${Date.now()}`;
+                    const projectName = dom.zipFileInput.files[0]?.name.replace(/\.zip$/i, '') || '새 프로젝트';
+                    const newProject = { id: newProjectId, name: projectName, createdAt: new Date(), promptTemplate: '다음 텍스트를 한국어로 번역해줘: <<원문>>' };
+                    const filesToSave = payload.files.map(f => ({ ...f, projectId: newProjectId, translatedText: '', status: 'untranslated', promptCopied: false }));
+                    await dbManager.addProject(newProject);
+                    await dbManager.addFiles(filesToSave);
+                    uiManager.hideLoading();
+                    uiManager.showToast(`'${projectName}' 프로젝트 생성 완료.`, 'success');
+                    await uiManager.renderDashboard();
                 }
             };
-            worker.onerror = (e) => { console.error('Worker Error:', e); uiManager.hideLoading(); uiManager.showToast('웹 워커 실행 중 심각한 오류가 발생했습니다.', 'error'); }
         }
-        async function init() { /* 동일 */
-            try { await dbManager.initDB(); setupWorker(); eventHandlers.init(); await uiManager.renderDashboard(); } catch (error) { console.error("애플리케이션 초기화 실패:", error); document.body.innerHTML = `<div class="p-8 text-center text-red-600">애플리케이션을 시작할 수 없습니다. 브라우저가 IndexedDB를 지원하는지 확인하세요. 오류: ${error}</div>`; }
+        
+        async function init() {
+            try { await dbManager.initDB(); setupWorker(); eventHandlers.init(); await uiManager.renderDashboard(); }
+            catch (error) { console.error("초기화 실패:", error); document.body.innerHTML = `<div class="p-8 text-center text-red-500">앱 시작 실패. IndexedDB 지원을 확인하세요.</div>`; }
         }
         document.addEventListener('DOMContentLoaded', init);
     </script>
