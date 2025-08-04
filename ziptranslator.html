@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>eBook 번역 관리 도구 v6.2 (Prompt UX Enhanced)</title>
+    <title>eBook 번역 관리 도구 v6.3 (Event Handler Hotfix)</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -112,13 +112,13 @@
         <div id="workspace-view" class="view">
             <header class="flex justify-between items-center px-4">
                 <div class="flex items-center gap-2">
-                    <button data-action="back-to-dashboard" class="p-2 rounded-full hover:bg-[var(--bg-hover)]"><i class="bi bi-arrow-left text-xl"></i></button>
+                    <button data-action="load-dashboard" class="p-2 rounded-full hover:bg-[var(--bg-hover)]"><i class="bi bi-arrow-left text-xl"></i></button>
                     <h2 id="workspace-project-name" class="text-lg font-bold"></h2>
                 </div>
                 <div class="flex items-center space-x-2">
                     <button data-action="copy-prompt" class="btn btn-secondary"><i class="bi bi-clipboard"></i>프롬프트 복사</button>
-                    <button data-action="export" class="btn btn-secondary"><i class="bi bi-box-arrow-down"></i>내보내기</button>
-                    <button data-action="save-translation" class="btn btn-primary"><i class="bi bi-check-lg"></i>저장</button>
+                    <button data-action="export-translations" class="btn btn-secondary"><i class="bi bi-box-arrow-down"></i>내보내기</button>
+                    <button data-action="save-current-file" class="btn btn-primary"><i class="bi bi-check-lg"></i>저장</button>
                     <button data-action="open-prompt-modal" class="btn btn-secondary btn-icon" title="프롬프트 설정"><i class="bi bi-gear-fill"></i></button>
                 </div>
             </header>
@@ -171,7 +171,7 @@
             isLoading: true,
             loadingMessage: '초기화 중...',
             projects: [],
-            isPromptModalOpen: false, // NEW
+            isPromptModalOpen: false,
             workspace: {
                 projectId: null, projectName: '', files: [],
                 currentFile: null, promptTemplate: ''
@@ -182,7 +182,7 @@
             dom.loading.view.classList.toggle('hidden', !state.isLoading);
             if(state.isLoading) dom.loading.message.textContent = state.loadingMessage;
             
-            dom.promptModal.view.classList.toggle('hidden', !state.isPromptModalOpen); // NEW
+            dom.promptModal.view.classList.toggle('hidden', !state.isPromptModalOpen);
             if(state.isPromptModalOpen) dom.promptModal.textarea.value = state.workspace.promptTemplate;
 
             for(const viewKey in dom.views) {
@@ -219,42 +219,29 @@
             async loadDashboard() { this.setLoading(true,'대시보드 로딩 중...');const e=await dbManager.getAll("projects");for(const t of e){const o=await dbManager.getFilesForProject(t.id);t.totalFiles=o.length,t.translatedFiles=o.filter(e=>"translated"===e.status).length}setState({currentView:'dashboard',isLoading:!1,projects:e,isPromptModalOpen:!1}) },
             async openWorkspace(projectId) { this.setLoading(true,'작업 공간 로딩 중...');try{const e=await dbManager.get("projects",projectId),t=await dbManager.getFilesForProject(projectId);setState({currentView:"workspace",isLoading:!1,workspace:{projectId:e.id,projectName:e.name,files:t,currentFile:null,promptTemplate:e.promptTemplate||"다음 텍스트를 한국어로 번역해줘: {{text}}"}})}catch(e){this.handleError(e,"프로젝트를 여는 데 실패했습니다.")} },
             selectFile(fileName) { const e=state.workspace.files.find(e=>e.name===fileName);e&&setState({workspace:{currentFile:e}}) },
-            async saveCurrentFile(moveToNext=!1) { const{currentFile:e}=state.workspace,{translatedText:t}=dom.workspace;if(!e)return;const o=t.value;if(e.translatedText===o)return void(moveToNext&&this.selectNextUntranslated());const r={...e,translatedText:o,status:o.trim()?"translated":"untranslated"};await dbManager.put("files",r),this.showToast(`${r.name.split("/").pop()} 저장 완료!`,"success");const n=state.workspace.files.map(t=>t.name===r.name?r:t);setState({workspace:{files:n,currentFile:r}}),moveToNext&&this.selectNextUntranslated() },
-            selectNextUntranslated() { const{files:e,currentFile:t}=state.workspace,o=e.findIndex(e=>e.name===t.name),r=[...e.slice(o+1),...e.slice(0,o+1)].find(e=>"untranslated"===e.status);r?this.selectFile(r.name):this.showToast("모든 파일 번역 완료! 🎉","info") },
+            async saveCurrentFile() { const{currentFile:e}=state.workspace,{translatedText:t}=dom.workspace;if(!e)return;const o=t.value;if(e.translatedText===o)return;const r={...e,translatedText:o,status:o.trim()?"translated":"untranslated"};await dbManager.put("files",r),this.showToast(`${r.name.split("/").pop()} 저장 완료!`,"success");const n=state.workspace.files.map(t=>t.name===r.name?r:t);setState({workspace:{files:n,currentFile:r}}) },
             async createProject(zipFile, files) { try{const e=`proj_${Date.now()}`,t=zipFile.name.replace(/\.zip$/i,"")||"새 프로젝트",o={id:e,name:t,createdAt:new Date().toISOString(),promptTemplate:"다음 텍스트를 한국어로 번역해줘: {{text}}"};await dbManager.put("projects",o);const r=files.map(t=>({...t,projectId:e,translatedText:"",status:"untranslated"}));for(const n of r)await dbManager.put("files",n);this.showToast(`'${t}' 프로젝트 생성 완료.`,"success"),await this.loadDashboard()}catch(e){this.handleError(e,"프로젝트 생성 실패")}finally{dom.dashboard.zipFileInput.value=""} },
             async deleteProject(projectId) { const e=state.projects.find(e=>e.id===projectId);if(!e)return;const t=await this.showConfirm("프로젝트 삭제",`'${e.name}' 프로젝트와 모든 파일을 정말 삭제하시겠습니까?`);t&&(this.setLoading(true,`'${e.name}' 삭제 중...`),await dbManager.deleteProjectAndFiles(projectId),this.showToast(`'${e.name}' 삭제 완료.`,"info"),await this.loadDashboard()) },
             async exportTranslations() { const{projectId:e,projectName:t,files:o}=state.workspace;if(!e)return;this.setLoading(true,"텍스트 파일 생성 중...");o.sort((e,t)=>e.name.localeCompare(t.name,void 0,{numeric:!0}));let r=`프로젝트: ${t}\n내보내기 날짜: ${new Date().toLocaleString()}\n========================================\n\n`;o.forEach(e=>{r+=`--- 파일: ${e.name} ---\n${e.translatedText||"[번역되지 않음]"}\n\n`});const n=new Blob([r],{type:"text/plain;charset=utf-8"}),s=URL.createObjectURL(n),a=document.createElement("a");a.href=s,a.download=`${t}_번역본.txt`,a.click(),URL.revokeObjectURL(s),a.remove(),this.setLoading(false),this.showToast("번역본을 내보냈습니다.","info")},
-            // --- NEW & UPDATED PROMPT ACTIONS ---
             openPromptModal() { setState({ isPromptModalOpen: true }) },
             closePromptModal() { setState({ isPromptModalOpen: false }) },
-            async savePrompt() {
-                const newTemplate = dom.promptModal.textarea.value;
-                if (state.workspace.promptTemplate === newTemplate) return this.closePromptModal();
-                const project = await dbManager.get('projects', state.workspace.projectId);
-                project.promptTemplate = newTemplate;
-                await dbManager.put('projects', project);
-                setState({ workspace: { promptTemplate: newTemplate }, isPromptModalOpen: false });
-                this.showToast('프롬프트 템플릿 저장 완료', 'info');
-            },
-            async copyPrompt() {
-                const { currentFile, promptTemplate } = state.workspace;
-                if (!currentFile) return this.showToast('먼저 파일을 선택해주세요.', 'error');
-                const prompt = promptTemplate.replace(/\{\{text\}\}/g, currentFile.originalText);
-                try {
-                    await navigator.clipboard.writeText(prompt);
-                    this.showToast('프롬프트가 클립보드에 복사되었습니다.');
-                } catch(err) {
-                    this.handleError(err, '클립보드 복사 실패');
-                }
-            }
+            async savePrompt() { const e=dom.promptModal.textarea.value;if(state.workspace.promptTemplate===e)return this.closePromptModal();const t=await dbManager.get("projects",state.workspace.projectId);t.promptTemplate=e,await dbManager.put("projects",t),setState({workspace:{promptTemplate:e},isPromptModalOpen:!1}),this.showToast("프롬프트 템플릿 저장 완료","info") },
+            async copyPrompt() { const{currentFile:e,promptTemplate:t}=state.workspace;if(!e)return this.showToast("먼저 파일을 선택해주세요.","error");const o=t.replace(/\{\{text\}\}/g,e.originalText);try{await navigator.clipboard.writeText(o),this.showToast("프롬프트가 클립보드에 복사되었습니다.")}catch(e){this.handleError(e,"클립보드 복사 실패")}}
         };
 
+        // --- Event Listener (FIXED) ---
         dom.app.addEventListener('click', (e) => {
             const target = e.target.closest('[data-action]');
             if (!target) return;
-            const { action, projectId, fileName } = target.dataset;
-            if (actions[action]) actions[action](projectId || fileName);
-            else if(action === 'delete-project') actions.deleteProject(projectId); // Special case due to legacy naming
+
+            // HTML의 kebab-case 액션 이름을 JS의 camelCase 함수 이름으로 변환
+            const actionName = target.dataset.action.replace(/-([a-z])/g, g => g[1].toUpperCase());
+            
+            if (actions[actionName]) {
+                const { projectId, fileName } = target.dataset;
+                // 함수에 필요한 파라미터를 전달하여 호출
+                actions[actionName](projectId || fileName);
+            }
         });
         
         $('#new-project-btn').addEventListener('click',()=>dom.dashboard.zipFileInput.click());
