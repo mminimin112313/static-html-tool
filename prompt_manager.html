@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>프롬프트 관리자 프로 (k)</title>
+    <title>프롬프트 관리자 프로 (최종)</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
@@ -158,7 +158,7 @@
         .history-item-type i { color: var(--accent-blue); }
         .history-item-body .history-item-title { font-weight: 500; font-size: 1.1rem; margin-bottom: 8px; }
         .history-item-body .history-snippet { font-style: italic; color: var(--text-secondary); padding-left: 10px; border-left: 2px solid var(--border-color); }
-        .history-item-body .history-variables { font-size: 0.85rem; background-color: var(--bg-primary); border-radius: 4px; padding: 10px; max-height:100px; overflow-y: auto; }
+        .history-item-body .history-variables { font-size: 0.85rem; background-color: var(--bg-primary); border-radius: 4px; padding: 10px; max-height: 100px; overflow-y: auto; }
         .history-item-body .history-variables div { margin-bottom: 4px; }
         .history-item-body .history-variables strong { color: var(--accent-yellow); }
         .history-item-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
@@ -171,8 +171,8 @@
             .sidebar { position: fixed; transform: translateX(-100%); width: 250px; }
             .sidebar.open { transform: translateX(0); }
             #mobile-menu-toggle { display: block; background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; }
-            .main-header { flex-wrap: wrap; height: auto; padding: 10px 16px; }
-            .main-header h1 { width: calc(100% - 40px); order: -1; }
+            .main-header { flex-wrap: wrap; height: auto; padding: 10px 16px; justify-content: flex-start; }
+            .main-header h1 { flex-grow: 1; }
             .header-controls { width: 100%; order: 2; margin-top: 10px; flex-direction: column; gap: 10px; }
             .search-input { width: 100%; }
             .prompt-list-item { flex-wrap: wrap; }
@@ -719,9 +719,15 @@
             });
 
             uiElements.templateModal.generateBtn.onclick = async () => {
-                helpers.copyToClipboard(preview.textContent);
+                const textToCopy = preview.textContent;
+                helpers.copyToClipboard(textToCopy);
                 helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
                 await dbService.update('prompts', p.id, { usageCount: (p.usageCount || 0) + 1 });
+                const variablesUsed = Array.from(inputs).reduce((acc, input) => {
+                    acc[input.dataset.placeholder] = input.value;
+                    return acc;
+                }, {});
+                helpers.logUsage('template_generate', p.id, p.title, textToCopy, variablesUsed);
                 if (onCompleteCallback) onCompleteCallback();
             };
             uiElements.templateModal.closeBtn.onclick = () => {
@@ -935,6 +941,26 @@
             if (targetDate.getTime() === today.getTime()) return '오늘';
             if (targetDate.getTime() === yesterday.getTime()) return '어제';
             return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
+        },
+        logUsage: async (type, itemId, itemName, content = '', variablesUsed = null) => {
+            if (!indexedDbInstance) await openIndexedDB();
+            const record = {
+                type, itemId, itemName,
+                timestamp: new Date(),
+                content,
+                contentSnippet: content.substring(0, 100),
+                variablesUsed
+            };
+            await putIntoIndexedDB(CACHE_STORE_USAGE_HISTORY, record);
+
+            const allRecords = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
+            if (allRecords.length > 20) {
+                allRecords.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+                const recordsToDelete = allRecords.slice(0, allRecords.length - 20);
+                for (const rec of recordsToDelete) {
+                    await deleteFromIndexedDB(CACHE_STORE_USAGE_HISTORY, rec.id);
+                }
+            }
         }
     };
 
@@ -971,6 +997,7 @@
         currentSequencePromptIndex = 0;
         uiElements.sequenceModal.overlay.classList.remove('show');
         helpers.showToast(`'${sequence.name}' 시퀀스를 시작합니다.`);
+        helpers.logUsage('sequence_run', sequence.id, sequence.name);
         await executeNextPromptInSequence();
     }
 
@@ -1032,6 +1059,7 @@
                         helpers.copyToClipboard(p.content); 
                         helpers.showToast('클립보드에 복사되었습니다!'); 
                         await dbService.update('prompts', promptId, { usageCount: (p.usageCount || 0) + 1 });
+                        helpers.logUsage('prompt_copy', p.id, p.title, p.content);
                     }
                 }
                 else if (e.target.closest('.use-btn')) return render.templateModal(promptId);
@@ -1204,7 +1232,6 @@
             helpers.showToast('데이터 가져오기 완료!');
         };
         
-        // 모바일 사이드바 토글
         uiElements.mobileMenuToggle.onclick = () => uiElements.sidebar.classList.toggle('open');
         uiElements.sidebarCloseBtn.onclick = () => uiElements.sidebar.classList.remove('open');
 
