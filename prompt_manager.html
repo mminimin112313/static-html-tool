@@ -337,6 +337,362 @@
         
     <div class="toast" id="toast"></div>
 
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>프롬프트 관리자 프로 (최종)</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+
+    <style>
+        /* 기본 스타일 및 변수 정의 */
+        :root {
+            --bg-primary: #131314;
+            --bg-secondary: #1e1f20;
+            --bg-tertiary: #2d2e30;
+            --bg-hover: #3c4043;
+            --text-primary: #e2e2e3;
+            --text-secondary: #bdc1c6;
+            --accent-blue: #8ab4f8;
+            --accent-yellow: #fdd663;
+            --accent-pink: #f28b82;
+            --border-color: #3c4043;
+            --sidebar-width: 280px;
+            --header-height: 64px;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden; /* 메인 레이아웃 스크롤 방지 */
+        }
+
+        body.no-scroll { overflow: hidden; }
+
+        button, input, textarea, select { font-family: inherit; }
+        button { cursor: pointer; }
+
+        /* 공용 버튼 스타일 */
+        .button-like {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            transition: background-color 0.2s;
+        }
+        .button-like:hover { background-color: var(--bg-hover); }
+
+        /* 사이드바 */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--bg-secondary);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            height: 100%;
+            transition: transform 0.3s ease-in-out;
+            z-index: 1000;
+        }
+        .sidebar-content {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        #auth-section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        #login-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--accent-blue);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        #user-profile {
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+        #user-profile img { width: 32px; height: 32px; border-radius: 50%; }
+        #user-profile p { font-size: .9rem; flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #logout-btn { background: none; border: 1px solid var(--border-color); color: var(--text-secondary); padding: 6px 10px; border-radius: 6px; }
+
+        .new-prompt-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 10px 16px;
+            font-size: .9rem;
+            margin: 16px;
+        }
+        .new-prompt-btn:hover { background-color: #282a2c; }
+
+        .nav-section-title { font-size: .9rem; color: var(--text-secondary); padding: 16px 16px 8px; font-weight: 500; }
+        .nav-list { list-style: none; }
+        .nav-item a { display: flex; align-items: center; gap: 16px; padding: 10px 16px; color: var(--text-primary); text-decoration: none; border-radius: 4px; font-size: .9rem; cursor: pointer; }
+        .nav-item a:hover { background-color: var(--bg-tertiary); }
+        .nav-item.active a { background-color: var(--accent-blue); color: var(--bg-primary); }
+        .nav-icon { width: 24px; text-align: center; font-size: 1rem; }
+        
+        .new-folder-btn {
+            width: calc(100% - 32px);
+            margin: 10px 16px;
+            padding: 10px;
+            background: none;
+            border: 1px dashed var(--border-color);
+            color: var(--text-secondary);
+            border-radius: 4px;
+        }
+        .new-folder-btn:hover { background-color: var(--bg-tertiary); }
+
+        #data-management-section {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+            margin-top: auto;
+        }
+        #data-management-section .button-like {
+            width: 100%;
+            margin-top: 10px;
+        }
+
+        /* 메인 콘텐츠 */
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+        .main-header {
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            height: var(--header-height);
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--border-color);
+            gap: 16px;
+        }
+        #mobile-menu-toggle { display: none; }
+        .main-header h1 { font-size: 1.4rem; font-weight: 500; flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .search-wrapper { position: relative; }
+        .search-input {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 8px 16px 8px 36px;
+            font-size: 1rem;
+            width: 300px;
+        }
+        .search-wrapper .fa-magnifying-glass { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary); }
+
+        .content-view {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        .content-placeholder { padding: 50px 20px; text-align: center; color: var(--text-secondary); }
+
+        /* 프롬프트 목록 */
+        .prompt-list-item { display: flex; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--border-color); gap: 16px; }
+        .prompt-list-item:hover { background-color: var(--bg-secondary); }
+        .prompt-info { cursor: pointer; flex-grow: 1; min-width: 0; }
+        .prompt-list-icon { font-size: 1.1rem; color: var(--text-secondary); width: 20px; cursor: pointer; }
+        .fav-icon.active { color: var(--accent-yellow) !important; }
+        .prompt-title { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .prompt-subtitle { font-size: .8rem; color: var(--text-secondary); margin-top: 4px; }
+        .prompt-tags { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+        .prompt-tag { background-color: var(--bg-tertiary); color: var(--text-secondary); font-size: .75rem; padding: 2px 6px; border-radius: 4px; }
+        .prompt-actions { margin-left: auto; display: flex; gap: 8px; flex-shrink: 0; }
+        .prompt-actions button, .prompt-actions a {
+            background-color: var(--bg-tertiary); border: 1px solid var(--border-color); color: var(--text-primary); padding: 8px 12px; border-radius: 6px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+        }
+        .prompt-actions button:hover, .prompt-actions a:hover { background-color: var(--bg-hover); }
+
+        /* 편집기 */
+        .editor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 10px; }
+        .editor-actions button { margin-left: 8px; }
+        .editor-actions .save-btn { background-color: var(--accent-blue); color: var(--bg-primary); border: none; }
+        .editor-actions .delete-btn { color: var(--accent-pink); border-color: var(--accent-pink); }
+        .form-group { margin-bottom: 24px; }
+        .form-group label { display: block; font-size: .9rem; color: var(--text-secondary); margin-bottom: 8px; }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%; background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); padding: 12px; font-size: 1rem;
+        }
+        .form-group textarea { height: 300px; resize: vertical; }
+        .is-template-toggle { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: .9rem; }
+
+        /* 파일 업로드 섹션 스타일 */
+        .file-upload-section {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+            gap: 10px;
+        }
+        .file-upload-section .button-like {
+            padding: 8px 12px;
+            font-size: 0.85rem;
+        }
+        #loaded-file-name {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        /* 모달 */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.7); display: flex; justify-content: center; align-items: center; z-index: 1000; opacity: 0; visibility: hidden; transition: opacity .3s, visibility .3s; }
+        .modal-overlay.show { opacity: 1; visibility: visible; }
+        .modal-content { background-color: var(--bg-secondary); padding: 24px; border-radius: 8px; width: 90%; max-width: 600px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .modal-header h3 { color: var(--accent-blue); }
+        .modal-header .close-btn { background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; }
+        .modal-body { max-height: 60vh; overflow-y: auto; }
+        .modal-preview { background-color: var(--bg-primary); padding: 12px; border-radius: 4px; margin-top: 16px; white-space: pre-wrap; font-family: monospace; max-height: 150px; overflow-y: auto; }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
+        .modal-footer .generate-btn { background-color: var(--accent-blue); color: var(--bg-primary); border: none; }
+        
+        /* 템플릿 모달의 텍스트 영역 스타일 재정의 */
+        #template-modal-overlay .form-group textarea {
+            height: auto;
+            min-height: 40px;
+        }
+
+        #sequence-modal-overlay .modal-content { max-width: 700px; }
+        #sequence-modal-overlay .modal-footer { justify-content: space-between; }
+        .sequence-sortable-list { min-height: 100px; border: 1px dashed var(--border-color); border-radius: 8px; padding: 10px; background-color: var(--bg-primary); display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; }
+        .sequence-sortable-item { display: flex; align-items: center; background-color: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 12px; cursor: grab; }
+        .sequence-sortable-item .drag-handle { color: var(--text-secondary); margin-right: 10px; }
+        .sequence-sortable-item span { flex-grow: 1; }
+        .sequence-sortable-item .remove-from-sequence-btn { background: none; border: none; color: var(--text-secondary); margin-left: auto; padding: 4px; }
+        .sortable-ghost { opacity: 0.4; }
+
+        /* 토스트 */
+        .toast { position: fixed; bottom: 20px; right: 20px; background-color: var(--bg-tertiary); color: var(--text-primary); padding: 12px 20px; border-radius: 6px; border-left: 4px solid var(--accent-blue); opacity: 0; visibility: hidden; transition: all .3s; transform: translateY(20px); z-index: 2000; }
+        .toast.show { opacity: 1; visibility: visible; transform: translateY(0); }
+
+        /* 반응형 */
+        @media (max-width: 768px) {
+            .sidebar { position: fixed; transform: translateX(-100%); width: 250px; }
+            .sidebar.open { transform: translateX(0); }
+            #mobile-menu-toggle { display: block; background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; }
+            .main-header { flex-wrap: wrap; height: auto; padding: 10px 16px; }
+            .main-header h1 { width: calc(100% - 40px); order: -1; }
+            .search-wrapper { width: 100%; order: 2; margin-top: 10px; }
+            .search-input { width: 100%; }
+            .prompt-list-item { flex-wrap: wrap; }
+            .prompt-actions { width: 100%; justify-content: flex-end; margin-top: 10px; }
+        }
+    </style>
+</head>
+<body>
+    <aside class="sidebar" id="sidebar">
+        <div id="auth-section">
+            <button id="login-btn"><i class="fa-brands fa-google"></i> Google 계정으로 로그인</button>
+            <div id="user-profile">
+                <img id="user-photo" src="" alt="사용자 사진">
+                <p id="user-email"></p>
+                <button id="logout-btn" title="로그아웃"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+            </div>
+        </div>
+        <div class="sidebar-content" id="sidebar-content" style="display:none;">
+            <button class="new-prompt-btn" id="new-prompt-btn"><i class="fa-solid fa-plus"></i> 새 항목</button>
+            <nav class="sidebar-nav">
+                <h3 class="nav-section-title">라이브러리</h3>
+                <ul class="nav-list" id="library-list">
+                    <li class="nav-item active" data-filter-type="all"><a><i class="nav-icon fa-solid fa-book-bookmark"></i> 모든 항목</a></li>
+                    <li class="nav-item" data-filter-type="favorites"><a><i class="nav-icon fa-solid fa-star"></i> 즐겨찾기</a></li>
+                    <li class="nav-item" data-filter-type="templates"><a><i class="nav-icon fa-solid fa-puzzle-piece"></i> 템플릿만</a></li>
+                    <li class="nav-item" data-filter-type="prompts"><a><i class="nav-icon fa-solid fa-file-lines"></i> 프롬프트만</a></li>
+                    <li class="nav-item" data-filter-type="history"><a><i class="nav-icon fa-solid fa-history"></i> 사용 기록</a></li>
+                </ul>
+                <h3 class="nav-section-title">폴더</h3>
+                <ul class="nav-list" id="folder-list"></ul>
+                <button class="new-folder-btn" id="new-folder-btn"><i class="fa-solid fa-folder-plus"></i> 새 폴더</button>
+                
+                <h3 class="nav-section-title">시퀀스</h3>
+                <ul class="nav-list" id="sequence-list"></ul>
+                <button id="new-sequence-btn" class="new-folder-btn"><i class="fa-solid fa-layer-group"></i> 새 시퀀스</button>
+            </nav>
+            <div id="data-management-section">
+                 <h3 class="nav-section-title" style="padding: 0;">데이터 관리</h3>
+                 <button id="export-data-btn" class="button-like">데이터 내보내기</button>
+                 <input type="file" id="import-data-input" accept=".json" style="display: none;">
+                 <button id="import-data-btn" class="button-like">데이터 가져오기</button>
+            </div>
+        </div>
+        <button id="sidebar-close-btn" style="display: none;"><i class="fa-solid fa-times"></i></button>
+    </aside>
+
+    <main class="main-content">
+        <header class="main-header">
+            <button id="mobile-menu-toggle"><i class="fa-solid fa-bars"></i></button>
+            <h1 id="main-header-title">환영합니다</h1>
+            <div class="search-wrapper">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" class="search-input" id="search-input" placeholder="검색...">
+            </div>
+        </header>
+        <div class="content-view" id="content-view">
+            <div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>
+        </div>
+    </main>
+
+    <div class="modal-overlay" id="template-modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="template-modal-title">템플릿 사용</h3>
+                <button class="close-btn" id="template-modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" id="template-modal-body"></div>
+            <div class="modal-footer">
+                <button id="template-modal-generate-btn" class="generate-btn button-like"><i class="fa-solid fa-wand-magic-sparkles"></i> 생성 및 복사</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="modal-overlay" id="sequence-modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="sequence-modal-title">새 시퀀스 생성</h3>
+                <button class="close-btn" id="sequence-modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body" id="sequence-modal-body"></div>
+            <div class="modal-footer">
+                <div>
+                  <button id="sequence-modal-save-btn" class="generate-btn button-like"><i class="fa-regular fa-save"></i> 저장</button>
+                  <button id="sequence-modal-run-btn" class="button-like"><i class="fa-solid fa-play"></i> 실행</button>
+                </div>
+                <button id="sequence-modal-delete-btn" class="button-like" style="color: var(--accent-pink); border-color: var(--accent-pink);"><i class="fa-regular fa-trash-can"></i> 삭제</button>
+            </div>
+        </div>
+    </div>
+        
+    <div class="toast" id="toast"></div>
+
 <script type="module">
     // Firebase SDK 모듈 임포트
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
@@ -650,13 +1006,89 @@
                         <button class="save-btn button-like" data-id="${id || ''}"><i class="fa-regular fa-save"></i> 저장</button>
                     </div>
                 </div>
-                <div class="form-group"><label>제목</label><input id="title-input" value="${helpers.escapeHTML(p.title || '')}"></div>
-                <div class="form-group"><label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label><textarea id="content-input">${helpers.escapeHTML(p.content || '')}</textarea></div>
-                <div class="form-group"><label>링크 (URL)</label><input id="link-input" type="url" value="${helpers.escapeHTML(p.link || '')}"></div>
-                <div style="display:flex; gap: 24px; flex-wrap: wrap;"><div class="form-group" style="flex:1; min-width: 200px;"><label>폴더</label><select id="folder-select"><option value="">미분류</option>${folderOpts}</select></div><div class="form-group" style="flex:1; min-width: 200px;"><label>태그 (쉼표로 구분)</label><input id="tags-input" value="${(p.tags || []).join(', ')}"></div></div>
-                <div class="is-template-toggle"><input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}><label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label></div>
+                <div class="form-group">
+                    <label>제목</label>
+                    <input id="title-input" value="${helpers.escapeHTML(p.title || '')}">
+                </div>
+                <div class="form-group">
+                    <label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label>
+                    <textarea id="content-input">${helpers.escapeHTML(p.content || '')}</textarea>
+                    <div class="file-upload-section">
+                        <input type="file" id="large-text-file" accept=".txt,.html,.md,.json,.csv,.js,.css,text/*" style="display:none;">
+                        <button id="load-text-btn" class="button-like"><i class="fa-solid fa-file-arrow-up"></i> 파일에서 불러오기</button>
+                        <span id="loaded-file-name"></span>
+                    </div>
+                    <p id="content-size-warning" style="color: var(--accent-yellow); font-size: 0.85rem; margin-top: 5px; display: none;">
+                        경고: 내용이 너무 길어 저장에 실패할 수 있습니다. (Firestore 문서 제한 1MB)
+                    </p>
+                </div>
+                <div class="form-group">
+                    <label>링크 (URL)</label>
+                    <input id="link-input" type="url" value="${helpers.escapeHTML(p.link || '')}">
+                </div>
+                <div style="display:flex; gap: 24px; flex-wrap: wrap;">
+                    <div class="form-group" style="flex:1; min-width: 200px;">
+                        <label>폴더</label>
+                        <select id="folder-select"><option value="">미분류</option>${folderOpts}</select>
+                    </div>
+                    <div class="form-group" style="flex:1; min-width: 200px;">
+                        <label>태그 (쉼표로 구분)</label>
+                        <input id="tags-input" value="${(p.tags || []).join(', ')}">
+                    </div>
+                </div>
+                <div class="is-template-toggle">
+                    <input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}>
+                    <label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label>
+                </div>
                 ${!isNew ? `<button id="view-versions-btn" class="button-like" style="margin-top: 20px;"><i class="fa-solid fa-history"></i> 버전 기록 보기</button><div id="versions-history" style="display:none; margin-top:10px; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px;"></div>` : ''}
             `;
+
+            // 파일 업로드 및 크기 경고 로직 추가
+            const contentInput = document.getElementById('content-input');
+            const loadTextBtn = document.getElementById('load-text-btn');
+            const largeTextFileInput = document.getElementById('large-text-file');
+            const loadedFileNameSpan = document.getElementById('loaded-file-name');
+            const contentSizeWarning = document.getElementById('content-size-warning');
+
+            const checkContentSizeWarning = () => {
+                const byteLength = new TextEncoder().encode(contentInput.value).length;
+                const threshold = 900 * 1024; // 900KB
+                contentSizeWarning.style.display = byteLength > threshold ? 'block' : 'none';
+            };
+
+            const handleFileLoad = async (file) => {
+                if (!file) return;
+                if (file.size > 5 * 1024 * 1024) { // 5MB limit
+                    helpers.showToast('파일 크기는 5MB를 초과할 수 없습니다.');
+                    return;
+                }
+                loadedFileNameSpan.textContent = file.name;
+                try {
+                    const text = await file.text();
+                    contentInput.value = text;
+                    checkContentSizeWarning();
+                    helpers.showToast('파일 내용을 불러왔습니다.');
+                } catch (error) {
+                    helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
+                    console.error("File read error:", error);
+                }
+            };
+
+            loadTextBtn.onclick = () => largeTextFileInput.click();
+            largeTextFileInput.onchange = (e) => handleFileLoad(e.target.files[0]);
+
+            contentInput.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+            });
+            contentInput.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files.length > 0) {
+                    await handleFileLoad(e.dataTransfer.files[0]);
+                }
+            });
+            contentInput.addEventListener('input', checkContentSizeWarning);
+            checkContentSizeWarning(); // 초기 로드 시 확인
         },
         templateModal: async (id, onCompleteCallback = null) => {
             const p = await dbService.getById('prompts', id);
@@ -1018,4 +1450,4 @@
     uiElements.logoutBtn.addEventListener('click', () => signOut(auth));
 </script>
 </body>
-</html>
+</ht
