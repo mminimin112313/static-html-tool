@@ -447,6 +447,56 @@
         margin: 0;
     }
 
+
+    /* Settings modal tabs styling */
+    .settings-tabs {
+        display: flex;
+        border-bottom: 1px solid var(--color-border);
+        margin-bottom: 16px;
+    }
+    .settings-tab {
+        flex: 1 1 0;
+        padding: 10px 12px;
+        border: none;
+        background: none;
+        font-weight: 500;
+        font-size: 0.95rem;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        transition: color 0.2s ease, border-bottom-color 0.2s ease;
+    }
+    .settings-tab.active {
+        color: var(--color-primary);
+        border-bottom-color: var(--color-primary);
+    }
+    .settings-content { display: none; }
+    .settings-content.active { display: block; }
+
+    /* Improve spacing and typography within settings content */
+    .settings-content > div {
+        margin-bottom: 24px;
+    }
+    .settings-content label.form-label {
+        display: block;
+        margin-bottom: 6px;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+    .settings-content textarea,
+    .settings-content select,
+    .settings-content input {
+        width: 100%;
+        padding: 8px 12px;
+        border: 1px solid var(--color-border);
+        border-radius: 8px;
+        font-family: var(--font-ui);
+        font-size: 0.9rem;
+    }
+    .settings-content textarea {
+        min-height: 100px;
+    }
+
         /* Responsive layout adjustments */
         /* For medium screens, collapse to two columns */
         @media (max-width: 1200px) {
@@ -551,8 +601,21 @@
                 <span id="langBadge" style="font-family: var(--font-mono); font-size: 0.8rem; background: #F3F4F6; padding: 2px 8px; border-radius: 6px;"></span>
             </div>
             <div class="pane__body--padded translation-pane-body">
-                <button id="btnCopyPrompt" class="btn btn--primary"><i data-lucide="clipboard-copy"></i><span class="btn-label">AI 프롬프트 복사</span></button>
+                <!-- Group prompt and QA buttons in a flex container for better layout -->
+                <div class="prompt-buttons" style="display:flex; flex-wrap:wrap; gap:8px; width:100%;">
+                    <button id="btnCopyPrompt" class="btn btn--primary" style="flex:1 1 auto;"><i data-lucide="clipboard-copy"></i><span class="btn-label">AI 프롬프트 복사</span></button>
+                    <button id="btnQA" class="btn btn--secondary" title="QA 검사" style="flex:1 1 auto;"><i data-lucide="check-square"></i><span class="btn-label">QA 검사</span></button>
+                    <button id="btnGlossaryPrompt" class="btn btn--secondary" title="용어집 생성 프롬프트" style="flex:1 1 auto;"><i data-lucide="book-plus"></i><span class="btn-label">용어집 생성</span></button>
+                </div>
                 <textarea id="translationArea" placeholder="여기에 번역을 붙여넣으세요... (자동 저장)"></textarea>
+                <!-- Translation memory suggestions will be inserted here -->
+                <div id="tmSuggestions" style="margin-top: 8px;"></div>
+                <!-- Project glossary editing area: always visible below translation -->
+                <div id="projectGlossaryPane" style="margin-top: 8px;">
+                    <label for="projectGlossaryEdit" style="display:block; font-size:0.85rem; font-weight:500; margin-bottom:4px;">공통 용어집 (편집 가능)</label>
+                    <textarea id="projectGlossaryEdit" class="form-select" style="width:100%; min-height: 80px; resize: vertical; font-family:var(--font-mono); font-size:0.85rem;"></textarea>
+                    <p style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top:4px;">각 줄에 "용어=번역" 형태로 입력하세요.</p>
+                </div>
                 <div class="action-group">
                     <span id="saveStatus"></span>
                     <button id="btnMarkDone" class="btn btn--secondary" title="완료로 표시"><i data-lucide="check-circle-2"></i><span class="btn-label">완료</span></button>
@@ -600,6 +663,8 @@
             <button class="btn btn--secondary" onclick="this.closest('dialog').close()">닫기</button>
         </div>
     </dialog>
+
+    <!-- Glossary dialog: edit glossary for the current project -->
     
     <!-- Toast notifications -->
     <div class="toast-wrap" id="toastWrap"></div>
@@ -824,8 +889,188 @@ const DEFAULT_TEMPLATE = `<?xml version="2.0" encoding="UTF-8"?>
     <path>{{path}}</path>
     <filename>{{filename}}</filename>
     <instructions>{{instructions}}</instructions>
+    <glossary>{{glossary}}</glossary>
   </variables>
 </metaPrompt>`;
+
+// Default QA prompt template. This template guides a quality assurance review of
+// the translation. It includes placeholders for the source and target
+// languages, file path, instructions, glossary, the original text, and the
+// translation. The tasks instruct the reviewer to check for accuracy,
+// completeness, grammar, formatting, and naturalness.
+// 고품질 QA 프롬프트 템플릿. 번역 품질을 철저히 검사하기 위한
+// 메타 프롬프트로, 원문과 번역문을 비교 분석하고 모든 오류를
+// 찾아내어 수정 제안을 제공합니다. 다양한 자리표시자는 런타임에
+// 채워집니다.
+const DEFAULT_QA_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
+<qaMetaPrompt>
+  <purpose>
+    번역 문서의 품질을 종합적으로 검수하고 개선합니다. 원문과 번역문을
+    비교하여 의미가 정확히 전달되었는지, 내용이 완전한지, 문법·맞춤법·
+    형식적 오류가 없는지, 그리고 용어집과 지침을 준수했는지 세밀하게
+    확인합니다. 검수자는 또한 번역투 표현을 자연스럽고 유려한 문어체로
+    다듬어 최종 결과물이 최고 수준의 완성도를 갖추도록 해야 합니다.
+  </purpose>
+
+  <promptDesignFramework>
+
+    <objectiveDefinition id="1" title="검수 목표 정의">
+      <finalDeliverable id="1.1" description="검수 결과의 최종 형태">
+         본 검수의 결과물은 번역본에 대한 상세한 평가 보고서입니다. 보고서에는
+         발견된 모든 문제점, 개선이 필요한 부분, 수정 제안, 그리고 번역의
+         전반적인 품질 등급이 포함되어야 합니다.
+      </finalDeliverable>
+      <coreTask id="1.2" description="검수자가 수행해야 할 핵심 작업">
+        평가(Evaluate), 수정 제안(Suggest), 문체 개선(Polish). 검수자는 원문과
+        번역문을 비교·분석하여 오류를 식별하고, 정확하고 자연스러운 표현으로
+        수정하는 방법을 제시해야 합니다.
+      </coreTask>
+      <successCriteria id="1.3" description="성공적인 검수의 객관적 기준">
+        - 번역본이 원문의 의미, 뉘앙스, 정보 구조를 완벽하게 재현함.
+        - 누락되거나 추가된 정보가 없음.
+        - 맞춤법, 띄어쓰기, 문법, 용어 사용, 서식 등 언어적 오류가 전혀 없음.
+        - 용어집에 정의된 용어가 일관되게 사용됨.
+        - 어색한 번역투가 제거되고 자연스러운 문어체로 표현됨.
+        - 보고서에는 문제점과 수정 제안이 명확하고 구체적으로 기술됨.
+      </successCriteria>
+    </objectiveDefinition>
+
+    <personaAssignment id="2" title="검수자 역할 부여">
+      <expertPersona id="2.1" description="검수 전문가의 묘사">
+        당신은 20년 경력의 전문 번역가이자 언어학자입니다. 다양한 분야의
+        번역·편집·교정 경험을 바탕으로, 문체와 톤을 세심하게 분석하고,
+        원문과 번역문 사이의 의미적 차이를 정확히 포착하여 개선합니다.
+        또한 용어집 관리와 스타일 가이드 제작 경험이 풍부하여 일관된
+        용어 사용과 형식적 완성도를 보장합니다.
+      </expertPersona>
+      <audience id="2.2" description="검수 보고서를 소비할 대상">
+        검수 결과는 번역가, 편집자, 콘텐츠 관리자 등 전문 독자를 위한
+        것입니다. 따라서 보고서는 전문용어를 사용하되, 각 문제점의
+        맥락과 수정 이유를 이해하기 쉽게 설명해야 합니다.
+      </audience>
+      <toneAndStyle id="2.3" description="검수 보고서의 어조와 스타일">
+        - **객관적이고 전문적인 어조:** 문제점을 지적할 때 공격적이지
+        않고, 명확하고 근거 있는 설명을 제공합니다.
+        - **구체적인 제안:** 수정이 필요한 부분은 어떻게 개선하면 좋을지
+        구체적이고 실용적인 방안을 제시합니다.
+        - **일관된 구조:** 문제점 목록, 개선 방안, 종합 평가 등 체계적인
+        구조를 유지합니다.
+      </toneAndStyle>
+    </personaAssignment>
+
+    <contextAndFormat id="3" title="맥락 제공 및 형식 지정">
+      <essentialContext id="3.1" description="검수에 필요한 배경 정보">
+        <![CDATA[
+          <!-- 번역 검수를 위해 원문과 번역문을 여기에 삽입하십시오. -->
+<original language="{{source_lang}}">
+{{text}}
+</original>
+<translation language="{{target_lang}}">
+{{translation}}
+</translation>
+        ]]>
+      </essentialContext>
+      <outputFormat id="3.2" description="검수 보고서의 형식">
+        <![CDATA[
+<report>
+  <issues>
+    <!-- 각 문제점(issue) 요소에는 문제의 종류(type), 위치(location),
+         상세 설명(description), 그리고 제안된 수정안(suggestion)을 포함합니다. -->
+  </issues>
+  <summary>
+    <!-- 번역본의 전반적인 품질을 요약 평가하십시오. 등급(예: A, B, C)과
+         개선이 필요한 주요 영역을 포함합니다. -->
+  </summary>
+</report>
+        ]]>
+      </outputFormat>
+    </contextAndFormat>
+
+    <reasoningDesign id="4" title="추론 과정 설계">
+      <reasoningFramework id="4.1" description="품질 검토 단계">
+        <option type="Checklist" description="체크리스트 기반 평가">
+          <instruction>다음 검토 단계를 순서대로 수행하라. 각 단계에서
+          발견된 문제를 기록하고 다음 단계로 넘어갈 때 이를 참고하라.</instruction>
+          <subTasks>
+            <task id="1">원문과 번역문을 비교하여 의미가 일치하는지 확인한다.</task>
+            <task id="2">누락되거나 추가된 정보가 없는지 확인한다.</task>
+            <task id="3">맞춤법, 띄어쓰기, 문법 오류를 찾아 수정한다.</task>
+            <task id="4">어색한 번역투나 부자연스러운 표현을 교정한다.</task>
+            <task id="5">용어집을 참고하여 용어가 일관되게 번역되었는지 점검한다.</task>
+            <task id="6">형식, 문단 구조, 인용 부호, 숫자 표기 등 서식 문제를 검토한다.</task>
+          </subTasks>
+        </option>
+      </reasoningFramework>
+    </reasoningDesign>
+
+    <constraints id="5" title="제약 조건">
+      <mustInclude id="5.1" description="반드시 포함해야 할 요소">
+        - 모든 문제점에 대한 구체적인 설명과 수정 제안
+        - 번역본의 전반적 품질 평가 및 등급
+      </mustInclude>
+      <mustAvoid id="5.2" description="피해야 할 요소">
+        - 원문의 정보 왜곡이나 의도적 수정
+        - 비전문적이거나 모호한 표현
+      </mustAvoid>
+      <selfCorrectionCommand id="5.3" description="최종 검증 명령">
+        <![CDATA[
+          모든 검토 과정을 완료한 후, 보고서를 제출하기 전에 전체 내용을
+          다시 읽어보며 누락된 문제는 없는지, 제안이 현실적이고 구체적인지
+          세 번 이상 교차 검토하라.
+        ]]>
+      </selfCorrectionCommand>
+    </constraints>
+
+  </promptDesignFramework>
+
+  <variables>
+    <sourceLang>{{source_lang}}</sourceLang>
+    <targetLang>{{target_lang}}</targetLang>
+    <path>{{path}}</path>
+    <filename>{{filename}}</filename>
+    <instructions>{{instructions}}</instructions>
+    <glossary>{{glossary}}</glossary>
+  </variables>
+</qaMetaPrompt>`;
+
+// Default glossary creation prompt. This template instructs the model to
+// extract key terms from the provided text and produce a bilingual glossary
+// from source language to target language. The output should be structured
+// XML containing term/translation pairs. The template can be customized in
+// future versions but is currently constant.
+const DEFAULT_GLOSSARY_PROMPT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
+<glossaryPrompt>
+  <purpose>
+    원문을 분석하여 중요한 용어, 전문 용어, 반복되는 개념을 식별하고 각 용어의 번역어를 제시하는 용어집을 생성합니다. 용어의 정의와 번역은 문맥에 맞게 간결하고 명확해야 하며, 기존 용어집(existingGlossary)이 있다면 이를 참고하여 일관성을 유지하고, 기존 용어집과 중복되거나 모순되는 용어는 새로 생성하지 않습니다.
+  </purpose>
+  <context>
+    <sourceLang>{{source_lang}}</sourceLang>
+    <targetLang>{{target_lang}}</targetLang>
+    <path>{{path}}</path>
+    <filename>{{filename}}</filename>
+    <instructions>{{instructions}}</instructions>
+    <existingGlossary>{{glossary}}</existingGlossary>
+    <text>{{text}}</text>
+  </context>
+  <tasks>
+    <task>원문에서 중요하거나 반복되는 용어를 추출합니다.</task>
+    <task>각 용어의 적절한 번역을 찾아서 제시합니다.</task>
+    <task>existingGlossary에 포함된 용어와 비교하여 중복되거나 모순되는 항목은 제외합니다.</task>
+    <task>기존 용어집과 지침을 참고하여 번역 용어의 일관성을 확인합니다.</task>
+    <task>결과를 표 형식의 XML 구조로 작성합니다.</task>
+  </tasks>
+  <outputFormat>
+    <![CDATA[
+<glossary>
+  <entry>
+    <term>...</term>
+    <translation>...</translation>
+  </entry>
+  <!-- 여러 용어에 대해 entry 요소를 반복합니다. -->
+</glossary>
+    ]]>
+  </outputFormat>
+</glossaryPrompt>`;
 
 // Default settings if none are stored
 function defaultSettings() {
@@ -835,6 +1080,10 @@ function defaultSettings() {
         targetLang: 'en',
         styleNotes: 'Maintain a consistent tone and preserve formatting.',
         promptTemplate: DEFAULT_TEMPLATE,
+        qaPromptTemplate: DEFAULT_QA_TEMPLATE,
+        // Default glossary prompt template instructs the model to generate a glossary
+        // while checking against existing entries to avoid duplicates or contradictions.
+        glossaryPromptTemplate: DEFAULT_GLOSSARY_PROMPT_TEMPLATE,
         // Do not split text by default; treat the entire file as a single block. Users can override via settings.
         splitMode: 'none',
         maxChunk: 800
@@ -850,8 +1099,29 @@ async function loadSettings() {
         await idbPut('settings', s);
     } else {
         // If splitMode is missing from older versions, default to 'none'
+        let updated = false;
         if (!('splitMode' in s)) {
             s.splitMode = 'none';
+            updated = true;
+        }
+        // If qaPromptTemplate is missing or appears to use the old format (starting with <qaPrompt>), update it to the new high‑quality default.
+        if (!('qaPromptTemplate' in s)) {
+            s.qaPromptTemplate = DEFAULT_QA_TEMPLATE;
+            updated = true;
+        } else {
+            const qa = (s.qaPromptTemplate || '').trim();
+            // Detect old template by its root tag <qaPrompt>
+            if (qa.startsWith('<qaPrompt')) {
+                s.qaPromptTemplate = DEFAULT_QA_TEMPLATE;
+                updated = true;
+            }
+        }
+        // Ensure glossaryPromptTemplate exists; assign default if missing.
+        if (!('glossaryPromptTemplate' in s)) {
+            s.glossaryPromptTemplate = DEFAULT_GLOSSARY_PROMPT_TEMPLATE;
+            updated = true;
+        }
+        if (updated) {
             await idbPut('settings', s);
         }
     }
@@ -873,6 +1143,32 @@ const saveCurrentState = () => {
     }
 };
 
+// Render the project glossary in the translation pane. Displays the glossary
+// (term=translation pairs) in a textarea for editing. Updates when the
+// current project changes and saves changes back to IndexedDB on input.
+async function renderProjectGlossary() {
+    // Ensure the glossary pane exists in the DOM
+    const glossaryArea = document.getElementById('projectGlossaryEdit');
+    if (!glossaryArea) return;
+    // Load current project's glossary
+    let glossaryText = '';
+    if (currentProjectId) {
+        const proj = await idbGet('projects', currentProjectId);
+        glossaryText = (proj && proj.glossary) ? proj.glossary : '';
+    }
+    glossaryArea.value = glossaryText;
+}
+
+// Debounced saving of glossary edits. When the glossary textarea changes,
+// this function saves the updated glossary to the current project record.
+const debouncedSaveGlossary = debounce(async (text) => {
+    if (!currentProjectId) return;
+    const proj = await idbGet('projects', currentProjectId);
+    if (proj) {
+        proj.glossary = text;
+        await idbPut('projects', proj);
+    }
+}, 1200);
 // Restore last opened project/file after reload
 async function restoreLastState() {
     const lastProjectId = localStorage.getItem('lastProjectId');
@@ -963,6 +1259,8 @@ async function openFile(path, restoreSelection = false) {
     }
     document.querySelectorAll('.tree-item').forEach(el => el.classList.toggle('active', el.dataset.path === path));
     saveCurrentState();
+    // Update the project glossary display whenever a file is opened
+    renderProjectGlossary();
 }
 
 // Split text into blocks based on the chosen mode and chunk size
@@ -1017,9 +1315,13 @@ function paintBlocks() {
             if (selectedBlockIndices.has(i)) selectedBlockIndices.delete(i);
             else selectedBlockIndices.add(i);
             saveCurrentState();
+            // Update translation memory suggestions whenever block selection changes
+            updateTMSuggestions();
         });
         els.sourceContainer.appendChild(card);
     });
+    // After painting blocks, update TM suggestions for the initial state
+    updateTMSuggestions();
 }
 
 // Render the project tree in the left pane
@@ -1069,7 +1371,8 @@ async function refreshProjectList() {
 async function createProjectFromZip(file) {
     const name = file.name.replace(/\.zip$/i, '');
     const id = 'p_' + Date.now();
-    await idbPut('projects', { id, name, createdAt: Date.now() });
+    // Initialize project with an empty glossary field
+    await idbPut('projects', { id, name, createdAt: Date.now(), glossary: '' });
     try {
         const zip = await JSZip.loadAsync(file);
         const filePromises = [];
@@ -1198,11 +1501,246 @@ async function showProjectManagement() {
     lucide.createIcons();
 }
 
+// --- Glossary management ---
+
+// --- TRANSLATION MEMORY & QA ---
+// Compute a simple similarity ratio between two strings based on word overlap.
+// The ratio is the size of the intersection of word sets divided by the average
+// size of the sets. Words are lowercased and split by whitespace.
+function wordSimilarity(a, b) {
+    if (!a || !b) return 0;
+    const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(Boolean));
+    const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(Boolean));
+    if (!wordsA.size || !wordsB.size) return 0;
+    let intersectionCount = 0;
+    wordsA.forEach(word => {
+        if (wordsB.has(word)) intersectionCount++;
+    });
+    const avgSize = (wordsA.size + wordsB.size) / 2;
+    return intersectionCount / avgSize;
+}
+
+// Update translation memory suggestions based on currently selected blocks. This
+// function searches all other files in the current project for similar text
+// segments and displays the matching source/translation pairs in the
+// #tmSuggestions container. Suggestions are sorted by similarity and limited
+// to the top matches.
+async function updateTMSuggestions() {
+    if (!currentProjectId || !currentFilePath) {
+        if (els.tmSuggestions) els.tmSuggestions.innerHTML = '';
+        return;
+    }
+    // Build selected text; if no blocks selected, consider the whole file
+    const fileRec = await idbGet('files', [currentProjectId, currentFilePath]);
+    const settings = await idbGet('settings','global') || defaultSettings();
+    // Determine segments to search for: use each selected block or entire text
+    let searchSegments = [];
+    if (selectedBlockIndices.size > 0) {
+        searchSegments = [...selectedBlockIndices].sort((a,b) => a-b).map(i => currentSourceBlocks[i]);
+    } else {
+        // Use entire text split into blocks; fallback to full text
+        searchSegments = splitText(fileRec.text, settings.splitMode, settings.maxChunk);
+        if (!searchSegments.length && fileRec.text) searchSegments = [fileRec.text];
+    }
+    // Get all other files in the same project
+    const allFiles = await idbGetAll('files');
+    const otherFiles = allFiles.filter(f => f.projectId === currentProjectId && f.path !== currentFilePath);
+    // Collect candidate segments with translation info
+    const otherSegments = [];
+    for (const other of otherFiles) {
+        const segs = splitText(other.text, settings.splitMode, settings.maxChunk);
+        const translations = segs.map(() => other.translation || '');
+        segs.forEach((seg, idx) => {
+            otherSegments.push({ src: seg, tgt: translations[idx], file: other.path });
+        });
+    }
+    // Build results for each search segment
+    const results = [];
+    searchSegments.forEach(seg => {
+        const matches = [];
+        otherSegments.forEach(candidate => {
+            const score = wordSimilarity(seg, candidate.src);
+            if (score > 0.4) {
+                matches.push({ src: candidate.src, tgt: candidate.tgt, score, file: candidate.file });
+            }
+        });
+        matches.sort((a,b) => b.score - a.score);
+        results.push({ segment: seg, matches: matches.slice(0,3) });
+    });
+    // Render suggestions
+    if (!els.tmSuggestions) return;
+    if (results.length === 0 || results.every(r => r.matches.length === 0)) {
+        els.tmSuggestions.innerHTML = '';
+        return;
+    }
+    let html = '';
+    results.forEach((res, idx) => {
+        if (res.matches.length === 0) return;
+        html += `<div style="margin-bottom:8px;">
+            <div style="font-size:0.8rem; font-weight:600; color:var(--color-primary); margin-bottom:4px;">#${idx+1} 번역 메모리 제안</div>`;
+        res.matches.forEach(match => {
+            html += `<div style="border:1px solid var(--color-border); border-radius:6px; padding:8px; margin-bottom:4px; font-size:0.8rem;">
+                <div style="color:var(--color-text-secondary); margin-bottom:4px;"><strong>원문:</strong> ${match.src.length > 200 ? match.src.substring(0,200) + '...' : match.src}</div>
+                <div style="color:var(--color-text-secondary);"><strong>번역:</strong> ${match.tgt ? (match.tgt.length > 200 ? match.tgt.substring(0,200) + '...' : match.tgt) : '(번역 없음)'}</div>
+                <div style="font-size:0.7rem; color:var(--color-text-placeholder);">유사도: ${(match.score*100).toFixed(0)}%, 파일: ${match.file}</div>
+            </div>`;
+        });
+        html += '</div>';
+    });
+    els.tmSuggestions.innerHTML = html;
+}
+
+// Build a QA prompt for the selected blocks or entire file. This prompt will
+// instruct the AI to perform quality assurance on the translation, checking
+// for completeness, accuracy, grammar, and formatting. The QA prompt will
+// include both the original text and the current translation.
+async function buildQAPrompt() {
+    if (!currentProjectId || !currentFilePath) return null;
+    const fileRec = await idbGet('files', [currentProjectId, currentFilePath]);
+    const project = await idbGet('projects', currentProjectId);
+    const settings = await idbGet('settings', 'global') || defaultSettings();
+    // Determine source text based on selected blocks or entire file
+    let sourceText = '';
+    if (selectedBlockIndices.size > 0) {
+        sourceText = [...selectedBlockIndices].sort((a,b) => a-b).map(i => currentSourceBlocks[i]).join('\n\n');
+    } else {
+        sourceText = fileRec.text || '';
+    }
+    const translationText = els.translationArea.value.trim();
+    if (!sourceText.trim() || !translationText) return null;
+    const glossary = project && project.glossary ? project.glossary : '';
+    const tmpl = settings.qaPromptTemplate || DEFAULT_QA_TEMPLATE;
+    return tmpl
+        .replaceAll('{{source_lang}}', settings.sourceLang)
+        .replaceAll('{{target_lang}}', settings.targetLang)
+        .replaceAll('{{path}}', currentFilePath)
+        .replaceAll('{{filename}}', currentFilePath.split('/').pop())
+        .replaceAll('{{instructions}}', settings.styleNotes || '')
+        .replaceAll('{{glossary}}', glossary)
+        .replaceAll('{{text}}', sourceText)
+        .replaceAll('{{translation}}', translationText);
+}
+
+// Copy the QA prompt to the clipboard. Similar to copyPrompt but tailored for QA.
+async function copyQAPrompt() {
+    const btn = els.btnQA;
+    const labelEl = btn.querySelector('span');
+    let iconEl = btn.querySelector('svg');
+    if (!iconEl) iconEl = btn.querySelector('i');
+    btn.disabled = true;
+    if (iconEl) iconEl.classList.add('animate-spin');
+    if (labelEl) labelEl.textContent = '생성 중...';
+    const qaPrompt = await buildQAPrompt();
+    if (qaPrompt) {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(qaPrompt);
+            } else {
+                const tempArea = document.createElement('textarea');
+                tempArea.value = qaPrompt;
+                tempArea.style.position = 'fixed';
+                tempArea.style.top = '-1000px';
+                document.body.appendChild(tempArea);
+                tempArea.select();
+                try {
+                    document.execCommand('copy');
+                } finally {
+                    document.body.removeChild(tempArea);
+                }
+            }
+            toast('QA 프롬프트가 복사되었습니다!', 'ok');
+        } catch(e) {
+            toast('QA 프롬프트 복사에 실패했습니다.', 'error');
+        }
+    } else {
+        toast('원문과 번역을 모두 입력해야 QA 프롬프트를 생성할 수 있습니다.', 'error');
+    }
+    setTimeout(() => {
+        btn.disabled = false;
+        if (iconEl) iconEl.classList.remove('animate-spin');
+        if (labelEl) labelEl.textContent = 'QA 검사';
+    }, 1000);
+}
+
+// Build a glossary creation prompt using the default glossary prompt template. The
+// prompt instructs the model to analyze the selected source text and produce a
+// bilingual glossary. It replaces placeholders with the current languages,
+// file path, filename, instructions, existing glossary and the selected text.
+async function buildGlossaryPrompt() {
+    if (!currentProjectId || !currentFilePath) return null;
+    const fileRec = await idbGet('files', [currentProjectId, currentFilePath]);
+    const project = await idbGet('projects', currentProjectId);
+    const settings = await idbGet('settings', 'global') || defaultSettings();
+    // Determine source text based on selected blocks or entire file
+    let sourceText = '';
+    if (selectedBlockIndices.size > 0) {
+        sourceText = [...selectedBlockIndices].sort((a,b) => a-b).map(i => currentSourceBlocks[i]).join('\n\n');
+    } else {
+        sourceText = fileRec.text || '';
+    }
+    if (!sourceText.trim()) return null;
+    const glossary = project && project.glossary ? project.glossary : '';
+    const tmpl = settings.glossaryPromptTemplate || DEFAULT_GLOSSARY_PROMPT_TEMPLATE;
+    return tmpl
+        .replaceAll('{{source_lang}}', settings.sourceLang)
+        .replaceAll('{{target_lang}}', settings.targetLang)
+        .replaceAll('{{path}}', currentFilePath)
+        .replaceAll('{{filename}}', currentFilePath.split('/').pop())
+        .replaceAll('{{instructions}}', settings.styleNotes || '')
+        .replaceAll('{{glossary}}', glossary)
+        .replaceAll('{{text}}', sourceText);
+}
+
+// Copy the glossary creation prompt to the clipboard. Similar to copyPrompt and
+// copyQAPrompt, but generates a prompt for glossary creation. Shows feedback
+// via the button label and a spinner on the icon.
+async function copyGlossaryPrompt() {
+    const btn = els.btnGlossaryPrompt;
+    const labelEl = btn ? btn.querySelector('span') : null;
+    let iconEl = btn ? btn.querySelector('svg') : null;
+    if (!iconEl && btn) iconEl = btn.querySelector('i');
+    if (btn) btn.disabled = true;
+    if (iconEl) iconEl.classList.add('animate-spin');
+    if (labelEl) labelEl.textContent = '생성 중...';
+    const glossPrompt = await buildGlossaryPrompt();
+    if (glossPrompt) {
+        try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                await navigator.clipboard.writeText(glossPrompt);
+            } else {
+                const tempArea = document.createElement('textarea');
+                tempArea.value = glossPrompt;
+                tempArea.style.position = 'fixed';
+                tempArea.style.top = '-1000px';
+                document.body.appendChild(tempArea);
+                tempArea.select();
+                try {
+                    document.execCommand('copy');
+                } finally {
+                    document.body.removeChild(tempArea);
+                }
+            }
+            toast('용어집 프롬프트가 복사되었습니다!', 'ok');
+        } catch(e) {
+            toast('용어집 프롬프트 복사에 실패했습니다.', 'error');
+        }
+    } else {
+        toast('원문을 선택해야 용어집 프롬프트를 생성할 수 있습니다.', 'error');
+    }
+    setTimeout(() => {
+        if (btn) btn.disabled = false;
+        if (iconEl) iconEl.classList.remove('animate-spin');
+        if (labelEl) labelEl.textContent = '용어집 생성';
+    }, 1000);
+}
+
 // Build the AI prompt text from selected blocks
 async function buildPromptText() {
     if (!currentFilePath) return null;
     const settings = await idbGet('settings','global') || defaultSettings();
     const fileRecord = await idbGet('files', [currentProjectId, currentFilePath]);
+    const project = await idbGet('projects', currentProjectId);
+    const glossary = project && project.glossary ? project.glossary : '';
     const sourceText = [...selectedBlockIndices].sort((a,b) => a - b).map(i => currentSourceBlocks[i]).join('\n\n') || fileRecord.text || '';
     if (!sourceText.trim()) return null;
     const template = settings.promptTemplate || DEFAULT_TEMPLATE;
@@ -1214,6 +1752,7 @@ async function buildPromptText() {
             .replaceAll('{{path}}', currentFilePath)
             .replaceAll('{{filename}}', currentFilePath.split('/').pop())
             .replaceAll('{{instructions}}', settings.styleNotes || '')
+            .replaceAll('{{glossary}}', glossary)
             .replaceAll('{{text}}', sourceText)
             .replaceAll('{{번역대상}}', sourceText);
 }
@@ -1364,73 +1903,146 @@ async function fullImport() {
 // Render the settings modal dialog
 async function renderSettingsModal() {
     const s = await idbGet('settings', 'global') || defaultSettings();
-        els.settingsDlg.innerHTML = `
-        <form method="dialog" style="width:500px;">
+    // Load current project's glossary for the glossary tab
+    let glossaryVal = '';
+    if (currentProjectId) {
+        const projForGlossary = await idbGet('projects', currentProjectId);
+        glossaryVal = (projForGlossary && projForGlossary.glossary) ? projForGlossary.glossary : '';
+    }
+    // Build settings dialog with tabs for general, translation prompt, QA prompt, and glossary
+    els.settingsDlg.innerHTML = `
+        <form method="dialog" style="width:600px;">
             <div class="dialog__header">
                 <h2>설정</h2>
                 <button class="btn btn--icon" value="cancel" title="닫기"><i data-lucide="x"></i></button>
             </div>
-            <div class="dialog__body" style="display:flex; flex-direction:column; gap: 16px;">
-                <!-- Language selection -->
-                <div>
-                    <label class="form-label" style="font-weight:500;">언어</label>
-                    <div style="display: flex; align-items: center; gap: 12px;">
-                        <input id="dlgSourceLang" class="form-select" style="width:100%;" value="${s.sourceLang}" />
-                        <i data-lucide="arrow-right" style="color: var(--color-text-secondary);"></i>
-                        <input id="dlgTargetLang" class="form-select" style="width:100%;" value="${s.targetLang}" />
+            <div class="dialog__body">
+                <div class="settings-tabs">
+                    <button type="button" class="settings-tab active" data-tab="general">일반</button>
+                    <button type="button" class="settings-tab" data-tab="translation">번역 프롬프트</button>
+                    <button type="button" class="settings-tab" data-tab="qa">QA 프롬프트</button>
+                    <button type="button" class="settings-tab" data-tab="glossary">용어집</button>
+                </div>
+                <div id="tab-general" class="settings-content active">
+                    <!-- General settings: languages, split mode, notes -->
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label" style="font-weight:500;">언어</label>
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <input id="dlgSourceLang" class="form-select" style="width:100%;" value="${s.sourceLang}" />
+                            <i data-lucide="arrow-right" style="color: var(--color-text-secondary);"></i>
+                            <input id="dlgTargetLang" class="form-select" style="width:100%;" value="${s.targetLang}" />
+                        </div>
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label" style="font-weight:500;">텍스트 분할 방식</label>
+                        <select id="dlgSplitMode" class="form-select" style="width:100%;">
+                            <option value="none" ${s.splitMode === 'none' ? 'selected' : ''}>분할 안 함 (전체 텍스트)</option>
+                            <option value="auto" ${s.splitMode === 'auto' ? 'selected' : ''}>자동 (문단 우선)</option>
+                            <option value="paragraph" ${s.splitMode === 'paragraph' ? 'selected' : ''}>문단별</option>
+                            <option value="line" ${s.splitMode === 'line' ? 'selected' : ''}>줄별</option>
+                        </select>
+                        <p style="font-size:0.75rem; color: var(--color-text-secondary); margin-top:4px;">블록 선택 없이 전체 복사를 위해 ‘분할 안 함’을 선택하세요.</p>
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label" style="font-weight:500;">지침</label>
+                        <textarea id="dlgStyleNotes" class="form-select" style="width:100%; min-height: 80px; resize: vertical; font-family:var(--font-ui);">${s.styleNotes}</textarea>
                     </div>
                 </div>
-                <!-- Text split mode selection -->
-                <div>
-                    <label class="form-label" style="font-weight:500;">텍스트 분할 방식</label>
-                    <select id="dlgSplitMode" class="form-select" style="width:100%;">
-                        <option value="none" ${s.splitMode === 'none' ? 'selected' : ''}>분할 안 함 (전체 텍스트)</option>
-                        <option value="auto" ${s.splitMode === 'auto' ? 'selected' : ''}>자동 (문단 우선)</option>
-                        <option value="paragraph" ${s.splitMode === 'paragraph' ? 'selected' : ''}>문단별</option>
-                        <option value="line" ${s.splitMode === 'line' ? 'selected' : ''}>줄별</option>
-                    </select>
-                    <p style="font-size:0.75rem; color: var(--color-text-secondary); margin-top:4px;">블록 선택 없이 전체 복사를 위해 ‘분할 안 함’을 선택하세요.</p>
+                <div id="tab-translation" class="settings-content">
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label" style="font-weight:500;">번역 프롬프트 템플릿</label>
+                        <textarea id="dlgPromptTemplate" class="form-select" style="width:100%; min-height: 200px; resize: vertical; font-family:var(--font-mono);">${s.promptTemplate}</textarea>
+                        <button type="button" id="btnResetTranslationTemplate" class="btn btn--secondary" style="margin-top:8px;">템플릿 초기화</button>
+                    </div>
                 </div>
-                <!-- Style notes -->
-                <div>
-                    <label class="form-label" style="font-weight:500;">지침</label>
-                    <textarea id="dlgStyleNotes" class="form-select" style="width:100%; min-height: 80px; resize: vertical; font-family:var(--font-ui);">${s.styleNotes}</textarea>
+                <div id="tab-qa" class="settings-content">
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label" style="font-weight:500;">QA 프롬프트 템플릿</label>
+                        <textarea id="dlgQAPromptTemplate" class="form-select" style="width:100%; min-height: 200px; resize: vertical; font-family:var(--font-mono);">${s.qaPromptTemplate || DEFAULT_QA_TEMPLATE}</textarea>
+                        <button type="button" id="btnResetQATemplate" class="btn btn--secondary" style="margin-top:8px;">템플릿 초기화</button>
+                    </div>
                 </div>
-                <!-- Prompt template -->
-                <div>
-                    <label class="form-label" style="font-weight:500;">AI 프롬프트 템플릿</label>
-                    <textarea id="dlgPromptTemplate" class="form-select" style="width:100%; min-height: 150px; resize: vertical; font-family:var(--font-mono);">${s.promptTemplate}</textarea>
+                <div id="tab-glossary" class="settings-content">
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label" style="font-weight:500;">프로젝트 용어집</label>
+                        <p style="font-size:0.8rem; color: var(--color-text-secondary); margin-bottom:4px;">각 줄에 "용어=번역" 형태로 입력하세요. 예: "CPU=중앙처리장치".</p>
+                        <textarea id="dlgProjectGlossary" class="form-select" style="width:100%; min-height: 200px; resize: vertical; font-family:var(--font-mono);">${glossaryVal}</textarea>
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label" style="font-weight:500;">용어집 생성 프롬프트 템플릿</label>
+                        <p style="font-size:0.8rem; color: var(--color-text-secondary); margin-bottom:4px;">기존 용어집을 참고하면서 새로운 용어를 생성하는 프롬프트를 수정할 수 있습니다.</p>
+                        <textarea id="dlgGlossaryPromptTemplate" class="form-select" style="width:100%; min-height: 200px; resize: vertical; font-family:var(--font-mono);">${s.glossaryPromptTemplate || DEFAULT_GLOSSARY_PROMPT_TEMPLATE}</textarea>
+                        <button type="button" id="btnResetGlossaryTemplate" class="btn btn--secondary" style="margin-top:8px;">템플릿 초기화</button>
+                    </div>
                 </div>
             </div>
             <div class="dialog__footer">
-                <button type="button" id="btnResetTemplate" class="btn btn--secondary" style="margin-right:auto;">템플릿 초기화</button>
                 <button class="btn btn--secondary" value="cancel">취소</button>
                 <button class="btn btn--primary" value="save">저장</button>
             </div>
         </form>`;
     els.settingsDlg.showModal();
     lucide.createIcons();
-    // Reset template button resets to default
-    document.getElementById('btnResetTemplate').addEventListener('click', () => {
-        document.getElementById('dlgPromptTemplate').value = DEFAULT_TEMPLATE;
+    // Tab switching logic
+    const tabButtons = els.settingsDlg.querySelectorAll('.settings-tab');
+    const tabContents = {
+        general: els.settingsDlg.querySelector('#tab-general'),
+        translation: els.settingsDlg.querySelector('#tab-translation'),
+        qa: els.settingsDlg.querySelector('#tab-qa'),
+        glossary: els.settingsDlg.querySelector('#tab-glossary'),
+    };
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabButtons.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const tabName = btn.getAttribute('data-tab');
+            Object.keys(tabContents).forEach(key => {
+                if (key === tabName) tabContents[key].classList.add('active');
+                else tabContents[key].classList.remove('active');
+            });
+        });
     });
-    // Handle save/cancel events
-        els.settingsDlg.onclose = async () => {
-            if (els.settingsDlg.returnValue === 'save') {
-                const newSettings = {
-                    id: 'global',
-                    sourceLang: document.getElementById('dlgSourceLang').value,
-                    targetLang: document.getElementById('dlgTargetLang').value,
-                    styleNotes: document.getElementById('dlgStyleNotes').value,
-                    promptTemplate: document.getElementById('dlgPromptTemplate').value,
-                    // Persist the chosen split mode
-                    splitMode: document.getElementById('dlgSplitMode').value,
-                };
-                await idbPut('settings', newSettings);
-                updateLangBadge(newSettings.sourceLang, newSettings.targetLang);
-                toast('설정이 저장되었습니다!', 'ok');
+    // Reset translation, QA, and glossary template buttons
+    els.settingsDlg.querySelector('#btnResetTranslationTemplate').addEventListener('click', () => {
+        els.settingsDlg.querySelector('#dlgPromptTemplate').value = DEFAULT_TEMPLATE;
+    });
+    els.settingsDlg.querySelector('#btnResetQATemplate').addEventListener('click', () => {
+        els.settingsDlg.querySelector('#dlgQAPromptTemplate').value = DEFAULT_QA_TEMPLATE;
+    });
+    const resetGlossaryBtn = els.settingsDlg.querySelector('#btnResetGlossaryTemplate');
+    if (resetGlossaryBtn) {
+        resetGlossaryBtn.addEventListener('click', () => {
+            els.settingsDlg.querySelector('#dlgGlossaryPromptTemplate').value = DEFAULT_GLOSSARY_PROMPT_TEMPLATE;
+        });
+    }
+    // Handle save on dialog close
+    els.settingsDlg.onclose = async () => {
+        if (els.settingsDlg.returnValue === 'save') {
+            const newSettings = {
+                id: 'global',
+                sourceLang: els.settingsDlg.querySelector('#dlgSourceLang').value,
+                targetLang: els.settingsDlg.querySelector('#dlgTargetLang').value,
+                styleNotes: els.settingsDlg.querySelector('#dlgStyleNotes').value,
+                promptTemplate: els.settingsDlg.querySelector('#dlgPromptTemplate').value,
+                qaPromptTemplate: els.settingsDlg.querySelector('#dlgQAPromptTemplate').value,
+                glossaryPromptTemplate: els.settingsDlg.querySelector('#dlgGlossaryPromptTemplate') ? els.settingsDlg.querySelector('#dlgGlossaryPromptTemplate').value : DEFAULT_GLOSSARY_PROMPT_TEMPLATE,
+                splitMode: els.settingsDlg.querySelector('#dlgSplitMode').value,
+            };
+            // Save global settings
+            await idbPut('settings', newSettings);
+            updateLangBadge(newSettings.sourceLang, newSettings.targetLang);
+            // If glossary tab is present and a project is selected, save glossary
+            const glossaryField = els.settingsDlg.querySelector('#dlgProjectGlossary');
+            if (glossaryField && currentProjectId) {
+                const projToUpdate = await idbGet('projects', currentProjectId);
+                if (projToUpdate) {
+                    projToUpdate.glossary = glossaryField.value;
+                    await idbPut('projects', projToUpdate);
+                }
             }
-        };
+            toast('설정이 저장되었습니다!', 'ok');
+        }
+    };
 }
 
 // Setup event listeners for UI actions
@@ -1451,6 +2063,8 @@ function setupEventListeners() {
         const firstFile = (await getFilesOfCurrent())[0]?.path;
         await openFile(firstFile);
         await updateCurrentProjectProgress();
+        // After switching projects, refresh the glossary pane
+        await renderProjectGlossary();
     });
     els.btnExportZip.addEventListener('click', async () => {
         if (!currentProjectId) return toast('프로젝트가 로드되지 않았습니다.');
@@ -1469,6 +2083,13 @@ function setupEventListeners() {
     els.btnSettings.addEventListener('click', renderSettingsModal);
     els.btnCopyPrompt.addEventListener('click', copyPrompt);
     els.translationArea.addEventListener('input', () => debouncedSave(els.translationArea.value));
+
+    // Save glossary edits when user types into the glossary textarea
+    if (els.projectGlossaryEdit) {
+        els.projectGlossaryEdit.addEventListener('input', () => {
+            debouncedSaveGlossary(els.projectGlossaryEdit.value);
+        });
+    }
     els.btnMarkDone.addEventListener('click', async () => {
         if (!currentFilePath) return toast('No file selected.', 'error');
         const rec = await idbGet('files', [currentProjectId, currentFilePath]);
@@ -1479,6 +2100,18 @@ function setupEventListeners() {
         toast('완료로 표시되었습니다.', 'ok');
     });
     els.btnHistory.addEventListener('click', showHistory);
+
+    // Glossary creation prompt button
+    if (els.btnGlossaryPrompt) {
+        els.btnGlossaryPrompt.addEventListener('click', copyGlossaryPrompt);
+    }
+
+    // QA button: copy QA prompt to clipboard
+    if (els.btnQA) {
+        els.btnQA.addEventListener('click', copyQAPrompt);
+    }
+
+    // Glossary button: open glossary editor
     els.btnDataActions.addEventListener('click', (e) => {
         e.stopPropagation();
         els.dataDropdownMenu.style.display = 'block';
@@ -1527,6 +2160,8 @@ async function init() {
             await restoreLastState();
             setupEventListeners();
             setupButtonInteractions();
+            // Load and display glossary for the current project, if any
+            await renderProjectGlossary();
             // After everything is set up, ensure icons are rendered. If lucide
             // failed to load, our stub will simply no-op here.
             lucide.createIcons();
