@@ -81,11 +81,13 @@
             gap: 8px;
             font-size: 0.9rem;
             white-space: nowrap;
-            transition: background-color 0.2s;
+            transition: background-color 0.2s, box-shadow 0.2s;
+            /* improve responsiveness on iOS */
             touch-action: manipulation;
         }
         .button-like:hover {
             background-color: var(--bg-hover);
+            box-shadow: 0 0 0 2px var(--border-color);
         }
 
         /* Sidebar layout */
@@ -316,6 +318,7 @@
         }
         .prompt-list-item:hover {
             background-color: var(--bg-secondary);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
         }
         .prompt-info {
             cursor: pointer;
@@ -437,6 +440,15 @@
             align-items: center;
             margin-top: 10px;
             gap: 10px;
+            padding: 10px;
+            border: 1px dashed var(--border-color);
+            border-radius: 6px;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        /* Highlight drop area when dragging a file over */
+        .file-upload-section.dragover {
+            background-color: var(--bg-hover);
+            border-color: var(--accent-blue);
         }
         .file-upload-section .button-like {
             padding: 8px 12px;
@@ -1286,11 +1298,50 @@
                 }
             };
             loadTextBtn.onclick = () => largeTextFileInput.click();
-            largeTextFileInput.onchange = (e) => handleFileLoad(e.target.files[0]);
-            contentInput.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+            // When a file is selected via the file picker, load its content and display its name
+            // Use async handler so we await file loading before continuing. This ensures
+            // the text area is reliably populated after the file is read.
+            largeTextFileInput.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    loadedFileNameSpan.textContent = file.name;
+                    await handleFileLoad(file);
+                }
+            };
+            // Highlight the file upload area when dragging a file over it
+            const fileUploadSection = loadTextBtn.parentElement;
+            fileUploadSection.addEventListener('dragenter', (e) => {
+                e.preventDefault();
+                fileUploadSection.classList.add('dragover');
+            });
+            fileUploadSection.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                fileUploadSection.classList.add('dragover');
+            });
+            fileUploadSection.addEventListener('dragleave', () => {
+                fileUploadSection.classList.remove('dragover');
+            });
+            fileUploadSection.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                fileUploadSection.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    const file = e.dataTransfer.files[0];
+                    loadedFileNameSpan.textContent = file.name;
+                    await handleFileLoad(file);
+                }
+            });
+            // Support dragging files directly onto the content textarea
+            contentInput.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'copy';
+            });
             contentInput.addEventListener('drop', async (e) => {
                 e.preventDefault();
-                if (e.dataTransfer.files.length > 0) await handleFileLoad(e.dataTransfer.files[0]);
+                if (e.dataTransfer.files.length > 0) {
+                    const file = e.dataTransfer.files[0];
+                    loadedFileNameSpan.textContent = file.name;
+                    await handleFileLoad(file);
+                }
             });
             contentInput.addEventListener('input', checkContentSizeWarning);
             checkContentSizeWarning();
