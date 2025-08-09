@@ -1,1412 +1,1242 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>프롬프트 관리자 프로 (m) – fixed</title>
-  <link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
-    crossorigin="anonymous"
-    referrerpolicy="no-referrer"
-  />
-  <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>프롬프트 관리자 프로 (m)</title>
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <!-- Fuse.js for fuzzy search -->
+    <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
+    <!-- SortableJS for drag and drop -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <style>
+        /* =====================================================================
+           기본 스타일 및 변수 정의
+           ---------------------------------------------------------------------
+           색상과 크기 관련 변수를 한 곳에서 정의하여 유지보수성을 높였습니다.
+        */
+        :root {
+            --bg-primary: #131314;
+            --bg-secondary: #1e1f20;
+            --bg-tertiary: #2d2e30;
+            --bg-hover: #3c4043;
+            --text-primary: #e2e2e3;
+            --text-secondary: #bdc1c6;
+            --accent-blue: #8ab4f8;
+            --accent-yellow: #fdd663;
+            --accent-pink: #f28b82;
+            --border-color: #3c4043;
+            --sidebar-width: 280px;
+            --header-height: 64px;
+        }
 
-  <style>
-    /* 기본 스타일 및 변수 정의 */
-    :root {
-      --bg-primary: #131314;
-      --bg-secondary: #1e1f20;
-      --bg-tertiary: #2d2e30;
-      --bg-hover: #3c4043;
-      --text-primary: #e2e2e3;
-      --text-secondary: #bdc1c6;
-      --accent-blue: #8ab4f8;
-      --accent-yellow: #fdd663;
-      --accent-pink: #f28b82;
-      --border-color: #3c4043;
-      --sidebar-width: 280px;
-      --header-height: 64px;
-    }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
 
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            overscroll-behavior: contain;
+            -webkit-touch-callout: none;
+        }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-        "Helvetica Neue", Arial, sans-serif;
-      background-color: var(--bg-primary);
-      color: var(--text-primary);
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
-    }
+        /* Prevent body scrolling when sidebar is open. Position fixed is used
+           instead of overflow hidden because iOS Safari ignores overflow on body
+           elements when fixed children are present. The scroll position is
+           restored on close via JavaScript (see script section).*/
+        body.no-scroll {
+            overflow: hidden;
+            position: fixed;
+            width: 100%;
+        }
 
-    body.no-scroll {
-      overflow: hidden;
-    }
+        button, input, textarea, select {
+            font-family: inherit;
+        }
 
-    button,
-    input,
-    textarea,
-    select {
-      font-family: inherit;
-    }
-    button {
-      cursor: pointer;
-    }
+        button {
+            cursor: pointer;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
+        }
 
-    .button-like {
-      background-color: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      padding: 10px 16px;
-      border-radius: 6px;
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      font-size: 0.9rem;
-      white-space: nowrap;
-      transition: background-color 0.2s;
-    }
-    .button-like:hover {
-      background-color: var(--bg-hover);
-    }
+        /* Button-like styles reused across UI */
+        .button-like {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 10px 16px;
+            border-radius: 6px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            transition: background-color 0.2s;
+            touch-action: manipulation;
+        }
+        .button-like:hover {
+            background-color: var(--bg-hover);
+        }
 
-    .sidebar {
-      width: var(--sidebar-width);
-      background-color: var(--bg-secondary);
-      display: flex;
-      flex-direction: column;
-      flex-shrink: 0;
-      height: 100%;
-      transition: transform 0.3s ease-in-out;
-      z-index: 1000;
-    }
-    .sidebar-content {
-      display: flex;
-      flex-direction: column;
-      flex-grow: 1;
-      overflow-y: auto;
-      min-height: 0;
-    }
-    #auth-section {
-      padding: 16px;
-      border-bottom: 1px solid var(--border-color);
-    }
-    #login-btn {
-      width: 100%;
-      padding: 10px;
-      background-color: var(--accent-blue);
-      color: var(--bg-primary);
-      border: none;
-      border-radius: 6px;
-      font-weight: 500;
-    }
-    #user-profile {
-      display: none;
-      align-items: center;
-      gap: 10px;
-    }
-    #user-profile img {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-    }
-    #user-profile p {
-      font-size: 0.9rem;
-      flex-grow: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    #logout-btn {
-      background: none;
-      border: 1px solid var(--border-color);
-      color: var(--text-secondary);
-      padding: 6px 10px;
-      border-radius: 6px;
-    }
+        /* Sidebar layout */
+        .sidebar {
+            width: var(--sidebar-width);
+            background-color: var(--bg-secondary);
+            display: flex;
+            flex-direction: column;
+            flex-shrink: 0;
+            height: 100vh;
+            transition: transform 0.3s ease-in-out;
+            z-index: 1000;
+            touch-action: manipulation;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        /* The navigation area inside the sidebar */
+        .sidebar-content {
+            display: flex;
+            flex-direction: column;
+            flex-grow: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        /* Login area */
+        #auth-section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        #login-btn {
+            width: 100%;
+            padding: 10px;
+            background-color: var(--accent-blue);
+            color: var(--bg-primary);
+            border: none;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+        #user-profile {
+            display: none;
+            align-items: center;
+            gap: 10px;
+        }
+        #user-profile img {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+        }
+        #user-profile p {
+            font-size: .9rem;
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #logout-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-secondary);
+            padding: 6px 10px;
+            border-radius: 6px;
+        }
 
-    .new-prompt-btn {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background-color: var(--bg-primary);
-      color: var(--text-primary);
-      border: 1px solid var(--border-color);
-      border-radius: 24px;
-      padding: 10px 16px;
-      font-size: 0.9rem;
-      margin: 16px;
-    }
-    .new-prompt-btn:hover {
-      background-color: #282a2c;
-    }
+        .new-prompt-btn {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 10px 16px;
+            font-size: .9rem;
+            margin: 16px;
+            touch-action: manipulation;
+        }
+        .new-prompt-btn:hover {
+            background-color: #282a2c;
+        }
 
-    .nav-section-title {
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-      padding: 16px 16px 8px;
-      font-weight: 500;
-    }
-    .nav-list {
-      list-style: none;
-    }
-    .nav-item a {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      padding: 10px 16px;
-      color: var(--text-primary);
-      text-decoration: none;
-      border-radius: 4px;
-      font-size: 0.9rem;
-      cursor: pointer;
-    }
-    .nav-item a:hover {
-      background-color: var(--bg-tertiary);
-    }
-    .nav-item.active a {
-      background-color: var(--accent-blue);
-      color: var(--bg-primary);
-    }
-    .nav-icon {
-      width: 24px;
-      text-align: center;
-      font-size: 1rem;
-    }
+        .nav-section-title {
+            font-size: .9rem;
+            color: var(--text-secondary);
+            padding: 16px 16px 8px;
+            font-weight: 500;
+        }
+        .nav-list {
+            list-style: none;
+        }
+        .nav-item a {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 10px 16px;
+            color: var(--text-primary);
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: .9rem;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .nav-item a:hover {
+            background-color: var(--bg-tertiary);
+        }
+        .nav-item.active a {
+            background-color: var(--accent-blue);
+            color: var(--bg-primary);
+        }
+        .nav-icon {
+            width: 24px;
+            text-align: center;
+            font-size: 1rem;
+        }
 
-    .new-folder-btn {
-      width: calc(100% - 32px);
-      margin: 10px 16px;
-      padding: 10px;
-      background: none;
-      border: 1px dashed var(--border-color);
-      color: var(--text-secondary);
-      border-radius: 4px;
-    }
-    .new-folder-btn:hover {
-      background-color: var(--bg-tertiary);
-    }
+        .new-folder-btn {
+            width: calc(100% - 32px);
+            margin: 10px 16px;
+            padding: 10px;
+            background: none;
+            border: 1px dashed var(--border-color);
+            color: var(--text-secondary);
+            border-radius: 4px;
+            touch-action: manipulation;
+        }
+        .new-folder-btn:hover {
+            background-color: var(--bg-tertiary);
+        }
 
-    #data-management-section {
-      padding: 16px;
-      border-top: 1px solid var(--border-color);
-      margin-top: auto;
-    }
-    #data-management-section .button-like {
-      width: 100%;
-      margin-top: 10px;
-    }
+        #data-management-section {
+            padding: 16px;
+            border-top: 1px solid var(--border-color);
+            margin-top: auto;
+        }
+        #data-management-section .button-like {
+            width: 100%;
+            margin-top: 10px;
+        }
 
-    .main-content {
-      flex-grow: 1;
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
-    .main-header {
-      display: flex;
-      align-items: center;
-      padding: 0 24px;
-      height: var(--header-height);
-      flex-shrink: 0;
-      border-bottom: 1px solid var(--border-color);
-      gap: 16px;
-    }
-    #mobile-menu-toggle {
-      display: none;
-    }
-    .main-header h1 {
-      font-size: 1.4rem;
-      font-weight: 500;
-      flex-grow: 1;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            height: 100vh;
+        }
+        .main-header {
+            display: flex;
+            align-items: center;
+            padding: 0 24px;
+            height: var(--header-height);
+            flex-shrink: 0;
+            border-bottom: 1px solid var(--border-color);
+            gap: 16px;
+        }
+        #mobile-menu-toggle {
+            display: none;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            touch-action: manipulation;
+        }
+        .main-header h1 {
+            font-size: 1.4rem;
+            font-weight: 500;
+            flex-grow: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
 
-    .header-controls {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-    }
-    .search-wrapper {
-      position: relative;
-    }
-    .search-input {
-      background-color: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      color: var(--text-primary);
-      padding: 8px 16px 8px 36px;
-      font-size: 1rem;
-      width: 300px;
-    }
-    .search-wrapper .fa-magnifying-glass {
-      position: absolute;
-      left: 12px;
-      top: 50%;
-      transform: translateY(-50%);
-      color: var(--text-secondary);
-    }
-    #sort-select {
-      background-color: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      color: var(--text-primary);
-      padding: 8px 12px;
-      font-size: 0.9rem;
-      -webkit-appearance: none;
-      appearance: none;
-      cursor: pointer;
-    }
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .search-wrapper {
+            position: relative;
+        }
+        .search-input {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 8px 16px 8px 36px;
+            font-size: 1rem;
+            width: 300px;
+        }
+        .search-wrapper .fa-magnifying-glass {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: var(--text-secondary);
+        }
+        #sort-select {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            -webkit-appearance: none;
+            appearance: none;
+            cursor: pointer;
+        }
 
-    .content-view {
-      flex-grow: 1;
-      overflow-y: auto;
-      padding: 24px;
-    }
-    .content-placeholder {
-      padding: 50px 20px;
-      text-align: center;
-      color: var(--text-secondary);
-    }
+        .content-view {
+            flex-grow: 1;
+            overflow-y: auto;
+            padding: 24px;
+        }
+        .content-placeholder {
+            padding: 50px 20px;
+            text-align: center;
+            color: var(--text-secondary);
+        }
 
-    .prompt-list-item {
-      display: flex;
-      align-items: center;
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border-color);
-      gap: 16px;
-    }
-    .prompt-list-item:hover {
-      background-color: var(--bg-secondary);
-    }
-    .prompt-info {
-      cursor: pointer;
-      flex-grow: 1;
-      min-width: 0;
-    }
-    .prompt-list-icon {
-      font-size: 1.1rem;
-      color: var(--text-secondary);
-      width: 20px;
-      cursor: pointer;
-    }
-    .fav-icon.active {
-      color: var(--accent-yellow) !important;
-    }
-    .prompt-title {
-      font-weight: 500;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .prompt-subtitle {
-      font-size: 0.8rem;
-      color: var(--text-secondary);
-      margin-top: 4px;
-    }
-    .prompt-tags {
-      display: flex;
-      gap: 6px;
-      margin-top: 8px;
-      flex-wrap: wrap;
-    }
-    .prompt-tag {
-      background-color: var(--bg-tertiary);
-      color: var(--text-secondary);
-      font-size: 0.75rem;
-      padding: 2px 6px;
-      border-radius: 4px;
-    }
-    .prompt-actions {
-      margin-left: auto;
-      display: flex;
-      gap: 8px;
-      flex-shrink: 0;
-    }
-    .prompt-actions button,
-    .prompt-actions a {
-      background-color: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      color: var(--text-primary);
-      padding: 8px 12px;
-      border-radius: 6px;
-      text-decoration: none;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    .prompt-actions button:hover,
-    .prompt-actions a:hover {
-      background-color: var(--bg-hover);
-    }
+        .prompt-list-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 16px;
+            touch-action: manipulation;
+        }
+        .prompt-list-item:hover {
+            background-color: var(--bg-secondary);
+        }
+        .prompt-info {
+            cursor: pointer;
+            flex-grow: 1;
+            min-width: 0;
+        }
+        .prompt-list-icon {
+            font-size: 1.1rem;
+            color: var(--text-secondary);
+            width: 20px;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .fav-icon.active {
+            color: var(--accent-yellow) !important;
+        }
+        .prompt-title {
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .prompt-subtitle {
+            font-size: .8rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+        .prompt-tags {
+            display: flex;
+            gap: 6px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+        .prompt-tag {
+            background-color: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: .75rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .prompt-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .prompt-actions button,
+        .prompt-actions a {
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            touch-action: manipulation;
+        }
+        .prompt-actions button:hover,
+        .prompt-actions a:hover {
+            background-color: var(--bg-hover);
+        }
 
-    .editor-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 24px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    .editor-actions button {
-      margin-left: 8px;
-    }
-    .editor-actions .save-btn {
-      background-color: var(--accent-blue);
-      color: var(--bg-primary);
-      border: none;
-    }
-    .editor-actions .delete-btn {
-      color: var(--accent-pink);
-      border-color: var(--accent-pink);
-    }
-    .form-group {
-      margin-bottom: 24px;
-    }
-    .form-group label {
-      display: block;
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-    }
-    .form-group input,
-    .form-group textarea,
-    .form-group select {
-      width: 100%;
-      background-color: var(--bg-secondary);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      color: var(--text-primary);
-      padding: 12px;
-      font-size: 1rem;
-    }
-    .form-group textarea {
-      height: 300px;
-      resize: vertical;
-    }
-    .is-template-toggle {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      margin-top: 16px;
-      font-size: 0.9rem;
-    }
+        .editor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .editor-actions button {
+            margin-left: 8px;
+        }
+        .editor-actions .save-btn {
+            background-color: var(--accent-blue);
+            color: var(--bg-primary);
+            border: none;
+        }
+        .editor-actions .delete-btn {
+            color: var(--accent-pink);
+            border-color: var(--accent-pink);
+        }
+        .form-group {
+            margin-bottom: 24px;
+        }
+        .form-group label {
+            display: block;
+            font-size: .9rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        .form-group input,
+        .form-group textarea,
+        .form-group select {
+            width: 100%;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 12px;
+            font-size: 1rem;
+        }
+        .form-group textarea {
+            height: 300px;
+            resize: vertical;
+        }
+        .is-template-toggle {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 16px;
+            font-size: .9rem;
+        }
 
-    .file-upload-section {
-      display: flex;
-      align-items: center;
-      margin-top: 10px;
-      gap: 10px;
-    }
-    .file-upload-section .button-like {
-      padding: 8px 12px;
-      font-size: 0.85rem;
-    }
-    #loaded-file-name {
-      font-size: 0.85rem;
-      color: var(--text-secondary);
-    }
+        .file-upload-section {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+            gap: 10px;
+        }
+        .file-upload-section .button-like {
+            padding: 8px 12px;
+            font-size: 0.85rem;
+        }
+        #loaded-file-name {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
 
-    .modal-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.7);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 1000;
-      opacity: 0;
-      visibility: hidden;
-      transition: opacity 0.3s, visibility 0.3s;
-    }
-    .modal-overlay.show {
-      opacity: 1;
-      visibility: visible;
-    }
-    .modal-content {
-      background-color: var(--bg-secondary);
-      padding: 24px;
-      border-radius: 8px;
-      width: 90%;
-      max-width: 600px;
-      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
-    }
-    .modal-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-    }
-    .modal-header h3 {
-      color: var(--accent-blue);
-    }
-    .modal-header .close-btn {
-      background: none;
-      border: none;
-      color: var(--text-secondary);
-      font-size: 1.5rem;
-      cursor: pointer;
-    }
-    .modal-body {
-      max-height: 60vh;
-      overflow-y: auto;
-    }
-    .modal-preview {
-      background-color: var(--bg-primary);
-      padding: 12px;
-      border-radius: 4px;
-      margin-top: 16px;
-      white-space: pre-wrap;
-      font-family: monospace;
-      max-height: 150px;
-      overflow-y: auto;
-    }
-    .modal-footer {
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-      margin-top: 24px;
-    }
-    .modal-footer .generate-btn {
-      background-color: var(--accent-blue);
-      color: var(--bg-primary);
-      border: none;
-    }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity .3s, visibility .3s;
+            overscroll-behavior: contain;
+            touch-action: manipulation;
+            padding-top: env(safe-area-inset-top);
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        .modal-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        .modal-content {
+            background-color: var(--bg-secondary);
+            padding: 24px;
+            border-radius: 8px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .modal-header h3 {
+            color: var(--accent-blue);
+        }
+        .modal-header .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            cursor: pointer;
+            touch-action: manipulation;
+        }
+        .modal-body {
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        .modal-preview {
+            background-color: var(--bg-primary);
+            padding: 12px;
+            border-radius: 4px;
+            margin-top: 16px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 24px;
+        }
+        .modal-footer .generate-btn {
+            background-color: var(--accent-blue);
+            color: var(--bg-primary);
+            border: none;
+        }
 
-    #template-modal-overlay .form-group textarea {
-      height: auto;
-      min-height: 40px;
-    }
+        /* Sequence modal specific adjustments */
+        #sequence-modal-overlay .modal-content {
+            max-width: 700px;
+        }
+        #sequence-modal-overlay .modal-footer {
+            justify-content: space-between;
+        }
+        .sequence-sortable-list {
+            min-height: 100px;
+            border: 1px dashed var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+            background-color: var(--bg-primary);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .sequence-sortable-item {
+            display: flex;
+            align-items: center;
+            background-color: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 8px 12px;
+            cursor: grab;
+            user-select: none;
+            touch-action: manipulation;
+        }
+        .sequence-sortable-item .drag-handle {
+            color: var(--text-secondary);
+            margin-right: 10px;
+        }
+        .sequence-sortable-item span {
+            flex-grow: 1;
+        }
+        .sequence-sortable-item .remove-from-sequence-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            margin-left: auto;
+            padding: 4px;
+            touch-action: manipulation;
+        }
+        .sortable-ghost {
+            opacity: 0.4;
+        }
 
-    #sequence-modal-overlay .modal-content {
-      max-width: 700px;
-    }
-    #sequence-modal-overlay .modal-footer {
-      justify-content: space-between;
-    }
-    .sequence-sortable-list {
-      min-height: 100px;
-      border: 1px dashed var(--border-color);
-      border-radius: 8px;
-      padding: 10px;
-      background-color: var(--bg-primary);
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      max-height: 250px;
-      overflow-y: auto;
-    }
-    .sequence-sortable-item {
-      display: flex;
-      align-items: center;
-      background-color: var(--bg-tertiary);
-      border: 1px solid var(--border-color);
-      border-radius: 6px;
-      padding: 8px 12px;
-      cursor: grab;
-    }
-    .sequence-sortable-item .drag-handle {
-      color: var(--text-secondary);
-      margin-right: 10px;
-    }
-    .sequence-sortable-item span {
-      flex-grow: 1;
-    }
-    .sequence-sortable-item .remove-from-sequence-btn {
-      background: none;
-      border: none;
-      color: var(--text-secondary);
-      margin-left: auto;
-      padding: 4px;
-    }
-    .sortable-ghost {
-      opacity: 0.4;
-    }
+        .statistics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 20px;
+        }
+        .stat-card {
+            background-color: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        .stat-card h3 {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-bottom: 15px;
+        }
+        .stat-card .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--accent-blue);
+        }
+        .stat-card .stat-details {
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+        .stat-card ul {
+            list-style: none;
+            padding: 0;
+            margin-top: 10px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .stat-card li {
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+        }
+        .stat-card li:last-child {
+            border-bottom: none;
+        }
+        .stat-card .count {
+            color: var(--text-secondary);
+        }
 
-    .statistics-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-      gap: 20px;
-    }
-    .stat-card {
-      background-color: var(--bg-secondary);
-      padding: 20px;
-      border-radius: 8px;
-      border: 1px solid var(--border-color);
-    }
-    .stat-card h3 {
-      font-size: 1rem;
-      color: var(--text-secondary);
-      margin-bottom: 15px;
-    }
-    .stat-card .stat-number {
-      font-size: 2.5rem;
-      font-weight: bold;
-      color: var(--accent-blue);
-    }
-    .stat-card .stat-details {
-      font-size: 0.9rem;
-      margin-top: 5px;
-    }
-    .stat-card ul {
-      list-style: none;
-      padding: 0;
-      margin-top: 10px;
-      max-height: 400px;
-      overflow-y: auto;
-    }
-    .stat-card li {
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border-color);
-      display: flex;
-      justify-content: space-between;
-    }
-    .stat-card li:last-child {
-      border-bottom: none;
-    }
-    .stat-card .count {
-      color: var(--text-secondary);
-    }
+        .history-list {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .history-date-header {
+            color: var(--text-secondary);
+            font-size: 1rem;
+            font-weight: 500;
+            padding-bottom: 8px;
+            margin-top: 24px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .history-date-header:first-child {
+            margin-top: 0;
+        }
+        .history-item {
+            background-color: var(--bg-secondary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 16px;
+            border: 1px solid var(--border-color);
+        }
+        .history-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+        }
+        .history-item-type {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+        }
+        .history-item-type i {
+            color: var(--accent-blue);
+        }
+        .history-item-body .history-item-title {
+            font-weight: 500;
+            font-size: 1.1rem;
+            margin-bottom: 8px;
+        }
+        .history-item-body .history-snippet {
+            font-style: italic;
+            color: var(--text-secondary);
+            padding-left: 10px;
+            border-left: 2px solid var(--border-color);
+        }
+        .history-item-body .history-variables {
+            font-size: 0.85rem;
+            background-color: var(--bg-primary);
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .history-item-body .history-variables div {
+            margin-bottom: 4px;
+        }
+        .history-item-body .history-variables strong {
+            color: var(--accent-yellow);
+        }
+        .history-item-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .history-item-actions .button-like {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+        }
 
-    .history-list {
-      max-width: 800px;
-      margin: 0 auto;
-    }
-    .history-date-header {
-      color: var(--text-secondary);
-      font-size: 1rem;
-      font-weight: 500;
-      padding-bottom: 8px;
-      margin-top: 24px;
-      border-bottom: 1px solid var(--border-color);
-    }
-    .history-date-header:first-child {
-      margin-top: 0;
-    }
-    .history-item {
-      background-color: var(--bg-secondary);
-      border-radius: 8px;
-      padding: 16px;
-      margin-top: 16px;
-      border: 1px solid var(--border-color);
-    }
-    .history-item-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      color: var(--text-secondary);
-      font-size: 0.9rem;
-      margin-bottom: 12px;
-    }
-    .history-item-type {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-weight: 500;
-    }
-    .history-item-type i {
-      color: var(--accent-blue);
-    }
-    .history-item-body .history-item-title {
-      font-weight: 500;
-      font-size: 1.1rem;
-      margin-bottom: 8px;
-    }
-    .history-item-body .history-snippet {
-      font-style: italic;
-      color: var(--text-secondary);
-      padding-left: 10px;
-      border-left: 2px solid var(--border-color);
-    }
-    .history-item-body .history-variables {
-      font-size: 0.85rem;
-      background-color: var(--bg-primary);
-      border-radius: 4px;
-      padding: 10px;
-      max-height: 100px;
-      overflow-y: auto;
-    }
-    .history-item-body .history-variables div {
-      margin-bottom: 4px;
-    }
-    .history-item-body .history-variables strong {
-      color: var(--accent-yellow);
-    }
-    .history-item-actions {
-      display: flex;
-      justify-content: flex-end;
-      gap: 10px;
-      margin-top: 16px;
-    }
-    .history-item-actions .button-like {
-      padding: 6px 12px;
-      font-size: 0.85rem;
-    }
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: var(--bg-tertiary);
+            color: var(--text-primary);
+            padding: 12px 20px;
+            border-radius: 6px;
+            border-left: 4px solid var(--accent-blue);
+            opacity: 0;
+            visibility: hidden;
+            transition: all .3s;
+            transform: translateY(20px);
+            z-index: 2000;
+        }
+        .toast.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
 
-    .toast {
-      position: fixed;
-      bottom: 20px;
-      right: 20px;
-      background-color: var(--bg-tertiary);
-      color: var(--text-primary);
-      padding: 12px 20px;
-      border-radius: 6px;
-      border-left: 4px solid var(--accent-blue);
-      opacity: 0;
-      visibility: hidden;
-      transition: all 0.3s;
-      transform: translateY(20px);
-      z-index: 2000;
-    }
-    .toast.show {
-      opacity: 1;
-      visibility: visible;
-      transform: translateY(0);
-    }
+        /* ------------------------------------------------------------------
+           미디어 쿼리: 모바일 뷰 (<=768px)
+           ------------------------------------------------------------------
+           햄버거 메뉴와 모바일 전용 UI를 정의합니다. 버튼은 클릭과 터치
+           이벤트 모두에서 동작하도록 touch-action 속성이 지정됩니다.
+        */
+        @media (max-width: 768px) {
+            .sidebar {
+                position: fixed;
+                transform: translateX(-100%);
+                width: 250px;
+                height: 100vh;
+            }
+            .sidebar.open {
+                transform: translateX(0);
+            }
+            #mobile-menu-toggle {
+                display: block;
+            }
+            .main-header {
+                flex-wrap: wrap;
+                height: auto;
+                padding: 10px 16px;
+                justify-content: flex-start;
+            }
+            .main-header h1 {
+                flex-grow: 1;
+            }
+            .header-controls {
+                width: 100%;
+                order: 2;
+                margin-top: 10px;
+                flex-direction: column;
+                gap: 10px;
+            }
+            .search-input {
+                width: 100%;
+            }
+            .prompt-list-item {
+                flex-wrap: wrap;
+            }
+            .prompt-actions {
+                width: 100%;
+                justify-content: flex-end;
+                margin-top: 10px;
+            }
+        }
 
-    /* === injected: off-canvas / accessibility improvements === */
-    .sidebar-backdrop {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.5);
-      opacity: 0;
-      transition: opacity 0.3s ease;
-      z-index: 900;
-    }
-    .sidebar-backdrop.show {
-      opacity: 1;
-    }
+        /* ------------------------------------------------------------------
+           모바일 백드롭 (햄버거 메뉴 뒷배경) 및 닫기 버튼
+           ------------------------------------------------------------------
+           백드롭은 사이드바가 열릴 때 활성화되며, ESC 키 또는 터치로
+           닫을 수 있습니다. 터치 환경에서의 tap highlight 제거를 위해
+           touch-action: manipulation 을 지정합니다.
+        */
+        #sidebar-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            z-index: 999;
+            touch-action: manipulation;
+        }
 
-    #sidebar {
-      position: relative;
-    }
-    #sidebar-close-btn {
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      background: none;
-      border: none;
-      color: var(--text-secondary);
-      font-size: 1.25rem;
-      display: none; /* 기본 숨김 */
-    }
-    .sidebar.open #sidebar-close-btn {
-      display: block; /* 열렸을 때만 표시 */
-    }
+        /* Safari iOS doesn't respect 100vh during scroll and orientation changes.
+           Use 100svh or 100lvh where supported. */
+        @supports (height: 100dvh) {
+            .modal-overlay, .sidebar {
+                height: 100dvh;
+            }
+            #sidebar-backdrop {
+                height: 100dvh;
+            }
+        }
+        @supports (height: 100lvh) {
+            .modal-overlay, .sidebar {
+                height: 100lvh;
+            }
+            #sidebar-backdrop {
+                height: 100lvh;
+            }
+        }
 
-    .main-header {
-      padding-top: max(0px, env(safe-area-inset-top));
-    }
-
-    @media (max-width: 768px) {
-      .sidebar {
-        position: fixed;
-        transform: translateX(-100%);
-        width: 250px;
-        top: 0;
-        left: 0;
-        bottom: 0;
-      }
-      .sidebar.open {
-        transform: translateX(0);
-      }
-      #mobile-menu-toggle {
-        display: block;
-        background: none;
-        border: none;
-        color: var(--text-secondary);
-        font-size: 1.5rem;
-      }
-      .main-header {
-        flex-wrap: wrap;
-        height: auto;
-        padding: 10px 16px;
-        justify-content: flex-start;
-      }
-      .main-header h1 {
-        flex-grow: 1;
-      }
-      .header-controls {
-        width: 100%;
-        order: 2;
-        margin-top: 10px;
-        flex-direction: column;
-        gap: 10px;
-      }
-      .search-input {
-        width: 100%;
-      }
-      .prompt-list-item {
-        flex-wrap: wrap;
-      }
-      .prompt-actions {
-        width: 100%;
-        justify-content: flex-end;
-        margin-top: 10px;
-      }
-      body.no-scroll {
-        overflow: hidden;
-      }
-    }
-    /* === /injected === */
-  </style>
+    </style>
 </head>
 <body>
-  <aside class="sidebar" id="sidebar" role="navigation" tabindex="-1" aria-hidden="true">
-    <div id="auth-section">
-      <button id="login-btn"><i class="fa-brands fa-google"></i> Google 계정으로 로그인</button>
-      <div id="user-profile">
-        <img id="user-photo" src="" alt="사용자 사진" />
-        <p id="user-email"></p>
-        <button id="logout-btn" title="로그아웃">
-          <i class="fa-solid fa-arrow-right-from-bracket"></i>
-        </button>
-      </div>
-    </div>
-    <div class="sidebar-content" id="sidebar-content" style="display: none">
-      <button class="new-prompt-btn" id="new-prompt-btn">
-        <i class="fa-solid fa-plus"></i> 새 항목
-      </button>
-      <nav class="sidebar-nav">
-        <h3 class="nav-section-title">라이브러리</h3>
-        <ul class="nav-list" id="library-list">
-          <li class="nav-item active" data-filter-type="all">
-            <a><i class="nav-icon fa-solid fa-book-bookmark"></i> 모든 항목</a>
-          </li>
-          <li class="nav-item" data-filter-type="favorites">
-            <a><i class="nav-icon fa-solid fa-star"></i> 즐겨찾기</a>
-          </li>
-          <li class="nav-item" data-filter-type="templates">
-            <a><i class="nav-icon fa-solid fa-puzzle-piece"></i> 템플릿만</a>
-          </li>
-          <li class="nav-item" data-filter-type="prompts">
-            <a><i class="nav-icon fa-solid fa-file-lines"></i> 프롬프트만</a>
-          </li>
-          <li class="nav-item" data-filter-type="statistics">
-            <a><i class="nav-icon fa-solid fa-chart-pie"></i> 통계</a>
-          </li>
-          <li class="nav-item" data-filter-type="history">
-            <a><i class="nav-icon fa-solid fa-history"></i> 사용 기록</a>
-          </li>
-        </ul>
-        <h3 class="nav-section-title">폴더</h3>
-        <ul class="nav-list" id="folder-list"></ul>
-        <button class="new-folder-btn" id="new-folder-btn">
-          <i class="fa-solid fa-folder-plus"></i> 새 폴더
-        </button>
-
-        <h3 class="nav-section-title">시퀀스</h3>
-        <ul class="nav-list" id="sequence-list"></ul>
-        <button id="new-sequence-btn" class="new-folder-btn">
-          <i class="fa-solid fa-layer-group"></i> 새 시퀀스
-        </button>
-      </nav>
-      <div id="data-management-section">
-        <h3 class="nav-section-title" style="padding: 0">데이터 관리</h3>
-        <button id="export-data-btn" class="button-like">데이터 내보내기</button>
-        <input type="file" id="import-data-input" accept=".json" style="display: none" />
-        <button id="import-data-btn" class="button-like">데이터 가져오기</button>
-      </div>
-    </div>
-    <button id="sidebar-close-btn" aria-label="사이드바 닫기"><i class="fa-solid fa-times"></i></button>
-  </aside>
-
-  <!-- injected: off-canvas backdrop -->
-  <div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
-
-  <main class="main-content">
-    <header class="main-header">
-      <button id="mobile-menu-toggle" aria-controls="sidebar" aria-expanded="false" aria-label="사이드바 메뉴">
-        <i class="fa-solid fa-bars"></i>
-      </button>
-      <h1 id="main-header-title">환영합니다</h1>
-      <div class="header-controls">
-        <div class="search-wrapper">
-          <i class="fa-solid fa-magnifying-glass"></i>
-          <input type="text" class="search-input" id="search-input" placeholder="검색..." />
+    <!-- Sidebar navigation; role and aria attributes aid screen reader users -->
+    <aside class="sidebar" id="sidebar" role="navigation" aria-hidden="true" tabindex="-1">
+        <div id="auth-section">
+            <button id="login-btn"><i class="fa-brands fa-google"></i> Google 계정으로 로그인</button>
+            <div id="user-profile">
+                <img id="user-photo" src="" alt="사용자 사진">
+                <p id="user-email"></p>
+                <button id="logout-btn" title="로그아웃"><i class="fa-solid fa-arrow-right-from-bracket"></i></button>
+            </div>
         </div>
-        <div class="sort-wrapper">
-          <select id="sort-select" class="button-like" style="padding: 8px 12px">
-            <option value="updatedAt_desc">최근 사용순</option>
-            <option value="usageCount_desc">사용 횟수순</option>
-            <option value="createdAt_desc">최신 등록순</option>
-            <option value="createdAt_asc">오래된 등록순</option>
-            <option value="title_asc">이름순</option>
-          </select>
+        <div class="sidebar-content" id="sidebar-content" style="display:none;">
+            <button class="new-prompt-btn" id="new-prompt-btn"><i class="fa-solid fa-plus"></i> 새 항목</button>
+            <nav class="sidebar-nav">
+                <h3 class="nav-section-title">라이브러리</h3>
+                <ul class="nav-list" id="library-list">
+                    <li class="nav-item active" data-filter-type="all"><a><i class="nav-icon fa-solid fa-book-bookmark"></i> 모든 항목</a></li>
+                    <li class="nav-item" data-filter-type="favorites"><a><i class="nav-icon fa-solid fa-star"></i> 즐겨찾기</a></li>
+                    <li class="nav-item" data-filter-type="templates"><a><i class="nav-icon fa-solid fa-puzzle-piece"></i> 템플릿만</a></li>
+                    <li class="nav-item" data-filter-type="prompts"><a><i class="nav-icon fa-solid fa-file-lines"></i> 프롬프트만</a></li>
+                    <li class="nav-item" data-filter-type="statistics"><a><i class="nav-icon fa-solid fa-chart-pie"></i> 통계</a></li>
+                    <li class="nav-item" data-filter-type="history"><a><i class="nav-icon fa-solid fa-history"></i> 사용 기록</a></li>
+                </ul>
+                <h3 class="nav-section-title">폴더</h3>
+                <ul class="nav-list" id="folder-list"></ul>
+                <button class="new-folder-btn" id="new-folder-btn"><i class="fa-solid fa-folder-plus"></i> 새 폴더</button>
+                <h3 class="nav-section-title">시퀀스</h3>
+                <ul class="nav-list" id="sequence-list"></ul>
+                <button id="new-sequence-btn" class="new-folder-btn"><i class="fa-solid fa-layer-group"></i> 새 시퀀스</button>
+            </nav>
+            <div id="data-management-section">
+                 <h3 class="nav-section-title" style="padding: 0;">데이터 관리</h3>
+                 <button id="export-data-btn" class="button-like">데이터 내보내기</button>
+                 <input type="file" id="import-data-input" accept=".json" style="display: none;">
+                 <button id="import-data-btn" class="button-like">데이터 가져오기</button>
+            </div>
         </div>
-      </div>
-    </header>
-    <div class="content-view" id="content-view">
-      <div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>
-    </div>
-  </main>
-
-  <div class="modal-overlay" id="template-modal-overlay">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 id="template-modal-title">템플릿 사용</h3>
-        <button class="close-btn" id="template-modal-close-btn">&times;</button>
-      </div>
-      <div class="modal-body" id="template-modal-body"></div>
-      <div class="modal-footer">
-        <button id="template-modal-generate-btn" class="generate-btn button-like">
-          <i class="fa-solid fa-wand-magic-sparkles"></i> 생성 및 복사
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-overlay" id="sequence-modal-overlay">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3 id="sequence-modal-title">새 시퀀스 생성</h3>
-        <button class="close-btn" id="sequence-modal-close-btn">&times;</button>
-      </div>
-      <div class="modal-body" id="sequence-modal-body"></div>
-      <div class="modal-footer">
-        <div>
-          <button id="sequence-modal-save-btn" class="generate-btn button-like">
-            <i class="fa-regular fa-save"></i> 저장
-          </button>
-          <button id="sequence-modal-run-btn" class="button-like">
-            <i class="fa-solid fa-play"></i> 실행
-          </button>
+        <button id="sidebar-close-btn"><i class="fa-solid fa-times"></i></button>
+    </aside>
+    <!-- Backdrop for sidebar (clicking closes the menu) -->
+    <div id="sidebar-backdrop"></div>
+    <!-- Main content area -->
+    <main class="main-content">
+        <header class="main-header">
+            <button id="mobile-menu-toggle" aria-controls="sidebar" aria-expanded="false"><i class="fa-solid fa-bars"></i></button>
+            <h1 id="main-header-title">환영합니다</h1>
+            <div class="header-controls">
+                <div class="search-wrapper">
+                    <i class="fa-solid fa-magnifying-glass"></i>
+                    <input type="text" class="search-input" id="search-input" placeholder="검색...">
+                </div>
+                <div class="sort-wrapper">
+                    <select id="sort-select" class="button-like" style="padding: 8px 12px;">
+                        <option value="updatedAt_desc">최근 사용순</option>
+                        <option value="usageCount_desc">사용 횟수순</option>
+                        <option value="createdAt_desc">최신 등록순</option>
+                        <option value="createdAt_asc">오래된 등록순</option>
+                        <option value="title_asc">이름순</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+        <div class="content-view" id="content-view">
+            <div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>
         </div>
-        <button id="sequence-modal-delete-btn" class="button-like" style="color: var(--accent-pink); border-color: var(--accent-pink)">
-          <i class="fa-regular fa-trash-can"></i> 삭제
-        </button>
-      </div>
+    </main>
+    <!-- Template modal (for filling template placeholders) -->
+    <div class="modal-overlay" id="template-modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="template-modal-title">템플릿 사용</h3>
+                <button class="close-btn" id="template-modal-close-btn" aria-label="닫기">&times;</button>
+            </div>
+            <div class="modal-body" id="template-modal-body"></div>
+            <div class="modal-footer">
+                <button id="template-modal-generate-btn" class="generate-btn button-like"><i class="fa-solid fa-wand-magic-sparkles"></i> 생성 및 복사</button>
+            </div>
+        </div>
     </div>
-  </div>
-
-  <div class="toast" id="toast"></div>
-
-  <script type="module">
-    // Firebase SDK 모듈 임포트
+    <!-- Sequence modal (for creating or editing sequences) -->
+    <div class="modal-overlay" id="sequence-modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="sequence-modal-title">새 시퀀스 생성</h3>
+                <button class="close-btn" id="sequence-modal-close-btn" aria-label="닫기">&times;</button>
+            </div>
+            <div class="modal-body" id="sequence-modal-body"></div>
+            <div class="modal-footer">
+                <div>
+                  <button id="sequence-modal-save-btn" class="generate-btn button-like"><i class="fa-regular fa-save"></i> 저장</button>
+                  <button id="sequence-modal-run-btn" class="button-like"><i class="fa-solid fa-play"></i> 실행</button>
+                </div>
+                <button id="sequence-modal-delete-btn" class="button-like" style="color: var(--accent-pink); border-color: var(--accent-pink);"><i class="fa-regular fa-trash-can"></i> 삭제</button>
+            </div>
+        </div>
+    </div>
+    <div class="toast" id="toast"></div>
+<script type="module">
+    /* =====================================================================
+       Firebase configuration and initialization
+       ---------------------------------------------------------------------
+       Note: this script assumes Firebase libraries are already imported via
+       CDN at the top of the document. Replace the firebaseConfig values with
+       your own project's configuration.
+    */
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-app.js";
-    import {
-      getAuth,
-      GoogleAuthProvider,
-      onAuthStateChanged,
-      signInWithPopup,
-      signOut,
+    import { 
+        getAuth, 
+        GoogleAuthProvider, 
+        onAuthStateChanged, 
+        signInWithPopup, 
+        signOut 
     } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-auth.js";
-    import {
-      getFirestore,
-      collection,
-      doc,
-      setDoc,
-      addDoc,
-      deleteDoc,
-      serverTimestamp,
-      getDoc,
-      updateDoc,
-      query,
-      orderBy,
-      onSnapshot,
+    import { 
+        getFirestore, 
+        collection, 
+        doc, 
+        setDoc, 
+        addDoc, 
+        deleteDoc, 
+        serverTimestamp, 
+        getDoc, 
+        updateDoc,
+        query,
+        orderBy,
+        onSnapshot
     } from "https://www.gstatic.com/firebasejs/11.10.0/firebase-firestore.js";
 
-    // Firebase 프로젝트 설정
+    // Firebase project settings
     const firebaseConfig = {
-      apiKey: "AIzaSyAzpL5nTg6v92Uj28QsBpxt1k8wYoGKXtY",
-      authDomain: "prompt-76252.firebaseapp.com",
-      projectId: "prompt-76252",
-      storageBucket: "prompt-76252.appspot.com",
-      messagingSenderId: "683129810198",
-      appId: "1:683129810198:web:aa39fe66cec551d41df437",
-      measurementId: "G-4GCY1XH5HN",
+        apiKey: "AIzaSyAzpL5nTg6v92Uj28QsBpxt1k8wYoGKXtY",
+        authDomain: "prompt-76252.firebaseapp.com",
+        projectId: "prompt-76252",
+        storageBucket: "prompt-76252.appspot.com",
+        messagingSenderId: "683129810198",
+        appId: "1:683129810198:web:aa39fe66cec551d41df437",
+        measurementId: "G-4GCY1XH5HN"
     };
-
-    // Firebase 초기화
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const dbFirestore = getFirestore(app);
     let currentUser = null;
     let unsubscribeListeners = {};
 
-    // =================================================================
-    // IndexedDB 설정
-    // =================================================================
-    const INDEXEDDB_NAME = "PromptManagerCacheDB";
+    /* =====================================================================
+       IndexedDB configuration
+       ---------------------------------------------------------------------
+       Caches prompts, folders, sequences and usage history locally for
+       offline access. Upgrading the version will trigger onupgradeneeded and
+       create necessary object stores if missing.
+    */
+    const INDEXEDDB_NAME = 'PromptManagerCacheDB';
     const INDEXEDDB_VERSION = 5;
-    const CACHE_STORE_PROMPTS = "cachedPrompts";
-    const CACHE_STORE_FOLDERS = "cachedFolders";
-    const CACHE_STORE_VERSIONS = "promptVersions";
-    const CACHE_STORE_SEQUENCES = "cachedSequences";
-    const CACHE_STORE_USAGE_HISTORY = "usageHistory";
+    const CACHE_STORE_PROMPTS = 'cachedPrompts';
+    const CACHE_STORE_FOLDERS = 'cachedFolders';
+    const CACHE_STORE_VERSIONS = 'promptVersions';
+    const CACHE_STORE_SEQUENCES = 'cachedSequences';
+    const CACHE_STORE_USAGE_HISTORY = 'usageHistory';
 
     let indexedDbInstance;
-
     function openIndexedDB() {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(INDEXEDDB_NAME, INDEXEDDB_VERSION);
-        request.onupgradeneeded = (event) => {
-          const db = event.target.result;
-          if (!db.objectStoreNames.contains(CACHE_STORE_PROMPTS))
-            db.createObjectStore(CACHE_STORE_PROMPTS, { keyPath: "id" });
-          if (!db.objectStoreNames.contains(CACHE_STORE_FOLDERS))
-            db.createObjectStore(CACHE_STORE_FOLDERS, { keyPath: "id" });
-          if (!db.objectStoreNames.contains(CACHE_STORE_VERSIONS)) {
-            const vs = db.createObjectStore(CACHE_STORE_VERSIONS, {
-              keyPath: "id",
-              autoIncrement: true,
-            });
-            vs.createIndex("promptId", "promptId", { unique: false });
-          }
-          if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES))
-            db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: "id" });
-          if (!db.objectStoreNames.contains(CACHE_STORE_USAGE_HISTORY)) {
-            const hs = db.createObjectStore(CACHE_STORE_USAGE_HISTORY, {
-              keyPath: "id",
-              autoIncrement: true,
-            });
-            hs.createIndex("timestamp", "timestamp", { unique: false });
-          }
-        };
-        request.onsuccess = (event) => {
-          indexedDbInstance = event.target.result;
-          resolve(indexedDbInstance);
-        };
-        request.onerror = (event) => reject(event.target.errorCode);
-      });
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(INDEXEDDB_NAME, INDEXEDDB_VERSION);
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains(CACHE_STORE_PROMPTS)) db.createObjectStore(CACHE_STORE_PROMPTS, { keyPath: 'id' });
+                if (!db.objectStoreNames.contains(CACHE_STORE_FOLDERS)) db.createObjectStore(CACHE_STORE_FOLDERS, { keyPath: 'id' });
+                if (!db.objectStoreNames.contains(CACHE_STORE_VERSIONS)) {
+                    const vs = db.createObjectStore(CACHE_STORE_VERSIONS, { keyPath: 'id', autoIncrement: true });
+                    vs.createIndex('promptId', 'promptId', { unique: false });
+                }
+                if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES)) db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: 'id' });
+                if (!db.objectStoreNames.contains(CACHE_STORE_USAGE_HISTORY)) {
+                    const hs = db.createObjectStore(CACHE_STORE_USAGE_HISTORY, { keyPath: 'id', autoIncrement: true });
+                    hs.createIndex('timestamp', 'timestamp', { unique: false });
+                }
+            };
+            request.onsuccess = (event) => {
+                indexedDbInstance = event.target.result;
+                resolve(indexedDbInstance);
+            };
+            request.onerror = (event) => reject(event.target.errorCode);
+        });
     }
-
     async function getFromIndexedDB(storeName, indexName = null, queryVal = null) {
-      if (!indexedDbInstance) await openIndexedDB();
-      return new Promise((resolve, reject) => {
-        const tx = indexedDbInstance.transaction([storeName], "readonly");
-        const store = tx.objectStore(storeName);
-        let request;
-        if (indexName && queryVal !== null)
-          request = store.index(indexName).getAll(queryVal);
-        else if (queryVal !== null) request = store.get(queryVal);
-        else request = store.getAll();
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = (event) => reject(event.target.error);
-      });
+        if (!indexedDbInstance) await openIndexedDB();
+        return new Promise((resolve, reject) => {
+            const tx = indexedDbInstance.transaction([storeName], 'readonly');
+            const store = tx.objectStore(storeName);
+            let request;
+            if (indexName && queryVal !== null) request = store.index(indexName).getAll(queryVal);
+            else if (queryVal !== null) request = store.get(queryVal);
+            else request = store.getAll();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
     }
-
     async function putIntoIndexedDB(storeName, data) {
-      if (!indexedDbInstance) await openIndexedDB();
-      const tx = indexedDbInstance.transaction([storeName], "readwrite");
-      const store = tx.objectStore(storeName);
-      return new Promise((resolve, reject) => {
-        const request = store.put(data);
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = (event) => reject(event.target.error);
-      });
+        if (!indexedDbInstance) await openIndexedDB();
+        const tx = indexedDbInstance.transaction([storeName], 'readwrite');
+        const store = tx.objectStore(storeName);
+        return new Promise((resolve, reject) => {
+            const request = store.put(data);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = (event) => reject(event.target.error);
+        });
     }
-
     async function deleteFromIndexedDB(storeName, id) {
-      if (!indexedDbInstance) await openIndexedDB();
-      const tx = indexedDbInstance.transaction([storeName], "readwrite");
-      const store = tx.objectStore(storeName);
-      return new Promise((resolve, reject) => {
-        const request = store.delete(id);
-        request.onsuccess = () => resolve();
-        request.onerror = (event) => reject(event.target.error);
-      });
+        if (!indexedDbInstance) await openIndexedDB();
+        const tx = indexedDbInstance.transaction([storeName], 'readwrite');
+        const store = tx.objectStore(storeName);
+        return new Promise((resolve, reject) => {
+            const request = store.delete(id);
+            request.onsuccess = () => resolve();
+            request.onerror = (event) => reject(event.target.error);
+        });
     }
 
-    // =================================================================
-    // UI 요소 및 상태 관리
-    // =================================================================
+    /* =====================================================================
+       UI element references
+       ---------------------------------------------------------------------
+       Centralised collection of frequently accessed DOM elements. This makes
+       event binding and state management more readable.
+    */
     const uiElements = {
-      contentView: document.getElementById("content-view"),
-      mainHeader: document.getElementById("main-header-title"),
-      folderList: document.getElementById("folder-list"),
-      libraryList: document.getElementById("library-list"),
-      newPromptBtn: document.getElementById("new-prompt-btn"),
-      newFolderBtn: document.getElementById("new-folder-btn"),
-      searchInput: document.getElementById("search-input"),
-      sidebarContent: document.getElementById("sidebar-content"),
-      loginBtn: document.getElementById("login-btn"),
-      logoutBtn: document.getElementById("logout-btn"),
-      userProfile: document.getElementById("user-profile"),
-      userEmail: document.getElementById("user-email"),
-      userPhoto: document.getElementById("user-photo"),
-      toast: document.getElementById("toast"),
-      templateModal: {
-        overlay: document.getElementById("template-modal-overlay"),
-        title: document.getElementById("template-modal-title"),
-        body: document.getElementById("template-modal-body"),
-        generateBtn: document.getElementById("template-modal-generate-btn"),
-        closeBtn: document.getElementById("template-modal-close-btn"),
-      },
-      sequenceModal: {
-        overlay: document.getElementById("sequence-modal-overlay"),
-        title: document.getElementById("sequence-modal-title"),
-        body: document.getElementById("sequence-modal-body"),
-        saveBtn: document.getElementById("sequence-modal-save-btn"),
-        runBtn: document.getElementById("sequence-modal-run-btn"),
-        closeBtn: document.getElementById("sequence-modal-close-btn"),
-        deleteBtn: document.getElementById("sequence-modal-delete-btn"),
-      },
-      sidebar: document.getElementById("sidebar"),
-      mobileMenuToggle: document.getElementById("mobile-menu-toggle"),
-      sidebarCloseBtn: document.getElementById("sidebar-close-btn"),
-      sequenceList: document.getElementById("sequence-list"),
-      newSequenceBtn: document.getElementById("new-sequence-btn"),
-      dataMgmtSection: document.getElementById("data-management-section"),
-      exportDataBtn: document.getElementById("export-data-btn"),
-      importDataBtn: document.getElementById("import-data-btn"),
-      importDataInput: document.getElementById("import-data-input"),
-      sortSelect: document.getElementById("sort-select"),
+        contentView: document.getElementById('content-view'),
+        mainHeader: document.getElementById('main-header-title'),
+        folderList: document.getElementById('folder-list'),
+        libraryList: document.getElementById('library-list'),
+        newPromptBtn: document.getElementById('new-prompt-btn'),
+        newFolderBtn: document.getElementById('new-folder-btn'),
+        searchInput: document.getElementById('search-input'),
+        sidebarContent: document.getElementById('sidebar-content'),
+        loginBtn: document.getElementById('login-btn'),
+        logoutBtn: document.getElementById('logout-btn'),
+        userProfile: document.getElementById('user-profile'),
+        userEmail: document.getElementById('user-email'),
+        userPhoto: document.getElementById('user-photo'),
+        toast: document.getElementById('toast'),
+        templateModal: {
+            overlay: document.getElementById('template-modal-overlay'),
+            title: document.getElementById('template-modal-title'),
+            body: document.getElementById('template-modal-body'),
+            generateBtn: document.getElementById('template-modal-generate-btn'),
+            closeBtn: document.getElementById('template-modal-close-btn')
+        },
+        sequenceModal: {
+            overlay: document.getElementById('sequence-modal-overlay'),
+            title: document.getElementById('sequence-modal-title'),
+            body: document.getElementById('sequence-modal-body'),
+            saveBtn: document.getElementById('sequence-modal-save-btn'),
+            runBtn: document.getElementById('sequence-modal-run-btn'),
+            closeBtn: document.getElementById('sequence-modal-close-btn'),
+            deleteBtn: document.getElementById('sequence-modal-delete-btn')
+        },
+        sidebar: document.getElementById('sidebar'),
+        mobileMenuToggle: document.getElementById('mobile-menu-toggle'),
+        sidebarCloseBtn: document.getElementById('sidebar-close-btn'),
+        sidebarBackdrop: document.getElementById('sidebar-backdrop'),
+        sequenceList: document.getElementById('sequence-list'),
+        newSequenceBtn: document.getElementById('new-sequence-btn'),
+        dataMgmtSection: document.getElementById('data-management-section'),
+        exportDataBtn: document.getElementById('export-data-btn'),
+        importDataBtn: document.getElementById('import-data-btn'),
+        importDataInput: document.getElementById('import-data-input'),
+        sortSelect: document.getElementById('sort-select'),
     };
 
+    /* =====================================================================
+       Application state variables
+       ---------------------------------------------------------------------
+       The state object tracks current filter and sort, loaded prompts, folders
+       and sequences. These values update as Firestore snapshots come in.
+    */
     let state = {
-      currentFilter: { type: "all", id: null, name: "모든 항목" },
-      currentSortOrder: "updatedAt_desc",
-      prompts: [],
-      folders: [],
-      sequences: [],
+        currentFilter: { type: 'all', id: null, name: '모든 항목' },
+        currentSortOrder: 'updatedAt_desc',
+        prompts: [],
+        folders: [],
+        sequences: [],
     };
-
     let fuse = null;
     let activeSequencePrompts = [];
     let currentSequencePromptIndex = -1;
     let sequenceSortableInstance = null;
 
-    // =================================================================
-    // 접근성/오프캔버스: 유틸 및 컨트롤러
-    // =================================================================
-    let focusTrapCleanup = null;
-    let lastFocusedElement = null;
-
-    function trapFocus(container) {
-      const focusable = container.querySelectorAll(
-        'a[href], button, input, textarea, select, details, [tabindex]:not([tabindex="-1"])'
-      );
-      const list = Array.from(focusable).filter(
-        (el) => !el.hasAttribute("disabled") && !el.getAttribute("aria-hidden")
-      );
-      if (list.length === 0) return;
-      const first = list[0];
-      const last = list[list.length - 1];
-
-      function onKeyDown(e) {
-        if (e.key !== "Tab") return;
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
-      }
-      document.addEventListener("keydown", onKeyDown);
-      focusTrapCleanup = () => document.removeEventListener("keydown", onKeyDown);
-      setTimeout(() => first.focus(), 0);
-    }
-
-    function releaseFocusTrap() {
-      if (focusTrapCleanup) {
-        focusTrapCleanup();
-        focusTrapCleanup = null;
-      }
-    }
-
-    function openSidebar() {
-      uiElements.sidebar.classList.add("open");
-      document.body.classList.add("no-scroll");
-      const backdrop = document.getElementById("sidebar-backdrop");
-      if (backdrop) {
-        backdrop.hidden = false;
-        backdrop.classList.add("show");
-      }
-      uiElements.mobileMenuToggle.setAttribute("aria-expanded", "true");
-      uiElements.sidebar.setAttribute("aria-hidden", "false");
-      lastFocusedElement = document.activeElement;
-      const mainEl = document.querySelector(".main-content");
-      if (mainEl) {
-        try {
-          mainEl.inert = true;
-        } catch (_) {
-          mainEl.setAttribute("aria-hidden", "true");
-        }
-      }
-      if (uiElements.sidebarCloseBtn) uiElements.sidebarCloseBtn.style.display = "block";
-      trapFocus(uiElements.sidebar);
-    }
-
-    function closeSidebar() {
-      uiElements.sidebar.classList.remove("open");
-      document.body.classList.remove("no-scroll");
-      const backdrop = document.getElementById("sidebar-backdrop");
-      if (backdrop) {
-        backdrop.classList.remove("show");
-        backdrop.hidden = true;
-      }
-      uiElements.mobileMenuToggle.setAttribute("aria-expanded", "false");
-      uiElements.sidebar.setAttribute("aria-hidden", "true");
-      const mainEl = document.querySelector(".main-content");
-      if (mainEl) {
-        try {
-          mainEl.inert = false;
-        } catch (_) {
-          mainEl.removeAttribute("aria-hidden");
-        }
-      }
-      if (uiElements.sidebarCloseBtn) uiElements.sidebarCloseBtn.style.display = "none";
-      releaseFocusTrap();
-      if (lastFocusedElement && typeof lastFocusedElement.focus === "function") {
-        try {
-          lastFocusedElement.focus();
-        } catch (_) {}
-      } else {
-        uiElements.mobileMenuToggle.focus();
-      }
-    }
-
-    function toggleSidebar() {
-      if (uiElements.sidebar.classList.contains("open")) closeSidebar();
-      else openSidebar();
-    }
-
-    function debounce(fn, wait) {
-      let t;
-      return function (...args) {
-        clearTimeout(t);
-        t = setTimeout(() => fn.apply(this, args), wait);
-      };
-    }
-
-    // =================================================================
-    // 데이터 서비스
-    // =================================================================
+    /* =====================================================================
+       Database service helper functions
+       ---------------------------------------------------------------------
+       Wrap Firestore operations in a local API. This hides Firestore-specific
+       details from the rest of the code and makes unit testing easier.
+    */
     const dbService = {
-      getCollectionRef: (name) => collection(dbFirestore, "users", currentUser.uid, name),
-      getDocRef: (name, id) => doc(dbFirestore, "users", currentUser.uid, name, id),
-
-      listenToCollection: (collectionName, orderByField, orderByDirection, callback) => {
-        if (!currentUser) return;
-        if (unsubscribeListeners[collectionName]) unsubscribeListeners[collectionName]();
-        const q = query(
-          dbService.getCollectionRef(collectionName),
-          orderBy(orderByField, orderByDirection)
-        );
-        unsubscribeListeners[collectionName] = onSnapshot(
-          q,
-          (snapshot) => {
-            const data = snapshot.docs.map((doc) => {
-              const d = doc.data();
-              if (d.createdAt?.toDate) d.createdAt = d.createdAt.toDate();
-              if (d.updatedAt?.toDate) d.updatedAt = d.updatedAt.toDate();
-              return { id: doc.id, ...d };
-            });
-            callback(data);
-          },
-          (error) => console.error(`Listen error on ${collectionName}:`, error)
-        );
-      },
-
-      getById: async (collectionName, id) => {
-        const item = state[collectionName].find((p) => p.id === id);
-        if (item) return { ...item };
-        try {
-          const docSnap = await getDoc(dbService.getDocRef(collectionName, id));
-          if (docSnap.exists()) {
-            const d = docSnap.data();
-            if (d.createdAt?.toDate) d.createdAt = d.createdAt.toDate();
-            if (d.updatedAt?.toDate) d.updatedAt = d.updatedAt.toDate();
-            return { id: docSnap.id, ...d };
-          }
-          return null;
-        } catch (error) {
-          return null;
-        }
-      },
-
-      put: async (collectionName, item) => {
-        const { id, ...data } = item;
-        data.updatedAt = serverTimestamp();
-        if (!id) {
-          data.createdAt = serverTimestamp();
-          const docRef = await addDoc(dbService.getCollectionRef(collectionName), data);
-          return docRef.id;
-        } else {
-          await setDoc(dbService.getDocRef(collectionName, id), data, { merge: true });
-          return id;
-        }
-      },
-      update: (name, id, data) => dbService.put(name, { id, ...data }),
-      delete: (name, id) => deleteDoc(dbService.getDocRef(name, id)),
-      savePromptVersion: (promptId, content, memo = "") =>
-        putIntoIndexedDB(CACHE_STORE_VERSIONS, {
-          promptId,
-          content,
-          timestamp: new Date(),
-          memo,
-        }),
-      getPromptVersions: (promptId) =>
-        getFromIndexedDB(CACHE_STORE_VERSIONS, "promptId", promptId).then((v) =>
-          v.sort((a, b) => b.timestamp - a.timestamp)
-        ),
+        getCollectionRef: (name) => collection(dbFirestore, 'users', currentUser.uid, name),
+        getDocRef: (name, id) => doc(dbFirestore, 'users', currentUser.uid, name, id),
+        listenToCollection: (collectionName, orderByField, orderByDirection, callback) => {
+            if (!currentUser) return;
+            if (unsubscribeListeners[collectionName]) unsubscribeListeners[collectionName]();
+            const q = query(dbService.getCollectionRef(collectionName), orderBy(orderByField, orderByDirection));
+            unsubscribeListeners[collectionName] = onSnapshot(q, (snapshot) => {
+                const data = snapshot.docs.map(doc => {
+                    const d = doc.data();
+                    if (d.createdAt?.toDate) d.createdAt = d.createdAt.toDate();
+                    if (d.updatedAt?.toDate) d.updatedAt = d.updatedAt.toDate();
+                    return { id: doc.id, ...d };
+                });
+                callback(data);
+            }, (error) => console.error(`Listen error on ${collectionName}:`, error));
+        },
+        getById: async (collectionName, id) => {
+            const item = state[collectionName].find(p => p.id === id);
+            if (item) return { ...item };
+            try {
+                const docSnap = await getDoc(dbService.getDocRef(collectionName, id));
+                if (docSnap.exists()) {
+                    const d = docSnap.data();
+                    if (d.createdAt?.toDate) d.createdAt = d.createdAt.toDate();
+                    if (d.updatedAt?.toDate) d.updatedAt = d.updatedAt.toDate();
+                    return { id: docSnap.id, ...d };
+                }
+                return null;
+            } catch (error) { return null; }
+        },
+        put: async (collectionName, item) => {
+            const { id, ...data } = item;
+            data.updatedAt = serverTimestamp();
+            if (!id) {
+                data.createdAt = serverTimestamp();
+                const docRef = await addDoc(dbService.getCollectionRef(collectionName), data);
+                return docRef.id;
+            } else {
+                await setDoc(dbService.getDocRef(collectionName, id), data, { merge: true });
+                return id;
+            }
+        },
+        update: (name, id, data) => dbService.put(name, { id, ...data }),
+        delete: (name, id) => deleteDoc(dbService.getDocRef(name, id)),
+        savePromptVersion: (promptId, content, memo = '') => putIntoIndexedDB(CACHE_STORE_VERSIONS, { promptId, content, timestamp: new Date(), memo }),
+        getPromptVersions: (promptId) => getFromIndexedDB(CACHE_STORE_VERSIONS, 'promptId', promptId).then(v => v.sort((a, b) => b.timestamp - a.timestamp)),
     };
 
-    // =================================================================
-    // 렌더링 함수
-    // =================================================================
+    /* =====================================================================
+       Rendering functions
+       ---------------------------------------------------------------------
+       Methods inside the render object build UI fragments based on the current
+       application state. Calling a render method updates a portion of the DOM.
+    */
     const render = {
-      folders: () => {
-        uiElements.folderList.innerHTML =
-          state.folders
-            .map(
-              (f) => `
+        folders: () => {
+            uiElements.folderList.innerHTML = state.folders.map(f => `
                 <li class="nav-item" data-filter-type="folder" data-folder-id="${f.id}">
                     <a style="display: flex; align-items: center; width: 100%;">
                         <i class="nav-icon fa-regular fa-folder"></i>
-                        <span class="folder-name" style="flex-grow: 1;">${helpers.escapeHTML(
-                          f.name
-                        )}</span>
-                        <button class="edit-folder-btn" data-folder-id="${f.id}" data-folder-name="${helpers.escapeHTML(
-                f.name
-              )}" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; margin-left: auto; display: none;">
+                        <span class="folder-name" style="flex-grow: 1;">${helpers.escapeHTML(f.name)}</span>
+                        <button class="edit-folder-btn" data-folder-id="${f.id}" data-folder-name="${helpers.escapeHTML(f.name)}" style="background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; margin-left: auto; display: none;">
                             <i class="fa-solid fa-pencil"></i>
                         </button>
                     </a>
-                </li>`
-            )
-            .join("") +
-          `<li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
-      },
-      sequences: () => {
-        uiElements.sequenceList.innerHTML = state.sequences
-          .map(
-            (s) => `
+                </li>`).join('') + `
+                <li class="nav-item" data-filter-type="uncategorized"><a><i class="nav-icon fa-solid fa-inbox"></i> 미분류</a></li>`;
+        },
+        sequences: () => {
+            uiElements.sequenceList.innerHTML = state.sequences.map(s => `
                 <li class="nav-item" data-filter-type="sequence" data-seq-id="${s.id}">
-                    <a><i class="nav-icon fa-solid fa-layer-group"></i> ${helpers.escapeHTML(
-                      s.name
-                    )}</a>
-                </li>`
-          )
-          .join("");
-      },
-      prompts: () => {
-        uiElements.mainHeader.textContent = state.currentFilter.name;
-        let filtered = state.prompts;
-        const { type, id } = state.currentFilter;
-
-        if (type === "folder") filtered = state.prompts.filter((p) => p.folderId === id);
-        else if (type === "uncategorized") filtered = state.prompts.filter((p) => !p.folderId);
-        else if (type === "favorites") filtered = state.prompts.filter((p) => p.isFavorite);
-        else if (type === "templates") filtered = state.prompts.filter((p) => p.isTemplate);
-        else if (type === "prompts") filtered = state.prompts.filter((p) => !p.isTemplate);
-
-        const searchTerm = uiElements.searchInput.value.toLowerCase();
-        if (searchTerm) {
-          if (!fuse) buildSearchIndex();
-          const searchResults = fuse.search(searchTerm).map((r) => r.item);
-          const filteredIds = new Set(filtered.map((p) => p.id));
-          filtered = searchResults.filter((p) => filteredIds.has(p.id));
-        }
-
-        if (filtered.length === 0) {
-          uiElements.contentView.innerHTML = `<div class="content-placeholder">항목을 찾을 수 없습니다.</div>`;
-          return;
-        }
-
-        uiElements.contentView.innerHTML = filtered
-          .map((p) => {
-            const icon = p.isTemplate ? "fa-puzzle-piece" : "fa-file-lines";
-            const tagsHTML = (p.tags || [])
-              .map((tag) => `<span class="prompt-tag">#${helpers.escapeHTML(tag)}</span>`)
-              .join("");
-            const date = p.updatedAt ? p.updatedAt.toLocaleString() : "N/A";
-
-            let buttonsHtml = "";
-            if (p.isTemplate)
-              buttonsHtml += `<button class="use-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 사용</button>`;
-            else if (p.link)
-              buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
-            else buttonsHtml += `<button class="copy-btn"><i class="fa-regular fa-copy"></i> 복사</button>`;
-
-            if (p.isTemplate && p.link)
-              buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn" style="margin-left: 8px;"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
-
-            return `
+                    <a><i class="nav-icon fa-solid fa-layer-group"></i> ${helpers.escapeHTML(s.name)}</a>
+                </li>`).join('');
+        },
+        prompts: () => {
+            uiElements.mainHeader.textContent = state.currentFilter.name;
+            let filtered = state.prompts;
+            const { type, id } = state.currentFilter;
+            if (type === 'folder') filtered = state.prompts.filter(p => p.folderId === id);
+            else if (type === 'uncategorized') filtered = state.prompts.filter(p => !p.folderId);
+            else if (type === 'favorites') filtered = state.prompts.filter(p => p.isFavorite);
+            else if (type === 'templates') filtered = state.prompts.filter(p => p.isTemplate);
+            else if (type === 'prompts') filtered = state.prompts.filter(p => !p.isTemplate);
+            const searchTerm = uiElements.searchInput.value.toLowerCase();
+            if (searchTerm) {
+                if (!fuse) buildSearchIndex();
+                const searchResults = fuse.search(searchTerm).map(r => r.item);
+                const filteredIds = new Set(filtered.map(p => p.id));
+                filtered = searchResults.filter(p => filteredIds.has(p.id));
+            }
+            if (filtered.length === 0) {
+                uiElements.contentView.innerHTML = `<div class="content-placeholder">항목을 찾을 수 없습니다.</div>`;
+                return;
+            }
+            uiElements.contentView.innerHTML = filtered.map(p => {
+                const icon = p.isTemplate ? 'fa-puzzle-piece' : 'fa-file-lines';
+                const tagsHTML = (p.tags || []).map(tag => `<span class="prompt-tag">#${helpers.escapeHTML(tag)}</span>`).join('');
+                const date = p.updatedAt ? p.updatedAt.toLocaleString() : 'N/A';
+                let buttonsHtml = '';
+                if (p.isTemplate) buttonsHtml += `<button class="use-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 사용</button>`;
+                else if (p.link) buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
+                else buttonsHtml += `<button class="copy-btn"><i class="fa-regular fa-copy"></i> 복사</button>`;
+                if (p.isTemplate && p.link) buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn" style="margin-left: 8px;"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
+                return `
                 <div class="prompt-list-item" data-prompt-id="${p.id}">
-                    <i class="prompt-list-icon fa-solid ${icon}" style="color: ${
-              p.isTemplate ? "var(--accent-blue)" : "var(--text-secondary)"
-            }"></i>
-                    <i class="prompt-list-icon fa-solid fa-star fav-icon ${
-                      p.isFavorite ? "active" : ""
-                    }"></i>
+                    <i class="prompt-list-icon fa-solid ${icon}" style="color: ${p.isTemplate ? 'var(--accent-blue)' : 'var(--text-secondary)'}"></i>
+                    <i class="prompt-list-icon fa-solid fa-star fav-icon ${p.isFavorite ? 'active' : ''}"></i>
                     <div class="prompt-info">
                         <div class="prompt-title">${helpers.escapeHTML(p.title)}</div>
                         <div class="prompt-subtitle">업데이트: ${date}</div>
-                        ${tagsHTML ? `<div class="prompt-tags">${tagsHTML}</div>` : ""}
+                        ${tagsHTML ? `<div class="prompt-tags">${tagsHTML}</div>` : ''}
                     </div>
                     <div class="prompt-actions">
                         ${buttonsHtml}
                         <button class="edit-btn"><i class="fa-regular fa-edit"></i> 편집</button>
                     </div>
                 </div>`;
-          })
-          .join("");
-      },
-      promptEditor: async (id) => {
-        const isNew = id === null;
-        let p = isNew
-          ? {
-              title: "",
-              content: "",
-              folderId: null,
-              tags: [],
-              isFavorite: false,
-              isTemplate: false,
-              link: "",
+            }).join('');
+        },
+        promptEditor: async (id) => {
+            const isNew = id === null;
+            let p = isNew ? { title: '', content: '', folderId: null, tags: [], isFavorite: false, isTemplate: false, link: '' } : await dbService.getById('prompts', id);
+            if (!p) {
+                helpers.showToast('항목을 찾을 수 없습니다!');
+                return render.prompts();
             }
-          : await dbService.getById("prompts", id);
-        if (!p) {
-          helpers.showToast("항목을 찾을 수 없습니다!");
-          return render.prompts();
-        }
-
-        const folderOpts = state.folders
-          .map(
-            (f) => `<option value="${f.id}" ${
-              f.id === p.folderId ? "selected" : ""
-            }>${helpers.escapeHTML(f.name)}</option>`
-          )
-          .join("");
-
-        uiElements.mainHeader.textContent = isNew ? "새 항목" : `편집: ${p.title}`;
-        uiElements.contentView.innerHTML = `
+            const folderOpts = state.folders.map(f => `<option value="${f.id}" ${f.id === p.folderId ? 'selected' : ''}>${helpers.escapeHTML(f.name)}</option>`).join('');
+            uiElements.mainHeader.textContent = isNew ? '새 항목' : `편집: ${p.title}`;
+            uiElements.contentView.innerHTML = `
                 <div class="editor-header">
-                    <h2>${isNew ? "새 항목 생성" : "항목 편집"}</h2>
+                    <h2>${isNew ? '새 항목 생성' : '항목 편집'}</h2>
                     <div class="editor-actions">
-                        ${
-                          !isNew
-                            ? `<button class="delete-btn button-like" data-id="${id}"><i class="fa-regular fa-trash-can"></i> 삭제</button>`
-                            : ""
-                        }
-                        <button class="save-btn button-like" data-id="${id || ""}"><i class="fa-regular fa-save"></i> 저장</button>
+                        ${!isNew ? `<button class="delete-btn button-like" data-id="${id}"><i class="fa-regular fa-trash-can"></i> 삭제</button>` : ''}
+                        <button class="save-btn button-like" data-id="${id || ''}"><i class="fa-regular fa-save"></i> 저장</button>
                     </div>
                 </div>
                 <div class="form-group">
                     <label>제목</label>
-                    <input id="title-input" value="${helpers.escapeHTML(p.title || "")}">
+                    <input id="title-input" value="${helpers.escapeHTML(p.title || '')}">
                 </div>
                 <div class="form-group">
-                    <label>내용 ${
-                      p.isTemplate ? "(플레이스홀더에 {{변수}} 사용)" : ""
-                    }</label>
-                    <textarea id="content-input">${helpers.escapeHTML(p.content || "")}</textarea>
+                    <label>내용 ${p.isTemplate ? '(플레이스홀더에 {{변수}} 사용)' : ''}</label>
+                    <textarea id="content-input">${helpers.escapeHTML(p.content || '')}</textarea>
                     <div class="file-upload-section">
                         <input type="file" id="large-text-file" accept=".txt,.html,.md,.json,.csv,.js,.css,text/*" style="display:none;">
                         <button id="load-text-btn" class="button-like"><i class="fa-solid fa-file-arrow-up"></i> 파일에서 불러오기</button>
@@ -1418,7 +1248,7 @@
                 </div>
                 <div class="form-group">
                     <label>링크 (URL)</label>
-                    <input id="link-input" type="url" value="${helpers.escapeHTML(p.link || "")}">
+                    <input id="link-input" type="url" value="${helpers.escapeHTML(p.link || '')}">
                 </div>
                 <div style="display:flex; gap: 24px; flex-wrap: wrap;">
                     <div class="form-group" style="flex:1; min-width: 200px;">
@@ -1427,246 +1257,172 @@
                     </div>
                     <div class="form-group" style="flex:1; min-width: 200px;">
                         <label>태그 (쉼표로 구분)</label>
-                        <input id="tags-input" value="${(p.tags || []).join(", ")}">
+                        <input id="tags-input" value="${(p.tags || []).join(', ')}">
                     </div>
                 </div>
                 <div class="is-template-toggle">
-                    <input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? "checked" : ""}>
+                    <input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}>
                     <label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label>
                 </div>
-                ${
-                  !isNew
-                    ? `<button id="view-versions-btn" class="button-like" style="margin-top: 20px;"><i class="fa-solid fa-history"></i> 버전 기록 보기</button><div id="versions-history" style="display:none; margin-top:10px; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px;"></div>`
-                    : ""
-                }
+                ${!isNew ? `<button id="view-versions-btn" class="button-like" style="margin-top: 20px;"><i class="fa-solid fa-history"></i> 버전 기록 보기</button><div id="versions-history" style="display:none; margin-top:10px; border: 1px solid var(--border-color); padding: 15px; border-radius: 8px;"></div>` : ''}
             `;
-
-        const contentInput = document.getElementById("content-input");
-        const loadTextBtn = document.getElementById("load-text-btn");
-        const largeTextFileInput = document.getElementById("large-text-file");
-        const loadedFileNameSpan = document.getElementById("loaded-file-name");
-        const contentSizeWarning = document.getElementById("content-size-warning");
-
-        const checkContentSizeWarning = () => {
-          const byteLength = new TextEncoder().encode(contentInput.value).length;
-          const threshold = 900 * 1024;
-          contentSizeWarning.style.display = byteLength > threshold ? "block" : "none";
-        };
-
-        const handleFileLoad = async (file) => {
-          const content = await helpers.loadFileAsText(file);
-          if (content !== null) {
-            contentInput.value = content;
+            const contentInput = document.getElementById('content-input');
+            const loadTextBtn = document.getElementById('load-text-btn');
+            const largeTextFileInput = document.getElementById('large-text-file');
+            const loadedFileNameSpan = document.getElementById('loaded-file-name');
+            const contentSizeWarning = document.getElementById('content-size-warning');
+            const checkContentSizeWarning = () => {
+                const byteLength = new TextEncoder().encode(contentInput.value).length;
+                const threshold = 900 * 1024;
+                contentSizeWarning.style.display = byteLength > threshold ? 'block' : 'none';
+            };
+            const handleFileLoad = async (file) => {
+                const content = await helpers.loadFileAsText(file);
+                if (content !== null) {
+                    contentInput.value = content;
+                    checkContentSizeWarning();
+                    loadedFileNameSpan.textContent = file.name;
+                    helpers.showToast('파일 내용을 불러왔습니다.');
+                }
+            };
+            loadTextBtn.onclick = () => largeTextFileInput.click();
+            largeTextFileInput.onchange = (e) => handleFileLoad(e.target.files[0]);
+            contentInput.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+            contentInput.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                if (e.dataTransfer.files.length > 0) await handleFileLoad(e.dataTransfer.files[0]);
+            });
+            contentInput.addEventListener('input', checkContentSizeWarning);
             checkContentSizeWarning();
-            loadedFileNameSpan.textContent = file.name;
-            helpers.showToast("파일 내용을 불러왔습니다.");
-          }
-        };
-
-        loadTextBtn.onclick = () => largeTextFileInput.click();
-        largeTextFileInput.onchange = (e) => handleFileLoad(e.target.files[0]);
-
-        contentInput.addEventListener("dragover", (e) => {
-          e.preventDefault();
-          e.dataTransfer.dropEffect = "copy";
-        });
-        contentInput.addEventListener("drop", async (e) => {
-          e.preventDefault();
-          if (e.dataTransfer.files.length > 0)
-            await handleFileLoad(e.dataTransfer.files[0]);
-        });
-        contentInput.addEventListener("input", checkContentSizeWarning);
-        checkContentSizeWarning();
-      },
-      templateModal: async (id, onCompleteCallback = null) => {
-        const p = await dbService.getById("prompts", id);
-        if (!p) {
-          helpers.showToast("템플릿을 찾을 수 없습니다!");
-          if (onCompleteCallback) onCompleteCallback(true);
-          return;
-        }
-
-        const placeholders = [
-          ...new Set(
-            [...p.content.matchAll(/{{([^\n}]+?)}}/g)].map((match) => match[1].trim())
-          ),
-        ];
-        uiElements.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
-        uiElements.templateModal.body.innerHTML =
-          placeholders
-            .map(
-              (ph) => `
+        },
+        templateModal: async (id, onCompleteCallback = null) => {
+            const p = await dbService.getById('prompts', id);
+            if (!p) {
+                helpers.showToast('템플릿을 찾을 수 없습니다!');
+                if (onCompleteCallback) onCompleteCallback(true);
+                return;
+            }
+            const placeholders = [...new Set([...p.content.matchAll(/{{([^\n}]+?)}}/g)].map(match => match[1].trim()))];
+            uiElements.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
+            uiElements.templateModal.body.innerHTML = placeholders.map(ph => `
                 <div class="form-group">
-                    <label for="ph-${ph}">${ph.replace(/_/g, " ")}</label>
+                    <label for="ph-${ph}">${ph.replace(/_/g, ' ')}</label>
                     <div style="display: flex; gap: 8px;">
                         <textarea id="ph-${ph}" data-placeholder="${ph}" rows="1" style="flex-grow: 1; resize: vertical;"></textarea>
                         <input type="file" class="template-file-input" data-target-id="ph-${ph}" style="display: none;" accept=".txt,.html,.md,.json,.csv,.js,.css,text/*">
                         <button class="template-file-upload-btn button-like" data-target-id="ph-${ph}" title="파일에서 불러오기" style="flex-shrink: 0; padding: 8px 12px;"><i class="fa-solid fa-file-arrow-up"></i></button>
                     </div>
-                </div>`
-            )
-            .join("") +
-          `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${helpers.escapeHTML(
-            p.content
-          )}</div></div>`;
-        uiElements.templateModal.overlay.classList.add("show");
-
-        const modalBody = uiElements.templateModal.body;
-        const inputs = modalBody.querySelectorAll("textarea[data-placeholder]");
-        const preview = document.getElementById("template-preview");
-
-        const updatePreview = () => {
-          let content = p.content;
-          inputs.forEach((input) => {
-            content = content.replaceAll(
-              `{{${input.dataset.placeholder}}}`,
-              input.value || `{{${input.dataset.placeholder}}}`
-            );
-          });
-          preview.textContent = content;
-        };
-
-        inputs.forEach((input) => input.addEventListener("input", updatePreview));
-        updatePreview();
-
-        modalBody.addEventListener("click", (e) => {
-          const uploadBtn = e.target.closest(".template-file-upload-btn");
-          if (uploadBtn)
-            modalBody
-              .querySelector(
-                `.template-file-input[data-target-id="${uploadBtn.dataset.targetId}"]`
-              )
-              .click();
-        });
-
-        modalBody.addEventListener("change", async (e) => {
-          const fileInput = e.target.closest(".template-file-input");
-          if (fileInput && fileInput.files.length > 0) {
-            const textarea = modalBody.querySelector(`#${fileInput.dataset.targetId}`);
-            const content = await helpers.loadFileAsText(fileInput.files[0]);
-            if (content !== null) {
-              textarea.value = content;
-              textarea.dispatchEvent(new Event("input", { bubbles: true }));
+                </div>`).join('') + `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${helpers.escapeHTML(p.content)}</div></div>`;
+            uiElements.templateModal.overlay.classList.add('show');
+            const modalBody = uiElements.templateModal.body;
+            const inputs = modalBody.querySelectorAll('textarea[data-placeholder]');
+            const preview = document.getElementById('template-preview');
+            const updatePreview = () => {
+                let content = p.content;
+                inputs.forEach(input => {
+                    content = content.replaceAll(`{{${input.dataset.placeholder}}}`, input.value || `{{${input.dataset.placeholder}}}`);
+                });
+                preview.textContent = content;
+            };
+            inputs.forEach(input => input.addEventListener('input', updatePreview));
+            updatePreview();
+            modalBody.addEventListener('click', (e) => {
+                const uploadBtn = e.target.closest('.template-file-upload-btn');
+                if (uploadBtn) modalBody.querySelector(`.template-file-input[data-target-id="${uploadBtn.dataset.targetId}"]`).click();
+            });
+            modalBody.addEventListener('change', async (e) => {
+                const fileInput = e.target.closest('.template-file-input');
+                if (fileInput && fileInput.files.length > 0) {
+                    const textarea = modalBody.querySelector(`#${fileInput.dataset.targetId}`);
+                    const content = await helpers.loadFileAsText(fileInput.files[0]);
+                    if (content !== null) {
+                        textarea.value = content;
+                        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    fileInput.value = '';
+                }
+            });
+            uiElements.templateModal.generateBtn.onclick = async () => {
+                const textToCopy = preview.textContent;
+                await helpers.copyToClipboard(textToCopy);
+                helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
+                await dbService.update('prompts', p.id, { usageCount: (p.usageCount || 0) + 1 });
+                const variablesUsed = Array.from(inputs).reduce((acc, input) => {
+                    acc[input.dataset.placeholder] = input.value;
+                    return acc;
+                }, {});
+                helpers.logUsage('template_generate', p.id, p.title, textToCopy, variablesUsed);
+                if (onCompleteCallback) onCompleteCallback();
+            };
+            uiElements.templateModal.closeBtn.onclick = () => {
+                uiElements.templateModal.overlay.classList.remove('show');
+                if (onCompleteCallback) onCompleteCallback(true);
+            };
+        },
+        sequenceEditor: async (id) => {
+            const isNew = id === null;
+            let s = isNew ? { name: '', description: '', promptIds: [] } : await dbService.getById('sequences', id);
+            if (!s) {
+                helpers.showToast('시퀀스를 찾을 수 없습니다!');
+                return;
             }
-            fileInput.value = "";
-          }
-        });
-
-        uiElements.templateModal.generateBtn.onclick = async () => {
-          const textToCopy = preview.textContent;
-          await helpers.copyToClipboard(textToCopy);
-          helpers.showToast("템플릿이 생성되어 클립보드에 복사되었습니다!");
-          await dbService.update("prompts", p.id, {
-            usageCount: (p.usageCount || 0) + 1,
-          });
-          const variablesUsed = Array.from(inputs).reduce((acc, input) => {
-            acc[input.dataset.placeholder] = input.value;
-            return acc;
-          }, {});
-          helpers.logUsage("template_generate", p.id, p.title, textToCopy, variablesUsed);
-          if (onCompleteCallback) onCompleteCallback();
-        };
-        uiElements.templateModal.closeBtn.onclick = () => {
-          uiElements.templateModal.overlay.classList.remove("show");
-          if (onCompleteCallback) onCompleteCallback(true);
-        };
-      },
-      sequenceEditor: async (id) => {
-        const isNew = id === null;
-        let s = isNew
-          ? { name: "", description: "", promptIds: [] }
-          : await dbService.getById("sequences", id);
-        if (!s) {
-          helpers.showToast("시퀀스를 찾을 수 없습니다!");
-          return;
-        }
-
-        uiElements.sequenceModal.title.textContent = isNew
-          ? "새 시퀀스 생성"
-          : `시퀀스 편집: ${s.name}`;
-        uiElements.sequenceModal.body.innerHTML = `
-                <div class="form-group"><label>이름</label><input id="sequence-name-input" value="${helpers.escapeHTML(
-                  s.name || ""
-                )}"></div>
-                <div class="form-group"><label>설명</label><textarea id="sequence-description-input">${helpers.escapeHTML(
-                  s.description || ""
-                )}</textarea></div>
-                <div class="form-group"><label>프롬프트 선택</label><select id="sequence-prompts-select" multiple size="8">${state.prompts
-                  .map((p) => `<option value="${p.id}">${helpers.escapeHTML(p.title)}</option>`)
-                  .join("")}</select></div>
-                <div class="form-group"><label>시퀀스 순서 (드래그 & 드롭)</label><div id="sequence-sortable-list" class="sequence-sortable-list"></div></div>`;
-        uiElements.sequenceModal.overlay.classList.add("show");
-        uiElements.sequenceModal.saveBtn.dataset.id = id || "";
-        uiElements.sequenceModal.runBtn.dataset.id = id || "";
-        uiElements.sequenceModal.deleteBtn.dataset.id = id || "";
-        uiElements.sequenceModal.deleteBtn.style.display = isNew ? "none" : "inline-block";
-
-        const selectEl = document.getElementById("sequence-prompts-select");
-        const sortableList = document.getElementById("sequence-sortable-list");
-
-        const updateSortableList = () => {
-          sortableList.innerHTML = "";
-          s.promptIds.forEach((promptId) => {
-            const prompt = state.prompts.find((p) => p.id === promptId);
-            if (prompt) {
-              sortableList.insertAdjacentHTML(
-                "beforeend",
-                `<div class="sequence-sortable-item" data-prompt-id="${prompt.id}"><i class="fa-solid fa-grip-vertical drag-handle"></i><span>${helpers.escapeHTML(
-                  prompt.title
-                )}</span><button class="remove-from-sequence-btn"><i class="fa-solid fa-times"></i></button></div>`
-              );
-              const option = selectEl.querySelector(`option[value="${prompt.id}"]`);
-              if (option) option.selected = true;
-            }
-          });
-        };
-
-        updateSortableList();
-
-        if (sequenceSortableInstance) sequenceSortableInstance.destroy();
-        sequenceSortableInstance = Sortable.create(sortableList, {
-          animation: 150,
-          handle: ".drag-handle",
-          onEnd: () => {
-            s.promptIds = Array.from(sortableList.children).map((item) => item.dataset.promptId);
-          },
-        });
-
-        selectEl.onchange = () => {
-          const selectedIds = new Set(Array.from(selectEl.selectedOptions).map((opt) => opt.value));
-          s.promptIds = s.promptIds.filter((id) => selectedIds.has(id));
-          selectedIds.forEach((id) => {
-            if (!s.promptIds.includes(id)) s.promptIds.push(id);
-          });
-          updateSortableList();
-        };
-        sortableList.onclick = (e) => {
-          if (e.target.closest(".remove-from-sequence-btn")) {
-            const item = e.target.closest(".sequence-sortable-item");
-            s.promptIds = s.promptIds.filter((id) => id !== item.dataset.promptId);
+            uiElements.sequenceModal.title.textContent = isNew ? '새 시퀀스 생성' : `시퀀스 편집: ${s.name}`;
+            uiElements.sequenceModal.body.innerHTML = `
+                <div class="form-group"><label>이름</label><input id="sequence-name-input" value="${helpers.escapeHTML(s.name || '')}"></div>
+                <div class="form-group"><label>설명</label><textarea id="sequence-description-input">${helpers.escapeHTML(s.description || '')}</textarea></div>
+                <div class="form-group"><label>프롬프트 선택</label><select id="sequence-prompts-select" multiple size="8">${state.prompts.map(p => `<option value="${p.id}">${helpers.escapeHTML(p.title)}</option>`).join('')}</select></div>
+                <div class="form-group"><label>시퀀스 순서 (드래그 &amp; 드롭)</label><div id="sequence-sortable-list" class="sequence-sortable-list"></div></div>`;
+            uiElements.sequenceModal.overlay.classList.add('show');
+            uiElements.sequenceModal.saveBtn.dataset.id = id || '';
+            uiElements.sequenceModal.runBtn.dataset.id = id || '';
+            uiElements.sequenceModal.deleteBtn.dataset.id = id || '';
+            uiElements.sequenceModal.deleteBtn.style.display = isNew ? 'none' : 'inline-block';
+            const selectEl = document.getElementById('sequence-prompts-select');
+            const sortableList = document.getElementById('sequence-sortable-list');
+            const updateSortableList = () => {
+                sortableList.innerHTML = '';
+                s.promptIds.forEach(promptId => {
+                    const prompt = state.prompts.find(p => p.id === promptId);
+                    if (prompt) {
+                        sortableList.insertAdjacentHTML('beforeend', `<div class="sequence-sortable-item" data-prompt-id="${prompt.id}"><i class="fa-solid fa-grip-vertical drag-handle"></i><span>${helpers.escapeHTML(prompt.title)}</span><button class="remove-from-sequence-btn"><i class="fa-solid fa-times"></i></button></div>`);
+                        const option = selectEl.querySelector(`option[value="${prompt.id}"]`);
+                        if (option) option.selected = true;
+                    }
+                });
+            };
             updateSortableList();
-          }
-        };
-      },
-      statisticsDashboard: () => {
-        uiElements.mainHeader.textContent = "통계";
-        const topUsedPrompts = [...state.prompts]
-          .sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0))
-          .slice(0, 30);
-        const folderPromptCounts = state.folders
-          .map((folder) => ({
-            name: folder.name,
-            count: state.prompts.filter((p) => p.folderId === folder.id).length,
-          }))
-          .sort((a, b) => b.count - a.count)
-          .slice(0, 10);
-
-        uiElements.contentView.innerHTML = `
+            if (sequenceSortableInstance) sequenceSortableInstance.destroy();
+            sequenceSortableInstance = Sortable.create(sortableList, {
+                animation: 150,
+                handle: '.drag-handle',
+                forceFallback: true,
+                fallbackTolerance: 3,
+                onEnd: () => { s.promptIds = Array.from(sortableList.children).map(item => item.dataset.promptId); }
+            });
+            selectEl.onchange = () => {
+                const selectedIds = new Set(Array.from(selectEl.selectedOptions).map(opt => opt.value));
+                s.promptIds = s.promptIds.filter(id => selectedIds.has(id));
+                selectedIds.forEach(id => { if (!s.promptIds.includes(id)) s.promptIds.push(id); });
+                updateSortableList();
+            };
+            sortableList.onclick = (e) => {
+                if (e.target.closest('.remove-from-sequence-btn')) {
+                    const item = e.target.closest('.sequence-sortable-item');
+                    s.promptIds = s.promptIds.filter(id => id !== item.dataset.promptId);
+                    updateSortableList();
+                }
+            };
+        },
+        statisticsDashboard: () => {
+            uiElements.mainHeader.textContent = '통계';
+            const topUsedPrompts = [...state.prompts].sort((a, b) => (b.usageCount || 0) - (a.usageCount || 0)).slice(0, 30);
+            const folderPromptCounts = state.folders.map(folder => ({ name: folder.name, count: state.prompts.filter(p => p.folderId === folder.id).length })).sort((a, b) => b.count - a.count).slice(0, 10);
+            uiElements.contentView.innerHTML = `
                 <div class="statistics-grid">
                     <div class="stat-card">
                         <h3>총 프롬프트</h3>
                         <div class="stat-number">${state.prompts.length}</div>
-                        <div class="stat-details">템플릿: ${state.prompts.filter((p) => p.isTemplate).length} / 일반: ${state.prompts.filter((p) => !p.isTemplate).length}</div>
+                        <div class="stat-details">템플릿: ${state.prompts.filter(p => p.isTemplate).length} / 일반: ${state.prompts.filter(p => !p.isTemplate).length}</div>
                     </div>
                     <div class="stat-card">
                         <h3>총 폴더</h3>
@@ -1674,76 +1430,51 @@
                     </div>
                     <div class="stat-card">
                         <h3>가장 많이 사용된 프롬프트 TOP 30</h3>
-                        <ul>${
-                          topUsedPrompts
-                            .map(
-                              (p) => `<li><span>${helpers.escapeHTML(p.title)}</span> <span class="count">${p.usageCount || 0}회</span></li>`
-                            )
-                            .join("") || "<li>데이터가 없습니다.</li>"
-                        }</ul>
+                        <ul>${topUsedPrompts.map(p => `<li><span>${helpers.escapeHTML(p.title)}</span> <span class="count">${p.usageCount || 0}회</span></li>`).join('') || '<li>데이터가 없습니다.</li>'}</ul>
                     </div>
                     <div class="stat-card">
                         <h3>프롬프트가 가장 많은 폴더 TOP 10</h3>
-                        <ul>${
-                          folderPromptCounts
-                            .map(
-                              (f) => `<li><span>${helpers.escapeHTML(f.name)}</span> <span class="count">${f.count}개</span></li>`
-                            )
-                            .join("") || "<li>데이터가 없습니다.</li>"
-                        }</ul>
+                        <ul>${folderPromptCounts.map(f => `<li><span>${helpers.escapeHTML(f.name)}</span> <span class="count">${f.count}개</span></li>`).join('') || '<li>데이터가 없습니다.</li>'}</ul>
                     </div>
                 </div>`;
-      },
-      usageHistory: async () => {
-        uiElements.mainHeader.textContent = "사용 기록";
-        const history = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
-        history.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-
-        if (history.length === 0) {
-          uiElements.contentView.innerHTML = `<div class="content-placeholder">사용 기록이 없습니다.</div>`;
-          return;
-        }
-
-        const groupedHistory = history.reduce((acc, record) => {
-          const dateKey = helpers.formatDateGroup(record.timestamp);
-          if (!acc[dateKey]) acc[dateKey] = [];
-          acc[dateKey].push(record);
-          return acc;
-        }, {});
-
-        let historyHtml = "";
-        for (const date in groupedHistory) {
-          historyHtml += `<h3 class="history-date-header">${date}</h3>`;
-          historyHtml += groupedHistory[date]
-            .map((record) => {
-              let icon, typeText, detailsHtml = "";
-              switch (record.type) {
-                case "prompt_copy":
-                  icon = "fa-copy";
-                  typeText = "프롬프트 복사";
-                  detailsHtml = `<p class="history-snippet">"${helpers.escapeHTML(record.contentSnippet)}..."</p>`;
-                  break;
-                case "template_generate":
-                  icon = "fa-wand-magic-sparkles";
-                  typeText = "템플릿 생성";
-                  if (record.variablesUsed)
-                    detailsHtml = `<div class="history-variables">${Object.entries(record.variablesUsed)
-                      .map(
-                        ([key, value]) => `<div><strong>${helpers.escapeHTML(key)}:</strong> ${helpers.escapeHTML(value)}</div>`
-                      )
-                      .join("")}</div>`;
-                  break;
-                case "sequence_run":
-                  icon = "fa-layer-group";
-                  typeText = "시퀀스 실행";
-                  break;
-              }
-
-              return `
+        },
+        usageHistory: async () => {
+            uiElements.mainHeader.textContent = '사용 기록';
+            const history = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
+            history.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+            if (history.length === 0) {
+                uiElements.contentView.innerHTML = `<div class="content-placeholder">사용 기록이 없습니다.</div>`;
+                return;
+            }
+            const groupedHistory = history.reduce((acc, record) => {
+                const dateKey = helpers.formatDateGroup(record.timestamp);
+                if (!acc[dateKey]) acc[dateKey] = [];
+                acc[dateKey].push(record);
+                return acc;
+            }, {});
+            let historyHtml = '';
+            for (const date in groupedHistory) {
+                historyHtml += `<h3 class="history-date-header">${date}</h3>`;
+                historyHtml += groupedHistory[date].map(record => {
+                    let icon, typeText, detailsHtml = '';
+                    switch (record.type) {
+                        case 'prompt_copy':
+                            icon = 'fa-copy'; typeText = '프롬프트 복사';
+                            detailsHtml = `<p class="history-snippet">"${helpers.escapeHTML(record.contentSnippet)}..."</p>`;
+                            break;
+                        case 'template_generate':
+                            icon = 'fa-wand-magic-sparkles'; typeText = '템플릿 생성';
+                            if (record.variablesUsed) detailsHtml = `<div class="history-variables">${Object.entries(record.variablesUsed).map(([key, value]) => `<div><strong>${helpers.escapeHTML(key)}:</strong> ${helpers.escapeHTML(value)}</div>`).join('')}</div>`;
+                            break;
+                        case 'sequence_run':
+                            icon = 'fa-layer-group'; typeText = '시퀀스 실행';
+                            break;
+                    }
+                    return `
                     <div class="history-item" data-record-id="${record.id}" data-item-id="${record.itemId}" data-type="${record.type}">
                         <div class="history-item-header">
                             <div class="history-item-type"><i class="fa-solid ${icon}"></i><span>${typeText}</span></div>
-                            <span class="history-item-time">${record.timestamp.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}</span>
+                            <span class="history-item-time">${record.timestamp.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}</span>
                         </div>
                         <div class="history-item-body">
                             <p class="history-item-title">${helpers.escapeHTML(record.itemName)}</p>
@@ -1754,53 +1485,61 @@
                             <button class="button-like reuse-history-btn"><i class="fa-solid fa-redo"></i> 재사용</button>
                         </div>
                     </div>`;
-            })
-            .join("");
+                }).join('');
+            }
+            uiElements.contentView.innerHTML = `<div class="history-list">${historyHtml}</div>`;
         }
-        uiElements.contentView.innerHTML = `<div class="history-list">${historyHtml}</div>`;
-      },
     };
 
-    // =================================================================
-    // 헬퍼 함수
-    // =================================================================
+    /* =====================================================================
+       Helper functions
+       ---------------------------------------------------------------------
+       Functions to display toast notifications, escape HTML, copy to clipboard
+       with fallbacks for older browsers (including iOS Safari), show confirmation
+       dialogs, log usage history, and load local files safely. Some functions
+       return Promises for asynchronous operations.
+    */
     const helpers = {
-      showToast: (msg) => {
-        uiElements.toast.textContent = msg;
-        uiElements.toast.classList.add("show");
-        setTimeout(() => uiElements.toast.classList.remove("show"), 3000);
-      },
-      escapeHTML: (str) => {
-        const p = document.createElement("p");
-        p.textContent = str;
-        return p.innerHTML;
-      },
-      copyToClipboard: async (text) => {
-        // Modern clipboard API 우선
-        try {
-          if (navigator.clipboard && window.isSecureContext) {
-            await navigator.clipboard.writeText(text);
-            return;
-          }
-        } catch (_) {}
-        // 폴백
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.focus();
-        ta.select();
-        try {
-          document.execCommand("copy");
-        } catch (_) {}
-        document.body.removeChild(ta);
-      },
-      showConfirm: (message) => {
-        return new Promise((resolve) => {
-          const modal = document.createElement("div");
-          modal.className = "modal-overlay show";
-          modal.innerHTML = `
+        showToast: (msg) => {
+            uiElements.toast.textContent = msg;
+            uiElements.toast.classList.add('show');
+            setTimeout(() => uiElements.toast.classList.remove('show'), 3000);
+        },
+        escapeHTML: (str) => {
+            const p = document.createElement('p');
+            p.textContent = str;
+            return p.innerHTML;
+        },
+        /* Copy text to clipboard. Try navigator.clipboard first, then fall back to
+           document.execCommand('copy') which still works on iOS Safari. Selecting
+           the textarea using setSelectionRange is necessary for iOS to copy. */
+        copyToClipboard: async (text) => {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                try {
+                    await navigator.clipboard.writeText(text);
+                    return;
+                } catch (err) {
+                    // fall through to fallback
+                }
+            }
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.setAttribute('readonly', '');
+            textArea.style.position = 'absolute';
+            textArea.style.left = '-9999px';
+            document.body.appendChild(textArea);
+            textArea.select();
+            textArea.setSelectionRange(0, text.length);
+            try {
+                document.execCommand('copy');
+            } catch (err) {}
+            document.body.removeChild(textArea);
+        },
+        showConfirm: (message) => {
+            return new Promise(resolve => {
+                const modal = document.createElement('div');
+                modal.className = 'modal-overlay show';
+                modal.innerHTML = `
                     <div class="modal-content" style="max-width: 400px;">
                         <div class="modal-body" style="padding: 20px 0;">${message}</div>
                         <div class="modal-footer">
@@ -1808,383 +1547,441 @@
                             <button id="confirm-ok" class="generate-btn button-like">확인</button>
                         </div>
                     </div>`;
-          document.body.appendChild(modal);
-          modal.querySelector("#confirm-ok").onclick = () => {
-            modal.remove();
-            resolve(true);
-          };
-          modal.querySelector("#confirm-cancel").onclick = () => {
-            modal.remove();
-            resolve(false);
-          };
-        });
-      },
-      resetSequenceExecution: () => {
-        activeSequencePrompts = [];
-        currentSequencePromptIndex = -1;
-        uiElements.templateModal.overlay.classList.remove("show");
-        helpers.showToast("시퀀스 실행이 종료되었습니다.");
-      },
-      loadFileAsText: (file) => {
-        return new Promise((resolve) => {
-          if (!file) return resolve(null);
-          if (file.size > 5 * 1024 * 1024) {
-            // 5MB limit
-            helpers.showToast("파일 크기는 5MB를 초과할 수 없습니다.");
-            return resolve(null);
-          }
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target.result);
-          reader.onerror = () => {
-            helpers.showToast("파일을 읽는 중 오류가 발생했습니다.");
-            resolve(null);
-          };
-          reader.readAsText(file);
-        });
-      },
-      formatDateGroup: (date) => {
-        const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-        if (targetDate.getTime() === today.getTime()) return "오늘";
-        if (targetDate.getTime() === yesterday.getTime()) return "어제";
-        return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
-      },
-      logUsage: async (type, itemId, itemName, content = "", variablesUsed = null) => {
-        if (!indexedDbInstance) await openIndexedDB();
-        const record = {
-          type,
-          itemId,
-          itemName,
-          timestamp: new Date(),
-          content,
-          contentSnippet: content.substring(0, 100),
-          variablesUsed,
-        };
-        await putIntoIndexedDB(CACHE_STORE_USAGE_HISTORY, record);
-
-        const allRecords = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
-        if (allRecords.length > 20) {
-          allRecords.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-          const recordsToDelete = allRecords.slice(0, allRecords.length - 20);
-          for (const rec of recordsToDelete) {
-            await deleteFromIndexedDB(CACHE_STORE_USAGE_HISTORY, rec.id);
-          }
+                document.body.appendChild(modal);
+                modal.querySelector('#confirm-ok').onclick = () => { modal.remove(); resolve(true); };
+                modal.querySelector('#confirm-cancel').onclick = () => { modal.remove(); resolve(false); };
+            });
+        },
+        resetSequenceExecution: () => {
+            activeSequencePrompts = [];
+            currentSequencePromptIndex = -1;
+            uiElements.templateModal.overlay.classList.remove('show');
+            helpers.showToast('시퀀스 실행이 종료되었습니다.');
+        },
+        loadFileAsText: (file) => {
+            return new Promise((resolve) => {
+                if (!file) return resolve(null);
+                if (file.size > 5 * 1024 * 1024) {
+                    helpers.showToast('파일 크기는 5MB를 초과할 수 없습니다.');
+                    return resolve(null);
+                }
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = () => {
+                    helpers.showToast('파일을 읽는 중 오류가 발생했습니다.');
+                    resolve(null);
+                };
+                reader.readAsText(file);
+            });
+        },
+        formatDateGroup: (date) => {
+            const now = new Date();
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+            const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+            if (targetDate.getTime() === today.getTime()) return '오늘';
+            if (targetDate.getTime() === yesterday.getTime()) return '어제';
+            return `${date.getFullYear()}년 ${date.getMonth() + 1}월 ${date.getDate()}일`;
+        },
+        logUsage: async (type, itemId, itemName, content = '', variablesUsed = null) => {
+            if (!indexedDbInstance) await openIndexedDB();
+            const record = {
+                type, itemId, itemName,
+                timestamp: new Date(),
+                content,
+                contentSnippet: content.substring(0, 100),
+                variablesUsed
+            };
+            await putIntoIndexedDB(CACHE_STORE_USAGE_HISTORY, record);
+            const allRecords = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
+            if (allRecords.length > 20) {
+                allRecords.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+                const recordsToDelete = allRecords.slice(0, allRecords.length - 20);
+                for (const rec of recordsToDelete) {
+                    await deleteFromIndexedDB(CACHE_STORE_USAGE_HISTORY, rec.id);
+                }
+            }
         }
-      },
     };
 
-    // =================================================================
-    // 시퀀스 실행
-    // =================================================================
+    /* =====================================================================
+       Sequence execution engine
+       ---------------------------------------------------------------------
+       Runs through prompts in a sequence. For templates, show the template
+       modal; for normal prompts, copy their content. Execution stops either
+       when all prompts have run or when the user cancels a template.
+    */
     async function executeNextPromptInSequence(forceStop = false) {
-      if (forceStop || currentSequencePromptIndex >= activeSequencePrompts.length) {
-        return helpers.resetSequenceExecution();
-      }
-      const currentPrompt = activeSequencePrompts[currentSequencePromptIndex];
-      currentSequencePromptIndex++;
-      if (currentPrompt.isTemplate) {
-        await render.templateModal(currentPrompt.id, (isStopped) =>
-          executeNextPromptInSequence(isStopped)
-        );
-      } else {
-        await helpers.copyToClipboard(currentPrompt.content);
-        helpers.showToast(`'${currentPrompt.title}'가 복사되었습니다.`);
-        setTimeout(() => executeNextPromptInSequence(), 1200);
-      }
+        if (forceStop || currentSequencePromptIndex >= activeSequencePrompts.length) {
+            return helpers.resetSequenceExecution();
+        }
+        const currentPrompt = activeSequencePrompts[currentSequencePromptIndex];
+        currentSequencePromptIndex++;
+        if (currentPrompt.isTemplate) {
+            await render.templateModal(currentPrompt.id, (isStopped) => executeNextPromptInSequence(isStopped));
+        } else {
+            await helpers.copyToClipboard(currentPrompt.content);
+            helpers.showToast(`'${currentPrompt.title}'가 복사되었습니다.`);
+            setTimeout(() => executeNextPromptInSequence(), 1200);
+        }
     }
-
     async function startSequenceExecution(sequenceId) {
-      const sequence = await dbService.getById("sequences", sequenceId);
-      if (!sequence || !sequence.promptIds?.length)
-        return helpers.showToast("실행할 프롬프트가 없습니다.");
-
-      activeSequencePrompts = [];
-      for (const pid of sequence.promptIds) {
-        const p = await dbService.getById("prompts", pid);
-        if (p) activeSequencePrompts.push(p);
-      }
-
-      if (activeSequencePrompts.length === 0)
-        return helpers.showToast("실행할 유효한 프롬프트가 없습니다.");
-
-      currentSequencePromptIndex = 0;
-      uiElements.sequenceModal.overlay.classList.remove("show");
-      helpers.showToast(`'${sequence.name}' 시퀀스를 시작합니다.`);
-      helpers.logUsage("sequence_run", sequence.id, sequence.name);
-      await executeNextPromptInSequence();
+        const sequence = await dbService.getById('sequences', sequenceId);
+        if (!sequence || !sequence.promptIds?.length) return helpers.showToast('실행할 프롬프트가 없습니다.');
+        activeSequencePrompts = [];
+        for (const pid of sequence.promptIds) {
+            const p = await dbService.getById('prompts', pid);
+            if (p) activeSequencePrompts.push(p);
+        }
+        if (activeSequencePrompts.length === 0) return helpers.showToast('실행할 유효한 프롬프트가 없습니다.');
+        currentSequencePromptIndex = 0;
+        uiElements.sequenceModal.overlay.classList.remove('show');
+        helpers.showToast(`'${sequence.name}' 시퀀스를 시작합니다.`);
+        helpers.logUsage('sequence_run', sequence.id, sequence.name);
+        await executeNextPromptInSequence();
     }
 
-    // =================================================================
-    // 검색 인덱스 빌드
-    // =================================================================
+    /* =====================================================================
+       Search index builder
+       ---------------------------------------------------------------------
+       Builds a Fuse.js search index for prompts. Called whenever prompts
+       collection changes. The threshold determines how fuzzy matching works.
+    */
     function buildSearchIndex() {
-      fuse = new Fuse(state.prompts, {
-        keys: ["title", "content", "tags"],
-        includeScore: true,
-        threshold: 0.3,
-      });
+        fuse = new Fuse(state.prompts, { keys: ['title', 'content', 'tags'], includeScore: true, threshold: 0.3 });
     }
 
-    // =================================================================
-    // 앱 초기화 및 이벤트 리스너 설정
-    // =================================================================
-    function setupPromptsListener() {
-      const [field, direction] = state.currentSortOrder.split("_");
-      const firestoreField = field === "title" ? "updatedAt" : field;
-      const firestoreDirection = field === "title" ? "desc" : direction;
-
-      dbService.listenToCollection(
-        "prompts",
-        firestoreField,
-        firestoreDirection,
-        (data) => {
-          state.prompts = data;
-          if (state.currentSortOrder === "title_asc") {
-            state.prompts.sort((a, b) => a.title.localeCompare(b.title, "ko"));
-          }
-          buildSearchIndex();
-          if (
-            state.currentFilter.type !== "statistics" &&
-            state.currentFilter.type !== "history"
-          ) {
-            render.prompts();
-          }
-        }
-      );
-    }
-
-    function setupEventListeners() {
-      const setFilter = (type, id, name) => {
-        state.currentFilter = { type, id, name };
-        document.querySelectorAll(".sidebar .nav-item.active").forEach((el) =>
-          el.classList.remove("active")
-        );
-        const target = document.querySelector(
-          `.nav-item[data-filter-type="${type}"]` + (id ? `[data-folder-id="${id}"]` : "")
-        );
-        if (target) target.classList.add("active");
-
-        const isPromptListView = !["statistics", "history", "sequence"].includes(type);
-        uiElements.sortSelect.style.display = isPromptListView ? "block" : "none";
-        uiElements.searchInput.style.display = isPromptListView ? "block" : "none";
-
-        if (type === "statistics") render.statisticsDashboard();
-        else if (type === "history") render.usageHistory();
-        else render.prompts();
-      };
-
-      uiElements.contentView.addEventListener("click", async (e) => {
-        const promptItem = e.target.closest(".prompt-list-item");
-        const editorSaveBtn = e.target.closest(".save-btn");
-        const editorDeleteBtn = e.target.closest(".delete-btn");
-        const historyItem = e.target.closest(".history-item");
-
-        if (promptItem) {
-          const promptId = promptItem.dataset.promptId;
-          if (e.target.closest(".edit-btn")) return render.promptEditor(promptId);
-          if (e.target.closest(".copy-btn")) {
-            const p = await dbService.getById("prompts", promptId);
-            if (p) {
-              await helpers.copyToClipboard(p.content);
-              helpers.showToast("클립보드에 복사되었습니다!");
-              await dbService.update("prompts", promptId, {
-                usageCount: (p.usageCount || 0) + 1,
-              });
-              helpers.logUsage("prompt_copy", p.id, p.title, p.content);
-            }
-          } else if (e.target.closest(".use-btn")) return render.templateModal(promptId);
-          else if (e.target.closest(".fav-icon")) {
-            const p = await dbService.getById("prompts", promptId);
-            if (p) {
-              await dbService.update("prompts", promptId, {
-                isFavorite: !p.isFavorite,
-              });
-            }
-          } else if (e.target.closest(".prompt-info")) return render.promptEditor(promptId);
-          return;
-        }
-
-        if (editorSaveBtn) {
-          const id = editorSaveBtn.dataset.id || null;
-          let existingData = {};
-          if (id) existingData = (await dbService.getById("prompts", id)) || {};
-          const data = {
-            title: document.getElementById("title-input").value,
-            content: document.getElementById("content-input").value,
-            folderId: document.getElementById("folder-select").value || null,
-            tags: document
-              .getElementById("tags-input")
-              .value.split(",")
-              .map((t) => t.trim())
-              .filter(Boolean),
-            isTemplate: document.getElementById("is-template-checkbox").checked,
-            link: document.getElementById("link-input").value.trim(),
-            isFavorite: existingData.isFavorite || false,
-            usageCount: existingData.usageCount || 0,
-          };
-          const savedId = await dbService.put("prompts", { id, ...data });
-          helpers.showToast("저장되었습니다!");
-          await dbService.savePromptVersion(savedId, data.content, "수동 저장");
-          setFilter("all", null, "모든 항목");
-        }
-
-        if (editorDeleteBtn) {
-          const id = editorDeleteBtn.dataset.id;
-          if (await helpers.showConfirm("정말로 삭제하시겠습니까?")) {
-            await dbService.delete("prompts", id);
-            helpers.showToast("삭제되었습니다.");
-            setFilter("all", null, "모든 항목");
-          }
-        }
-
-        if (historyItem) {
-          const recordId = parseInt(historyItem.dataset.recordId, 10);
-          const itemId = historyItem.dataset.itemId;
-          const type = historyItem.dataset.type;
-
-          if (e.target.closest(".view-original-btn")) {
-            if (type === "sequence_run") render.sequenceEditor(itemId);
-            else render.promptEditor(itemId);
-          } else if (e.target.closest(".reuse-history-btn")) {
-            const record = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY, null, recordId);
-            if (!record) return helpers.showToast("기록을 찾을 수 없습니다.");
-
-            if (type === "prompt_copy") {
-              await helpers.copyToClipboard(record.content);
-              helpers.showToast("프롬프트가 클립보드에 복사되었습니다.");
-            } else if (type === "template_generate") {
-              await render.templateModal(itemId);
-              if (record.variablesUsed) {
-                for (const [key, value] of Object.entries(record.variablesUsed)) {
-                  const inputEl = uiElements.templateModal.body.querySelector(
-                    `textarea[data-placeholder="${key}"]`
-                  );
-                  if (inputEl) {
-                    inputEl.value = value;
-                    inputEl.dispatchEvent(new Event("input", { bubbles: true }));
-                  }
+    /* =====================================================================
+       Sidebar, focus trap and accessibility logic
+       ---------------------------------------------------------------------
+       Manage opening and closing of the sidebar on mobile. Implements body
+       scroll locking for iOS Safari by fixing body position and restoring
+       scroll. Adds keyboard and touch support (Escape key, backdrop click
+       and resize) and traps focus within the sidebar when open.
+    */
+    let sidebarOpen = false;
+    let previousFocusedElement = null;
+    let bodyScrollY = 0;
+    function trapFocus(container) {
+        const focusableSelectors = 'a[href], area[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), iframe, object, embed, [tabindex]:not([tabindex="-1"]), [contenteditable]';
+        const focusableEls = Array.from(container.querySelectorAll(focusableSelectors)).filter(el => el.offsetParent !== null);
+        const first = focusableEls[0];
+        const last = focusableEls[focusableEls.length - 1];
+        function handleFocus(e) {
+            if (e.key !== 'Tab') return;
+            if (e.shiftKey) {
+                if (document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
                 }
-              }
-            } else if (type === "sequence_run") {
-              startSequenceExecution(itemId);
+            } else {
+                if (document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
             }
-          }
-          return;
         }
-      });
-
-      uiElements.searchInput.addEventListener("input", () => render.prompts());
-      uiElements.newPromptBtn.addEventListener("click", () => render.promptEditor(null));
-      uiElements.newFolderBtn.addEventListener("click", async () => {
-        const name = prompt("새 폴더 이름을 입력하세요:");
-        if (name?.trim()) await dbService.put("folders", { name: name.trim() });
-      });
-      uiElements.newSequenceBtn.addEventListener("click", () => render.sequenceEditor(null));
-
-      uiElements.libraryList.addEventListener("click", (e) => {
-        const target = e.target.closest(".nav-item");
-        if (target) setFilter(target.dataset.filterType, null, target.textContent.trim());
-      });
-      uiElements.folderList.addEventListener("click", (e) => {
-        const editBtn = e.target.closest(".edit-folder-btn");
-        if (editBtn) {
-          e.stopPropagation();
-          const folderId = editBtn.dataset.folderId;
-          const currentName = editBtn.dataset.folderName;
-          const newName = prompt("새 폴더 이름을 입력하세요:", currentName);
-          if (newName && newName.trim() && newName.trim() !== currentName) {
-            dbService.update("folders", folderId, { name: newName.trim() });
-            helpers.showToast("폴더 이름이 변경되었습니다.");
-          }
-          return;
-        }
-        const target = e.target.closest(".nav-item");
-        if (target)
-          setFilter(
-            target.dataset.filterType === "uncategorized" ? "uncategorized" : "folder",
-            target.dataset.folderId,
-            target.querySelector(".folder-name")?.textContent.trim() || "미분류"
-          );
-      });
-      uiElements.folderList.addEventListener("mouseover", (e) => {
-        const item = e.target.closest('.nav-item[data-folder-id]');
-        if (item) item.querySelector('.edit-folder-btn').style.display = 'inline-block';
-      });
-      uiElements.folderList.addEventListener("mouseout", (e) => {
-        const item = e.target.closest('.nav-item[data-folder-id]');
-        if (item) item.querySelector('.edit-folder-btn').style.display = 'none';
-      });
-
-      uiElements.sequenceList.addEventListener("click", (e) => {
-        const target = e.target.closest(".nav-item");
-        if (target) render.sequenceEditor(target.dataset.seqId);
-      });
-
-      uiElements.sortSelect.addEventListener("change", (e) => {
-        state.currentSortOrder = e.target.value;
-        setupPromptsListener();
-      });
-
-      // === 햄버거/오프캔버스 이벤트 바인딩 ===
-      uiElements.mobileMenuToggle.onclick = toggleSidebar;
-      uiElements.sidebarCloseBtn.onclick = () => closeSidebar();
-      const _backdrop = document.getElementById("sidebar-backdrop");
-      if (_backdrop)
-        _backdrop.addEventListener("click", () => closeSidebar(), { passive: true });
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && uiElements.sidebar.classList.contains("open")) closeSidebar();
-      });
-      window.addEventListener(
-        "resize",
-        debounce(() => {
-          if (window.innerWidth > 768) closeSidebar();
-        }, 150)
-      );
+        container.addEventListener('keydown', handleFocus);
+        return () => {
+            container.removeEventListener('keydown', handleFocus);
+        };
     }
-
-    async function initializeAppLogic() {
-      await openIndexedDB();
-      uiElements.sidebarContent.style.display = "flex"; // 로그인 전에도 레이아웃 로드
-      uiElements.contentView.innerHTML = "<div class=\"content-placeholder\">데이터를 불러오는 중...</div>";
-
-      dbService.listenToCollection("folders", "updatedAt", "desc", (data) => {
-        state.folders = data;
-        render.folders();
-      });
-      dbService.listenToCollection("sequences", "updatedAt", "desc", (data) => {
-        state.sequences = data;
-        render.sequences();
-      });
-      setupPromptsListener();
-
-      setupEventListeners();
+    let releaseFocusTrap = null;
+    function openSidebar() {
+        if (sidebarOpen) return;
+        previousFocusedElement = document.activeElement;
+        sidebarOpen = true;
+        uiElements.sidebar.classList.add('open');
+        uiElements.sidebar.setAttribute('aria-hidden', 'false');
+        uiElements.mobileMenuToggle.setAttribute('aria-expanded', 'true');
+        uiElements.sidebarBackdrop.style.display = 'block';
+        uiElements.sidebarCloseBtn.style.display = 'block';
+        // Lock body scroll by fixing position and storing scrollY
+        bodyScrollY = window.pageYOffset || document.documentElement.scrollTop;
+        document.body.style.top = `-${bodyScrollY}px`;
+        document.body.style.position = 'fixed';
+        document.body.style.width = '100%';
+        document.body.classList.add('no-scroll');
+        releaseFocusTrap = trapFocus(uiElements.sidebar);
+        uiElements.sidebar.focus();
     }
-
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        currentUser = user;
-        uiElements.loginBtn.style.display = "none";
-        uiElements.userProfile.style.display = "flex";
-        uiElements.userEmail.textContent = user.displayName || user.email;
-        uiElements.userPhoto.src = user.photoURL || `https://via.placeholder.com/32`;
-        initializeAppLogic();
-      } else {
-        Object.values(unsubscribeListeners).forEach((unsub) => unsub());
-        unsubscribeListeners = {};
-        currentUser = null;
-        uiElements.loginBtn.style.display = "block";
-        uiElements.userProfile.style.display = "none";
-        uiElements.sidebarContent.style.display = "none";
-        uiElements.contentView.innerHTML = '<div class="content-placeholder">로그인해주세요.</div>';
-        closeSidebar(); // 로그아웃 시 열려 있으면 닫기
-      }
+    function closeSidebar() {
+        if (!sidebarOpen) return;
+        sidebarOpen = false;
+        uiElements.sidebar.classList.remove('open');
+        uiElements.sidebar.setAttribute('aria-hidden', 'true');
+        uiElements.mobileMenuToggle.setAttribute('aria-expanded', 'false');
+        uiElements.sidebarBackdrop.style.display = 'none';
+        uiElements.sidebarCloseBtn.style.display = 'none';
+        document.body.classList.remove('no-scroll');
+        document.body.style.position = '';
+        document.body.style.top = '';
+        document.body.style.width = '';
+        window.scrollTo(0, bodyScrollY);
+        if (releaseFocusTrap) releaseFocusTrap();
+        if (previousFocusedElement) previousFocusedElement.focus();
+    }
+    function toggleSidebar() {
+        sidebarOpen ? closeSidebar() : openSidebar();
+    }
+    // Bind mobile toggle button to click and touchstart for responsiveness
+    uiElements.mobileMenuToggle.addEventListener('click', (e) => { e.preventDefault(); toggleSidebar(); });
+    uiElements.mobileMenuToggle.addEventListener('touchstart', (e) => { e.preventDefault(); toggleSidebar(); });
+    // Bind sidebar close button
+    uiElements.sidebarCloseBtn.addEventListener('click', () => closeSidebar());
+    uiElements.sidebarCloseBtn.addEventListener('touchstart', () => closeSidebar());
+    // Click on backdrop closes sidebar
+    uiElements.sidebarBackdrop.addEventListener('click', () => closeSidebar());
+    // Escape key closes sidebar
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sidebarOpen) closeSidebar();
+    });
+    // On resize to desktop, close sidebar if open
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 768 && sidebarOpen) closeSidebar();
     });
 
-    uiElements.loginBtn.addEventListener("click", () => signInWithPopup(auth, new GoogleAuthProvider()));
-    uiElements.logoutBtn.addEventListener("click", () => signOut(auth));
-  </script>
+    /* =====================================================================
+       Event binding and application initialization
+       ---------------------------------------------------------------------
+       Attaches listeners to UI elements for CRUD operations and interactions.
+       When the user logs in, Firestore listeners are set up. The ordering of
+       listeners ensures user actions are handled after DOM is ready.
+    */
+    function setupPromptsListener() {
+        const [field, direction] = state.currentSortOrder.split('_');
+        const firestoreField = (field === 'title') ? 'updatedAt' : field;
+        const firestoreDirection = (field === 'title') ? 'desc' : direction;
+        dbService.listenToCollection('prompts', firestoreField, firestoreDirection, (data) => {
+            state.prompts = data;
+            if (state.currentSortOrder === 'title_asc') {
+                state.prompts.sort((a, b) => a.title.localeCompare(b.title, 'ko'));
+            }
+            buildSearchIndex();
+            if (state.currentFilter.type !== 'statistics' && state.currentFilter.type !== 'history') {
+                render.prompts();
+            }
+        });
+    }
+    function setupEventListeners() {
+        const setFilter = (type, id, name) => {
+            state.currentFilter = { type, id, name };
+            document.querySelectorAll('.sidebar .nav-item.active').forEach(el => el.classList.remove('active'));
+            const target = document.querySelector(`.nav-item[data-filter-type="${type}"]` + (id ? `[data-folder-id="${id}"]` : ''));
+            if(target) target.classList.add('active');
+            const isPromptListView = !['statistics', 'history', 'sequence'].includes(type);
+            uiElements.sortSelect.style.display = isPromptListView ? 'block' : 'none';
+            uiElements.searchInput.style.display = isPromptListView ? 'block' : 'none';
+            if (type === 'statistics') render.statisticsDashboard();
+            else if (type === 'history') render.usageHistory();
+            else render.prompts();
+        };
+        uiElements.contentView.addEventListener('click', async (e) => {
+            const promptItem = e.target.closest('.prompt-list-item');
+            const editorSaveBtn = e.target.closest('.save-btn');
+            const editorDeleteBtn = e.target.closest('.delete-btn');
+            const historyItem = e.target.closest('.history-item');
+            if (promptItem) {
+                const promptId = promptItem.dataset.promptId;
+                if (e.target.closest('.edit-btn')) return render.promptEditor(promptId);
+                if (e.target.closest('.copy-btn')) {
+                    const p = await dbService.getById('prompts', promptId);
+                    if(p) { 
+                        await helpers.copyToClipboard(p.content); 
+                        helpers.showToast('클립보드에 복사되었습니다!'); 
+                        await dbService.update('prompts', promptId, { usageCount: (p.usageCount || 0) + 1 });
+                        helpers.logUsage('prompt_copy', p.id, p.title, p.content);
+                    }
+                }
+                else if (e.target.closest('.use-btn')) return render.templateModal(promptId);
+                else if (e.target.closest('.fav-icon')) {
+                    const p = await dbService.getById('prompts', promptId);
+                    if(p) { await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite }); }
+                }
+                else if (e.target.closest('.prompt-info')) return render.promptEditor(promptId);
+                return;
+            }
+            if (editorSaveBtn) {
+                const id = editorSaveBtn.dataset.id || null;
+                let existingData = {};
+                if(id) existingData = await dbService.getById('prompts', id) || {};
+                const data = {
+                    title: document.getElementById('title-input').value,
+                    content: document.getElementById('content-input').value,
+                    folderId: document.getElementById('folder-select').value || null,
+                    tags: document.getElementById('tags-input').value.split(',').map(t => t.trim()).filter(Boolean),
+                    isTemplate: document.getElementById('is-template-checkbox').checked,
+                    link: document.getElementById('link-input').value.trim(),
+                    isFavorite: existingData.isFavorite || false,
+                    usageCount: existingData.usageCount || 0,
+                };
+                const savedId = await dbService.put('prompts', { id, ...data });
+                helpers.showToast('저장되었습니다!');
+                await dbService.savePromptVersion(savedId, data.content, '수동 저장');
+                setFilter('all', null, '모든 항목');
+            }
+            if (editorDeleteBtn) {
+                const id = editorDeleteBtn.dataset.id;
+                if (await helpers.showConfirm('정말로 삭제하시겠습니까?')) {
+                    await dbService.delete('prompts', id);
+                    helpers.showToast('삭제되었습니다.');
+                    setFilter('all', null, '모든 항목');
+                }
+            }
+            if (historyItem) {
+                const recordId = parseInt(historyItem.dataset.recordId, 10);
+                const itemId = historyItem.dataset.itemId;
+                const type = historyItem.dataset.type;
+                if (e.target.closest('.view-original-btn')) {
+                    if (type === 'sequence_run') render.sequenceEditor(itemId);
+                    else render.promptEditor(itemId);
+                } else if (e.target.closest('.reuse-history-btn')) {
+                    const record = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY, null, recordId);
+                    if (!record) return helpers.showToast('기록을 찾을 수 없습니다.');
+                    if (type === 'prompt_copy') {
+                        await helpers.copyToClipboard(record.content);
+                        helpers.showToast('프롬프트가 클립보드에 복사되었습니다.');
+                    } else if (type === 'template_generate') {
+                        await render.templateModal(itemId);
+                        if (record.variablesUsed) {
+                            for (const [key, value] of Object.entries(record.variablesUsed)) {
+                                const inputEl = uiElements.templateModal.body.querySelector(`textarea[data-placeholder="${key}"]`);
+                                if (inputEl) {
+                                    inputEl.value = value;
+                                    inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+                                }
+                            }
+                        }
+                    } else if (type === 'sequence_run') {
+                        startSequenceExecution(itemId);
+                    }
+                }
+                return;
+            }
+        });
+        uiElements.searchInput.addEventListener('input', () => render.prompts());
+        uiElements.newPromptBtn.addEventListener('click', () => render.promptEditor(null));
+        uiElements.newFolderBtn.addEventListener('click', async () => {
+            const name = prompt('새 폴더 이름을 입력하세요:');
+            if (name?.trim()) await dbService.put('folders', { name: name.trim() });
+        });
+        uiElements.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null));
+        uiElements.libraryList.addEventListener('click', (e) => {
+            const target = e.target.closest('.nav-item');
+            if(target) setFilter(target.dataset.filterType, null, target.textContent.trim());
+        });
+        uiElements.folderList.addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.edit-folder-btn');
+            if (editBtn) {
+                e.stopPropagation();
+                const folderId = editBtn.dataset.folderId;
+                const currentName = editBtn.dataset.folderName;
+                const newName = prompt('새 폴더 이름을 입력하세요:', currentName);
+                if (newName && newName.trim() && newName.trim() !== currentName) {
+                    dbService.update('folders', folderId, { name: newName.trim() });
+                    helpers.showToast('폴더 이름이 변경되었습니다.');
+                }
+                return;
+            }
+            const target = e.target.closest('.nav-item');
+            if(target) setFilter(target.dataset.filterType === 'uncategorized' ? 'uncategorized' : 'folder', target.dataset.folderId, target.querySelector('.folder-name')?.textContent.trim() || '미분류');
+        });
+        uiElements.folderList.addEventListener('mouseover', (e) => {
+            const item = e.target.closest('.nav-item[data-folder-id]');
+            if (item) item.querySelector('.edit-folder-btn').style.display = 'inline-block';
+        });
+        uiElements.folderList.addEventListener('mouseout', (e) => {
+            const item = e.target.closest('.nav-item[data-folder-id]');
+            if (item) item.querySelector('.edit-folder-btn').style.display = 'none';
+        });
+        uiElements.sequenceList.addEventListener('click', (e) => {
+            const target = e.target.closest('.nav-item');
+            if(target) render.sequenceEditor(target.dataset.seqId);
+        });
+        uiElements.sortSelect.addEventListener('change', (e) => {
+            state.currentSortOrder = e.target.value;
+            setupPromptsListener();
+        });
+        uiElements.sequenceModal.saveBtn.onclick = async () => {
+            const id = uiElements.sequenceModal.saveBtn.dataset.id || null;
+            const data = {
+                name: document.getElementById('sequence-name-input').value,
+                description: document.getElementById('sequence-description-input').value,
+                promptIds: Array.from(document.getElementById('sequence-sortable-list').children).map(item => item.dataset.promptId)
+            };
+            if (!data.name.trim()) return helpers.showToast('시퀀스 이름을 입력해주세요.');
+            await dbService.put('sequences', { id, ...data });
+            helpers.showToast('시퀀스가 저장되었습니다.');
+            uiElements.sequenceModal.overlay.classList.remove('show');
+        };
+        uiElements.sequenceModal.runBtn.onclick = () => startSequenceExecution(uiElements.sequenceModal.runBtn.dataset.id);
+        uiElements.sequenceModal.deleteBtn.onclick = async () => {
+            const id = uiElements.sequenceModal.deleteBtn.dataset.id;
+            if (await helpers.showConfirm('이 시퀀스를 삭제하시겠습니까?')) {
+                await dbService.delete('sequences', id);
+                helpers.showToast('삭제되었습니다.');
+                uiElements.sequenceModal.overlay.classList.remove('show');
+            }
+        };
+        uiElements.sequenceModal.closeBtn.onclick = () => uiElements.sequenceModal.overlay.classList.remove('show');
+        uiElements.exportDataBtn.onclick = async () => {
+            const data = { prompts: state.prompts, folders: state.folders, sequences: state.sequences };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `prompt_manager_backup_${new Date().toISOString().slice(0,10)}.json`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        };
+        uiElements.importDataBtn.onclick = () => uiElements.importDataInput.click();
+        uiElements.importDataInput.onchange = async (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+            const text = await file.text();
+            const data = JSON.parse(text);
+            if (await helpers.showConfirm('데이터를 가져옵니다. 기존 데이터를 모두 삭제할까요?')) {
+                await Promise.all([
+                    ...state.prompts.map(p => dbService.delete('prompts', p.id)),
+                    ...state.folders.map(f => dbService.delete('folders', f.id)),
+                    ...state.sequences.map(s => dbService.delete('sequences', s.id)),
+                ]);
+            }
+            if (data.folders) await Promise.all(data.folders.map(f => dbService.put('folders', { ...f, id: null })));
+            if (data.prompts) await Promise.all(data.prompts.map(p => dbService.put('prompts', { ...p, id: null })));
+            if (data.sequences) await Promise.all(data.sequences.map(s => dbService.put('sequences', { ...s, id: null })));
+            helpers.showToast('데이터 가져오기 완료!');
+        };
+    }
+    async function initializeAppLogic() {
+        await openIndexedDB();
+        uiElements.sidebarContent.style.display = 'flex';
+        uiElements.contentView.innerHTML = '<div class="content-placeholder">데이터를 불러오는 중...</div>';
+        dbService.listenToCollection('folders', 'updatedAt', 'desc', (data) => { state.folders = data; render.folders(); });
+        dbService.listenToCollection('sequences', 'updatedAt', 'desc', (data) => { state.sequences = data; render.sequences(); });
+        setupPromptsListener();
+        setupEventListeners();
+    }
+    onAuthStateChanged(auth, async user => {
+        if (user) {
+            currentUser = user;
+            uiElements.loginBtn.style.display = 'none';
+            uiElements.userProfile.style.display = 'flex';
+            uiElements.userEmail.textContent = user.displayName || user.email;
+            uiElements.userPhoto.src = user.photoURL || `https://via.placeholder.com/32`;
+            initializeAppLogic();
+        } else {
+            Object.values(unsubscribeListeners).forEach(unsub => unsub());
+            unsubscribeListeners = {};
+            currentUser = null;
+            uiElements.loginBtn.style.display = 'block';
+            uiElements.userProfile.style.display = 'none';
+            uiElements.sidebarContent.style.display = 'none';
+            uiElements.contentView.innerHTML = '<div class="content-placeholder">로그인해주세요.</div>';
+        }
+    });
+    uiElements.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
+    uiElements.logoutBtn.addEventListener('click', () => signOut(auth));
+</script>
 </body>
 </html>
