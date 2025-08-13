@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>프롬프트 관리자 프로 (m)</title>
+    <title>Prompt_manager</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" xintegrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
@@ -48,7 +48,7 @@
         .button-like:hover { background-color: var(--bg-hover); }
 
         .sidebar {
-            width: var(--sidebar-width); background-color: var(--bg-secondary); display: flex; flex-direction: column; flex-shrink: 0; height: 100%; transition: transform 0.3s ease-in-out; z-index: 1000;
+            width: var(--sidebar-width); background-color: var(--bg-secondary); display: flex; flex-direction: column; flex-shrink: 0; height: 100%; transition: transform 0.3s ease-in-out; z-index: 1000; position: relative;
         }
         .sidebar-content {
             display: flex; flex-direction: column; flex-grow: 1; overflow-y: auto; min-height: 0;
@@ -166,14 +166,45 @@
 
         .toast { position: fixed; bottom: 20px; right: 20px; background-color: var(--bg-tertiary); color: var(--text-primary); padding: 12px 20px; border-radius: 6px; border-left: 4px solid var(--accent-blue); opacity: 0; visibility: hidden; transition: all .3s; transform: translateY(20px); z-index: 2000; }
         .toast.show { opacity: 1; visibility: visible; transform: translateY(0); }
+        
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease-in-out, visibility 0.3s ease-in-out;
+        }
+        .sidebar-overlay.show {
+            opacity: 1;
+            visibility: visible;
+        }
 
+        #sidebar-close-btn {
+            display: none; /* 평소에는 숨김 */
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.5rem;
+            z-index: 1001;
+            cursor: pointer;
+        }
+        
         @media (max-width: 768px) {
-            .sidebar { position: fixed; transform: translateX(-100%); width: 250px; }
+            .sidebar { position: fixed; transform: translateX(-100%); width: 280px; }
             .sidebar.open { transform: translateX(0); }
-            #mobile-menu-toggle { display: block; background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; }
+            .sidebar.open #sidebar-close-btn { display: block; }
+            #mobile-menu-toggle { display: block; background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; }
             .main-header { flex-wrap: wrap; height: auto; padding: 10px 16px; justify-content: flex-start; }
             .main-header h1 { flex-grow: 1; }
-            .header-controls { width: 100%; order: 2; margin-top: 10px; flex-direction: column; gap: 10px; }
+            .header-controls { width: 100%; order: 2; margin-top: 10px; flex-direction: column; gap: 10px; align-items: stretch; }
             .search-input { width: 100%; }
             .prompt-list-item { flex-wrap: wrap; }
             .prompt-actions { width: 100%; justify-content: flex-end; margin-top: 10px; }
@@ -182,6 +213,7 @@
 </head>
 <body>
     <aside class="sidebar" id="sidebar">
+        <button id="sidebar-close-btn"><i class="fa-solid fa-times"></i></button>
         <div id="auth-section">
             <button id="login-btn"><i class="fa-brands fa-google"></i> Google 계정으로 로그인</button>
             <div id="user-profile">
@@ -211,14 +243,15 @@
                 <button id="new-sequence-btn" class="new-folder-btn"><i class="fa-solid fa-layer-group"></i> 새 시퀀스</button>
             </nav>
             <div id="data-management-section">
-                 <h3 class="nav-section-title" style="padding: 0;">데이터 관리</h3>
-                 <button id="export-data-btn" class="button-like">데이터 내보내기</button>
-                 <input type="file" id="import-data-input" accept=".json" style="display: none;">
-                 <button id="import-data-btn" class="button-like">데이터 가져오기</button>
+                <h3 class="nav-section-title" style="padding: 0;">데이터 관리</h3>
+                <button id="export-data-btn" class="button-like">데이터 내보내기</button>
+                <input type="file" id="import-data-input" accept=".json" style="display: none;">
+                <button id="import-data-btn" class="button-like">데이터 가져오기</button>
             </div>
         </div>
-        <button id="sidebar-close-btn" style="display: none;"><i class="fa-solid fa-times"></i></button>
     </aside>
+
+    <div class="sidebar-overlay" id="sidebar-overlay"></div>
 
     <main class="main-content">
         <header class="main-header">
@@ -431,6 +464,7 @@
         sidebar: document.getElementById('sidebar'),
         mobileMenuToggle: document.getElementById('mobile-menu-toggle'),
         sidebarCloseBtn: document.getElementById('sidebar-close-btn'),
+        sidebarOverlay: document.getElementById('sidebar-overlay'), 
         sequenceList: document.getElementById('sequence-list'),
         newSequenceBtn: document.getElementById('new-sequence-btn'),
         dataMgmtSection: document.getElementById('data-management-section'),
@@ -881,6 +915,7 @@
             setTimeout(() => uiElements.toast.classList.remove('show'), 3000);
         },
         escapeHTML: (str) => {
+            if (typeof str !== 'string') return '';
             const p = document.createElement('p');
             p.textContent = str;
             return p.innerHTML;
@@ -954,9 +989,9 @@
             await putIntoIndexedDB(CACHE_STORE_USAGE_HISTORY, record);
 
             const allRecords = await getFromIndexedDB(CACHE_STORE_USAGE_HISTORY);
-            if (allRecords.length > 20) {
+            if (allRecords.length > 50) { // Keep last 50 records
                 allRecords.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-                const recordsToDelete = allRecords.slice(0, allRecords.length - 20);
+                const recordsToDelete = allRecords.slice(0, allRecords.length - 50);
                 for (const rec of recordsToDelete) {
                     await deleteFromIndexedDB(CACHE_STORE_USAGE_HISTORY, rec.id);
                 }
@@ -1028,6 +1063,19 @@
         });
     }
 
+    // 사이드바 열기/닫기 함수
+    const openSidebar = () => {
+        uiElements.sidebar.classList.add('open');
+        uiElements.sidebarOverlay.classList.add('show');
+        document.body.classList.add('no-scroll');
+    };
+
+    const closeSidebar = () => {
+        uiElements.sidebar.classList.remove('open');
+        uiElements.sidebarOverlay.classList.remove('show');
+        document.body.classList.remove('no-scroll');
+    };
+
     function setupEventListeners() {
         const setFilter = (type, id, name) => {
             state.currentFilter = { type, id, name };
@@ -1042,6 +1090,11 @@
             if (type === 'statistics') render.statisticsDashboard();
             else if (type === 'history') render.usageHistory();
             else render.prompts();
+            
+            // 모바일에서 메뉴 아이템 클릭 시 사이드바 닫기
+            if (window.innerWidth <= 768) {
+                closeSidebar();
+            }
         };
 
         uiElements.contentView.addEventListener('click', async (e) => {
@@ -1135,12 +1188,18 @@
         });
         
         uiElements.searchInput.addEventListener('input', () => render.prompts());
-        uiElements.newPromptBtn.addEventListener('click', () => render.promptEditor(null));
+        uiElements.newPromptBtn.addEventListener('click', () => {
+            render.promptEditor(null);
+            if (window.innerWidth <= 768) closeSidebar();
+        });
         uiElements.newFolderBtn.addEventListener('click', async () => {
             const name = prompt('새 폴더 이름을 입력하세요:');
             if (name?.trim()) await dbService.put('folders', { name: name.trim() });
         });
-        uiElements.newSequenceBtn.addEventListener('click', () => render.sequenceEditor(null));
+        uiElements.newSequenceBtn.addEventListener('click', () => {
+            render.sequenceEditor(null);
+            if (window.innerWidth <= 768) closeSidebar();
+        });
         
         uiElements.libraryList.addEventListener('click', (e) => {
             const target = e.target.closest('.nav-item');
@@ -1160,7 +1219,12 @@
                 return;
             }
             const target = e.target.closest('.nav-item');
-            if(target) setFilter(target.dataset.filterType === 'uncategorized' ? 'uncategorized' : 'folder', target.dataset.folderId, target.querySelector('.folder-name')?.textContent.trim() || '미분류');
+            if(target) {
+                const filterType = target.dataset.filterType === 'uncategorized' ? 'uncategorized' : 'folder';
+                const folderId = target.dataset.folderId;
+                const name = target.querySelector('.folder-name')?.textContent.trim() || '미분류';
+                setFilter(filterType, folderId, name);
+            }
         });
         uiElements.folderList.addEventListener('mouseover', (e) => {
             const item = e.target.closest('.nav-item[data-folder-id]');
@@ -1173,7 +1237,10 @@
 
         uiElements.sequenceList.addEventListener('click', (e) => {
             const target = e.target.closest('.nav-item');
-            if(target) render.sequenceEditor(target.dataset.seqId);
+            if(target) {
+                render.sequenceEditor(target.dataset.seqId);
+                if (window.innerWidth <= 768) closeSidebar();
+            }
         });
 
         uiElements.sortSelect.addEventListener('change', (e) => {
@@ -1217,24 +1284,31 @@
         uiElements.importDataInput.onchange = async (e) => {
             const file = e.target.files[0];
             if (!file) return;
-            const text = await file.text();
-            const data = JSON.parse(text);
-            if (await helpers.showConfirm('데이터를 가져옵니다. 기존 데이터를 모두 삭제할까요?')) {
-                await Promise.all([
-                    ...state.prompts.map(p => dbService.delete('prompts', p.id)),
-                    ...state.folders.map(f => dbService.delete('folders', f.id)),
-                    ...state.sequences.map(s => dbService.delete('sequences', s.id)),
-                ]);
+            try {
+                const text = await file.text();
+                const data = JSON.parse(text);
+                if (await helpers.showConfirm('데이터를 가져옵니다. 기존 데이터를 모두 삭제할까요? (이 작업은 되돌릴 수 없습니다)')) {
+                    await Promise.all([
+                        ...state.prompts.map(p => dbService.delete('prompts', p.id)),
+                        ...state.folders.map(f => dbService.delete('folders', f.id)),
+                        ...state.sequences.map(s => dbService.delete('sequences', s.id)),
+                    ]);
+                }
+                if (data.folders) await Promise.all(data.folders.map(f => dbService.put('folders', { ...f, id: null })));
+                if (data.prompts) await Promise.all(data.prompts.map(p => dbService.put('prompts', { ...p, id: null })));
+                if (data.sequences) await Promise.all(data.sequences.map(s => dbService.put('sequences', { ...s, id: null })));
+                helpers.showToast('데이터 가져오기 완료!');
+            } catch (err) {
+                helpers.showToast('데이터 가져오기 실패. 파일 형식을 확인해주세요.');
+                console.error("Import error:", err);
             }
-            if (data.folders) await Promise.all(data.folders.map(f => dbService.put('folders', { ...f, id: null })));
-            if (data.prompts) await Promise.all(data.prompts.map(p => dbService.put('prompts', { ...p, id: null })));
-            if (data.sequences) await Promise.all(data.sequences.map(s => dbService.put('sequences', { ...s, id: null })));
-            helpers.showToast('데이터 가져오기 완료!');
+            e.target.value = ''; // Reset file input
         };
-        
-        uiElements.mobileMenuToggle.onclick = () => uiElements.sidebar.classList.toggle('open');
-        uiElements.sidebarCloseBtn.onclick = () => uiElements.sidebar.classList.remove('open');
 
+        // 사이드바 토글 이벤트 리스너
+        uiElements.mobileMenuToggle.addEventListener('click', openSidebar);
+        uiElements.sidebarCloseBtn.addEventListener('click', closeSidebar);
+        uiElements.sidebarOverlay.addEventListener('click', closeSidebar);
     }
 
     async function initializeAppLogic() {
@@ -1242,7 +1316,7 @@
         uiElements.sidebarContent.style.display = 'flex';
         uiElements.contentView.innerHTML = '<div class="content-placeholder">데이터를 불러오는 중...</div>';
 
-        dbService.listenToCollection('folders', 'updatedAt', 'desc', (data) => { state.folders = data; render.folders(); });
+        dbService.listenToCollection('folders', 'name', 'asc', (data) => { state.folders = data; render.folders(); });
         dbService.listenToCollection('sequences', 'updatedAt', 'desc', (data) => { state.sequences = data; render.sequences(); });
         setupPromptsListener();
         
@@ -1264,12 +1338,18 @@
             uiElements.loginBtn.style.display = 'block';
             uiElements.userProfile.style.display = 'none';
             uiElements.sidebarContent.style.display = 'none';
-            uiElements.contentView.innerHTML = '<div class="content-placeholder">로그인해주세요.</div>';
+            uiElements.contentView.innerHTML = '<div class="content-placeholder">프롬프트를 관리하려면 로그인해주세요.</div>';
+            closeSidebar();
         }
     });
 
-    uiElements.loginBtn.addEventListener('click', () => signInWithPopup(auth, new GoogleAuthProvider()));
-    uiElements.logoutBtn.addEventListener('click', () => signOut(auth));
+    // 로그인/로그아웃 버튼
+    uiElements.loginBtn.onclick = () => {
+        const provider = new GoogleAuthProvider();
+        signInWithPopup(auth, provider).catch(error => console.error("Login failed:", error));
+    };
+    uiElements.logoutBtn.onclick = () => signOut(auth);
+
 </script>
 </body>
 </html>
