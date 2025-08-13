@@ -17,6 +17,13 @@
             --border-color: #3c4043; --sidebar-width: 280px; --header-height: 64px;
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        /* --- ✨ 미려한 스크롤바 스타일링 ✨ --- */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: var(--bg-primary); }
+        ::-webkit-scrollbar-thumb { background-color: var(--bg-tertiary); border-radius: 4px; border: 2px solid var(--bg-primary); }
+        ::-webkit-scrollbar-thumb:hover { background-color: var(--bg-hover); }
+
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; background-color: var(--bg-primary); color: var(--text-primary); display: flex; height: 100vh; overflow: hidden; }
         body.no-scroll { overflow: hidden; }
         button, input, textarea, select { font-family: inherit; }
@@ -73,7 +80,7 @@
         .form-group { margin-bottom: 24px; }
         .form-group label { display: block; font-size: .9rem; color: var(--text-secondary); margin-bottom: 8px; }
         .form-group input, .form-group textarea, .form-group select { width: 100%; background-color: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-primary); padding: 12px; font-size: 1rem; }
-        .form-group textarea { height: 300px; resize: vertical; }
+        .form-group textarea { min-height: 120px; resize: vertical; }
         .is-template-toggle { display: flex; align-items: center; gap: 10px; margin-top: 16px; font-size: .9rem; }
         .file-upload-section { display: flex; align-items: center; margin-top: 10px; gap: 10px; }
         .file-upload-section .button-like { padding: 8px 12px; font-size: 0.85rem; }
@@ -84,11 +91,11 @@
         .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
         .modal-header h3 { color: var(--accent-blue); }
         .modal-header .close-btn { background: none; border: none; color: var(--text-secondary); font-size: 1.5rem; cursor: pointer; }
-        .modal-body { max-height: 60vh; overflow-y: auto; }
+        .modal-body { max-height: 60vh; overflow-y: auto; padding-right: 8px; }
         .modal-preview { background-color: var(--bg-primary); padding: 12px; border-radius: 4px; margin-top: 16px; white-space: pre-wrap; font-family: monospace; max-height: 150px; overflow-y: auto; }
         .modal-footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 24px; }
         .modal-footer .generate-btn { background-color: var(--accent-blue); color: var(--bg-primary); border: none; }
-        #template-modal-overlay .form-group textarea { height: auto; min-height: 40px; }
+        #template-modal-overlay .form-group textarea { min-height: 40px; }
         #sequence-modal-overlay .modal-content { max-width: 700px; }
         #sequence-modal-overlay .modal-footer { justify-content: space-between; }
         .sequence-sortable-list { min-height: 100px; border: 1px dashed var(--border-color); border-radius: 8px; padding: 10px; background-color: var(--bg-primary); display: flex; flex-direction: column; gap: 8px; max-height: 250px; overflow-y: auto; }
@@ -259,80 +266,8 @@
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const dbFirestore = getFirestore(app);
-    let currentUser = null;
     let unsubscribeListeners = {};
 
-    // =================================================================
-    // IndexedDB 설정
-    // =================================================================
-    const INDEXEDDB_NAME = 'PromptManagerCacheDB';
-    const INDEXEDDB_VERSION = 5;
-    const CACHE_STORE_PROMPTS = 'cachedPrompts';
-    const CACHE_STORE_FOLDERS = 'cachedFolders';
-    const CACHE_STORE_VERSIONS = 'promptVersions';
-    const CACHE_STORE_SEQUENCES = 'cachedSequences';
-    const CACHE_STORE_USAGE_HISTORY = 'usageHistory';
-
-    let indexedDbInstance;
-
-    function openIndexedDB() {
-        return new Promise((resolve, reject) => {
-            const request = indexedDB.open(INDEXEDDB_NAME, INDEXEDDB_VERSION);
-            request.onupgradeneeded = (event) => {
-                const db = event.target.result;
-                if (!db.objectStoreNames.contains(CACHE_STORE_PROMPTS)) db.createObjectStore(CACHE_STORE_PROMPTS, { keyPath: 'id' });
-                if (!db.objectStoreNames.contains(CACHE_STORE_FOLDERS)) db.createObjectStore(CACHE_STORE_FOLDERS, { keyPath: 'id' });
-                if (!db.objectStoreNames.contains(CACHE_STORE_VERSIONS)) {
-                    const vs = db.createObjectStore(CACHE_STORE_VERSIONS, { keyPath: 'id', autoIncrement: true });
-                    vs.createIndex('promptId', 'promptId', { unique: false });
-                }
-                if (!db.objectStoreNames.contains(CACHE_STORE_SEQUENCES)) db.createObjectStore(CACHE_STORE_SEQUENCES, { keyPath: 'id' });
-                if (!db.objectStoreNames.contains(CACHE_STORE_USAGE_HISTORY)) {
-                    const hs = db.createObjectStore(CACHE_STORE_USAGE_HISTORY, { keyPath: 'id', autoIncrement: true });
-                    hs.createIndex('timestamp', 'timestamp', { unique: false });
-                }
-            };
-            request.onsuccess = (event) => {
-                indexedDbInstance = event.target.result;
-                resolve(indexedDbInstance);
-            };
-            request.onerror = (event) => reject(event.target.errorCode);
-        });
-    }
-
-    async function getFromIndexedDB(storeName, key) {
-        if (!indexedDbInstance) await openIndexedDB();
-        return new Promise((resolve, reject) => {
-            const tx = indexedDbInstance.transaction([storeName], 'readonly');
-            const store = tx.objectStore(storeName);
-            const request = key ? store.get(key) : store.getAll();
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = (event) => reject(event.target.error);
-        });
-    }
-
-    async function putIntoIndexedDB(storeName, data) {
-        if (!indexedDbInstance) await openIndexedDB();
-        const tx = indexedDbInstance.transaction([storeName], 'readwrite');
-        const store = tx.objectStore(storeName);
-        return new Promise((resolve, reject) => {
-            const request = store.put(data);
-            request.onsuccess = () => resolve(request.result);
-            request.onerror = (event) => reject(event.target.error);
-        });
-    }
-
-    async function deleteFromIndexedDB(storeName, id) {
-        if (!indexedDbInstance) await openIndexedDB();
-        const tx = indexedDbInstance.transaction([storeName], 'readwrite');
-        const store = tx.objectStore(storeName);
-        return new Promise((resolve, reject) => {
-            const request = store.delete(id);
-            request.onsuccess = () => resolve();
-            request.onerror = (event) => reject(event.target.error);
-        });
-    }
-    
     // =================================================================
     // UI 요소
     // =================================================================
@@ -382,20 +317,12 @@
     // =================================================================
     // 상태 관리 및 셀렉터 (State Management & Selectors)
     // =================================================================
-    
-    /**
-     * Memoization helper: Caches the result of a function based on its arguments.
-     * A mathematical function always produces the same output for the same input.
-     * This helper ensures our 'derived set' functions behave similarly, avoiding re-computation.
-     */
     const memoize = (fn) => {
         let lastArgs = null;
         let lastResult = null;
         return (...args) => {
             const argsStr = JSON.stringify(args);
-            if (argsStr === lastArgs) {
-                return lastResult;
-            }
+            if (argsStr === lastArgs) return lastResult;
             lastResult = fn(...args);
             lastArgs = argsStr;
             return lastResult;
@@ -404,7 +331,7 @@
 
     const state = {
         currentUser: null,
-        prompts: new Map(), // Use Map for O(1) lookups
+        prompts: new Map(),
         folders: new Map(),
         sequences: new Map(),
         currentFilter: { type: 'all', id: null, name: '모든 항목' },
@@ -413,16 +340,11 @@
     };
 
     let fuse = null;
+    let sequenceSortableInstance = null;
 
     const selectors = {
-        /**
-         * Memoized selector to get the filtered set of prompts.
-         * This is the first layer of set operations: intersection with filter criteria and search results.
-         */
         getFilteredPrompts: memoize((promptsMap, filter, searchTerm) => {
             let prompts = Array.from(promptsMap.values());
-            
-            // 1. Filter by navigation (Library/Folder)
             const { type, id } = filter;
             if (type === 'folder') prompts = prompts.filter(p => p.folderId === id);
             else if (type === 'uncategorized') prompts = prompts.filter(p => !p.folderId);
@@ -430,35 +352,28 @@
             else if (type === 'templates') prompts = prompts.filter(p => p.isTemplate);
             else if (type === 'prompts') prompts = prompts.filter(p => !p.isTemplate);
 
-            // 2. Intersect with search results if a search term exists
             if (searchTerm) {
                 if (!fuse) fuse = new Fuse(Array.from(state.prompts.values()), { keys: ['title', 'content', 'tags'], threshold: 0.3 });
-                else fuse.setCollection(Array.from(state.prompts.values())); // Update fuse collection
+                else fuse.setCollection(Array.from(state.prompts.values()));
                 
                 const searchResults = new Set(fuse.search(searchTerm).map(r => r.item.id));
                 prompts = prompts.filter(p => searchResults.has(p.id));
             }
             return prompts;
         }),
-
-        /**
-         * Memoized selector to sort the already filtered set of prompts.
-         * This function operates on the derived set from getFilteredPrompts.
-         */
         getSortedPrompts: memoize((prompts, sortOrder) => {
             const [field, direction] = sortOrder.split('_');
-            const sorted = [...prompts]; // Create a new array to avoid mutating the cached one
-
+            const sorted = [...prompts];
             sorted.sort((a, b) => {
-                const valA = a[field];
-                const valB = b[field];
                 let comparison = 0;
-                if (valA > valB) comparison = 1;
-                else if (valA < valB) comparison = -1;
-
-                // For title, use localeCompare for proper string comparison
-                if (field === 'title') comparison = a.title.localeCompare(b.title, 'ko');
-                
+                if (field === 'title') {
+                    comparison = (a.title || '').localeCompare(b.title || '', 'ko');
+                } else {
+                    const valA = a[field] || 0;
+                    const valB = b[field] || 0;
+                    if (valA > valB) comparison = 1;
+                    else if (valA < valB) comparison = -1;
+                }
                 return direction === 'desc' ? -comparison : comparison;
             });
             return sorted;
@@ -466,12 +381,11 @@
     };
     
     // =================================================================
-    // 데이터 서비스 (Optimized for Map)
+    // 데이터 서비스
     // =================================================================
     const dbService = {
         getCollectionRef: (name) => collection(dbFirestore, 'users', state.currentUser.uid, name),
         getDocRef: (name, id) => doc(dbFirestore, 'users', state.currentUser.uid, name, id),
-
         listenToCollection: (collectionName, orderByField, orderByDirection, callback) => {
             if (!state.currentUser) return;
             if (unsubscribeListeners[collectionName]) unsubscribeListeners[collectionName]();
@@ -487,23 +401,6 @@
                 callback(dataMap);
             }, (error) => console.error(`Listen error on ${collectionName}:`, error));
         },
-
-        getById: async (collectionName, id) => {
-            const map = state[collectionName];
-            if (map && map.has(id)) return { ...map.get(id) }; // O(1) lookup
-            
-            try { // Fallback to Firestore if not in local state
-                const docSnap = await getDoc(dbService.getDocRef(collectionName, id));
-                if (docSnap.exists()) {
-                    const d = docSnap.data();
-                    if (d.createdAt?.toDate) d.createdAt = d.createdAt.toDate();
-                    if (d.updatedAt?.toDate) d.updatedAt = d.updatedAt.toDate();
-                    return { id: docSnap.id, ...d };
-                }
-                return null;
-            } catch (error) { return null; }
-        },
-
         put: async (collectionName, item) => {
             const { id, ...data } = item;
             data.updatedAt = serverTimestamp();
@@ -521,7 +418,7 @@
     };
 
     // =================================================================
-    // 렌더링 함수 (View Layer - Simplified)
+    // 렌더링 함수
     // =================================================================
     const render = {
         folders: () => {
@@ -542,11 +439,6 @@
                     <a><i class="nav-icon fa-solid fa-layer-group"></i> ${helpers.escapeHTML(s.name)}</a>
                 </li>`).join('');
         },
-        /**
-         * The prompt rendering function is now pure.
-         * It receives the final, sorted set of data and transforms it into UI elements.
-         * All filtering and sorting logic has been moved to memoized selectors.
-         */
         prompts: () => {
             uiElements.mainHeader.textContent = state.currentFilter.name;
             const filtered = selectors.getFilteredPrompts(state.prompts, state.currentFilter, state.searchTerm);
@@ -556,17 +448,14 @@
                 uiElements.contentView.innerHTML = `<div class="content-placeholder">항목을 찾을 수 없습니다.</div>`;
                 return;
             }
-
             uiElements.contentView.innerHTML = sorted.map(p => {
                 const icon = p.isTemplate ? 'fa-puzzle-piece' : 'fa-file-lines';
                 const tagsHTML = (p.tags || []).map(tag => `<span class="prompt-tag">#${helpers.escapeHTML(tag)}</span>`).join('');
                 const date = p.updatedAt ? p.updatedAt.toLocaleString() : 'N/A';
-                
                 let buttonsHtml = '';
                 if (p.isTemplate) buttonsHtml += `<button class="use-btn"><i class="fa-solid fa-wand-magic-sparkles"></i> 사용</button>`;
                 else if (p.link) buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
                 else buttonsHtml += `<button class="copy-btn"><i class="fa-regular fa-copy"></i> 복사</button>`;
-                
                 if (p.isTemplate && p.link) buttonsHtml += `<a href="${p.link}" target="_blank" class="visit-link-btn" style="margin-left: 8px;"><i class="fa-solid fa-external-link-alt"></i> 방문</a>`;
 
                 return `
@@ -587,7 +476,7 @@
         },
         promptEditor: async (id) => {
             const isNew = id === null;
-            let p = isNew ? { title: '', content: '', folderId: null, tags: [], isFavorite: false, isTemplate: false, link: '' } : await dbService.getById('prompts', id);
+            let p = isNew ? { title: '', content: '', folderId: null, tags: [], isFavorite: false, isTemplate: false, link: '' } : state.prompts.get(id);
             if (!p) { helpers.showToast('항목을 찾을 수 없습니다!'); return render.prompts(); }
 
             const folderOpts = Array.from(state.folders.values()).map(f => `<option value="${f.id}" ${f.id === p.folderId ? 'selected' : ''}>${helpers.escapeHTML(f.name)}</option>`).join('');
@@ -613,21 +502,29 @@
                 </div>
                 <div class="is-template-toggle"><input type="checkbox" id="is-template-checkbox" ${p.isTemplate ? 'checked' : ''}><label for="is-template-checkbox">✨ 재사용 가능한 템플릿으로 만들기</label></div>`;
         },
-        // Other render functions (templateModal, sequenceEditor, etc.) remain largely the same...
         templateModal: async (id, onCompleteCallback = null) => {
-            const p = await dbService.getById('prompts', id);
+            const p = state.prompts.get(id);
             if (!p) { helpers.showToast('템플릿을 찾을 수 없습니다!'); if (onCompleteCallback) onCompleteCallback(true); return; }
 
             const placeholders = [...new Set([...p.content.matchAll(/{{([^\n}]+?)}}/g)].map(match => match[1].trim()))];
             uiElements.templateModal.title.textContent = `템플릿 사용: ${p.title}`;
+            
             uiElements.templateModal.body.innerHTML = placeholders.map(ph => `
                 <div class="form-group">
                     <label for="ph-${ph}">${ph.replace(/_/g, ' ')}</label>
-                    <textarea id="ph-${ph}" data-placeholder="${ph}" rows="1" style="resize: vertical;"></textarea>
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <textarea id="ph-${ph}" data-placeholder="${ph}" rows="1" style="flex-grow: 1; resize: vertical;"></textarea>
+                        <input type="file" class="template-file-input" data-target-id="ph-${ph}" style="display: none;" accept=".txt,.md,text/*">
+                        <button class="template-file-upload-btn button-like" data-target-id="ph-${ph}" title="파일에서 불러오기" style="flex-shrink: 0; padding: 8px 12px;">
+                            <i class="fa-solid fa-file-arrow-up"></i>
+                        </button>
+                    </div>
                 </div>`).join('') + `<div class="form-group"><label>미리보기</label><div class="modal-preview" id="template-preview">${helpers.escapeHTML(p.content)}</div></div>`;
+            
             uiElements.templateModal.overlay.classList.add('show');
 
-            const inputs = uiElements.templateModal.body.querySelectorAll('textarea[data-placeholder]');
+            const modalBody = uiElements.templateModal.body;
+            const inputs = modalBody.querySelectorAll('textarea[data-placeholder]');
             const preview = document.getElementById('template-preview');
             
             const updatePreview = () => {
@@ -641,12 +538,31 @@
             inputs.forEach(input => input.addEventListener('input', updatePreview));
             updatePreview();
 
+            modalBody.addEventListener('click', (e) => {
+                const uploadBtn = e.target.closest('.template-file-upload-btn');
+                if (uploadBtn) modalBody.querySelector(`.template-file-input[data-target-id="${uploadBtn.dataset.targetId}"]`).click();
+            });
+
+            modalBody.addEventListener('change', async (e) => {
+                const fileInput = e.target.closest('.template-file-input');
+                if (fileInput && fileInput.files.length > 0) {
+                    const textarea = modalBody.querySelector(`#${fileInput.dataset.targetId}`);
+                    const content = await helpers.loadFileAsText(fileInput.files[0]);
+                    if (content !== null) {
+                        textarea.value = content;
+                        textarea.dispatchEvent(new Event('input', { bubbles: true }));
+                    }
+                    fileInput.value = '';
+                }
+            });
+            
             uiElements.templateModal.generateBtn.onclick = async () => {
                 const textToCopy = preview.textContent;
                 helpers.copyToClipboard(textToCopy);
                 helpers.showToast('템플릿이 생성되어 클립보드에 복사되었습니다!');
                 await dbService.update('prompts', p.id, { usageCount: (p.usageCount || 0) + 1 });
                 if (onCompleteCallback) onCompleteCallback();
+                uiElements.templateModal.overlay.classList.remove('show');
             };
             uiElements.templateModal.closeBtn.onclick = () => {
                 uiElements.templateModal.overlay.classList.remove('show');
@@ -655,7 +571,7 @@
         },
         sequenceEditor: async (id) => {
             const isNew = id === null;
-            let s = isNew ? { name: '', description: '', promptIds: [] } : await dbService.getById('sequences', id);
+            let s = isNew ? { name: '', description: '', promptIds: [] } : state.sequences.get(id);
             if (!s) { helpers.showToast('시퀀스를 찾을 수 없습니다!'); return; }
 
             const promptsArray = Array.from(state.prompts.values());
@@ -722,7 +638,6 @@
                     <div class="stat-card"><h3>프롬프트가 가장 많은 폴더 TOP 10</h3><ul>${folderPromptCounts.map(f => `<li><span>${helpers.escapeHTML(f.name)}</span> <span class="count">${f.count}개</span></li>`).join('') || '<li>데이터가 없습니다.</li>'}</ul></div>
                 </div>`;
         },
-        usageHistory: async () => { /* ... remains the same */ },
     };
     
     // =================================================================
@@ -742,14 +657,22 @@
                 modal.querySelector('#confirm-cancel').onclick = () => { modal.remove(); resolve(false); };
             });
         },
+        loadFileAsText: (file) => {
+            return new Promise((resolve) => {
+                if (!file) return resolve(null);
+                if (file.size > 5 * 1024 * 1024) { helpers.showToast('파일 크기는 5MB를 초과할 수 없습니다.'); return resolve(null); }
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = () => { helpers.showToast('파일을 읽는 중 오류가 발생했습니다.'); resolve(null); };
+                reader.readAsText(file);
+            });
+        },
     };
     
     // =================================================================
     // 이벤트 핸들러 및 앱 로직
     // =================================================================
-    
     function setupEventListeners() {
-        // Sidebar and Modal close logic
         const openSidebar = () => { uiElements.sidebar.classList.add('open'); uiElements.sidebarOverlay.classList.add('show'); document.body.classList.add('no-scroll'); };
         const closeSidebar = () => { uiElements.sidebar.classList.remove('open'); uiElements.sidebarOverlay.classList.remove('show'); document.body.classList.remove('no-scroll'); };
         uiElements.mobileMenuToggle.addEventListener('click', openSidebar);
@@ -762,7 +685,6 @@
             });
         });
 
-        // State change handlers
         const setFilter = (type, id, name) => {
             state.currentFilter = { type, id, name };
             document.querySelectorAll('.sidebar .nav-item.active').forEach(el => el.classList.remove('active'));
@@ -774,7 +696,7 @@
             uiElements.searchInput.style.display = isPromptListView ? 'block' : 'none';
 
             if (type === 'statistics') render.statisticsDashboard();
-            else if (type === 'history') render.usageHistory();
+            else if (type === 'history') console.log("History view not implemented in this snippet"); // Placeholder
             else render.prompts();
             
             if (window.innerWidth <= 768) closeSidebar();
@@ -790,7 +712,6 @@
             render.prompts();
         });
         
-        // Action handlers
         uiElements.newPromptBtn.addEventListener('click', () => { render.promptEditor(null); if (window.innerWidth <= 768) closeSidebar(); });
         uiElements.newFolderBtn.addEventListener('click', async () => {
             const name = prompt('새 폴더 이름을 입력하세요:');
@@ -822,19 +743,19 @@
                 if (e.target.closest('.edit-btn') || e.target.closest('.prompt-info')) {
                     render.promptEditor(promptId);
                 } else if (e.target.closest('.copy-btn')) {
-                    const p = await dbService.getById('prompts', promptId);
+                    const p = state.prompts.get(promptId);
                     if (p) { helpers.copyToClipboard(p.content); helpers.showToast('클립보드에 복사되었습니다!'); await dbService.update('prompts', promptId, { usageCount: (p.usageCount || 0) + 1 }); }
                 } else if (e.target.closest('.use-btn')) {
                     render.templateModal(promptId);
                 } else if (e.target.closest('.fav-icon')) {
-                    const p = await dbService.getById('prompts', promptId);
+                    const p = state.prompts.get(promptId);
                     if (p) await dbService.update('prompts', promptId, { isFavorite: !p.isFavorite });
                 }
             }
 
             if (editorSaveBtn) {
                 const id = editorSaveBtn.dataset.id || null;
-                const existingData = id ? await dbService.getById('prompts', id) : {};
+                const existingData = id ? state.prompts.get(id) : {};
                 const data = {
                     title: document.getElementById('title-input').value,
                     content: document.getElementById('content-input').value,
@@ -864,7 +785,6 @@
     // 앱 초기화
     // =================================================================
     async function initializeAppLogic() {
-        await openIndexedDB();
         uiElements.sidebarContent.style.display = 'flex';
         uiElements.contentView.innerHTML = '<div class="content-placeholder">데이터를 불러오는 중...</div>';
 
