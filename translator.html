@@ -929,7 +929,7 @@ function defaultSettings() {
         qaPromptTemplate: DEFAULT_QA_TEMPLATE,
         glossaryPromptTemplate: DEFAULT_GLOSSARY_PROMPT_TEMPLATE,
         splitMode: 'auto',
-        maxChunk: 800
+        maxChunk: 4000
     };
 }
 
@@ -1109,8 +1109,8 @@ async function openFile(path, restoreSelection = false) {
     await updateMarkDoneButtonState(); // Update button state for new file
 }
 
-// MODIFIED: `splitText` function to respect `maxChunk` and avoid splitting single lines
-function splitText(text, mode = 'auto', maxLen = 800) {
+// `splitText` function to respect `maxChunk` and avoid splitting single lines
+function splitText(text, mode = 'auto', maxLen = 4000) {
     if (!text || !text.trim()) return [];
     if (mode === 'none') {
         const trimmed = text.trim();
@@ -1173,7 +1173,7 @@ function paintBlocks() {
 async function renderTree() {
     if (!currentProjectId) return;
     const files = await getFilesOfCurrent();
-    files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true }));
+    files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }));
     
     els.fileTree.innerHTML = '';
     if (!files.length) {
@@ -1340,7 +1340,7 @@ async function buildPromptText(sourceText) {
 // MODIFIED: `chunkTextForPrompt` now uses the user-set `maxChunk` from settings
 async function chunkTextForPrompt(text) {
     const settings = await idbGet('settings', 'global') || defaultSettings();
-    const limit = settings.maxChunk || 800;
+    const limit = settings.maxChunk || 4000;
     const lines = text.split('\n');
     const chunks = [];
     let currentChunk = '';
@@ -1388,7 +1388,7 @@ async function copyPrompt() {
     }
     
     const settings = await idbGet('settings', 'global') || defaultSettings();
-    const limit = settings.maxChunk || 800;
+    const limit = settings.maxChunk || 4000;
 
     if (fullSourceText.length < limit) {
         const prompt = await buildPromptText(fullSourceText);
@@ -1542,42 +1542,27 @@ async function exportAllPrompts() {
         const glossary = project?.glossary || '';
         
         const zip = new JSZip();
-        // Create subfolders for each type of prompt
         const translationPromptFolder = zip.folder("TranslationPrompts");
         const glossaryPromptFolder = zip.folder("GlossaryPrompts");
 
         for (const file of files) {
             if (!file.text || !file.text.trim()) continue;
             
-            // Use the `splitText` function to handle large files
             const sourceChunks = splitText(file.text, settings.splitMode, settings.maxChunk);
             const baseFilename = file.path.split('/').pop();
             const filenameWithoutExt = baseFilename.substring(0, baseFilename.lastIndexOf('.'));
             const filenameExt = baseFilename.substring(baseFilename.lastIndexOf('.'));
             
-            // Determine the final filename and path
-            if (sourceChunks.length > 1) {
-                // If the file is chunked, create multiple prompt files
-                sourceChunks.forEach((chunk, index) => {
-                    const chunkFilename = `${filenameWithoutExt}_part${index + 1}${filenameExt}.txt`;
+            // Generate and save prompts for each chunk
+            sourceChunks.forEach((chunk, index) => {
+                const chunkFilename = `${filenameWithoutExt}_part${index + 1}${filenameExt}.txt`;
 
-                    // Generate translation prompt for the chunk
-                    const translationPrompt = buildPromptTextSync(chunk, file.path, baseFilename, settings, glossary);
-                    translationPromptFolder.file(chunkFilename, translationPrompt);
+                const translationPrompt = buildPromptTextSync(chunk, file.path, baseFilename, settings, glossary);
+                translationPromptFolder.file(chunkFilename, translationPrompt);
 
-                    // Generate glossary prompt for the chunk
-                    const glossaryPrompt = buildGlossaryPromptTextSync(chunk, file.path, baseFilename, settings, glossary);
-                    glossaryPromptFolder.file(chunkFilename, glossaryPrompt);
-                });
-            } else {
-                // If not chunked, create a single prompt file
-                const singleFilename = `${filenameWithoutExt}${filenameExt}.txt`;
-                const translationPrompt = buildPromptTextSync(sourceChunks[0], file.path, baseFilename, settings, glossary);
-                translationPromptFolder.file(singleFilename, translationPrompt);
-
-                const glossaryPrompt = buildGlossaryPromptTextSync(sourceChunks[0], file.path, baseFilename, settings, glossary);
-                glossaryPromptFolder.file(singleFilename, glossaryPrompt);
-            }
+                const glossaryPrompt = buildGlossaryPromptTextSync(chunk, file.path, baseFilename, settings, glossary);
+                glossaryPromptFolder.file(chunkFilename, glossaryPrompt);
+            });
         }
         
         const blob = await zip.generateAsync({ type: 'blob' });
@@ -1722,7 +1707,7 @@ async function renderSettingsModal() {
                 qaPromptTemplate: els.settingsDlg.querySelector('#dlgQAPromptTemplate').value,
                 glossaryPromptTemplate: s.glossaryPromptTemplate, // Keep existing, not editable here
                 splitMode: els.settingsDlg.querySelector('#dlgSplitMode').value,
-                maxChunk: parseInt(els.settingsDlg.querySelector('#dlgMaxChunk').value) || 800
+                maxChunk: parseInt(els.settingsDlg.querySelector('#dlgMaxChunk').value) || 4000
             };
             await idbPut('settings', newSettings);
             updateLangBadge(newSettings.sourceLang, newSettings.targetLang);
