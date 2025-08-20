@@ -5,13 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TrAssist Pro — 4-Panel Viewer</title>
     
-    <!-- Preconnects for Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     
-    <!-- External libraries (JSZip, diff, and marked for Markdown rendering) -->
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
@@ -573,7 +571,6 @@
     </style>
 </head>
 <body>
-    <!-- Welcome screen -->
     <div id="welcomeScreen">
         <div style="max-width: 500px;">
             <i data-lucide="file-text" style="width: 48px; height: 48px; margin: 0 auto 16px; color: var(--color-primary);"></i>
@@ -586,7 +583,6 @@
         </div>
     </div>
     
-    <!-- Application header -->
     <header class="app-header">
         <div class="logo"><i data-lucide="file-text"></i><span>TrAssist</span></div>
         <select id="projectSelect" class="form-select"></select>
@@ -607,15 +603,12 @@
         <input id="importFile" type="file" accept=".json" style="display:none;" />
     </header>
 
-    <!-- Main workspace with FOUR panes -->
     <main id="mainWorkspace" class="main-workspace" style="display: none;">
-        <!-- 1. Project files list -->
         <aside class="pane">
             <div class="pane__header"><span class="pane__title">프로젝트 파일</span></div>
             <div id="fileTree" class="pane__body file-tree"></div>
         </aside>
 
-        <!-- 2. Translation Editor pane -->
         <section class="pane">
             <div class="pane__header">
                 <span class="pane__title">번역 편집기</span>
@@ -630,7 +623,7 @@
                     <button id="btnGlossaryPrompt" class="btn btn--secondary" title="용어집 생성 프롬프트" style="flex:1 1 auto;"><i data-lucide="book-plus"></i><span class="btn-label">용어집 생성</span></button>
                 </div>
                 <div id="promptChunkContainer"></div>
-                <textarea id="translationArea" placeholder="여기에 번역을 붙여넣으세요... (자동 저장 및 미리보기 업데이트)"></textarea>
+                <textarea id="translationArea" placeholder="여기에 번역을 붙여넣으세요. (자동 저장 및 미리보기 업데이트)"></textarea>
                 <div id="tmSuggestions" style="margin-top: 8px;"></div>
                 <div id="projectGlossaryPane" style="margin-top: 8px;">
                     <label for="projectGlossaryEdit" style="display:block; font-size:0.85rem; font-weight:500; margin-bottom:4px;">공통 용어집 (편집 가능)</label>
@@ -644,20 +637,17 @@
             </div>
         </section>
 
-        <!-- NEW: 3. Translation Viewer pane -->
         <section class="pane">
-    <div class="pane__header"><span class="pane__title">번역 뷰어 (마크다운)</span></div>
-    <div id="viewerContent" class="pane__body pane__body--padded"></div>
-</section>
+            <div class="pane__header"><span class="pane__title">번역 뷰어 (마크다운)</span></div>
+            <div id="viewerContent" class="pane__body pane__body--padded"></div>
+        </section>
         
-        <!-- 4. Source text pane -->
         <section class="pane">
             <div class="pane__header"><span id="pathLabel" class="pane__title" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-weight: 400; font-size: 0.875rem;">파일 선택</span></div>
             <div id="sourceContainer" class="pane__body source-blocks-container"></div>
         </section>
     </main>
     
-    <!-- Dialogs -->
     <dialog id="settingsDlg"></dialog>
     <dialog id="historyDialog" style="width: 800px; max-width: 95vw;">
         <div class="dialog__header"><h2>버전 기록</h2><button class="btn btn--icon" onclick="this.closest('dialog').close()"><i data-lucide="x"></i></button></div>
@@ -689,10 +679,8 @@
         </div>
     </dialog>
 
-    <!-- Toast notifications -->
     <div class="toast-wrap" id="toastWrap"></div>
 
-<!-- Load lucide icons library -->
 <script src="https://unpkg.com/lucide@latest"></script>
 
 <script>
@@ -940,7 +928,7 @@ function defaultSettings() {
         promptTemplate: DEFAULT_TEMPLATE,
         qaPromptTemplate: DEFAULT_QA_TEMPLATE,
         glossaryPromptTemplate: DEFAULT_GLOSSARY_PROMPT_TEMPLATE,
-        splitMode: 'none',
+        splitMode: 'auto',
         maxChunk: 800
     };
 }
@@ -1032,10 +1020,9 @@ const updateSaveStatus = (status) => {
     }
 };
 
-// NEW: Function to update the Markdown viewer
+// Function to update the Markdown viewer
 function updateViewer(text) {
     if (els.viewerContent) {
-        // Use the 'marked' library to parse Markdown into HTML
         els.viewerContent.innerHTML = marked.parse(text || '');
     }
 }
@@ -1055,7 +1042,7 @@ const debouncedSave = debounce(async (text) => {
     updateSaveStatus('saved');
 }, 1500);
 
-// MODIFIED: Update the "Mark as Done" button's appearance based on file status
+// Update the "Mark as Done" button's appearance based on file status
 async function updateMarkDoneButtonState() {
     if (!currentProjectId || !currentFilePath) {
         els.btnMarkDone.disabled = true;
@@ -1122,32 +1109,40 @@ async function openFile(path, restoreSelection = false) {
     await updateMarkDoneButtonState(); // Update button state for new file
 }
 
+// MODIFIED: `splitText` function to respect `maxChunk` and avoid splitting single lines
 function splitText(text, mode = 'auto', maxLen = 800) {
     if (!text || !text.trim()) return [];
     if (mode === 'none') {
         const trimmed = text.trim();
         return trimmed ? [trimmed] : [];
     }
+
     let chunks = [];
     if (mode === 'line') {
         chunks = text.split(/\r?\n/);
     } else if (mode === 'paragraph') {
         chunks = text.split(/\n{2,}/);
-    } else {
+    } else { // 'auto' mode
         chunks = text.split(/\n{2,}/);
         if (chunks.length < 2) chunks = text.split(/\r?\n/);
     }
+    
     const out = [];
     let currentChunk = '';
     for (const chunk of chunks) {
         const trimmedChunk = chunk.trim();
         if (!trimmedChunk) continue;
+
+        // Check if adding the next line/paragraph would exceed the limit
         if (currentChunk.length > 0 && (currentChunk.length + trimmedChunk.length + 2) > maxLen) {
             out.push(currentChunk);
-            currentChunk = '';
+            currentChunk = trimmedChunk;
+        } else {
+            // Append the chunk, respecting the "don't split a single line" rule
+            currentChunk = currentChunk ? `${currentChunk}\n\n${trimmedChunk}` : trimmedChunk;
         }
-        currentChunk = currentChunk ? `${currentChunk}\n\n${trimmedChunk}` : trimmedChunk;
     }
+    // Add the last remaining chunk
     if (currentChunk) out.push(currentChunk);
     return out;
 }
@@ -1342,7 +1337,10 @@ async function buildPromptText(sourceText) {
         .replaceAll('{{번역대상}}', sourceText);
 }
 
-function chunkTextForPrompt(text, limit = 40000) {
+// MODIFIED: `chunkTextForPrompt` now uses the user-set `maxChunk` from settings
+async function chunkTextForPrompt(text) {
+    const settings = await idbGet('settings', 'global') || defaultSettings();
+    const limit = settings.maxChunk || 800;
     const lines = text.split('\n');
     const chunks = [];
     let currentChunk = '';
@@ -1366,6 +1364,7 @@ function chunkTextForPrompt(text, limit = 40000) {
     return chunks;
 }
 
+// MODIFIED: `copyPrompt` now uses the user-set `maxChunk` to generate multiple prompt chunks
 async function copyPrompt() {
     const btn = els.btnCopyPrompt;
     const textEl = btn.querySelector('span');
@@ -1388,9 +1387,10 @@ async function copyPrompt() {
         return;
     }
     
-    const PROMPT_CHAR_LIMIT = 40000;
+    const settings = await idbGet('settings', 'global') || defaultSettings();
+    const limit = settings.maxChunk || 800;
 
-    if (fullSourceText.length < PROMPT_CHAR_LIMIT) {
+    if (fullSourceText.length < limit) {
         const prompt = await buildPromptText(fullSourceText);
         if (prompt) {
             try {
@@ -1401,7 +1401,7 @@ async function copyPrompt() {
             }
         }
     } else {
-        const chunks = chunkTextForPrompt(fullSourceText, PROMPT_CHAR_LIMIT);
+        const chunks = await chunkTextForPrompt(fullSourceText, limit);
         toast(`${chunks.length}개의 부분으로 나뉘었습니다. 각 부분을 복사하세요.`, 'info');
 
         chunks.forEach((chunk, index) => {
@@ -1441,9 +1441,6 @@ async function copyPrompt() {
         textEl.textContent = 'AI 프롬프트 복사';
     }, 1000);
 }
-
-// Other functions like showHistory, fullExport, fullImport, exportAllPrompts, renderSettingsModal
-// remain largely the same, so they are included for completeness without modification markers.
 
 async function showHistory() {
     if (!currentProjectId || !currentFilePath) return toast('먼저 파일을 열어주세요.');
@@ -1529,11 +1526,12 @@ async function fullImport() {
     reader.readAsText(file);
 }
 
+// MODIFIED: Export function to handle chunking and naming correctly
 async function exportAllPrompts() {
     if (!currentProjectId) {
         return toast('먼저 프로젝트를 선택해주세요.', 'error');
     }
-    toast('ZIP 파일 생성 중입니다...');
+    toast('프로젝트 전체 프롬프트 ZIP 파일 생성 중...');
     try {
         const files = await getFilesOfCurrent();
         if (!files.length) {
@@ -1544,37 +1542,42 @@ async function exportAllPrompts() {
         const glossary = project?.glossary || '';
         
         const zip = new JSZip();
-        const transFolder = zip.folder("translation_prompts");
-        const glossFolder = zip.folder("glossary_prompts");
+        // Create subfolders for each type of prompt
+        const translationPromptFolder = zip.folder("TranslationPrompts");
+        const glossaryPromptFolder = zip.folder("GlossaryPrompts");
 
         for (const file of files) {
             if (!file.text || !file.text.trim()) continue;
-            const sourceText = file.text;
             
-            const transTemplate = settings.promptTemplate || DEFAULT_TEMPLATE;
-            const translationPrompt = transTemplate
-                .replaceAll('{{source_lang}}', settings.sourceLang)
-                .replaceAll('{{target_lang}}', settings.targetLang)
-                .replaceAll('{{path}}', file.path)
-                .replaceAll('{{filename}}', file.path.split('/').pop())
-                .replaceAll('{{instructions}}', settings.styleNotes || '')
-                .replaceAll('{{glossary}}', glossary)
-                .replaceAll('{{text}}', sourceText)
-                .replaceAll('{{번역대상}}', sourceText);
-
-            const glossTemplate = settings.glossaryPromptTemplate || DEFAULT_GLOSSARY_PROMPT_TEMPLATE;
-            const glossaryPrompt = glossTemplate
-                .replaceAll('{{source_lang}}', settings.sourceLang)
-                .replaceAll('{{target_lang}}', settings.targetLang)
-                .replaceAll('{{path}}', file.path)
-                .replaceAll('{{filename}}', file.path.split('/').pop())
-                .replaceAll('{{instructions}}', settings.styleNotes || '')
-                .replaceAll('{{glossary}}', glossary)
-                .replaceAll('{{text}}', sourceText);
-
+            // Use the `splitText` function to handle large files
+            const sourceChunks = splitText(file.text, settings.splitMode, settings.maxChunk);
             const baseFilename = file.path.split('/').pop();
-            transFolder.file(`${baseFilename}.txt`, translationPrompt);
-            glossFolder.file(`${baseFilename}.txt`, glossaryPrompt);
+            const filenameWithoutExt = baseFilename.substring(0, baseFilename.lastIndexOf('.'));
+            const filenameExt = baseFilename.substring(baseFilename.lastIndexOf('.'));
+            
+            // Determine the final filename and path
+            if (sourceChunks.length > 1) {
+                // If the file is chunked, create multiple prompt files
+                sourceChunks.forEach((chunk, index) => {
+                    const chunkFilename = `${filenameWithoutExt}_part${index + 1}${filenameExt}.txt`;
+
+                    // Generate translation prompt for the chunk
+                    const translationPrompt = buildPromptTextSync(chunk, file.path, baseFilename, settings, glossary);
+                    translationPromptFolder.file(chunkFilename, translationPrompt);
+
+                    // Generate glossary prompt for the chunk
+                    const glossaryPrompt = buildGlossaryPromptTextSync(chunk, file.path, baseFilename, settings, glossary);
+                    glossaryPromptFolder.file(chunkFilename, glossaryPrompt);
+                });
+            } else {
+                // If not chunked, create a single prompt file
+                const singleFilename = `${filenameWithoutExt}${filenameExt}.txt`;
+                const translationPrompt = buildPromptTextSync(sourceChunks[0], file.path, baseFilename, settings, glossary);
+                translationPromptFolder.file(singleFilename, translationPrompt);
+
+                const glossaryPrompt = buildGlossaryPromptTextSync(sourceChunks[0], file.path, baseFilename, settings, glossary);
+                glossaryPromptFolder.file(singleFilename, glossaryPrompt);
+            }
         }
         
         const blob = await zip.generateAsync({ type: 'blob' });
@@ -1588,6 +1591,33 @@ async function exportAllPrompts() {
         toast(`ZIP 파일 생성 중 오류 발생: ${e.message}`, 'error');
         console.error("Failed to export all prompts as ZIP:", e);
     }
+}
+
+// NEW: Synchronous prompt building function for use in the loop
+function buildPromptTextSync(sourceText, path, filename, settings, glossary) {
+    const template = settings.promptTemplate || DEFAULT_TEMPLATE;
+    return template
+        .replaceAll('{{source_lang}}', settings.sourceLang)
+        .replaceAll('{{target_lang}}', settings.targetLang)
+        .replaceAll('{{path}}', path)
+        .replaceAll('{{filename}}', filename)
+        .replaceAll('{{instructions}}', settings.styleNotes || '')
+        .replaceAll('{{glossary}}', glossary)
+        .replaceAll('{{text}}', sourceText)
+        .replaceAll('{{번역대상}}', sourceText);
+}
+
+// NEW: Synchronous glossary prompt building function
+function buildGlossaryPromptTextSync(sourceText, path, filename, settings, glossary) {
+    const template = settings.glossaryPromptTemplate || DEFAULT_GLOSSARY_PROMPT_TEMPLATE;
+    return template
+        .replaceAll('{{source_lang}}', settings.sourceLang)
+        .replaceAll('{{target_lang}}', settings.targetLang)
+        .replaceAll('{{path}}', path)
+        .replaceAll('{{filename}}', filename)
+        .replaceAll('{{instructions}}', settings.styleNotes || '')
+        .replaceAll('{{glossary}}', glossary)
+        .replaceAll('{{text}}', sourceText);
 }
 
 async function renderSettingsModal() {
@@ -1627,6 +1657,11 @@ async function renderSettingsModal() {
                             <option value="paragraph" ${s.splitMode === 'paragraph' ? 'selected' : ''}>문단별</option>
                             <option value="line" ${s.splitMode === 'line' ? 'selected' : ''}>줄별</option>
                         </select>
+                    </div>
+                    <div style="margin-bottom:16px;">
+                        <label class="form-label" style="font-weight:500;" for="dlgMaxChunk">최대 프롬프트 용량 (글자 수)</label>
+                        <input id="dlgMaxChunk" type="number" class="form-select" value="${s.maxChunk}" min="100" />
+                        <p style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top:4px;">프롬프트 복사/내보내기 시 파일이 이 용량을 초과하면 자동으로 분할됩니다.</p>
                     </div>
                     <div style="margin-bottom:16px;">
                         <label class="form-label" style="font-weight:500;">지침</label>
@@ -1687,6 +1722,7 @@ async function renderSettingsModal() {
                 qaPromptTemplate: els.settingsDlg.querySelector('#dlgQAPromptTemplate').value,
                 glossaryPromptTemplate: s.glossaryPromptTemplate, // Keep existing, not editable here
                 splitMode: els.settingsDlg.querySelector('#dlgSplitMode').value,
+                maxChunk: parseInt(els.settingsDlg.querySelector('#dlgMaxChunk').value) || 800
             };
             await idbPut('settings', newSettings);
             updateLangBadge(newSettings.sourceLang, newSettings.targetLang);
@@ -1701,6 +1737,12 @@ async function renderSettingsModal() {
                 }
             }
             toast('설정이 저장되었습니다!', 'ok');
+            // Re-render source blocks to apply new chunking settings
+            if (currentFilePath) {
+                const fileRec = await idbGet('files', [currentProjectId, currentFilePath]);
+                currentSourceBlocks = splitText(fileRec.text, newSettings.splitMode, newSettings.maxChunk);
+                paintBlocks();
+            }
         }
     };
 }
@@ -1747,7 +1789,7 @@ function setupEventListeners() {
     els.btnSettings.addEventListener('click', renderSettingsModal);
     els.btnCopyPrompt.addEventListener('click', copyPrompt);
     
-    // MODIFIED: Update viewer on input, then trigger debounced save
+    // Update viewer on input, then trigger debounced save
     els.translationArea.addEventListener('input', () => {
         const text = els.translationArea.value;
         updateViewer(text);
@@ -1760,26 +1802,22 @@ function setupEventListeners() {
         });
     }
 
-    // MODIFIED: Event listener for the "Mark as Done" toggle button
+    // Event listener for the "Mark as Done" toggle button
     els.btnMarkDone.addEventListener('click', async () => {
         if (!currentFilePath) return toast('파일이 선택되지 않았습니다.', 'error');
         const rec = await idbGet('files', [currentProjectId, currentFilePath]);
         if (rec) {
-            // Toggle status: if 2 (Done), set to 1 (WIP). Otherwise, set to 2.
             rec.status = rec.status === 2 ? 1 : 2;
             await idbPut('files', rec);
             await renderTree();
             await updateCurrentProjectProgress();
-            await updateMarkDoneButtonState(); // Refresh button text
+            await updateMarkDoneButtonState();
             toast(rec.status === 2 ? '완료로 표시되었습니다.' : '완료 표시가 해제되었습니다.', 'ok');
         }
     });
 
     els.btnHistory.addEventListener('click', showHistory);
     
-    // QA and Glossary prompt buttons remain the same
-    // ...
-
     els.btnDataActions.addEventListener('click', (e) => {
         e.stopPropagation();
         els.dataDropdownMenu.style.display = 'block';
