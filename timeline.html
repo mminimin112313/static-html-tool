@@ -3,724 +3,476 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>사건 타임라인 시각화 도구 v15 (Final Polished)</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- SortableJS CDN for robust drag-and-drop functionality -->
-    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <title>지능형 사건 기록 시스템 v10.1</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Mermaid.js for Sequence Diagrams -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
     <style>
-        /*
-            DESIGN SYSTEM DEFINITION (v15.0) - The Final Polished Release
-            - Principal Product Designer: Gemini
-
-            CORE FIXES & ENHANCEMENTS:
-            1.  Polished Deletion Flow: Replaced the clunky `window.confirm()` with a custom, beautifully animated confirmation modal that is consistent with the app's UI. This provides a safer and more pleasant user experience.
-            2.  Smoother Modal Closing: Added subtle hover and active transitions to the modal 'X' close buttons for a more responsive and less "jarring" feel.
-            3.  Code Refinement: Encapsulated the confirmation logic into a reusable UI function (UI.ConfirmationModal.show), making the code cleaner and more maintainable.
-        */
-
-        :root {
-            --primary-color: #007bff;
-            --primary-hover: #0056b3;
-            --success-color: #28a745;
-            --bg-color: #f8f9fa;
-            --panel-bg: #ffffff;
-            --text-primary: #212529;
-            --text-secondary: #6c757d;
-            --border-color: #dee2e6;
-            --danger-color: #dc3545;
-            --danger-hover: #b22222;
-            --default-event-color: #212529; /* JS logic relies on this hex value */
-            --note-bg: #fffbe6;
-            --placeholder-bg: #e9ecef;
-            
-            --spacing-xs: 4px;
-            --spacing-sm: 8px;
-            --spacing-md: 16px;
-            --spacing-lg: 24px;
-
-            --sidebar-width: 280px;
-            --font-family: 'Poppins', 'Noto Sans KR', sans-serif;
-            --transition-speed: 0.2s;
-        }
-
-        html, body { height: 100%; margin: 0; }
-        body { font-family: var(--font-family); background-color: var(--bg-color); color: var(--text-primary); display: flex; flex-direction: column; overflow: hidden; }
+        /* General Custom Styles */
+        body { font-family: 'Pretendard', sans-serif; }
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         
-        .app-wrapper { display: flex; flex-direction: column; height: 100%; }
-        .top-nav { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 var(--spacing-md); height: 60px; background-color: var(--panel-bg); border-bottom: 1px solid var(--border-color); z-index: 1000; }
-        .top-nav-left { display: flex; align-items: center; gap: var(--spacing-sm); }
-        .hamburger-menu, #settings-toggle { background: none; border: none; cursor: pointer; padding: var(--spacing-sm); color: var(--text-primary); border-radius: 50%; transition: background-color var(--transition-speed) ease; }
-        .hamburger-menu:hover, #settings-toggle:hover { background-color: var(--placeholder-bg); }
-        #current-project-title { font-size: 1.2rem; font-weight: 500; margin: 0; }
-        main.app-content { flex-grow: 1; display: flex; overflow: auto; background-color: #e9ecef; padding: var(--spacing-md); }
-        #diagram-container { margin: auto; background: var(--panel-bg); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-
-        .chat-input-footer { flex-shrink: 0; padding: var(--spacing-md) var(--spacing-lg); background-color: #f1f3f5; border-top: 1px solid var(--border-color); }
-        #event-form { display: flex; gap: var(--spacing-sm); align-items: center; }
-        #event-input { flex-grow: 1; height: 44px; padding: 0 16px; border-radius: 22px; border: 1px solid var(--border-color); font-size: 1rem; transition: box-shadow var(--transition-speed); }
-        #event-input:focus { box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.25); border-color: var(--primary-color); outline: none; }
-        #event-input:disabled { background-color: var(--placeholder-bg); }
-        #send-button { width: 44px; height: 44px; border-radius: 50%; border: none; background-color: var(--primary-color); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: background-color var(--transition-speed), transform var(--transition-speed); }
-        #send-button:hover:not(:disabled) { background-color: var(--primary-hover); }
-        #send-button:active:not(:disabled) { transform: scale(0.9); }
-        #send-button:disabled { background-color: var(--text-secondary); cursor: not-allowed; }
-
-        .sidebar { position: fixed; top: 0; left: 0; width: var(--sidebar-width); height: 100%; background-color: var(--panel-bg); border-right: 1px solid var(--border-color); transform: translateX(calc(-1 * var(--sidebar-width))); transition: transform 0.3s ease-in-out; z-index: 1002; display: flex; flex-direction: column; }
-        .sidebar.is-open { transform: translateX(0); box-shadow: 0 0 25px rgba(0,0,0,0.1); }
-        .sidebar-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.4); z-index: 1001; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s; }
-        .sidebar-overlay.is-visible { opacity: 1; visibility: visible; }
-        .sidebar-header { padding: var(--spacing-md); border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
-        #project-list { list-style: none; padding: var(--spacing-sm) 0; margin: 0; flex-grow: 1; overflow-y: auto; }
-        #project-list li { display: flex; justify-content: space-between; align-items: center; padding: 12px var(--spacing-md); cursor: pointer; transition: background-color var(--transition-speed); }
-        #project-list li:hover { background-color: var(--placeholder-bg); }
-        #project-list li.active { background-color: var(--primary-color); color: white; }
-        #project-list li.active:hover { background-color: var(--primary-hover); }
-        .delete-project-btn { background: none; border: none; cursor: pointer; color: var(--danger-color); opacity: 0; padding: 4px; transition: opacity var(--transition-speed), background-color var(--transition-speed); border-radius: 50%; }
-        #project-list li:hover .delete-project-btn { opacity: 1; }
-        #project-list li:hover .delete-project-btn:hover { background-color: rgba(220, 53, 69, 0.1); }
-        #project-list li.active .delete-project-btn { color: white; }
-        .sidebar-footer { padding: var(--spacing-md); border-top: 1px solid var(--border-color); flex-shrink: 0; }
-        button { transition: background-color var(--transition-speed), transform var(--transition-speed), box-shadow var(--transition-speed); }
-        button:active { transform: scale(0.97); }
-        #new-project-controls button, #new-project-form button { padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; }
-        #new-project-btn { background-color: var(--primary-color); color: white; width: 100%; }
-        #new-project-btn:hover { background-color: var(--primary-hover); }
-        #new-project-form { display: none; gap: var(--spacing-sm); }
-        #new-project-name { flex-grow: 1; padding: 12px; border-radius: 8px; border: 1px solid var(--border-color); }
-        .confirm-btn { background-color: var(--primary-color); color: white; }
-        .confirm-btn:hover { background-color: var(--primary-hover); }
-        .cancel-btn, .secondary-btn { background-color: var(--placeholder-bg); }
-        .cancel-btn:hover, .secondary-btn:hover { background-color: #ddd; }
+        .record-entity { color: #2563eb; font-weight: 600; cursor: pointer; }
+        .record-source { color: #15803d; font-weight: 600; cursor: pointer; }
+        .record-relation { color: #c2410c; font-weight: bold; }
+        .record-page { color: #a16207; font-size: 0.8rem; font-style: italic; }
         
-        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; z-index: 1003; opacity: 0; visibility: hidden; transition: opacity 0.3s; }
-        .modal-overlay.is-visible { opacity: 1; visibility: visible; }
-        .modal-content { background-color: var(--panel-bg); border-radius: 12px; width: 90%; max-width: 800px; max-height: 80vh; display: flex; flex-direction: column; transform: scale(0.95); transition: transform 0.3s ease, opacity 0.3s; }
-        .modal-overlay.is-visible .modal-content { transform: scale(1); opacity: 1; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-md) var(--spacing-lg); border-bottom: 1px solid var(--border-color); }
-        .modal-header h2, .modal-header h4 { margin: 0; }
-        .modal-close-btn { background: none; border: none; font-size: 1.8rem; line-height: 1; padding: 0 var(--spacing-sm); color: var(--text-secondary); cursor: pointer; border-radius: 50%; transition: color var(--transition-speed), background-color var(--transition-speed); }
-        .modal-close-btn:hover { color: var(--text-primary); background-color: var(--placeholder-bg); }
-        .modal-tabs { display: flex; border-bottom: 1px solid var(--border-color); padding: 0 var(--spacing-lg); }
-        .modal-tab-btn { padding: var(--spacing-md) var(--spacing-sm); margin-right: var(--spacing-md); background: none; border: none; cursor: pointer; font-size: 1rem; border-bottom: 3px solid transparent; color: var(--text-secondary); }
-        .modal-tab-btn.active { border-bottom-color: var(--primary-color); color: var(--text-primary); font-weight: 500; }
-        .modal-body { display: flex; padding: var(--spacing-lg); gap: var(--spacing-lg); overflow: hidden; flex-grow: 1; }
-        .modal-tab-content { display: none; width: 100%; }
-        .modal-tab-content.active { display: flex; gap: var(--spacing-lg); flex-grow: 1; }
+        #context-panel.hidden { transform: translateX(100%); }
+        .tab-btn.active { border-bottom-color: #2563eb; color: #2563eb; font-weight: 600; }
+        
+        .dragging { opacity: 0.5; background: #e0e7ff; border: 1px dashed #4f46e5; }
+        .drag-handle { cursor: grab; }
+        .drag-handle:active { cursor: grabbing; }
+        
+        .summary-tag { transition: all 0.2s ease-in-out; }
+        .summary-tag:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 
-        #actor-list-pane, #event-list-pane { flex: 2; display: flex; flex-direction: column; overflow: hidden; }
-        #color-editor-pane { flex: 1; display: none; flex-direction: column; border-left: 1px solid var(--border-color); padding-left: var(--spacing-lg); }
-        #color-editor-pane.visible { display: flex; }
-        #actor-order-list, #modal-event-list-container { list-style: none; padding: 0; margin: 0; overflow-y: auto; }
-        #actor-order-list li, #modal-event-list-container li { display: flex; align-items: center; padding: 10px; margin-bottom: var(--spacing-sm); border: 1px solid var(--border-color); border-radius: 6px; transition: background-color var(--transition-speed), border-color var(--transition-speed), box-shadow var(--transition-speed); }
-        #actor-order-list li { cursor: grab; background-color: var(--panel-bg); user-select: none; }
-        #actor-order-list li:hover { background-color: var(--placeholder-bg); }
-        #actor-order-list li.sortable-ghost { opacity: 0.4; background: #cce5ff; }
-        #modal-event-list-container li { justify-content: space-between; cursor: pointer; }
-        #modal-event-list-container li:hover { background-color: var(--placeholder-bg); }
-        #modal-event-list-container li.active { border-color: var(--primary-color); box-shadow: 0 0 0 2px rgba(0,123,255,0.2); background-color: #f2f6ff;}
-        #modal-event-list-container .event-edit-form { display: flex; width: 100%; gap: var(--spacing-sm); }
-        #modal-event-list-container .event-edit-input { flex-grow: 1; border: 1px solid var(--primary-color); padding: 4px 8px; border-radius: 4px; }
-        .modal-toolbar { display: flex; gap: var(--spacing-sm); margin-bottom: var(--spacing-md); }
-        .sort-btn { background: var(--placeholder-bg); border: 1px solid transparent; padding: 6px 12px; border-radius: 15px; cursor: pointer; }
-        .sort-btn.active { background: var(--primary-color); color: white; }
+        .todo-item input:checked + span { text-decoration: line-through; color: #9ca3af; }
 
-        .color-swatch { width: 24px; height: 24px; border-radius: 50%; border: 2px solid white; cursor: pointer; box-shadow: 0 0 0 1px var(--border-color); transition: transform var(--transition-speed); }
-        .color-swatch:hover { transform: scale(1.1); }
-        .editor-actions, .confirmation-actions { margin-top: auto; display: flex; gap: var(--spacing-sm); }
-        .confirmation-actions { justify-content: flex-end; }
-        .editor-actions button, .confirmation-actions button { flex-grow: 1; border: none; padding: 10px; border-radius: 6px; cursor: pointer;}
-        #edit-event-btn { background-color: var(--primary-hover); color: white; }
-        .danger-btn { background-color: var(--danger-color); color: white; }
-        .danger-btn:hover { background-color: var(--danger-hover); }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        #autocomplete-box .selected { background-color: #eff6ff; }
     </style>
 </head>
-<body>
-    <div class="app-wrapper">
-         <nav class="top-nav">
-            <div class="top-nav-left">
-                <button class="hamburger-menu" aria-label="프로젝트 목록 열기"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 6H20M4 12H20M4 18H20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-                <h1 id="current-project-title">로딩 중...</h1>
+<body class="bg-slate-100 font-sans antialiased text-slate-800">
+
+    <!-- App Container -->
+    <div id="app" class="flex h-screen overflow-hidden">
+
+        <!-- Left Panel -->
+        <aside class="w-72 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+            <div class="p-4 border-b border-slate-200">
+                <h1 class="text-xl font-bold text-slate-700">사건 목록</h1>
             </div>
-            <button id="settings-toggle" aria-label="설정 열기"><svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="currentColor"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M19.43 12.98c.04-.32.07-.64.07-.98s-.03-.66-.07-.98l2.11-1.65c.19-.15.24-.42.12-.64l-2-3.46c-.12-.22-.39-.3-.61-.22l-2.49 1c-.52-.4-1.08-.73-1.69-.98l-.38-2.65C14.46 2.18 14.25 2 14 2h-4c-.25 0-.46.18-.49.42l-.38 2.65c-.61-.25-1.17-.59-1.69-.98l-2.49-1c-.23-.09-.49 0-.61.22l-2 3.46c-.13.22-.07.49.12.64l2.11 1.65c-.04.32-.07.65-.07.98s.03.66.07.98l-2.11 1.65c-.19-.15-.24-.42-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.03.24.24.42.49.42h4c.25 0 .46-.18.49-.42l.38-2.65c.61-.25 1.17-.59 1.69-.98l2.49 1c.23.09.49 0 .61.22l2-3.46c.12-.22-.07.49-.12-.64l-2.11-1.65zM12 15.5c-1.93 0-3.5-1.57-3.5-3.5s1.57-3.5 3.5-3.5 3.5 1.57 3.5 3.5-1.57 3.5-3.5 3.5z"/></svg></button>
-        </nav>
-        <aside class="sidebar"></aside>
-        <div class="sidebar-overlay"></div>
-        <main class="app-content"><div id="diagram-container"></div></main>
-        <footer class="chat-input-footer">
-            <form id="event-form">
-                <input type="text" id="event-input" placeholder="이벤트 입력 (예: 2025.3.4. 갑 을 .. 죽임)" autocomplete="off" disabled>
-                <button type="submit" id="send-button" aria-label="전송" disabled></button>
-            </form>
-        </footer>
+            <div class="p-4">
+                <button id="show-add-case-modal-btn" class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition flex items-center justify-center shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                    새 사건 추가
+                </button>
+            </div>
+            <nav id="case-list" class="flex-1 overflow-y-auto p-2 space-y-1"></nav>
+            
+            <div id="case-summary-panel" class="p-4 border-t border-slate-200 hidden flex-1 overflow-y-auto">
+                <h3 class="font-semibold text-slate-600 text-sm mb-2">주요 인물</h3>
+                <div id="summary-entities" class="flex flex-wrap gap-2 text-xs"></div>
+                <h3 class="font-semibold text-slate-600 text-sm mt-4 mb-2">주요 출처/자료</h3>
+                <div id="summary-sources" class="flex flex-wrap gap-2 text-xs"></div>
+            </div>
+
+            <div class="p-4 border-t border-slate-200 space-y-2">
+                <button id="backup-btn" class="w-full bg-slate-600 text-white py-2 px-4 rounded-lg hover:bg-slate-700">데이터 백업</button>
+                <label class="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 cursor-pointer text-center block">
+                    데이터 복원 <input type="file" id="restore-input" class="hidden" accept=".json">
+                </label>
+            </div>
+        </aside>
+
+        <!-- Main Panel -->
+        <main class="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+            <header class="p-4 border-b border-slate-200 bg-white flex-shrink-0">
+                <h2 id="current-case-name" class="text-2xl font-bold text-slate-800">사건을 선택하세요</h2>
+            </header>
+            
+            <div id="main-content" class="flex-1 flex flex-col overflow-hidden">
+                <div id="input-area" class="p-4 bg-white border-b border-slate-200 shadow-sm flex-shrink-0 relative">
+                    <form id="record-form">
+                        <input type="text" id="record-input" placeholder="날짜 #개체 > #개체 내용 @출처.페이지" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500" autocomplete="off" disabled>
+                    </form>
+                    <div id="autocomplete-box" class="absolute bg-white border border-slate-300 rounded-md shadow-lg z-10 hidden w-[calc(100%-2rem)] mt-1 max-h-48 overflow-y-auto"></div>
+                </div>
+                
+                <div class="px-4 pt-2 bg-white border-b border-slate-200 flex-shrink-0 flex justify-between items-center">
+                    <div id="view-tabs" class="flex space-x-4">
+                        <button data-view="list" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 active">기록</button>
+                        <button data-view="timeline" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">타임라인</button>
+                        <button data-view="sequence" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">시퀀스</button>
+                        <button data-view="files" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">자료</button>
+                        <button data-view="todos" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">할 일</button>
+                        <button data-view="memo" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">메모</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                         <input type="search" id="search-input" placeholder="#인물 AND @출처 OR '키워드'" class="w-64 p-1.5 border border-slate-300 rounded-md text-sm hidden">
+                         <button id="clear-filter-btn" class="text-sm text-slate-500 hover:text-slate-800 hidden">초기화</button>
+                         <button id="export-btn" class="text-sm bg-slate-200 px-3 py-1.5 rounded-md hover:bg-slate-300 hidden">내보내기</button>
+                    </div>
+                </div>
+
+                <div id="view-container" class="flex-1 overflow-auto bg-slate-100 relative">
+                    <div id="list-view" class="p-4"></div>
+                    <div id="timeline-view" class="hidden p-4"></div>
+                    <div id="sequence-view" class="hidden p-4 text-center bg-white"></div>
+                    <div id="files-view" class="hidden p-4"></div>
+                    <div id="todos-view" class="hidden p-4"></div>
+                    <div id="memo-view" class="hidden p-4 h-full"></div>
+                    <div id="placeholder-view" class="p-8 text-center text-slate-500"><p>사건을 선택하면 기록을 볼 수 있습니다.</p></div>
+                    <div id="loading-overlay" class="absolute inset-0 bg-white bg-opacity-75 hidden items-center justify-center flex-col gap-4"><div class="loader"></div><p>데이터를 불러오는 중...</p></div>
+                </div>
+            </div>
+        </main>
+
+        <!-- Right Panel (Context) -->
+        <aside id="context-panel" class="w-96 bg-white border-l border-slate-200 p-4 transform transition-transform hidden flex-col flex-shrink-0">
+            <div class="flex justify-between items-center border-b border-slate-200 pb-2 mb-4">
+                <h3 id="context-title" class="text-lg font-bold">상세 정보</h3>
+                <button id="close-context-btn" class="text-slate-500 hover:text-slate-800 text-2xl">&times;</button>
+            </div>
+            <div id="context-content" class="flex-1 overflow-y-auto"></div>
+        </aside>
     </div>
-    <div id="settings-modal" class="modal-overlay"></div>
-    <div id="confirmation-modal" class="modal-overlay"></div>
 
-    <script>
-    document.addEventListener('DOMContentLoaded', () => {
-        // --- App State ---
+    <!-- Modals -->
+    <div id="add-case-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center">
+        <div class="p-5 border w-96 shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-medium text-slate-900 text-center">새 사건 추가</h3>
+            <form id="add-case-form" class="mt-4 space-y-3">
+                <input type="text" id="new-case-name" placeholder="사건명" class="w-full p-2 border border-slate-300 rounded-md" required>
+                <input type="text" id="new-case-number" placeholder="사건 번호 (선택)" class="w-full p-2 border border-slate-300 rounded-md">
+                <div class="flex justify-end gap-2 pt-2">
+                    <button id="cancel-case-btn" type="button" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">취소</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script type="module">
+        mermaid.initialize({ startOnLoad: false, theme: 'base', themeVariables: {
+            'background': '#ffffff',
+            'primaryColor': '#f1f5f9', 
+            'primaryTextColor': '#0f172a', 
+            'lineColor': '#64748b',
+            'actorBkg': '#e2e8f0', 
+            'actorBorder': '#94a3b8',
+            'actorTextColor': '#1e293b',
+            'messageTextColor': '#334155',
+            'noteBkgColor': '#fefce8',
+            'noteTextColor': '#713f12',
+            'noteBorderColor': '#facc15',
+            'sequenceNumberColor': '#ffffff',
+        }});
+
+        // --- DATABASE MODULE ---
+        const DB_NAME = 'LawyerAppData_v9';
+        const DB_VERSION = 1;
         let db;
-        let projects = [];
-        let currentProjectId = null;
-        let selectedEventIdForModal = null;
-        let currentSortForModal = 'time';
-        let isEditingEventId = null;
-        let sortableInstance = null;
-        const PRESET_COLORS = ['#d9534f', '#f0ad4e', '#5cb85c', '#337ab7', '#5bc0de', '#777777', '#f783ac', '#6f42c1', '#20c997', '#fd7e14'];
-        const DEFAULT_EVENT_COLOR_HEX = '#212529'; // Use a constant for JS logic
-        
-        // --- DOM Elements ---
-        const projectTitleEl = document.getElementById('current-project-title');
-        const diagramContainer = document.getElementById('diagram-container');
-        const eventInput = document.getElementById('event-input');
-        const sendButton = document.getElementById('send-button');
-        const sidebar = document.querySelector('.sidebar');
-        const sidebarOverlay = document.querySelector('.sidebar-overlay');
-        const settingsModalOverlay = document.getElementById('settings-modal');
-        const confirmationModalOverlay = document.getElementById('confirmation-modal');
 
-        // --- Database Handler ---
-        const DB = {
-            init: () => new Promise((resolve, reject) => { const req = indexedDB.open('TimelineProjectsDB_v15', 1); req.onerror = e => reject(e.target.errorCode); req.onsuccess = e => { db = e.target.result; resolve(db); }; req.onupgradeneeded = e => e.target.result.createObjectStore('projects', { keyPath: 'id', autoIncrement: true }); }),
-            getProjects: () => new Promise((resolve, reject) => { try { const tx = db.transaction('projects', 'readonly'); tx.objectStore('projects').getAll().onsuccess = e => resolve(e.target.result); tx.onerror = e => reject(e.target.error); } catch(err) { reject(err); } }),
-            saveProject: project => new Promise((resolve, reject) => { try { const tx = db.transaction('projects', 'readwrite'); tx.objectStore('projects').put(project).onsuccess = e => resolve(e.target.result); tx.onerror = e => reject(e.target.error); } catch(err) { reject(err); } }),
-            deleteProject: id => new Promise((resolve, reject) => { try { const tx = db.transaction('projects', 'readwrite'); tx.objectStore('projects').delete(id).onsuccess = () => resolve(); tx.onerror = e => reject(e.target.error); } catch(err) { reject(err); } })
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onerror = (e) => reject("DB error: " + e.target.errorCode);
+                request.onsuccess = (e) => { db = e.target.result; resolve(db); };
+                request.onupgradeneeded = (e) => {
+                    const db = e.target.result;
+                    if (!db.objectStoreNames.contains('cases')) db.createObjectStore('cases', { keyPath: 'id', autoIncrement: true });
+                    if (!db.objectStoreNames.contains('records')) {
+                        const s = db.createObjectStore('records', { keyPath: 'id', autoIncrement: true });
+                        s.createIndex('caseId', 'caseId', { unique: false });
+                    }
+                    if (!db.objectStoreNames.contains('entities')) {
+                        const s = db.createObjectStore('entities', { keyPath: 'id', autoIncrement: true });
+                        s.createIndex('name', 'name', { unique: true });
+                    }
+                    if (!db.objectStoreNames.contains('sources')) {
+                        const s = db.createObjectStore('sources', { keyPath: 'id', autoIncrement: true });
+                        s.createIndex('name', 'name', { unique: true });
+                    }
+                    if (!db.objectStoreNames.contains('files')) {
+                        const s = db.createObjectStore('files', { keyPath: 'id', autoIncrement: true });
+                        s.createIndex('caseId', 'caseId', { unique: false });
+                    }
+                    if (!db.objectStoreNames.contains('todos')) {
+                        const s = db.createObjectStore('todos', { keyPath: 'id', autoIncrement: true });
+                        s.createIndex('caseId', 'caseId', { unique: false });
+                    }
+                };
+            });
+        }
+
+        const dbActions = {
+            add: (s, i) => new Promise((res, rej) => { const r = getStore(s, 'readwrite').add(i); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }),
+            update: (s, i) => new Promise((res, rej) => { const r = getStore(s, 'readwrite').put(i); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }),
+            getAll: (s) => new Promise((res, rej) => { const r = getStore(s, 'readonly').getAll(); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }),
+            getById: (s, id) => new Promise((res, rej) => { const r = getStore(s, 'readonly').get(id); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }),
+            delete: (s, id) => new Promise((res, rej) => { const r = getStore(s, 'readwrite').delete(id); r.onsuccess = ()=>res(); r.onerror = ()=>rej(r.error); }),
+            getByCase: (s, id) => new Promise((res, rej) => { const r = getStore(s, 'readonly').index('caseId').getAll(id); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }),
+            findByName: (s, n) => new Promise((res, rej) => { const r = getStore(s, 'readonly').index('name').get(n); r.onsuccess = ()=>res(r.result); r.onerror = ()=>rej(r.error); }),
+            clearStore: (s) => new Promise((res, rej) => { const r = getStore(s, 'readwrite').clear(); r.onsuccess = () => res(); r.onerror = () => rej(r.error); }),
         };
-        
-        // --- Core Logic ---
-        function getCurrentProject() { return projects.find(p => p.id === currentProjectId) || null; }
+        function getStore(s, m) { return db.transaction(s, m).objectStore(s); }
 
-        async function createNewProject(name) {
-            try {
-                const newProject = { name, events: [], eventColorMap: {}, eventIdCounter: 0, actorOrder: [], createdAt: new Date() };
-                const newId = await DB.saveProject(newProject);
-                newProject.id = newId;
-                projects.push(newProject);
-                await switchProject(newId);
-            } catch (err) { console.error("Failed to create project:", err); alert("프로젝트 생성 실패"); }
-        }
-        
-        async function switchProject(id) {
-            currentProjectId = id;
-            localStorage.setItem('timeline_lastProjectId_v15', id);
-            mainUpdate();
-            UI.Sidebar.renderProjectList();
-            UI.Sidebar.close();
-        }
+        // --- PARSER MODULE ---
+        function parseRecordText(rawText) {
+            let text = rawText;
+            const dateRegex = /^((?:\d{2,4})[.\-/년\s]+(?:\d{1,2})[.\-/월\s]+(?:\d{1,2})[일\s]*\.?)\s*/;
+            const dateMatch = text.match(dateRegex);
+            let eventTime = new Date();
+            if (dateMatch) {
+                const dateStr = dateMatch[1].replace(/[년월일]/g, '.').replace(/\s/g, '');
+                const parts = dateStr.split('.').filter(p => p);
+                if (parts.length === 3) {
+                    let year = parseInt(parts[0]);
+                    if (year < 100) year += 2000;
+                    const month = parseInt(parts[1]) - 1;
+                    const day = parseInt(parts[2]);
+                    eventTime = new Date(year, month, day);
+                    text = text.substring(dateMatch[0].length);
+                }
+            }
 
-        function parseEventString(line) {
-            const match = line.match(/^([\d\.\s-]+)\.\s*(.*?)\s*\.\.\s*(.*)$/);
-            if (!match) return null;
-            const [, dateStr, actorsStr, action] = match.map(s => s.trim());
-            const eventActors = actorsStr.split(/\s+/).filter(Boolean);
-            if (eventActors.length === 0) return null;
-            const dateParts = dateStr.split('.').map(Number);
-            const eventDate = new Date(dateParts[0], dateParts[1] - 1, dateParts[2] || 1);
-            return { date: eventDate.toISOString(), dateStr, actors: eventActors, action, type: eventActors.length > 1 ? 'interaction' : 'solo' };
-        }
-
-        async function addEvent(line) {
-            const project = getCurrentProject();
-            if (!project) return;
-            const parsedEvent = parseEventString(line);
-            if (!parsedEvent) { alert("입력 형식이 올바르지 않습니다."); return; }
+            const allEntities = [...text.matchAll(/#([^\s#@>]+)/g)].map(m => m[1]);
+            const allSources = [...text.matchAll(/@([^\s#@.>]+)(?:\.(\d+))?/g)].map(m => ({ name: m[1], page: m[2] ? parseInt(m[2], 10) : null }));
             
-            project.events.push({ id: project.eventIdCounter, ...parsedEvent });
-            project.eventIdCounter++;
-            parsedEvent.actors.forEach(actor => { if (!project.actorOrder.includes(actor)) project.actorOrder.push(actor); });
+            const relations = [];
+            const relationIndex = text.indexOf('>');
+            let description = text;
+
+            if (relationIndex > -1) {
+                const before = text.substring(0, relationIndex);
+                const after = text.substring(relationIndex + 1);
+                const fromEntities = [...before.matchAll(/#([^\s#@>]+)/g)].map(m => m[1]);
+                const toEntities = [...after.matchAll(/#([^\s#@>]+)/g)].map(m => m[1]);
+
+                if (fromEntities.length > 0 && toEntities.length > 0) {
+                    const from = fromEntities[fromEntities.length - 1];
+                    toEntities.forEach(to => relations.push({ from, to, type: '>' }));
+                }
+            }
             
-            try { await DB.saveProject(project); mainUpdate(); } catch(err) { console.error("Failed to add event:", err); alert("이벤트 저장 실패"); }
+            description = description.replace(/#[^\s#@>]+/g, '').replace(/@[^\s#@.>]+(\.\d+)?/g, '').replace('>', '').trim();
+            
+            return { rawText, eventTime: eventTime.toISOString().split('T')[0], description, entities: [...new Set(allEntities)], sources: allSources, relations };
         }
-
-        async function handleDeleteProject(id) {
-            const projectToDelete = projects.find(p => p.id === id);
-            if (!projectToDelete) return;
-
-            UI.ConfirmationModal.show(`정말로 '${projectToDelete.name}' 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`, async () => {
-                 try {
-                    await DB.deleteProject(id);
-                    projects = projects.filter(p => p.id !== id);
-                    if (currentProjectId === id) {
-                        const latestProject = projects.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-                        currentProjectId = latestProject ? latestProject.id : null;
-                        localStorage.setItem('timeline_lastProjectId_v15', currentProjectId);
-                    }
-                    mainUpdate();
-                    UI.Sidebar.renderProjectList();
-                } catch(err) { console.error("Failed to delete project:", err); alert("프로젝트 삭제 실패"); }
+        
+        // --- FILTER PARSER ---
+        function parseFilterQuery(query) {
+            const orGroups = query.split(/\s+OR\s+/i);
+            return orGroups.map(andGroup => {
+                const andConditions = andGroup.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+                return andConditions.filter(c => c.toUpperCase() !== 'AND').map(condition => {
+                    if (condition.startsWith('#')) return { type: 'entity', value: condition.substring(1) };
+                    if (condition.startsWith('@')) return { type: 'source', value: condition.substring(1) };
+                    if (condition.startsWith('/') && condition.endsWith('/')) return { type: 'regex', value: new RegExp(condition.slice(1, -1), 'i') };
+                    return { type: 'text', value: condition.replace(/"/g, '') };
+                });
             });
         }
 
-        // --- UI Module ---
-        const UI = {
-            Sidebar: {
-                init: () => {
-                    sidebar.innerHTML = `
-                        <div class="sidebar-header"><h2>프로젝트</h2></div>
-                        <ul id="project-list"></ul>
-                        <div class="sidebar-footer">
-                            <div id="new-project-controls"><button id="new-project-btn">+ 새 프로젝트 만들기</button></div>
-                            <form id="new-project-form">
-                                <input type="text" id="new-project-name" placeholder="프로젝트 이름" required>
-                                <button type="submit" class="confirm-btn">확인</button>
-                                <button type="button" class="cancel-btn">취소</button>
-                            </form>
-                        </div>`;
-                },
-                open: () => { sidebar.classList.add('is-open'); sidebarOverlay.classList.add('is-visible'); },
-                close: () => { sidebar.classList.remove('is-open'); sidebarOverlay.classList.remove('is-visible'); },
-                renderProjectList: () => {
-                    const listEl = document.getElementById('project-list');
-                    listEl.innerHTML = '';
-                    if (projects.length === 0) { listEl.innerHTML = '<li style="padding:12px 16px; color: var(--text-secondary);">프로젝트 없음</li>'; return; }
-                    projects.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).forEach(p => {
-                        const li = document.createElement('li');
-                        li.dataset.id = p.id;
-                        if (p.id === currentProjectId) li.classList.add('active');
-                        li.innerHTML = `<span>${p.name}</span><button class="delete-project-btn" data-id="${p.id}">&times;</button>`;
-                        listEl.appendChild(li);
-                    });
-                },
-                showNewProjectForm: (show) => {
-                    document.getElementById('new-project-controls').style.display = show ? 'none' : 'block';
-                    document.getElementById('new-project-form').style.display = show ? 'flex' : 'none';
-                    if(show) document.getElementById('new-project-name').focus();
-                }
-            },
-            Diagram: {
-                render: (project) => {
-                    diagramContainer.innerHTML = '';
-                    if (!project || !project.events || project.events.length === 0) {
-                        diagramContainer.innerHTML = `<div style="text-align:center; color: var(--text-secondary); padding: 2rem;"><h2>타임라인</h2><p>하단 입력창에 이벤트를 추가하세요.</p></div>`;
-                        return;
-                    }
-                    const allActorsInEvents = new Set();
-                    project.events.forEach(e => e.actors.forEach(a => allActorsInEvents.add(a)));
-                    const actorOrder = project.actorOrder || [];
-                    const sortedActors = [...actorOrder].filter(actor => allActorsInEvents.has(actor));
-                    allActorsInEvents.forEach(actor => { if (!sortedActors.includes(actor)) sortedActors.push(actor); });
-
-                    const PADDING = 50, ACTOR_WIDTH = 120, ACTOR_SPACING = 160, STEP_HEIGHT = 100, LIFELINE_TOP_Y = 80;
-                    const contentWidth = PADDING * 2 + (sortedActors.length > 0 ? (sortedActors.length - 1) * (ACTOR_WIDTH + ACTOR_SPACING) + ACTOR_WIDTH : 0);
-                    const sortedEvents = [...project.events].sort((a,b) => new Date(a.date) - new Date(b.date) || a.id - b.id);
-                    const contentHeight = PADDING * 2 + LIFELINE_TOP_Y + sortedEvents.length * STEP_HEIGHT;
-                    const actorPositions = new Map();
-                    sortedActors.forEach((actor, i) => actorPositions.set(actor, PADDING + ACTOR_WIDTH / 2 + i * (ACTOR_WIDTH + ACTOR_SPACING)));
-                    
-                    let svgContent = '', defs = `<filter id="drop-shadow" x="-0.3" y="-0.3" width="1.6" height="1.6"><feGaussianBlur in="SourceAlpha" stdDeviation="3"/><feOffset dx="2" dy="2" result="offsetblur"/><feComponentTransfer><feFuncA type="linear" slope="0.3"/></feComponentTransfer><feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge></filter>`;
-                    sortedActors.forEach(actor => {
-                        const x = actorPositions.get(actor);
-                        svgContent += `<g style="filter:url(#drop-shadow);"><rect x="${x - ACTOR_WIDTH / 2}" y="20" width="${ACTOR_WIDTH}" height="40" rx="8" ry="8" fill="#fff" stroke="#aaa" /><text x="${x}" y="45" text-anchor="middle" font-family="var(--font-family)" font-weight="500">${actor}</text></g><line x1="${x}" y1="${LIFELINE_TOP_Y}" x2="${x}" y2="${contentHeight - PADDING}" stroke="#ccc" stroke-dasharray="5,5" />`;
-                    });
-                    
-                    sortedEvents.forEach((event, i) => {
-                        const y = LIFELINE_TOP_Y + (i + 1) * STEP_HEIGHT;
-                        const eventColor = (project.eventColorMap || {})[event.id] || DEFAULT_EVENT_COLOR_HEX;
-                        if (event.type === 'interaction') {
-                            const sourceX = actorPositions.get(event.actors[0]), destX = actorPositions.get(event.actors[1]);
-                            if (sourceX === undefined || destX === undefined) return;
-                            const markerId = `arrowhead-${event.id}-${eventColor.replace('#','')}`;
-                            svgContent += `<g><line x1="${sourceX}" y1="${y}" x2="${destX}" y2="${y}" stroke="${eventColor}" stroke-width="2" marker-end="url(#${markerId})"/><text x="${(sourceX + destX) / 2}" y="${y - 12}" text-anchor="middle" fill="${eventColor}" font-size="14px" font-weight="500">${event.action}</text><text x="${(sourceX + destX) / 2}" y="${y + 20}" text-anchor="middle" fill="var(--text-secondary)" font-size="12px">${event.dateStr}</text></g>`;
-                            defs += `<marker id="${markerId}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${eventColor}"></path></marker>`;
-                        } else {
-                            const x = actorPositions.get(event.actors[0]);
-                            if (x === undefined) return;
-                            const noteW = 160, noteH = 70;
-                            svgContent += `<g transform="translate(${x + 15}, ${y - noteH/2})"><path d="M0 0 H${noteW-10} L${noteW} 10 V${noteH} H0Z" fill="var(--note-bg)" stroke="${eventColor}" style="filter:url(#drop-shadow);" /><path d="M${noteW-10} 0 V10 H${noteW} Z" fill="rgba(0,0,0,0.15)" /><foreignObject x="5" y="5" width="${noteW - 10}" height="${noteH - 10}"><div xmlns="http://www.w3.org/1999/xhtml" style="font-family: var(--font-family); font-size: 13px; color: ${eventColor}; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; line-height: 1.3;"><b>${event.action}</b><div style="font-size: 11px; color: var(--text-secondary);">${event.dateStr}</div></div></foreignObject></g><line x1="${x}" y1="${y}" x2="${x+15}" y2="${y}" stroke="${eventColor}" stroke-dasharray="3,3" />`;
+        async function applyFilter(records, parsedQuery) {
+            return records.filter(record => {
+                return parsedQuery.some(andGroup => {
+                    return andGroup.every(condition => {
+                        const text = record.rawText.toLowerCase();
+                        switch (condition.type) {
+                            case 'entity': return record.entities.includes(condition.value);
+                            case 'source': return record.sources.some(s => s.name === condition.value);
+                            case 'regex': return condition.value.test(record.rawText);
+                            case 'text': return text.includes(condition.value.toLowerCase());
+                            default: return false;
                         }
                     });
-                    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-                    svg.setAttribute("width", contentWidth);
-                    svg.setAttribute("height", contentHeight);
-                    svg.innerHTML = `<defs>${defs}</defs>${svgContent}`;
-                    diagramContainer.appendChild(svg);
-                }
-            },
-            SettingsModal: {
-                open: function() {
-                    const project = getCurrentProject();
-                    if(!project) { alert("프로젝트를 선택해주세요."); return; }
-                    settingsModalOverlay.innerHTML = `
-                    <div class="modal-content">
-                        <header class="modal-header">
-                            <h2>설정</h2>
-                            <button class="modal-close-btn" aria-label="닫기">&times;</button>
-                        </header>
-                        <div class="modal-tabs">
-                            <button class="modal-tab-btn active" data-tab="events">이벤트</button>
-                            <button class="modal-tab-btn" data-tab="actors">인물</button>
-                        </div>
-                        <div class="modal-body">
-                            <div id="events-tab" class="modal-tab-content active">
-                                 <div id="event-list-pane">
-                                    <div class="modal-toolbar"><button class="sort-btn active" data-sort="time">시간순</button><button class="sort-btn" data-sort="id">등록순</button></div>
-                                    <ul id="modal-event-list-container"></ul>
-                                 </div>
-                                 <div id="color-editor-pane"></div>
-                            </div>
-                            <div id="actors-tab" class="modal-tab-content">
-                                <div id="actor-list-pane">
-                                    <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 0;">인물을 드래그하여 다이어그램 순서를 변경하세요.</p>
-                                    <ul id="actor-order-list"></ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>`;
-                    settingsModalOverlay.classList.add('is-visible');
-                    UI.SettingsModal.renderEventTab();
-                    UI.SettingsModal.setupEventListeners();
-                },
-                close: () => {
-                    isEditingEventId = null;
-                    selectedEventIdForModal = null;
-                    if (sortableInstance) {
-                        sortableInstance.destroy();
-                        sortableInstance = null;
-                    }
-                    settingsModalOverlay.classList.remove('is-visible');
-                },
-                switchTab: (tabName) => {
-                    settingsModalOverlay.querySelectorAll('.modal-tab-btn, .modal-tab-content').forEach(el => el.classList.remove('active'));
-                    const tabBtn = settingsModalOverlay.querySelector(`.modal-tab-btn[data-tab="${tabName}"]`);
-                    const tabContent = settingsModalOverlay.querySelector(`#${tabName}-tab`);
-                    if(tabBtn) tabBtn.classList.add('active');
-                    if(tabContent) tabContent.classList.add('active');
-
-                    isEditingEventId = null;
-                    if(tabName === 'actors') UI.SettingsModal.renderActorTab();
-                    else UI.SettingsModal.renderEventTab();
-                },
-                renderActorTab: () => {
-                     const project = getCurrentProject();
-                     if(!project) return;
-                     const allActors = new Set();
-                     project.events.forEach(e => e.actors.forEach(a => allActors.add(a)));
-                     const actorOrder = project.actorOrder || [];
-                     const sortedActors = [...actorOrder].filter(actor => allActors.has(actor));
-                     allActors.forEach(actor => { if (!sortedActors.includes(actor)) sortedActors.push(actor); });
-                     
-                     const listEl = document.getElementById('actor-order-list');
-                     if(!listEl) return;
-                     listEl.innerHTML = '';
-                     sortedActors.forEach(actor => {
-                         const li = document.createElement('li');
-                         li.textContent = actor;
-                         li.dataset.actor = actor;
-                         listEl.appendChild(li);
-                     });
-                     UI.SettingsModal.setupDragDrop();
-                },
-                renderEventTab: () => {
-                    const project = getCurrentProject();
-                    if(!project) return;
-                    const container = document.getElementById('modal-event-list-container');
-                    if(!container) return;
-
-                    const events = [...project.events];
-                    if (currentSortForModal === 'time') events.sort((a,b) => new Date(a.date) - new Date(b.date) || a.id - b.id);
-                    else events.sort((a,b) => a.id - b.id);
-                    
-                    container.innerHTML = '';
-                    events.forEach(event => {
-                        const li = document.createElement('li');
-                        li.dataset.eventId = event.id;
-                        if(event.id === selectedEventIdForModal) li.classList.add('active');
-
-                        if(event.id === isEditingEventId) {
-                            const originalText = `${event.dateStr}. ${event.actors.join(' ')} .. ${event.action}`;
-                            li.innerHTML = `
-                                <form class="event-edit-form" data-event-id="${event.id}">
-                                    <input type="text" class="event-edit-input" value="${originalText}">
-                                    <button type="submit" class="confirm-btn" style="padding: 4px 8px;">저장</button>
-                                    <button type="button" class="cancel-edit-btn" style="padding: 4px 8px;">취소</button>
-                                </form>
-                            `;
-                        } else {
-                             const color = project.eventColorMap[event.id] || '#ccc';
-                            li.innerHTML = `
-                                <span>${event.dateStr}: ${event.actors.join(', ')} → ${event.action}</span>
-                                <span style="width: 20px; height: 20px; background-color: ${color}; border-radius: 4px; border: 1px solid rgba(0,0,0,0.1)"></span>
-                            `;
-                        }
-                        container.appendChild(li);
-                    });
-                    UI.SettingsModal.renderColorEditor();
-                },
-                renderColorEditor: () => {
-                     const pane = document.getElementById('color-editor-pane');
-                     if(!pane) return;
-                     const project = getCurrentProject();
-                     const event = project.events.find(e => e.id === selectedEventIdForModal);
-
-                     if (!event || isEditingEventId !== null) {
-                         pane.classList.remove('visible');
-                         pane.innerHTML = '';
-                         return;
-                     }
-                     
-                     pane.classList.add('visible');
-                     pane.innerHTML = `
-                        <h4>'${event.action}' 편집</h4>
-                        <div id="preset-colors" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
-                            ${PRESET_COLORS.map(c => `<button class="color-swatch" data-color="${c}" style="background-color: ${c};"></button>`).join('')}
-                        </div>
-                        <label for="custom-color-picker">사용자 지정 색상:</label>
-                        <input type="color" id="custom-color-picker" value="${project.eventColorMap[event.id] || '#000000'}">
-                        <div class="editor-actions">
-                           <button id="edit-event-btn" class="confirm-btn">내용 수정</button>
-                           <button id="delete-event-btn" class="danger-btn">이벤트 삭제</button>
-                        </div>
-                     `;
-                },
-                setupDragDrop: () => {
-                    const listEl = document.getElementById('actor-order-list');
-                    if(!listEl) return;
-                    if(sortableInstance) sortableInstance.destroy();
-                    
-                    sortableInstance = new Sortable(listEl, {
-                        animation: 150,
-                        ghostClass: 'sortable-ghost',
-                        onEnd: async (evt) => {
-                            const newOrder = [...evt.target.children].map(li => li.dataset.actor);
-                            const project = getCurrentProject();
-                            if(project) {
-                                project.actorOrder = newOrder;
-                                await DB.saveProject(project);
-                                mainUpdate();
-                            }
-                        }
-                    });
-                },
-                setupEventListeners: () => {
-                    const modal = settingsModalOverlay;
-                    if(!modal) return;
-                    
-                    modal.addEventListener('click', async e => {
-                        const project = getCurrentProject();
-                        if (!project) return;
-
-                        if (e.target.matches('.modal-tab-btn')) UI.SettingsModal.switchTab(e.target.dataset.tab);
-                        else if(e.target.matches('.sort-btn')) {
-                            currentSortForModal = e.target.dataset.sort;
-                            modal.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
-                            e.target.classList.add('active');
-                            UI.SettingsModal.renderEventTab();
-                        }
-                        else if(e.target.closest('#modal-event-list-container li') && !e.target.closest('.event-edit-form')) {
-                            const li = e.target.closest('li');
-                            if (isEditingEventId !== null && isEditingEventId !== parseInt(li.dataset.eventId)) {
-                                isEditingEventId = null; 
-                            }
-                            selectedEventIdForModal = parseInt(li.dataset.eventId);
-                            UI.SettingsModal.renderEventTab();
-                        }
-                        else if(e.target.matches('.color-swatch')) {
-                            project.eventColorMap[selectedEventIdForModal] = e.target.dataset.color;
-                            await DB.saveProject(project);
-                            UI.SettingsModal.renderEventTab();
-                            mainUpdate();
-                        }
-                        else if(e.target.id === 'delete-event-btn') {
-                            const eventToDelete = project.events.find(ev => ev.id === selectedEventIdForModal);
-                            if(eventToDelete) {
-                                UI.ConfirmationModal.show(`'${eventToDelete.action}' 이벤트를 삭제하시겠습니까?`, async () => {
-                                    project.events = project.events.filter(ev => ev.id !== selectedEventIdForModal);
-                                    delete project.eventColorMap[selectedEventIdForModal];
-                                    const deletedId = selectedEventIdForModal;
-                                    selectedEventIdForModal = null;
-                                    isEditingEventId = isEditingEventId === deletedId ? null : isEditingEventId;
-                                    await DB.saveProject(project);
-                                    UI.SettingsModal.renderEventTab();
-                                    mainUpdate();
-                                });
-                            }
-                        }
-                        else if (e.target.id === 'edit-event-btn') {
-                            isEditingEventId = selectedEventIdForModal;
-                            UI.SettingsModal.renderEventTab();
-                        }
-                        else if(e.target.matches('.cancel-edit-btn')) {
-                            isEditingEventId = null;
-                            UI.SettingsModal.renderEventTab();
-                        }
-                    });
-
-                    modal.addEventListener('submit', async e => {
-                        if(e.target.matches('.event-edit-form')) {
-                            e.preventDefault();
-                            const eventId = parseInt(e.target.dataset.eventId);
-                            const input = e.target.querySelector('.event-edit-input');
-                            const newEventData = parseEventString(input.value);
-
-                            if(!newEventData) {
-                                alert("잘못된 형식입니다. 수정을 취소합니다.");
-                                isEditingEventId = null;
-                                UI.SettingsModal.renderEventTab();
-                                return;
-                            }
-                            const project = getCurrentProject();
-                            const eventIndex = project.events.findIndex(ev => ev.id === eventId);
-                            if(eventIndex > -1) {
-                                const originalEvent = project.events[eventIndex];
-                                newEventData.actors.forEach(actor => { if (!project.actorOrder.includes(actor)) project.actorOrder.push(actor); });
-                                project.events[eventIndex] = { ...originalEvent, ...newEventData };
-                                await DB.saveProject(project);
-                                isEditingEventId = null;
-                                UI.SettingsModal.renderEventTab();
-                                mainUpdate();
-                            }
-                        }
-                    });
-                    
-                    modal.addEventListener('change', async e => {
-                        const project = getCurrentProject();
-                        if (!project) return;
-                        if(e.target.id === 'custom-color-picker') {
-                            project.eventColorMap[selectedEventIdForModal] = e.target.value;
-                            await DB.saveProject(project);
-                            UI.SettingsModal.renderEventTab();
-                            mainUpdate();
-                        }
-                    });
-                }
-            },
-            ConfirmationModal: {
-                show: (message, onConfirm) => {
-                    confirmationModalOverlay.innerHTML = `
-                        <div class="modal-content" style="max-width: 450px;">
-                            <div class="modal-header">
-                                <h4>삭제 확인</h4>
-                                <button class="modal-close-btn">&times;</button>
-                            </div>
-                            <div class="modal-body" style="flex-direction: column; gap: var(--spacing-md);">
-                                <p style="margin: 0; line-height: 1.6;">${message}</p>
-                                <div class="confirmation-actions">
-                                    <button class="secondary-btn" data-action="cancel">취소</button>
-                                    <button class="danger-btn" data-action="confirm">삭제</button>
-                                </div>
-                            </div>
-                        </div>`;
-                    confirmationModalOverlay.classList.add('is-visible');
-
-                    const confirmBtn = confirmationModalOverlay.querySelector('[data-action="confirm"]');
-                    const cancelBtn = confirmationModalOverlay.querySelector('[data-action="cancel"]');
-                    const closeBtn = confirmationModalOverlay.querySelector('.modal-close-btn');
-
-                    const cleanup = () => {
-                        UI.ConfirmationModal.hide();
-                        confirmBtn.removeEventListener('click', handleConfirm);
-                        cancelBtn.removeEventListener('click', cleanup);
-                        closeBtn.removeEventListener('click', cleanup);
-                    }
-
-                    const handleConfirm = () => {
-                        onConfirm();
-                        cleanup();
-                    }
-
-                    confirmBtn.addEventListener('click', handleConfirm, { once: true });
-                    cancelBtn.addEventListener('click', cleanup, { once: true });
-                    closeBtn.addEventListener('click', cleanup, { once: true });
-                },
-                hide: () => {
-                    confirmationModalOverlay.classList.remove('is-visible');
-                }
-            }
-        };
-        
-        // --- App Main Update & Initialization ---
-        function mainUpdate() {
-            const project = getCurrentProject();
-            if (!project) {
-                projectTitleEl.textContent = "프로젝트 없음";
-                diagramContainer.innerHTML = `<div style="text-align:center; padding: 2rem; color: var(--text-secondary);"><h2>환영합니다!</h2><p>왼쪽 메뉴에서 새 프로젝트를 만들어 타임라인 작성을 시작하세요.</p></div>`;
-                eventInput.disabled = true;
-                sendButton.disabled = true;
-                sendButton.innerHTML = '';
-                return;
-            }
-            projectTitleEl.textContent = project.name;
-            eventInput.disabled = false;
-            sendButton.disabled = false;
-            sendButton.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" height="24px" viewBox="0 0 24 24" width="24px" fill="#FFFFFF"><path d="M0 0h24v24H0V0z" fill="none"/><path d="M3.4 20.4l17.45-7.48c.81-.35.81-1.49 0-1.84L3.4 3.6c-.66-.29-1.39.2-1.39.91L2 9.12c0 .5.37.93.87.99L17 12 2.87 13.88c-.5.07-.87.5-.87 1l.01 4.61c0 .71.73 1.2 1.39.91z"/></svg>`;
-            UI.Diagram.render(project);
+                });
+            });
         }
 
-        async function initializeApp() {
-            try {
-                await DB.init();
-                projects = await DB.getProjects();
+        // --- GLOBAL STATE & ELEMENTS ---
+        let appState = { currentCaseId: null, currentView: 'list', draggedElement: null, searchTerm: '' };
+        const caseListEl = document.getElementById('case-list');
+        const currentCaseNameEl = document.getElementById('current-case-name');
+        const recordInputEl = document.getElementById('record-input');
+        const addCaseModalEl = document.getElementById('add-case-modal');
+        const mainContentEl = document.getElementById('main-content');
+        const placeholderViewEl = document.getElementById('placeholder-view');
+        const caseSummaryPanel = document.getElementById('case-summary-panel');
+        const searchInputEl = document.getElementById('search-input');
+        const exportBtnEl = document.getElementById('export-btn');
+        const clearFilterBtnEl = document.getElementById('clear-filter-btn');
+        const loadingOverlayEl = document.getElementById('loading-overlay');
+        const autocompleteBoxEl = document.getElementById('autocomplete-box');
+        const contextTitleEl = document.getElementById('context-title');
+        const contextContentEl = document.getElementById('context-content');
+        const views = { list: document.getElementById('list-view'), timeline: document.getElementById('timeline-view'), sequence: document.getElementById('sequence-view'), files: document.getElementById('files-view'), todos: document.getElementById('todos-view'), memo: document.getElementById('memo-view') };
+
+        // --- RENDER FUNCTIONS ---
+        async function renderCases() {
+            const cases = await dbActions.getAll('cases');
+            caseListEl.innerHTML = cases.map(c => `<a href="#" data-id="${c.id}" class="block px-4 py-2 text-sm rounded-md ${c.id === appState.currentCaseId ? 'bg-blue-100 text-blue-800 font-semibold' : 'text-slate-600 hover:bg-slate-100'}"><p class="font-medium">${c.caseName}</p><p class="text-xs text-slate-500">${c.caseNumber || ''}</p></a>`).join('');
+        }
+
+        async function renderMainView() {
+            loadingOverlayEl.style.display = 'flex';
+            const hasCase = !!appState.currentCaseId;
+            mainContentEl.classList.toggle('hidden', !hasCase);
+            placeholderViewEl.classList.toggle('hidden', hasCase);
+            caseSummaryPanel.classList.toggle('hidden', !hasCase);
+            searchInputEl.classList.toggle('hidden', !hasCase);
+            clearFilterBtnEl.classList.toggle('hidden', !hasCase);
+            exportBtnEl.classList.toggle('hidden', !hasCase || appState.currentView !== 'timeline');
+            document.getElementById('input-area').style.display = appState.currentView === 'list' ? 'block' : 'none';
+
+            if (!hasCase) { loadingOverlayEl.style.display = 'none'; return; }
+
+            Object.values(views).forEach(v => v.classList.add('hidden'));
+            views[appState.currentView].classList.remove('hidden');
+            
+            let records = (await dbActions.getByCase('records', appState.currentCaseId)).sort((a, b) => a.sequence - b.sequence);
+            
+            if (appState.searchTerm) {
+                const parsedQuery = parseFilterQuery(appState.searchTerm);
+                records = await applyFilter(records, parsedQuery);
+            }
+
+            await renderCaseSummary(records);
+
+            switch(appState.currentView) {
+                case 'list': await renderRecordList(records); break;
+                case 'timeline': await renderEnhancedTimeline(records); break;
+                case 'sequence': await renderSequenceDiagram(records); break;
+                case 'files': await renderFiles(); break;
+                case 'todos': await renderTodos(); break;
+                case 'memo': await renderMemo(); break;
+            }
+            loadingOverlayEl.style.display = 'none';
+        }
+
+        async function renderRecordList(records) {
+            views.list.innerHTML = records.length ? '' : `<p class="text-center text-slate-500">${appState.searchTerm ? '필터와 일치하는 기록이 없습니다.' : '아직 기록이 없습니다.'}</p>`;
+            for (const record of records) {
+                const el = document.createElement('div');
+                el.className = "bg-white p-3 rounded-lg shadow-sm mb-2 border border-slate-200 relative group";
+                el.dataset.id = record.id;
                 
-                let lastId = localStorage.getItem('timeline_lastProjectId_v15');
-                currentProjectId = lastId ? parseInt(lastId) : null;
-                if (!projects.find(p => p.id === currentProjectId)) {
-                    const latestProject = projects.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
-                    currentProjectId = latestProject ? latestProject.id : null;
-                }
+                const viewDiv = document.createElement('div');
+                viewDiv.className = 'record-view';
+                viewDiv.innerHTML = await renderRecordContent(record);
                 
-                setupEventListeners();
-                UI.Sidebar.renderProjectList();
-                mainUpdate();
-            } catch (err) {
-                console.error("Application initialization failed:", err);
-                projectTitleEl.textContent = "앱 로드 실패";
+                const editDiv = document.createElement('div');
+                editDiv.className = 'record-edit hidden';
+                editDiv.innerHTML = renderEditForm(record);
+
+                el.appendChild(viewDiv);
+                el.appendChild(editDiv);
+                views.list.appendChild(el);
             }
         }
         
-        function setupEventListeners(){
-            UI.Sidebar.init();
-            document.querySelector('.hamburger-menu').addEventListener('click', UI.Sidebar.open);
-            sidebarOverlay.addEventListener('click', UI.Sidebar.close);
+        async function renderRecordContent(record) {
+            const escapeHtml = (str) => str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            let text = record.rawText;
 
-            document.getElementById('new-project-btn').addEventListener('click', () => UI.Sidebar.showNewProjectForm(true));
-            document.querySelector('#new-project-form .cancel-btn').addEventListener('click', () => UI.Sidebar.showNewProjectForm(false));
-            document.getElementById('new-project-form').addEventListener('submit', async e => {
-                e.preventDefault();
-                const input = document.getElementById('new-project-name');
-                if (input.value.trim()) {
-                    await createNewProject(input.value.trim());
-                    input.value = '';
-                    UI.Sidebar.showNewProjectForm(false);
+            const placeholder = "___RELATION___";
+            if (record.relations.length > 0) {
+                const relationIndex = text.indexOf('>');
+                if(relationIndex > -1) {
+                    text = text.substring(0, relationIndex) + placeholder + text.substring(relationIndex + 1);
                 }
-            });
-
-            document.getElementById('project-list').addEventListener('click', e => {
-                const li = e.target.closest('li[data-id]');
-                const deleteBtn = e.target.closest('.delete-project-btn');
-                if (deleteBtn) {
-                    e.stopPropagation();
-                    handleDeleteProject(parseInt(deleteBtn.dataset.id));
-                } else if (li) {
-                    switchProject(parseInt(li.dataset.id));
-                }
-            });
-
-            document.getElementById('event-form').addEventListener('submit', e => {
-                e.preventDefault();
-                if (eventInput.value.trim()) {
-                    addEvent(eventInput.value.trim());
-                    eventInput.value = '';
-                }
-            });
+            }
             
-            document.getElementById('settings-toggle').addEventListener('click', UI.SettingsModal.open);
-            settingsModalOverlay.addEventListener('click', e => {
-                if (e.target.matches('.modal-close-btn') || e.target.id === 'settings-modal') {
-                    UI.SettingsModal.close();
+            text = escapeHtml(text);
+            
+            const entities = await Promise.all(record.entityIds.map(id => dbActions.getById('entities', id)));
+            for (const entity of entities) if (entity) text = text.replace(new RegExp(`#${entity.name}`, 'g'), `<span class="record-entity" data-type="entity" data-id="${entity.id}">#${entity.name}</span>`);
+            
+            const sources = await Promise.all(record.sourceIds.map(id => dbActions.getById('sources', id)));
+            for (const source of sources) {
+                if (source) {
+                    const recordSource = record.sources.find(s => s.name === source.name);
+                    const pageText = recordSource && recordSource.page ? ` <span class="record-page">(p.${recordSource.page})</span>` : '';
+                    text = text.replace(new RegExp(`@${source.name}(?:\\.${recordSource.page})?`, 'g'), `<span class="record-source" data-type="source" data-id="${source.id}">@${source.name}</span>${pageText}`);
                 }
-            });
-            confirmationModalOverlay.addEventListener('click', e => {
-                if (e.target.id === 'confirmation-modal') {
-                     UI.ConfirmationModal.hide();
-                }
-            })
+            }
+
+            text = text.replace(placeholder, '<span class="record-relation">&gt;</span>');
+
+            return `<div class="flex items-start"><span draggable="true" class="drag-handle text-slate-400 mr-3 mt-1 cursor-grab active:cursor-grabbing"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg></span><div class="flex-1"><p class="text-slate-800 whitespace-pre-wrap">${text}</p><p class="text-xs text-slate-500 text-right mt-2">${record.eventTime}</p></div></div><div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1"><button class="edit-record-btn text-slate-500 hover:text-blue-600 p-1" title="수정"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z" /></svg></button><button class="delete-record-btn text-slate-500 hover:text-red-600 p-1" title="삭제"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div>`;
         }
         
-        initializeApp();
-    });
+        function renderEditForm(record) { return `<textarea class="w-full p-2 border border-slate-300 rounded-md h-24">${record.rawText}</textarea><div class="flex justify-end gap-2 mt-2"><button class="cancel-edit-btn px-3 py-1 bg-slate-200 rounded text-sm hover:bg-slate-300">취소</button><button class="save-edit-btn px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">저장</button></div>`; }
+
+        async function renderEnhancedTimeline(records) {
+            views.timeline.innerHTML = records.length ? `<table class="w-full bg-white rounded-lg shadow-md"><thead class="bg-slate-50 text-left text-sm font-semibold text-slate-600"><tr><th class="p-3 w-1/6">날짜</th><th class="p-3 w-3/6">핵심 내용</th><th class="p-3 w-1/6">관련 인물</th><th class="p-3 w-1/6">출처</th></tr></thead><tbody class="divide-y divide-slate-200"></tbody></table>` : `<p class="text-center text-slate-500">${appState.searchTerm ? '필터와 일치하는 기록이 없습니다.' : '타임라인을 표시할 기록이 없습니다.'}</p>`;
+            if (!records.length) return;
+            const tbody = views.timeline.querySelector('tbody');
+            for (const record of records) {
+                const entities = (await Promise.all(record.entityIds.map(id => dbActions.getById('entities', id)))).filter(Boolean).map(e => e.name).join(', ');
+                const sources = (await Promise.all(record.sourceIds.map(id => dbActions.getById('sources', id)))).filter(Boolean).map(s => s.name).join(', ');
+                tbody.innerHTML += `<tr class="text-sm text-slate-700 hover:bg-slate-50"><td class="p-3 font-medium whitespace-nowrap">${record.eventTime}</td><td class="p-3 whitespace-pre-wrap">${record.description.replace(/>/g, '&gt;')}</td><td class="p-3">${entities}</td><td class="p-3">${sources}</td></tr>`;
+            }
+        }
+
+        async function renderSequenceDiagram(records) {
+            const relations = records.filter(r => r.relations && r.relations.length > 0);
+            if (relations.length === 0) { views.sequence.innerHTML = `<p>${appState.searchTerm ? '필터와 일치하는 기록이 없습니다.' : '시퀀스 다이어그램으로 표시할 상호작용(&gt;) 기록이 없습니다.'}</p>`; return; }
+            
+            const orderedParticipants = [];
+            relations.forEach(r => {
+                r.relations.forEach(rel => {
+                    if (!orderedParticipants.includes(rel.from)) orderedParticipants.push(rel.from);
+                    if (!orderedParticipants.includes(rel.to)) orderedParticipants.push(rel.to);
+                });
+            });
+
+            const mermaidCode = `sequenceDiagram\nautonumber\n${orderedParticipants.map(p => `participant ${p}`).join('\n')}\n${relations.map(r => r.relations.map(rel => { const desc = r.description.replace(/>/g, '').replace(/:/g, '').replace(/"/g, '#quot;'); return `${rel.from}->>${rel.to}: ${desc}<br/>(${r.eventTime})`; }).join('\n')).join('\n')}`;
+            views.sequence.innerHTML = `<div class="mermaid">${mermaidCode}</div>`;
+            await mermaid.run({ nodes: [views.sequence.querySelector('.mermaid')] });
+        }
+
+        async function renderFiles() {
+            views.files.innerHTML = `<div class="mb-4"><label class="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 cursor-pointer text-center block">자료 업로드<input type="file" id="file-upload-input" class="hidden" multiple></label></div><div id="file-list" class="space-y-2"></div>`;
+            const files = await dbActions.getByCase('files', appState.currentCaseId);
+            const fileListEl = document.getElementById('file-list');
+            fileListEl.innerHTML = files.length ? '' : '<p class="text-center text-slate-500">업로드된 자료가 없습니다.</p>';
+            files.forEach(file => { fileListEl.innerHTML += `<div class="bg-white p-3 rounded-md shadow-sm border flex justify-between items-center"><span class="font-medium flex items-center gap-2">${getFileIcon(file.type)} ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)</span><button class="download-file-btn text-blue-600 hover:underline" data-id="${file.id}">다운로드</button></div>`; });
+        }
+
+        async function renderTodos() {
+            views.todos.innerHTML = `<form id="add-todo-form" class="flex gap-2 mb-4"><input type="text" id="new-todo-input" class="flex-1 p-2 border rounded-md" placeholder="새로운 할 일..." required><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">추가</button></form><div id="todo-list" class="space-y-2"></div>`;
+            const todos = await dbActions.getByCase('todos', appState.currentCaseId);
+            const todoListEl = document.getElementById('todo-list');
+            todoListEl.innerHTML = todos.length ? '' : '<p class="text-center text-slate-500">할 일이 없습니다.</p>';
+            todos.forEach(todo => { todoListEl.innerHTML += `<div class="todo-item bg-white p-3 rounded-md shadow-sm border flex items-center"><input type="checkbox" data-id="${todo.id}" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3" ${todo.isCompleted ? 'checked' : ''}><span>${todo.task}</span></div>`; });
+        }
+
+        async function renderMemo() {
+            const caseData = await dbActions.getById('cases', appState.currentCaseId);
+            views.memo.innerHTML = `<textarea id="memo-textarea" class="w-full h-full p-3 border rounded-md resize-none" placeholder="사건에 대한 메모를 자유롭게 작성하세요...">${caseData.memo || ''}</textarea>`;
+        }
+        
+        async function renderCaseSummary(records) {
+            const entitySet = new Map(), sourceSet = new Map();
+            for (const record of records) {
+                for (const id of record.entityIds) if (!entitySet.has(id)) entitySet.set(id, (await dbActions.getById('entities', id)).name);
+                for (const id of record.sourceIds) if (!sourceSet.has(id)) sourceSet.set(id, (await dbActions.getById('sources', id)).name);
+            }
+            document.getElementById('summary-entities').innerHTML = [...entitySet.entries()].map(([id, name]) => `<span class="summary-tag bg-blue-100 text-blue-800 px-2 py-1 rounded-full cursor-pointer" data-filter="#${name}">#${name}</span>`).join('') + `<span class="summary-tag bg-slate-200 px-2 py-1 rounded-full cursor-pointer" data-filter="">전체</span>`;
+            document.getElementById('summary-sources').innerHTML = [...sourceSet.entries()].map(([id, name]) => `<span class="summary-tag bg-green-100 text-green-800 px-2 py-1 rounded-full cursor-pointer" data-filter="@${name}">@${name}</span>`).join('');
+        }
+        
+        // --- EVENT LISTENERS & LOGIC ---
+        document.getElementById('show-add-case-modal-btn').addEventListener('click', () => addCaseModalEl.classList.remove('hidden'));
+        document.getElementById('cancel-case-btn').addEventListener('click', () => addCaseModalEl.classList.add('hidden'));
+        document.getElementById('add-case-form').addEventListener('submit', async (e) => { e.preventDefault(); const n = document.getElementById('new-case-name').value.trim(); if (n) { await dbActions.add('cases', { caseName: n, caseNumber: document.getElementById('new-case-number').value.trim() }); addCaseModalEl.classList.add('hidden'); e.target.reset(); await renderCases(); } });
+        caseListEl.addEventListener('click', async (e) => { const l = e.target.closest('a'); if (l) { e.preventDefault(); appState.currentCaseId = Number(l.dataset.id); const c = await dbActions.getById('cases', appState.currentCaseId); currentCaseNameEl.textContent = c.caseName; recordInputEl.disabled = false; recordInputEl.focus(); searchInputEl.value = ''; appState.searchTerm = ''; await renderCases(); await renderMainView(); } });
+        document.getElementById('record-form').addEventListener('submit', async (e) => { e.preventDefault(); const t = recordInputEl.value.trim(); if (!t || !appState.currentCaseId) return; const rs = await dbActions.getByCase('records', appState.currentCaseId); const maxSeq = rs.reduce((m, r) => Math.max(m, r.sequence || 0), 0); const p = parseRecordText(t); const eIds = await Promise.all(p.entities.map(async (n) => (await dbActions.findByName('entities', n) || {id: await dbActions.add('entities', {name: n})}).id)); const sIds = await Promise.all(p.sources.map(async (s) => (await dbActions.findByName('sources', s.name) || {id: await dbActions.add('sources', {name: s.name})}).id)); await dbActions.add('records', { caseId: appState.currentCaseId, ...p, entityIds: eIds, sourceIds: sIds, sequence: maxSeq + 1 }); recordInputEl.value = ''; await renderMainView(); });
+        views.list.addEventListener('click', async (e) => { const t = e.target; const el = t.closest('[data-id]'); if (!el) return; const id = Number(el.dataset.id); if (t.closest('.delete-record-btn')) { if (confirm('이 기록을 삭제하시겠습니까?')) { await dbActions.delete('records', id); await renderMainView(); } } else if (t.closest('.edit-record-btn')) { el.querySelector('.record-view').classList.add('hidden'); el.querySelector('.record-edit').classList.remove('hidden'); el.querySelector('textarea').focus(); } else if (t.closest('.cancel-edit-btn')) { el.querySelector('.record-view').classList.remove('hidden'); el.querySelector('.record-edit').classList.add('hidden'); } else if (t.closest('.save-edit-btn')) { const newT = el.querySelector('textarea').value; const oldR = await dbActions.getById('records', id); const p = parseRecordText(newT); const eIds = await Promise.all(p.entities.map(async (n) => (await dbActions.findByName('entities', n) || {id: await dbActions.add('entities', {name: n})}).id)); const sIds = await Promise.all(p.sources.map(async (s) => (await dbActions.findByName('sources', s.name) || {id: await dbActions.add('sources', {name: s.name})}).id)); const upR = { ...oldR, ...p, entityIds: eIds, sourceIds: sIds }; await dbActions.update('records', upR); el.querySelector('.record-view').innerHTML = await renderRecordContent(upR); el.querySelector('.record-view').classList.remove('hidden'); el.querySelector('.record-edit').classList.add('hidden'); } });
+        views.list.addEventListener('dragstart', (e) => { if (e.target.closest('.drag-handle')) { appState.draggedElement = e.target.closest('[data-id]'); appState.draggedElement.classList.add('dragging'); } else { e.preventDefault(); } });
+        views.list.addEventListener('dragover', (e) => { e.preventDefault(); const t = e.target.closest('[data-id]'); if (t && t !== appState.draggedElement) { const r = t.getBoundingClientRect(); const n = (e.clientY - r.top) / (r.bottom - r.top) > .5; views.list.insertBefore(appState.draggedElement, n && t.nextSibling || t); } });
+        views.list.addEventListener('drop', async (e) => { e.preventDefault(); if (!appState.draggedElement) return; appState.draggedElement.classList.remove('dragging'); const els = [...views.list.querySelectorAll('[data-id]')]; for (let i = 0; i < els.length; i++) { const id = Number(els[i].dataset.id); const r = await dbActions.getById('records', id); if (r.sequence !== i + 1) { r.sequence = i + 1; await dbActions.update('records', r); } } appState.draggedElement = null; });
+        document.getElementById('view-tabs').addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (b && b.dataset.view !== appState.currentView) { document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active')); b.classList.add('active'); appState.currentView = b.dataset.view; renderMainView(); } });
+        searchInputEl.addEventListener('input', (e) => { appState.searchTerm = e.target.value; renderMainView(); });
+        clearFilterBtnEl.addEventListener('click', () => { searchInputEl.value = ''; appState.searchTerm = ''; renderMainView(); });
+        caseSummaryPanel.addEventListener('click', (e) => { const t = e.target.closest('.summary-tag'); if (t) { searchInputEl.value = t.dataset.filter; appState.searchTerm = t.dataset.filter; renderMainView(); } });
+        exportBtnEl.addEventListener('click', async () => { if (!appState.currentCaseId || appState.currentView !== 'timeline') { alert('표 타임라인 뷰에서만 내보내기가 가능합니다.'); return; } let rs = (await dbActions.getByCase('records', appState.currentCaseId)).sort((a, b) => a.sequence - b.sequence); let csv = "data:text/csv;charset=utf-8,날짜,핵심 내용,관련 인물,출처\n"; for (const r of rs) { const es = (await Promise.all(r.entityIds.map(id => dbActions.getById('entities', id)))).filter(Boolean).map(e => e.name).join('; '); const ss = (await Promise.all(r.sourceIds.map(id => dbActions.getById('sources', id)))).filter(Boolean).map(s => s.name).join('; '); const row = [r.eventTime, `"${r.description.replace(/>/g, '>')}"`, `"${es}"`, `"${ss}"`].join(','); csv += row + "\n"; } const uri = encodeURI(csv); const link = document.createElement("a"); link.setAttribute("href", uri); link.setAttribute("download", `timeline_export_${new Date().toISOString().split('T')[0]}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); });
+        document.getElementById('backup-btn').addEventListener('click', async () => { if (!db) return; const data = {}; for (const s of db.objectStoreNames) { data[s] = await dbActions.getAll(s); } const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `lawyer-app-backup-${new Date().toISOString().split('T')[0]}.json`; a.click(); URL.revokeObjectURL(a.href); });
+        document.getElementById('restore-input').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = async (ev) => { try { const data = JSON.parse(ev.target.result); if (confirm('정말로 데이터를 복원하시겠습니까? 현재 모든 데이터가 교체됩니다.')) { for (const s of db.objectStoreNames) { await dbActions.clearStore(s); if (data[s]) { for (const i of data[s]) { const { id, ...item } = i; await dbActions.add(s, item); } } } alert('데이터 복원이 완료되었습니다.'); location.reload(); } } catch (err) { console.error("Restore error:", err); alert('파일 복원 중 오류 발생'); } }; r.readAsText(f); e.target.value = ''; });
+        document.getElementById('close-context-btn').addEventListener('click', () => document.getElementById('context-panel').classList.add('hidden'));
+        views.files.addEventListener('change', async (e) => { if (e.target.id === 'file-upload-input') { for (const file of e.target.files) { await dbActions.add('files', { caseId: appState.currentCaseId, name: file.name, type: file.type, size: file.size, data: file }); } renderFiles(); } });
+        views.files.addEventListener('click', async (e) => { if (e.target.classList.contains('download-file-btn')) { const fileData = await dbActions.getById('files', Number(e.target.dataset.id)); const a = document.createElement('a'); a.href = URL.createObjectURL(fileData.data); a.download = fileData.name; a.click(); URL.revokeObjectURL(a.href); } });
+        views.todos.addEventListener('submit', async (e) => { if (e.target.id === 'add-todo-form') { e.preventDefault(); const input = document.getElementById('new-todo-input'); const task = input.value.trim(); if (task) { await dbActions.add('todos', { caseId: appState.currentCaseId, task, isCompleted: false }); input.value = ''; renderTodos(); } } });
+        views.todos.addEventListener('change', async (e) => { if (e.target.type === 'checkbox') { const todo = await dbActions.getById('todos', Number(e.target.dataset.id)); todo.isCompleted = e.target.checked; await dbActions.update('todos', todo); } });
+        views.memo.addEventListener('input', async (e) => { if (e.target.id === 'memo-textarea') { const caseData = await dbActions.getById('cases', appState.currentCaseId); caseData.memo = e.target.value; await dbActions.update('cases', caseData); } });
+        async function initializeApp() { await openDB(); await renderCases(); await renderMainView(); }
+        document.addEventListener('DOMContentLoaded', initializeApp);
     </script>
 </body>
 </html>
-
