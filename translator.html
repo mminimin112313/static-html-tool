@@ -92,6 +92,10 @@
         /* MODIFIED: Added max-height constraint */
         max-height: 600px;
     }
+    /* NEW: Style to hide panes */
+    .pane.hidden {
+        display: none;
+    }
     .pane__header {
         padding: 12px 16px;
         border-bottom: 1px solid var(--color-border);
@@ -156,6 +160,29 @@
         color: var(--color-text-primary);
         background-color: var(--color-bg);
     }
+    
+    /* NEW: Styles for Pane Toggle Buttons */
+    .pane-toggle-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .btn-toggle-pane {
+        padding: 8px;
+        background-color: var(--color-surface);
+        color: var(--color-text-secondary);
+        border: 1px solid var(--color-border);
+    }
+    .btn-toggle-pane.active {
+        background-color: var(--color-primary);
+        color: var(--color-primary-text);
+        border-color: var(--color-primary);
+    }
+    .btn-toggle-pane:not(.active):hover {
+        background-color: var(--color-bg);
+        border-color: var(--color-border-hover);
+    }
+
 
     .form-select {
         flex-shrink: 1;
@@ -567,6 +594,7 @@
         .app-header .btn-label { display: none; }
         .app-header .btn { padding: 10px; }
         #fileTree { max-height: 300px; overflow-y: auto; }
+        .pane-toggle-controls { display: none; } /* Hide toggles on small screens */
     }
     </style>
 </head>
@@ -588,6 +616,14 @@
         <select id="projectSelect" class="form-select"></select>
         <div id="projectProgress" style="min-width:150px; margin-left:12px;"></div>
         <button id="btnManageProjects" class="btn btn--secondary"><i data-lucide="folder-cog"></i><span class="btn-label">프로젝트 관리</span></button>
+        
+        <div class="pane-toggle-controls" style="margin-left: 24px;">
+            <button data-pane="paneFileTree" class="btn btn-toggle-pane" title="파일 목록 패널"><i data-lucide="folder-kanban"></i></button>
+            <button data-pane="paneEditor" class="btn btn-toggle-pane" title="번역 편집기 패널"><i data-lucide="file-pen-line"></i></button>
+            <button data-pane="paneViewer" class="btn btn-toggle-pane" title="번역 뷰어 패널"><i data-lucide="monitor-check"></i></button>
+            <button data-pane="paneSource" class="btn btn-toggle-pane" title="원본 텍스트 패널"><i data-lucide="file-text"></i></button>
+        </div>
+        
         <div style="flex-grow: 1;"></div>
         <button id="btnExportZip" class="btn btn--secondary"><i data-lucide="archive"></i><span class="btn-label">번역 내보내기</span></button>
         <button id="btnOpenZipHeader" class="btn btn--secondary"><i data-lucide="plus-circle"></i><span class="btn-label">ZIP 프로젝트 만들기</span></button>
@@ -604,12 +640,12 @@
     </header>
 
     <main id="mainWorkspace" class="main-workspace" style="display: none;">
-        <aside class="pane">
+        <aside id="paneFileTree" class="pane">
             <div class="pane__header"><span class="pane__title">프로젝트 파일</span></div>
             <div id="fileTree" class="pane__body file-tree"></div>
         </aside>
 
-        <section class="pane">
+        <section id="paneEditor" class="pane">
             <div class="pane__header">
                 <span class="pane__title">번역 편집기</span>
                 <button id="btnHistory" class="btn btn--icon" title="Version History"><i data-lucide="history"></i></button>
@@ -637,12 +673,12 @@
             </div>
         </section>
 
-        <section class="pane">
+        <section id="paneViewer" class="pane">
             <div class="pane__header"><span class="pane__title">번역 뷰어 (마크다운)</span></div>
             <div id="viewerContent" class="pane__body pane__body--padded"></div>
         </section>
         
-        <section class="pane">
+        <section id="paneSource" class="pane">
             <div class="pane__header"><span id="pathLabel" class="pane__title" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-weight: 400; font-size: 0.875rem;">파일 선택</span></div>
             <div id="sourceContainer" class="pane__body source-blocks-container"></div>
         </section>
@@ -676,6 +712,27 @@
         </div>
         <div class="dialog__footer">
             <button class="btn btn--secondary" onclick="this.closest('dialog').close()">닫기</button>
+        </div>
+    </dialog>
+
+    <dialog id="exportOptionsDlg" style="width: 400px; max-width: 90vw;">
+        <div class="dialog__header">
+            <h2>번역 내보내기 옵션</h2>
+            <button class="btn btn--icon" onclick="this.closest('dialog').close()"><i data-lucide="x"></i></button>
+        </div>
+        <div class="dialog__body" style="display: flex; flex-direction: column; gap: 12px;">
+            <p>어떤 형식으로 번역을 내보내시겠습니까?</p>
+            <button id="btnExportAsZip" class="btn btn--secondary" style="width:100%; justify-content: flex-start;">
+                <i data-lucide="archive"></i>
+                <span>ZIP 파일로 내보내기 (파일 구조 유지)</span>
+            </button>
+            <button id="btnExportAsTxt" class="btn btn--secondary" style="width:100%; justify-content: flex-start;">
+                <i data-lucide="file-text"></i>
+                <span>하나의 텍스트 파일로 합치기</span>
+            </button>
+        </div>
+        <div class="dialog__footer">
+            <button class="btn btn--secondary" onclick="this.closest('dialog').close()">취소</button>
         </div>
     </dialog>
 
@@ -768,6 +825,7 @@ let currentFilePath = null;
 let currentSourceBlocks = [];
 let selectedBlockIndices = new Set();
 const els = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(el => [el.id, el]));
+const PANE_IDS = ['paneFileTree', 'paneEditor', 'paneViewer', 'paneSource'];
 
 // --- CORE LOGIC ---
 // Default prompt templates remain unchanged from the original code
@@ -1755,6 +1813,64 @@ async function renderSettingsModal() {
     };
 }
 
+
+// --- NEW: PANE TOGGLE LOGIC ---
+/**
+ * @function setupPaneToggles
+ * @description Initializes the functionality for showing and hiding the main UI panes.
+ * It loads the visibility state from localStorage, applies it, and sets up
+ * event listeners for the toggle buttons.
+ */
+function setupPaneToggles() {
+    // 1. Load initial state from localStorage.
+    let visibility = {};
+    try {
+        const storedVisibility = JSON.parse(localStorage.getItem('paneVisibility'));
+        if (storedVisibility && typeof storedVisibility === 'object') {
+            visibility = storedVisibility;
+        } else {
+            // If stored data is invalid, initialize with default (all visible).
+            PANE_IDS.forEach(id => { visibility[id] = true; });
+        }
+    } catch (e) {
+        // If parsing fails or no data exists, default to all panes visible.
+        PANE_IDS.forEach(id => { visibility[id] = true; });
+    }
+
+    // 2. Define a function to apply the current visibility state to the DOM.
+    const applyVisibility = () => {
+        PANE_IDS.forEach(paneId => {
+            const paneEl = document.getElementById(paneId);
+            const toggleBtn = document.querySelector(`[data-pane="${paneId}"]`);
+            if (paneEl && toggleBtn) {
+                // Ensure the pane's visibility matches the state object.
+                const isVisible = !!visibility[paneId]; // Coerce to boolean
+                paneEl.classList.toggle('hidden', !isVisible);
+                toggleBtn.classList.toggle('active', isVisible);
+            }
+        });
+        // 3. Persist the current state to localStorage after any change.
+        localStorage.setItem('paneVisibility', JSON.stringify(visibility));
+    };
+    
+    // 4. Add event listeners to all toggle buttons.
+    document.querySelectorAll('.btn-toggle-pane').forEach(button => {
+        button.addEventListener('click', () => {
+            const paneId = button.dataset.pane;
+            if (paneId && PANE_IDS.includes(paneId)) {
+                // Invert the visibility state for the clicked pane.
+                visibility[paneId] = !visibility[paneId];
+                // Apply the new state to the DOM and save it.
+                applyVisibility();
+            }
+        });
+    });
+
+    // 5. Apply the initial loaded/default state when the application starts.
+    applyVisibility();
+}
+
+
 // --- EVENT LISTENERS ---
 function setupEventListeners() {
     els.btnOpenZip.addEventListener('click', () => els.zipFileInput.click());
@@ -1773,8 +1889,17 @@ function setupEventListeners() {
         await updateCurrentProjectProgress();
         await renderProjectGlossary();
     });
-    els.btnExportZip.addEventListener('click', async () => {
-        if (!currentProjectId) return toast('프로젝트가 로드되지 않았습니다.');
+
+    // MODIFIED: btnExportZip now opens a dialog instead of direct export.
+    els.btnExportZip.addEventListener('click', () => {
+        if (!currentProjectId) return toast('프로젝트가 로드되지 않았습니다.', 'error');
+        els.exportOptionsDlg.showModal();
+        lucide.createIcons(); // Ensure icons in dialog are rendered.
+    });
+    
+    // NEW: Listeners for the buttons within the export options dialog.
+    document.getElementById('btnExportAsZip').addEventListener('click', async () => {
+        els.exportOptionsDlg.close();
         const project = await idbGet('projects', currentProjectId);
         const files = await getFilesOfCurrent();
         const zip = new JSZip();
@@ -1787,6 +1912,41 @@ function setupEventListeners() {
         a.click();
         URL.revokeObjectURL(a.href);
     });
+
+    document.getElementById('btnExportAsTxt').addEventListener('click', async () => {
+        els.exportOptionsDlg.close();
+        try {
+            const project = await idbGet('projects', currentProjectId);
+            const files = await getFilesOfCurrent();
+            const translatedFiles = files.filter(f => f.translation?.trim());
+
+            if (translatedFiles.length === 0) {
+                return toast('내보낼 번역된 파일이 없습니다.', 'error');
+            }
+
+            let combinedText = `Project: ${project.name}\n`;
+            combinedText += `Exported on: ${new Date().toLocaleString()}\n\n`;
+            
+            translatedFiles.forEach((file) => {
+                combinedText += `========================================\n`;
+                combinedText += `File: ${file.path}\n`;
+                combinedText += `========================================\n\n`;
+                combinedText += `${file.translation}\n\n`;
+            });
+            
+            const blob = new Blob([combinedText], { type: 'text/plain;charset=utf-8' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${project.name}_translations_combined.txt`;
+            a.click();
+            URL.revokeObjectURL(a.href);
+            toast('번역이 하나의 텍스트 파일로 합쳐져 내보내졌습니다.', 'ok');
+        } catch (e) {
+            toast(`파일 생성 중 오류 발생: ${e.message}`, 'error');
+            console.error('Failed to export as single text file:', e);
+        }
+    });
+
     els.btnFullImport.addEventListener('click', () => els.importFile.click());
     els.importFile.addEventListener('change', fullImport);
     
@@ -1844,6 +2004,9 @@ function setupEventListeners() {
             toast('버전이 복원되었습니다!', 'ok');
         }
     });
+    
+    // NEW: Initialize pane toggle functionality.
+    setupPaneToggles();
 }
 
 // --- INITIALIZATION ---
