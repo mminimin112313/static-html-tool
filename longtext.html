@@ -3,995 +3,992 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 장문 글쓰기 도우미</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght{400;500;700}&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <title>AI Writing Workspace - Minimalist UI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <style>
-        body { font-family: 'Inter', 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        :root {
+            --font-family-main: 'Noto Sans KR', sans-serif;
+            --color-primary: #4F46E5; --color-primary-light: #EEF2FF; --color-primary-dark: #4338CA;
+            --color-success: #10B981; --color-warning: #F59E0B; --color-destructive: #DC2626;
+            --color-bg: #F8FAFC; --color-surface: #FFFFFF; --color-border: #E2E8F0;
+            --color-text-primary: #1E293B; --color-text-secondary: #64748B; --color-text-on-primary: #FFFFFF;
+            --space-1: 8px; --space-2: 16px; --space-3: 24px; --space-4: 32px;
+            --radius-md: 8px; --radius-lg: 12px;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            --transition-fast: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            --sidebar-width: 320px;
+            --header-height: 65px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+        html, body { height: 100%; margin: 0; overflow: hidden; }
+        body {
+            font-family: var(--font-family-main); background-color: var(--color-bg); color: var(--color-text-primary);
+            font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+        }
+        h1, h2, h3, h4, p, ul, ol, blockquote { margin: 0; }
+
         ::-webkit-scrollbar { width: 8px; height: 8px; }
-        ::-webkit-scrollbar-track { background: #e2e8f0; border-radius: 10px; }
+        ::-webkit-scrollbar-track { background: var(--color-border); border-radius: 10px; }
         ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
-        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--color-text-secondary); }
+
+        .app-container { display: flex; flex-direction: column; height: 100vh; }
+        .app-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: var(--space-2) var(--space-3); background-color: var(--color-surface);
+            border-bottom: 1px solid var(--color-border); flex-shrink: 0; height: var(--header-height); z-index: 10;
+        }
+        .header-project { display: flex; align-items: center; gap: var(--space-2); }
+        .header-project-icon { color: var(--color-primary); }
+        .header-project-title { font-size: 1.25rem; font-weight: 700; }
+        .header-actions { display: flex; align-items: center; gap: var(--space-1); }
         
-        .outline-item { cursor: pointer; transition: all 0.2s ease-in-out; }
-        .outline-item:hover { background-color: #f1f5f9; }
-        .outline-item.active { background-color: #eef2ff; font-weight: 600; border-left: 4px solid #4f46e5; }
-        .outline-item.completed .completion-icon { visibility: visible; }
+        .workspace { display: flex; flex-grow: 1; overflow: hidden; position: relative; }
+        .sidebar { 
+            background-color: var(--color-surface); border-right: 1px solid var(--color-border); 
+            display: flex; flex-direction: column; overflow: hidden;
+            width: var(--sidebar-width); flex-shrink: 0;
+            transition: margin-left 0.3s ease;
+        }
+        .sidebar-header { padding: var(--space-2); border-bottom: 1px solid var(--color-border); flex-shrink: 0; position: relative; }
+        .sidebar-content { padding: var(--space-2); overflow-y: auto; flex-grow: 1; }
+        .main-content { 
+            display: flex; flex-direction: column;
+            overflow-y: auto; padding: var(--space-4); flex-grow: 1; 
+        }
+        
+        #resizer { width: 5px; cursor: col-resize; background-color: var(--color-border); flex-shrink: 0; transition: background-color 0.2s; }
+        #resizer:hover { background-color: var(--color-primary); }
 
-        #sidebar { transition: transform 0.3s ease-in-out; }
-        .modal { transition: opacity 0.3s ease; }
-        .modal-content { transition: transform 0.3s ease; }
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: var(--space-1);
+            padding: 10px 16px; border-radius: var(--radius-md); border: 1px solid transparent;
+            font-weight: 500; font-size: 14px; cursor: pointer; transition: var(--transition-fast);
+            text-decoration: none; white-space: nowrap;
+        }
+        .btn.active { background-color: var(--color-primary-light); color: var(--color-primary); box-shadow: inset 0 2px 4px 0 rgb(0 0 0 / 0.05); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-primary { background-color: var(--color-primary); color: var(--color-text-on-primary); border-color: var(--color-primary); }
+        .btn-primary:not(:disabled):hover { background-color: var(--color-primary-dark); }
+        .btn-success { background-color: var(--color-success); color: var(--color-text-on-primary); border-color: var(--color-success); }
+        .btn-secondary { background-color: var(--color-surface); color: var(--color-text-primary); border-color: var(--color-border); }
+        .btn-secondary:not(:disabled):hover { background-color: var(--color-bg); }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-icon { padding: 10px; width: 40px; height: 40px; }
+        .btn-full { width: 100%; }
 
-        .loading-overlay {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(255, 255, 255, 0.8); backdrop-filter: blur(4px);
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            z-index: 1000; font-size: 1.2em; color: #4f46e5;
+        .form-group { margin-bottom: var(--space-2); }
+        .form-label { display: block; font-size: 14px; font-weight: 500; margin-bottom: var(--space-1); }
+        .form-input, .form-textarea, .form-select {
+            width: 100%; padding: 10px 12px; border: 1px solid var(--color-border);
+            border-radius: var(--radius-md); font-size: 14px; font-family: var(--font-family-main);
+            transition: var(--transition-fast); background-color: var(--color-surface);
         }
-        .spinner {
-            border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #4f46e5;
-            border-radius: 50%; width: 40px; height: 40px;
-            animation: spin 1s linear infinite; margin-bottom: 16px;
+        .form-input:focus, .form-textarea:focus, .form-select:focus {
+            outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 2px var(--color-primary-light);
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
+        .form-textarea { resize: vertical; min-height: 100px; }
 
-        /* 챕터 아이템 내 복사 버튼 스타일 */
-        .chapter-item .copy-prompt-btn {
-            background-color: #e0e7ff; /* indigo-100 */
-            color: #4f46e5; /* indigo-600 */
-            padding: 0.5rem; /* px-2 py-2 */
-            border-radius: 0.375rem; /* rounded-lg */
-            font-weight: 600; /* font-semibold */
-            transition: background-color 0.2s, color 0.2s;
-            line-height: 1; /* 아이콘과 텍스트의 수직 정렬을 위해 추가 */
+        .welcome-screen { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; color: var(--color-text-secondary); }
+        .welcome-icon { width: 80px; height: 80px; color: var(--color-border); margin-bottom: var(--space-3); }
+        .welcome-screen h2 { font-size: 2rem; font-weight: 700; color: var(--color-text-primary); margin-bottom: var(--space-1); }
+
+        .chapter-container { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; flex-grow: 1; min-height: 0; }
+        .chapter-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); flex-wrap: wrap; gap: var(--space-2); flex-shrink: 0; }
+        .chapter-title-group { flex-grow: 1; }
+        .chapter-title-group h2 { font-size: 2.5rem; font-weight: 700; line-height: 1.2; }
+        .chapter-title-group p { font-size: 1.1rem; color: var(--color-text-secondary); margin-top: var(--space-1); }
+        .chapter-nav-controls { display: flex; align-items: center; gap: var(--space-1); }
+        .chapter-view-controls { display: flex; gap: var(--space-1); }
+
+        .writing-grid { display: grid; gap: var(--space-3); transition: grid-template-columns 0.3s ease; flex-grow: 1; min-height: 0; }
+        .writing-grid.layout-2-cols { grid-template-columns: 1fr 1fr; }
+        .writing-grid.layout-3-cols { grid-template-columns: 1fr 1fr 1fr; }
+        .writing-grid.layout-4-cols { grid-template-columns: 1fr 1fr 1fr 1fr; }
+        
+        .writing-pane { background-color: var(--color-surface); border-radius: var(--radius-lg); border: 1px solid var(--color-border); box-shadow: var(--shadow-sm); display: flex; flex-direction: column; min-height: 0; }
+        .writing-pane-header { padding: var(--space-2); display: flex; justify-content: space-between; align-items: center; font-weight: 500; font-size: 1rem; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
+        .writing-pane-title { display: flex; align-items: center; gap: var(--space-1); }
+        .writing-pane-title svg { width: 20px; height: 20px; color: var(--color-primary); }
+        .writing-pane-body { padding: var(--space-2); flex-grow: 1; display: flex; flex-direction: column; overflow-y: auto; }
+        .writing-pane-body .form-textarea { border: none; padding: 0; flex-grow: 1; }
+        .writing-pane-body .form-textarea:focus { box-shadow: none; }
+        
+        .markdown-preview { padding: 0 var(--space-2); line-height: 1.7; }
+        .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 1.2em; margin-bottom: 0.6em; line-height: 1.3; font-weight: 700; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+        .markdown-preview p { margin-bottom: 1em; }
+        .markdown-preview ul, .markdown-preview ol { padding-left: 2em; margin-bottom: 1em; }
+        .markdown-preview blockquote { border-left: 4px solid var(--color-border); padding-left: 1em; margin-left: 0; color: var(--color-text-secondary); }
+        .markdown-preview code { background-color: var(--color-bg); padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.9em; }
+        .markdown-preview pre { background-color: var(--color-bg); padding: var(--space-2); border-radius: var(--radius-md); overflow-x: auto; }
+
+        .ai-toolkit { display: flex; justify-content: space-between; align-items: center; background-color: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: var(--space-2); margin-bottom: var(--space-3); flex-shrink: 0; }
+        .ai-toolkit-title { font-weight: 700; font-size: 1rem; }
+        .ai-toolkit-actions { display: flex; gap: var(--space-1); }
+        
+        .outline-list { list-style: none; padding: 0; margin: 0; }
+        .outline-item { display: flex; align-items: center; padding: 10px; border-radius: var(--radius-md); cursor: pointer; transition: var(--transition-fast); font-size: 14px; gap: var(--space-2); }
+        .outline-item:hover { background-color: var(--color-bg); }
+        .outline-item.active { background-color: var(--color-primary-light); color: var(--color-primary); font-weight: 700; }
+        .outline-status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background-color: var(--color-border); transition: var(--transition-fast); }
+        .outline-item.status-copied .outline-status-dot { background-color: var(--color-warning); }
+        .outline-item.status-completed .outline-status-dot { background-color: var(--color-success); }
+        .outline-item-title { flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .modal-overlay { position: fixed; inset: 0; background-color: rgba(30, 41, 59, 0.6); backdrop-filter: blur(4px); z-index: 50; display: flex; align-items: center; justify-content: center; padding: var(--space-3); opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
+        .modal-overlay.visible { opacity: 1; pointer-events: auto; }
+        .modal-content { background-color: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); width: 100%; max-width: 900px; display: flex; flex-direction: column; max-height: 90vh; transform: scale(0.95); transition: transform 0.3s ease; }
+        .modal-overlay.visible .modal-content { transform: scale(1); }
+        .modal-header { padding: var(--space-2) var(--space-3); display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); flex-shrink: 0; }
+        .modal-title { font-size: 1.25rem; font-weight: 700; }
+        .modal-close-btn { background: none; border: none; padding: 8px; cursor: pointer; color: var(--color-text-secondary); }
+        .modal-close-btn:hover { color: var(--color-text-primary); }
+        .modal-body { padding: 0; overflow-y: auto; flex-grow: 1; }
+        
+        .project-manager-layout { display: grid; grid-template-columns: 300px 1fr; height: 100%; }
+        .project-manager-list { padding: var(--space-3); border-right: 1px solid var(--color-border); display: flex; flex-direction: column; }
+        .project-manager-details { padding: var(--space-3); overflow-y: auto; }
+        .project-list { display: flex; flex-direction: column; gap: var(--space-1); margin-top: var(--space-2); flex-grow: 1; overflow-y: auto; }
+        .project-item { display: flex; justify-content: space-between; align-items: center; padding: 12px; border-radius: var(--radius-md); border: 1px solid transparent; cursor: pointer; transition: var(--transition-fast); }
+        .project-item:hover { background-color: var(--color-bg); }
+        .project-item.active { background-color: var(--color-primary-light); border-color: var(--color-primary); font-weight: 700; }
+        .project-item-name { flex-grow: 1; }
+        .project-item-actions button { color: var(--color-text-secondary); background: none; border: none; padding: 4px; cursor: pointer; }
+        .project-item-actions button:hover { color: var(--color-destructive); }
+        .project-details-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-text-secondary); text-align: center; }
+        
+        #toc-input-area.collapsed { display: none; }
+
+        .save-status-indicator { width: 24px; height: 24px; color: var(--color-text-secondary); transition: var(--transition-fast); }
+        .save-status-indicator .saving-icon { animation: spin 1.5s linear infinite; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
+        .hidden { display: none !important; }
+
+        .spinner-overlay { position: fixed; inset: 0; background-color: rgba(255, 255, 255, 0.8); backdrop-filter: blur(2px); z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+        .spinner { border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: var(--color-primary); border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+        .spinner-message { margin-top: var(--space-2); font-size: 1rem; font-weight: 500; color: var(--color-primary); }
+
+        @media (max-width: 1024px) {
+            .sidebar { position: fixed; top: 65px; left: 0; bottom: 0; z-index: 20; transform: translateX(-100%); transition: transform 0.3s ease; }
+            .sidebar.open { transform: translateX(0); }
+            #resizer { display: none; }
+            .sidebar-overlay { position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); z-index: 19; opacity: 0; transition: opacity 0.3s ease; pointer-events: none; }
+            .sidebar-overlay.open { opacity: 1; pointer-events: auto; }
         }
-        .chapter-item .copy-prompt-btn:hover {
-            background-color: #c7d2fe; /* indigo-200 */
-        }
-        .chapter-item .copy-prompt-btn .copy-status-icon {
-            margin-left: 0.5rem;
+        @media (max-width: 768px) {
+            .main-content { padding: var(--space-3); }
+            .chapter-title-group h2 { font-size: 2rem; }
+            .chapter-header { flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+            .project-manager-layout { grid-template-columns: 1fr; }
+            .project-manager-list { border-right: none; border-bottom: 1px solid var(--color-border); }
+            .writing-grid { grid-template-columns: 1fr; }
         }
     </style>
 </head>
-<body class="text-slate-800">
+<body>
 
-    <div id="loading-overlay" class="loading-overlay hidden">
+    <div id="loading-overlay" class="spinner-overlay hidden">
         <div class="spinner"></div>
-        <p id="loading-message">처리 중...</p>
+        <p id="loading-message" class="spinner-message">처리 중...</p>
     </div>
-
-    <div class="relative min-h-screen md:flex">
-        <div class="md:hidden flex justify-between items-center p-4 bg-white border-b border-slate-200 sticky top-0 z-20">
-            <button id="menu-open-btn" class="text-slate-600 hover:text-slate-900 mr-2"><i class="fas fa-bars fa-lg"></i></button>
-            <h1 class="text-lg font-bold text-slate-900 flex-grow text-center">AI 글쓰기 도우미</h1>
-        </div>
-
-        <aside id="sidebar" class="bg-white w-80 max-w-[85vw] fixed inset-y-0 left-0 z-40 transform -translate-x-full md:relative md:translate-x-0 md:w-1/3 lg:w-1/4 flex flex-col md:h-screen md:sticky md:top-0 border-r border-slate-200">
-            <div class="p-4 flex justify-between items-center border-b border-slate-200 flex-shrink-0">
-                <h1 class="text-xl font-bold text-slate-900">프로젝트</h1>
-                <div>
-                    <button id="project-manage-btn" class="text-slate-500 hover:text-indigo-600 transition-colors duration-200 mr-2" title="프로젝트 관리"><i class="fas fa-folder-open fa-lg"></i></button>
-                    <button id="settings-btn" class="text-slate-500 hover:text-indigo-600 transition-colors duration-200 mr-2" title="프롬프트 템플릿 설정"><i class="fas fa-cog fa-lg"></i></button>
-                    <button id="menu-close-btn" class="md:hidden text-slate-500 hover:text-slate-800"><i class="fas fa-times fa-lg"></i></button>
-                </div>
+    
+    <div class="app-container">
+        <header class="app-header">
+            <div class="header-project">
+                <button id="menu-open-btn" class="btn btn-secondary btn-icon"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" /></svg></button>
+                <svg class="header-project-icon" xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path></svg>
+                <h1 id="current-project-display" class="header-project-title">프로젝트 선택</h1>
+                <div id="save-status-indicator" class="save-status-indicator"></div>
             </div>
-            <div class="p-4 border-b border-slate-200 flex-shrink-0">
-                <p class="text-sm text-slate-600">현재 프로젝트: <span id="current-project-display" class="font-semibold text-indigo-700">선택되지 않음</span></p>
+            <div class="header-actions">
+                <button id="export-btn" class="btn btn-success"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg><span>원고 전체 다운로드</span></button>
+                <button id="settings-btn" class="btn btn-secondary btn-icon" title="프롬프트 템플릿 설정"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg></button>
             </div>
-            
-            <div class="flex-grow flex flex-col min-h-0">
-                <div class="p-4 flex-shrink-0">
-                    <label for="json-input" class="text-sm font-semibold mb-2 block text-slate-700">목차 JSON 붙여넣기:</label>
-                    <textarea id="json-input" class="w-full h-32 p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder='{"title": "책 제목", "children": [{"title": "1장", "level": 1, "children": [...]}]}'></textarea>
-                    <button id="render-btn" class="mt-3 w-full bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 transition shadow-sm">목차 생성/업데이트</button>
+        </header>
+
+        <main class="workspace">
+            <aside id="sidebar" class="sidebar">
+                <div class="sidebar-header">
+                    <button id="project-manage-btn" class="btn btn-secondary btn-full"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 0 0-1.883 2.542l.857 6a2.25 2.25 0 0 0 2.227 1.932H19.05a2.25 2.25 0 0 0 2.227-1.932l.857-6a2.25 2.25 0 0 0-1.883-2.542m-16.5 0V6A2.25 2.25 0 0 1 6 3.75h12A2.25 2.25 0 0 1 20.25 6v3.776" /></svg><span>프로젝트 관리</span></button>
+                    <button id="sidebar-close-btn" class="btn btn-secondary btn-icon" style="display: none; position: absolute; top: 8px; right: 8px; width: 36px; height: 36px;"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg></button>
                 </div>
-                <hr class="my-0 border-slate-200 flex-shrink-0">
-                <div class="p-4 flex flex-col flex-grow min-h-0">
-                    <h2 class="text-lg font-semibold mb-3 text-slate-800 flex-shrink-0">전체 구조</h2>
-                    <div id="outline-container" class="pr-2 flex-grow overflow-y-auto">
-                        <p class="text-slate-400 text-sm">목차를 생성하면 여기에 표시됩니다.</p>
+                <div class="sidebar-content">
+                    <div id="toc-input-area">
+                        <div class="form-group">
+                            <label for="toc-input" class="form-label">목차 JSON / XML</label>
+                            <textarea id="toc-input" class="form-textarea" rows="6" placeholder='{"title": "책 제목", "children": [...]}\n또는\n<toc title="책 제목"><chapter.../></toc>'></textarea>
+                        </div>
+                        <button id="render-btn" class="btn btn-primary btn-full">목차 생성/업데이트</button>
                     </div>
+                    <button id="toggle-toc-btn" class="btn btn-secondary btn-sm btn-full hidden" style="margin-top: var(--space-2);">목차 수정</button>
+                    <hr style="margin: var(--space-3) 0; border-color: var(--color-border);"><h4 style="font-weight: 700; margin-bottom: var(--space-2);">전체 구조</h4>
+                    <div id="outline-container"><p style="color: var(--color-text-secondary); font-size: 14px;">목차를 생성하면 여기에 표시됩니다.</p></div>
                 </div>
-            </div>
+            </aside>
+            <div id="resizer"></div>
+            <div id="sidebar-overlay"></div>
 
-            <div class="p-4 border-t border-slate-200 flex-shrink-0">
-                <button id="export-btn" class="w-full bg-emerald-600 text-white py-2 rounded-lg font-semibold hover:bg-emerald-700 disabled:bg-slate-400" disabled><i class="fas fa-download mr-2"></i> 원고 전체 다운로드 (MD)</button>
-            </div>
-        </aside>
-
-        <main class="flex-1 p-4 md:p-6 lg:p-8">
-            <div id="main-content-area" class="h-full">
-                <div id="welcome-screen" class="flex flex-col items-center justify-center h-full text-center text-slate-500">
-                    <i class="fas fa-feather-alt text-6xl text-slate-300 mb-4"></i>
-                    <h2 class="text-2xl font-bold text-slate-700">창작을 시작하세요</h2>
-                    <p class="mt-2">왼쪽 사이드바에서 프로젝트를 선택하거나, 새 프로젝트를 만들고 목차를 생성해주세요.</p>
+            <div id="main-content-area" class="main-content">
+                <div id="welcome-screen" class="welcome-screen">
+                    <svg class="welcome-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                    <h2>창작을 시작하세요</h2><p>왼쪽 사이드바에서 프로젝트를 선택하거나 새 프로젝트를 만들고,<br>목차를 생성하여 글쓰기 여정을 시작하세요.</p>
                 </div>
-                <div id="chapter-display-container" class="hidden space-y-6">
-                    </div>
+                <div id="chapter-display-container" class="hidden"></div>
             </div>
         </main>
     </div>
-    
-    <div id="sidebar-overlay" class="fixed inset-0 bg-black bg-opacity-50 z-30 hidden md:hidden"></div>
 
-    <div id="settings-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden opacity-0">
-        <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col transform scale-95">
-            <div class="p-5 border-b border-slate-200 flex justify-between items-center">
-                <h3 class="text-2xl font-bold text-slate-900">프롬프트 템플릿 설정</h3>
-                <button class="close-modal-btn text-slate-400 hover:text-slate-800"><i class="fas fa-times fa-2x"></i></button>
-            </div>
-            <div class="p-6 flex-grow overflow-y-auto">
-                <textarea id="prompt-template-input" class="w-full h-80 p-4 border border-slate-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-indigo-500"></textarea>
-                <div class="mt-4 p-4 bg-slate-100 rounded-lg">
-                    <h4 class="font-semibold text-slate-700 mb-2">사용 가능한 변수:</h4>
-                    <div class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-sm text-slate-600">
-                        <p><code>&lt;&lt;책제목&gt;&gt;</code></p>
-                        <p><code>&lt;&lt;파트&gt;&gt;</code></p>
-                        <p><code>&lt;&lt;파트설명&gt;&gt;</code></p>
-                        <p><code>&lt;&lt;챕터&gt;&gt;</code></p>
-                        <p><code>&lt;&lt;챕터설명&gt;&gt;</code></p>
-                        <p><code>&lt;&lt;전체목차&gt;&gt;</code></p>
-                        <p><code>&lt;&lt;현재파트목차&gt;&gt;</code></p>
-                        <p><code>&lt;&lt;참고자료&gt;&gt;</code></p>
+    <!-- Modals -->
+    <div id="project-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header"><h3 class="modal-title">프로젝트 관리</h3><button class="modal-close-btn"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="24" height="24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg></button></div>
+            <div class="modal-body">
+                <div class="project-manager-layout">
+                    <div class="project-manager-list">
+                        <form id="new-project-form" class="form-group">
+                            <div style="display: flex; gap: var(--space-1);">
+                                <input type="text" id="new-project-name" class="form-input" placeholder="새 프로젝트 이름..." required>
+                                <button type="submit" class="btn btn-primary">추가</button>
+                            </div>
+                        </form>
+                        <div id="project-list" class="project-list"></div>
                     </div>
-                </div>
-            </div>
-            <div class="p-5 border-t border-slate-200 flex justify-between items-center">
-                <button id="reset-template-btn" class="text-sm text-slate-500 hover:text-red-600">기본값으로 초기화</button>
-                <div>
-                    <span id="template-save-status" class="text-sm mr-4"></span>
-                    <button id="save-template-btn" class="bg-indigo-600 text-white px-8 py-3 rounded-lg font-semibold hover:bg-indigo-700">저장</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div id="project-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden opacity-0">
-        <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col transform scale-95">
-            <div class="p-5 border-b border-slate-200 flex justify-between items-center">
-                <h3 class="text-2xl font-bold text-slate-900">프로젝트 관리</h3>
-                <button class="close-modal-btn text-slate-400 hover:text-slate-800"><i class="fas fa-times fa-2x"></i></button>
-            </div>
-            <div class="p-6 flex-grow overflow-y-auto">
-                <div class="mb-6">
-                    <h4 class="text-lg font-semibold mb-3 text-slate-700">새 프로젝트 생성</h4>
-                    <div class="flex gap-2">
-                        <input type="text" id="new-project-name" class="flex-grow p-3 border border-slate-300 rounded-lg text-base focus:ring-2 focus:ring-indigo-500" placeholder="새 프로젝트 이름">
-                        <button id="create-project-btn" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-semibold hover:bg-blue-700 transition shadow-sm">생성</button>
-                    </div>
-                    <p id="new-project-status" class="mt-2 text-sm text-red-500"></p>
-                </div>
-                <div class="mb-6">
-                    <h4 class="text-lg font-semibold mb-3 text-slate-700">프로젝트 참고자료</h4>
-                    <textarea id="project-materials-input" class="w-full h-32 p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500" placeholder="이 프로젝트의 모든 글 생성 시 참조될 자료를 입력하세요. (예: 핵심 컨셉, 등장인물, 전문 용어집 등)"></textarea>
-                    <button id="save-project-materials-btn" class="mt-3 w-full bg-indigo-600 text-white py-2 rounded-lg font-semibold hover:bg-indigo-700 transition shadow-sm">참고자료 저장</button>
-                    <p id="project-materials-status" class="mt-2 text-sm text-slate-600"></p>
-                </div>
-                <div>
-                    <h4 class="text-lg font-semibold mb-3 text-slate-700">내 프로젝트</h4>
-                    <div id="project-list" class="space-y-2"></div>
-                </div>
-            </div>
-            <div class="p-5 border-t border-slate-200 flex justify-end">
-                <button class="close-modal-btn bg-slate-200 text-slate-800 px-6 py-2 rounded-lg font-semibold hover:bg-slate-300">닫기</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="writer-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden opacity-0">
-        <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-5xl h-[90vh] flex flex-col transform scale-95">
-            <div class="p-5 border-b border-slate-200 flex justify-between items-center">
-                <h3 id="writer-modal-title" class="text-2xl font-bold text-slate-900">글쓰기: </h3>
-                <button class="close-modal-btn text-slate-400 hover:text-slate-800"><i class="fas fa-times fa-2x"></i></button>
-            </div>
-            <div class="p-6 flex-grow overflow-y-auto flex flex-col md:flex-row gap-6">
-                <div class="md:w-1/2 flex flex-col gap-4">
-                    <div class="flex flex-col flex-grow">
-                        <h4 class="text-base font-semibold mb-2 text-slate-700 flex items-center"><i class="fas fa-magic-sparkles mr-2 text-indigo-500"></i>AI 생성용 프롬프트</h4>
-                        <div class="relative flex-grow">
-                             <textarea id="modal-prompt-textarea" readonly class="w-full h-full p-3 border bg-slate-50 border-slate-300 rounded-lg text-sm resize-y"></textarea>
-                             <button id="modal-copy-prompt-btn" class="absolute top-3 right-3 bg-slate-600 text-white p-2 rounded-md text-xs font-semibold hover:bg-slate-700 transition shadow-sm z-10" title="프롬프트 복사"><i class="fas fa-copy"></i></button>
+                    <div class="project-manager-details">
+                        <div id="project-details-placeholder" class="project-details-placeholder">
+                            <p>프로젝트를 선택하거나<br>새 프로젝트를 추가하세요.</p>
                         </div>
-                        <p id="copy-status-message-modal" class="text-sm mt-1 text-green-600"></p>
-                    </div>
-                    <div class="flex flex-col flex-grow">
-                        <h4 class="text-base font-semibold mb-2 text-slate-700 flex items-center"><i class="fas fa-lightbulb mr-2 text-amber-500"></i>메모 / 아이디어</h4>
-                        <textarea id="modal-notes-textarea" class="w-full h-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 resize-y" placeholder="이 챕터에 대한 아이디어나 개요를 자유롭게 작성하세요..."></textarea>
+                        <div id="project-details-form" class="hidden">
+                            <h4 class="form-label" style="font-size: 1.1rem; font-weight: 700; margin-bottom: var(--space-3);">프로젝트 상세 설정</h4>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-2);">
+                                <div class="form-group"><label for="project-genre" class="form-label">장르</label><select id="project-genre" class="form-select"><option value="소설">소설</option><option value="비문학">비문학</option><option value="자기계발">자기계발</option><option value="기술서적">기술서적</option><option value="판타지">판타지</option><option value="SF">SF</option><option value="기타">기타</option></select></div>
+                                <div class="form-group"><label for="project-age-group" class="form-label">연령대</label><select id="project-age-group" class="form-select"><option value="아동">아동</option><option value="청소년">청소년</option><option value="성인">성인</option><option value="모든 연령">모든 연령</option></select></div>
+                            </div>
+                            <div class="form-group"><label for="project-audience" class="form-label">핵심 독자층</label><input type="text" id="project-audience" class="form-input" placeholder="예: IT 업계 종사자, 판타지 소설 팬"></div>
+                            <div class="form-group"><label for="project-style-example" class="form-label">글쓰기 스타일 / 예시</label><textarea id="project-style-example" class="form-textarea" rows="3" placeholder="간결하고 명료한 문체, 특정 작가 스타일 등"></textarea></div>
+                            <div class="form-group"><label for="project-materials" class="form-label">참고자료</label><textarea id="project-materials" class="form-textarea" rows="5" placeholder="핵심 컨셉, 등장인물, 전문 용어집 등"></textarea></div>
+                        </div>
                     </div>
                 </div>
-                <div class="md:w-1/2 flex flex-col">
-                    <h4 class="text-base font-semibold mb-2 text-slate-700 flex items-center"><i class="fas fa-pencil-alt mr-2 text-emerald-500"></i>최종 원고</h4>
-                    <textarea id="modal-result-textarea" class="w-full flex-grow p-4 border border-slate-300 rounded-lg text-base focus:ring-2 focus:ring-indigo-500 resize-y" placeholder="AI가 생성한 글을 여기에 붙여넣고 편집하세요..."></textarea>
-                </div>
             </div>
-            <div class="p-5 border-t border-slate-200 flex justify-end items-center">
-                <span id="modal-save-status" class="text-sm mr-4"></span>
-                <button id="modal-save-btn" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition shadow-sm"><i class="fas fa-save mr-2"></i> 저장하고 닫기</button>
-            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header"><h3 class="modal-title">프롬프트 템플릿 설정</h3><button class="modal-close-btn"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="24" height="24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" /></svg></button></div>
+            <div class="modal-body" style="padding: var(--space-3);"><p style="font-size: 14px; color: var(--color-text-secondary); background-color: var(--color-bg); padding: var(--space-2); border-radius: var(--radius-md); margin-bottom: var(--space-2);">AI에게 전달할 명령의 구조를 XML 형식으로 정의합니다. <code>{{변수명}}</code> 형식으로 동적 데이터를 삽입할 수 있습니다.</p><textarea id="prompt-template-input" class="form-textarea" rows="15" style="font-family: monospace; font-size: 13px;"></textarea></div>
+            <div class="modal-footer"><button id="reset-template-btn" class="btn btn-secondary" style="margin-right: auto; color: var(--color-destructive);">기본값으로 초기화</button><button id="save-template-btn" class="btn btn-primary">저장</button></div>
         </div>
     </div>
     
-    <div id="message-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden opacity-0">
-        <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col transform scale-95">
-            <div class="p-5"><h3 id="message-modal-title" class="text-xl font-bold text-slate-900">알림</h3></div>
-            <div class="p-6 pt-0"><p id="message-modal-content" class="text-slate-700"></p></div>
-            <div class="p-5 border-t border-slate-200 flex justify-end">
-                <button class="close-modal-btn bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700">확인</button>
-            </div>
-        </div>
-    </div>
-    <div id="confirmation-modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 hidden opacity-0">
-        <div class="modal-content bg-white rounded-2xl shadow-2xl w-full max-w-sm flex flex-col transform scale-95">
-            <div class="p-5"><h3 id="confirmation-modal-title" class="text-xl font-bold text-slate-900">확인</h3></div>
-            <div class="p-6 pt-0"><p id="confirmation-modal-content" class="text-slate-700"></p></div>
-            <div class="p-5 border-t border-slate-200 flex justify-end gap-3">
-                <button id="confirm-cancel-btn" class="bg-slate-200 text-slate-800 px-6 py-2 rounded-lg font-semibold hover:bg-slate-300">취소</button>
-                <button id="confirm-ok-btn" class="bg-red-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-red-700">확인</button>
-            </div>
+    <div id="confirmation-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-body" style="text-align: center; padding: var(--space-4);"><h3 id="confirmation-modal-title" class="modal-title" style="margin-bottom: var(--space-1);"></h3><p id="confirmation-modal-content" style="color: var(--color-text-secondary);"></p></div>
+            <div class="modal-footer" style="display: grid; grid-template-columns: 1fr 1fr;"><button id="confirm-cancel-btn" class="btn btn-secondary">취소</button><button id="confirm-ok-btn" class="btn btn-primary">확인</button></div>
         </div>
     </div>
 
     <script>
-    // --- 1. IndexedDB Wrapper ---
-    const idb = {
-        db: null,
-        init(dbName, version, stores) {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(dbName, version);
-                request.onerror = (event) => reject(`IndexedDB error: ${event.target.errorCode}`);
-                request.onsuccess = (event) => {
-                    this.db = event.target.result;
-                    resolve(this.db);
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        marked.setOptions({
+            breaks: true,
+            gfm: true,
+        });
+
+        const DB_CONFIG = { NAME: 'AIWriterWorkspace_Final', VERSION: 1, STORES: { PROJECTS: 'projects', CONTENTS: 'contents', SETTINGS: 'settings' } };
+        const SETTINGS_KEYS = { PROMPT_TEMPLATE: 'promptTemplate', CURRENT_PROJECT: 'currentProjectId' };
+        const DEFAULT_PROMPT_TEMPLATE_XML = `
+<?xml version="1.0" encoding="UTF-8"?>
+<metaPrompt>
+  <purpose>
+    주어진 모든 맥락 정보를 종합적으로 분석하여, 특정 장(Chapter)에 해당하는 전문가 수준의 원고 초안을 생성하는 것.
+  </purpose>
+
+  <promptDesignFramework>
+
+    <objectiveDefinition id="1" title="목표 정의: 과업의 제1원칙">
+      <finalDeliverable id="1.1" description="프롬프트를 통해 얻고자 하는 최종 결과물">
+        '{{chapterTitle}}' 장에 대한 완성도 높은 원고 초안. 이 원고는 별도의 서문이나 요약 없이, 즉시 본문에 삽입할 수 있는 마크다운(Markdown) 형식이어야 한다.
+      </finalDeliverable>
+      <coreTask id="1.2" description="LLM이 수행해야 할 핵심적인 동사">
+        제시된 모든 맥락과 제약 조건을 엄격히 준수하여, '{{chapterTitle}}' 장의 원고를 **집필하라**.
+      </coreTask>
+      <successCriteria id="1.3" description="결과물이 '성공'이라고 판단할 객관적인 기준">
+        1.  생성된 원고가 '{{chapterDescription}}'에 명시된 목표와 내용을 충실히 반영하고 있는가?
+        2.  원고가 전체 목차('{{fullToc}}')의 흐름 속에서 현재 장의 역할을 정확히 수행하고 있는가?
+        3.  프로젝트 설정('{{projectGenre}}', '{{projectAudience}}', '{{projectStyleExample}}')에 부합하는 문체와 어조를 일관되게 유지하는가?
+        4.  '{{references}}'에 제공된 설정(인물, 배경, 용어 등)을 정확하게 활용하였는가?
+        5.  결과물이 서문, 요약, 프롬프트 반복 등 불필요한 내용 없이 오직 원고 본문만으로 구성되었는가?
+      </successCriteria>
+    </objectiveDefinition>
+
+    <personaAssignment id="2" title="역할 부여: 최적의 인지 모델 설계">
+      <expertPersona id="2.1" description="과업을 가장 잘 수행할 전문가의 상세한 묘사">
+        당신은 '{{projectGenre}}' 장르의 베테랑 작가이자, 해당 분야의 깊이 있는 지식을 갖춘 전문가이다. 당신의 임무는 단순한 텍스트 생성이 아니라, 작품 전체의 유기적인 흐름과 깊이를 더하는 한 부분을 완성하는 것이다. 당신은 프로젝트의 총괄 편집자로서, 모든 세부 설정과 이야기의 큰 그림을 완벽하게 이해하고 있다.
+      </expertPersona>
+      <audience id="2.2" description="결과물을 소비할 대상과 그들의 지식 수준">
+        이 글의 핵심 독자는 '{{projectAudience}}'이며, 대상 연령층은 '{{projectAgeGroup}}'이다. 이들의 지적 수준과 감성을 고려하여 집필해야 한다.
+      </audience>
+      <toneAndStyle id="2.3" description="결과물의 어조와 스타일">
+        글의 전체적인 톤앤매너와 문체는 다음 예시를 따른다: '{{projectStyleExample}}'. 이를 바탕으로 일관성 있는 작풍을 유지하라.
+      </toneAndStyle>
+    </personaAssignment>
+
+    <contextAndFormat id="3" title="맥락 제공 및 형식 지정">
+      <essentialContext id="3.1" description="과업 수행에 필요한 모든 배경 정보, 데이터, 이전 대화 내용">
+        <![CDATA[
+### 프로젝트 전체 개요
+- **책 전체 제목**: {{bookTitle}}
+- **장르 및 대상**: {{projectGenre}}, {{projectAgeGroup}} {{projectAudience}}
+- **핵심 참고자료 (세계관, 인물, 용어 등)**:
+{{references}}
+
+### 집필할 장(Chapter)의 위치와 목표
+- **현재 파트(Part)**: {{partTitle}} ({{partDescription}})
+- **집필 대상 장(Chapter)**: **{{chapterTitle}}**
+- **이번 장의 핵심 목표**: {{chapterDescription}}
+
+### 전체 목차 구조 (현재 위치 표시: ▶)
+{{fullToc}}
+
+### 현재 파트의 목차 구조 (현재 위치 표시: ▶)
+{{partToc}}
+        ]]>
+      </essentialContext>
+      <outputFormat id="3.2" description="결과물이 출력되어야 할 정확한 형식 또는 템플릿">
+        <![CDATA[
+## 최종 출력물 형식 (매우 중요)
+- **오직 원고 본문만 출력한다.**
+- **원고 내용에 적절한 소제목 목차를 포함하고, 목차의 최상위 제목은 '##'으로 시작해야 한다.**
+- Markdown 문법을 사용하여 문단을 나누고, 필요시 강조 등을 표현한다.
+- "결과물:", "원고:", "다음은 요청하신 원고입니다." 와 같은 서두를 절대로 사용하지 마라.
+- 프롬프트의 내용을 요약하거나 되풀이하지 마라.
+        ]]>
+      </outputFormat>
+    </contextAndFormat>
+
+    <reasoningDesign id="4" title="추론 과정 설계: 생각의 경로 구축">
+      <reasoningFramework id="4.1" description="과업 복잡성에 따른 추론 방식 선택">
+        <option type="DirectResponse" description="단순 정보 요청 시 사용">
+          <task>위의 모든 정보를 바탕으로, {{chapterTitle}} 장의 원고를 즉시 집필하라.</task>
+        </option>
+      </reasoningFramework>
+    </reasoningDesign>
+
+    <constraints id="5" title="제약 조건 설정: 탐색 공간 제어">
+      <mustInclude id="5.1" description="결과물에 반드시 포함되어야 할 키워드, 개념, 데이터 포인트">
+        - 원고 내용은 '{{chapterDescription}}'의 목표를 직접적으로 달성해야 한다.
+        - '{{references}}'의 설정과 충돌이 없어야 한다.
+      </mustInclude>
+      <mustAvoid id="5.2" description="반드시 피해야 할 주제, 표현, 단어, 편향, 가정">
+        - 집필 과업에 대한 자기 평가나 소감, 요약, 변명, 추가 설명을 포함하지 마라.
+        - 작가(AI)가 독자에게 직접 말을 거는 듯한 '메타적 서술'을 피하라. (예: "이제부터 ~에 대해 알아보겠습니다.")
+        - 전체 이야기의 결말을 암시하거나 단정 짓는 서술을 피하라. 현재 장의 역할에만 집중하라.
+      </mustAvoid>
+      <selfCorrectionCommand id="5.3" description="생성될 프롬프트 마지막에 포함될 최종 검증 명령">
+        <![CDATA[
+모든 지시사항을 완수한 후, 최종 답변을 제출하기 전에 잠시 멈추고 스스로 '레드팀'의 역할을 수행하라. 내가 제시한 모든 요구사항(역할, 형식, 내용, 제약 조건 등)이 100% 충족되었는지, 논리적 비약이나 설정 충돌은 없는지, 더 나은 대안은 없는지 최소 세 번 이상 교차 검증하고, 그 결과를 반영하여 최종적으로 완벽하고 군더더기 없는 원고 초안만 출력하라.
+        ]]>
+      </selfCorrectionCommand>
+<supplementaryDirectives title="Author's Internal Checklist">
+    <directive id="A" title="독자의 그림자: 끊임없는 질문에 답하기">
+      <description>
+        글을 쓰는 내내, 당신의 어깨너머로 회의적이지만 지적인 독자가 함께 읽고 있다고 상상하라. 그 독자는 매 문단이 끝날 때마다 다음과 같이 질문할 것이다: "그래서 이게 왜 중요한데(So What)?", "이 주장의 근거는 무엇이지?", "더 쉬운 설명은 없나?" 당신의 글은 이러한 독자의 잠재적 질문을 미리 예측하고, 그에 대한 답을 본문 안에 자연스럽게 녹여내야 한다. 독자의 의문이 싹트기 전에 해소시켜라.
+      </description>
+    </directive>
+    <directive id="B" title="정보적 투자수익률(ROI) 원칙: 독자의 노력을 보상하기">
+      <description>
+        독자가 한 문장을 읽는 데 사용하는 인지적 노력은 '투자'다. 당신은 그 투자에 대해 최대한의 '수익(지적 깨달음, 감정적 동요, 실용적 가치)'으로 보상할 의무가 있다. 모든 문장이 정보적 가치를 지니는지, 불필요한 미사여구나 군더더기는 없는지 끊임없이 점검하라. 문장이 길어진다면, 그 길이만큼의 가치를 담고 있는지 증명해야 한다.
+      </description>
+    </directive>
+    <directive id="C" title="논리적 연결의 미학: 문단과 문단을 엮는 힘">
+      <description>
+        문단을 독립된 정보의 섬으로 취급하지 마라. 뛰어난 글은 각 문단이 서로 맞물려 돌아가는 정교한 기계와 같다. 한 문단의 마지막 문장은 다음 문단의 첫 문장을 자연스럽게 호출하는 '갈고리' 역할을 해야 한다. 논리의 흐름이 끊기지 않고, 독자가 물 흐르듯 다음 내용으로 넘어갈 수 있도록 문단 사이의 논리적 인장력을 최대화하라.
+      </description>
+    </directive>
+    <directive id="D" title="구성의 교향곡: 요소들의 조화로운 배치">
+      <description>
+        하나의 장(Chapter)은 단일한 음색의 연주가 아닌, 다양한 악기가 조화를 이루는 교향곡이어야 한다. '이론 제시', '사례 분석', '서사적 묘사', '데이터 인용', '성찰적 질문' 등 다양한 구성 요소를 단조롭지 않게 배치하라. 예를 들어, 무거운 이론을 제시했다면 곧바로 흥미로운 일화를 통해 독자의 이해를 돕고 환기시키는 지혜가 필요하다.
+      </description>
+    </directive>
+    <directive id="E" title="지적 정직성의 프레임: 경계와 복잡성의 인정">
+      <description>
+        당신의 주장이 적용되는 범위와 한계를 명확히 하라. 모든 것을 설명할 수 있는 것처럼 과장하거나, 복잡한 문제를 단순하게 양분하지 마라. 특히 비문학 분야에서는 반대 의견이나 대안적 해석을 공정하게 소개하고, 왜 당신의 관점이 더 설득력 있는지 논증하라. 이러한 지적 정직성은 글의 신뢰도를 극적으로 높인다. 소설의 경우, 이는 세상을 선과 악으로만 나누지 않는 입체적인 세계관 구축으로 이어진다.
+      </description>
+    </directive>
+  </supplementaryDirectives>
+    </constraints>
+
+  </promptDesignFramework>
+</metaPrompt>
+
+`;
+
+        const DBService = {
+            db: null,
+            init() { return new Promise((resolve, reject) => { const request = indexedDB.open(DB_CONFIG.NAME, DB_CONFIG.VERSION); request.onerror = e => reject(`IndexedDB error: ${e.target.errorCode}`); request.onsuccess = e => { this.db = e.target.result; resolve(this.db); }; request.onupgradeneeded = e => { const db = e.target.result; Object.values(DB_CONFIG.STORES).forEach(storeName => { if (!db.objectStoreNames.contains(storeName)) { db.createObjectStore(storeName, { keyPath: 'id' }); } }); }; }); },
+            _getStore(storeName, mode = 'readonly') { if (!this.db) throw new Error("DB not initialized"); return this.db.transaction(storeName, mode).objectStore(storeName); },
+            get: (storeName, id) => new Promise((resolve, reject) => { const req = DBService._getStore(storeName).get(id); req.onsuccess = () => resolve(req.result); req.onerror = e => reject(`Get error: ${e.target.errorCode}`); }),
+            getAll: (storeName) => new Promise((resolve, reject) => { const req = DBService._getStore(storeName).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = e => reject(`GetAll error: ${e.target.errorCode}`); }),
+            put: (storeName, data) => new Promise((resolve, reject) => { const req = DBService._getStore(storeName, 'readwrite').put(data); req.onsuccess = () => resolve(req.result); req.onerror = e => reject(`Put error: ${e.target.errorCode}`); }),
+            delete: (storeName, id) => new Promise((resolve, reject) => { const req = DBService._getStore(storeName, 'readwrite').delete(id); req.onsuccess = () => resolve(); req.onerror = e => reject(`Delete error: ${e.target.errorCode}`); })
+        };
+
+        const AppState = {
+            _state: { 
+                currentProjectId: null, projects: [], currentTOC: null, 
+                promptTemplate: DEFAULT_PROMPT_TEMPLATE_XML, activeChapterPath: null, 
+                status: new Map(),
+                flatTOC: [],
+                isMemoVisible: true, isTranslationVisible: false, isPreviewVisible: false
+            },
+            _listeners: [],
+            getState() { return { ...this._state }; },
+            setState(updates) { Object.assign(this._state, updates); this._listeners.forEach(listener => listener(this._state)); },
+            subscribe(listener) { this._listeners.push(listener); },
+        };
+
+        const UIManager = {
+            dom: {},
+            init() {
+                const ids = ['loading-overlay', 'loading-message', 'menu-open-btn', 'sidebar', 'sidebar-close-btn', 'sidebar-overlay', 'resizer', 'current-project-display', 'save-status-indicator', 'toc-input-area', 'toc-input', 'toggle-toc-btn', 'render-btn', 'outline-container', 'export-btn', 'main-content-area', 'welcome-screen', 'chapter-display-container', 'project-manage-btn', 'settings-btn', 'settings-modal', 'prompt-template-input', 'reset-template-btn', 'save-template-btn', 'project-modal', 'new-project-form', 'new-project-name', 'project-details-placeholder', 'project-details-form', 'project-genre', 'project-age-group', 'project-audience', 'project-style-example', 'project-materials', 'project-list', 'confirmation-modal', 'confirmation-modal-title', 'confirmation-modal-content', 'confirm-cancel-btn', 'confirm-ok-btn'];
+                ids.forEach(id => {
+                    const element = document.getElementById(id);
+                    if (element) {
+                       this.dom[id.replace(/-(\w)/g, (_, p1) => p1.toUpperCase())] = element;
+                    }
+                });
+                this.handleResponsiveUI();
+                window.addEventListener('resize', this.handleResponsiveUI.bind(this));
+                AppState.subscribe(this.render.bind(this));
+            },
+            handleResponsiveUI() {
+                const isMobile = window.innerWidth <= 1024;
+                this.dom.menuOpenBtn.style.display = isMobile ? 'inline-flex' : 'none';
+                this.dom.sidebarCloseBtn.style.display = isMobile ? 'inline-flex' : 'none';
+                if (!isMobile) { 
+                    this.dom.sidebar.classList.remove('open'); 
+                    this.dom.sidebarOverlay.classList.remove('open');
+                    this.dom.sidebar.style.transform = 'translateX(0)';
+                } else {
+                    this.dom.sidebar.style.width = '320px'; // Reset on mobile
+                }
+            },
+            render(state) {
+                const { currentProjectId, projects, currentTOC, activeChapterPath, status } = state;
+                const currentProject = projects.find(p => p.id === currentProjectId);
+                this.dom.currentProjectDisplay.textContent = currentProject?.id || '프로젝트 선택';
+                this.dom.renderBtn.disabled = !currentProjectId;
+                this.dom.exportBtn.disabled = !currentTOC;
+                this._renderOutline(currentTOC, status, activeChapterPath);
+                if (currentProjectId && activeChapterPath) {
+                    this.dom.welcomeScreen.classList.add('hidden');
+                    this.dom.chapterDisplayContainer.classList.remove('hidden');
+                    // Only re-render the whole chapter content if it doesn't exist yet or path changes
+                    if (this.dom.chapterDisplayContainer.dataset.path !== activeChapterPath) {
+                        this._renderChapterContent(state);
+                    }
+                } else {
+                    this.dom.welcomeScreen.classList.remove('hidden');
+                    this.dom.chapterDisplayContainer.classList.add('hidden');
+                    this.dom.chapterDisplayContainer.innerHTML = '';
+                }
+            },
+            _renderOutline(toc, status, activePath) {
+                const container = this.dom.outlineContainer;
+                if (!toc || !toc.children || toc.children.length === 0) { container.innerHTML = '<p style="color: var(--color-text-secondary); font-size: 14px;">목차를 생성하면 여기에 표시됩니다.</p>'; return; }
+                const ul = document.createElement('ul');
+                ul.className = 'outline-list';
+                const traverse = (nodes, pathPrefix = '') => {
+                    nodes.forEach((node, i) => {
+                        const path = pathPrefix ? `${pathPrefix}.${i}` : `${i}`;
+                        const li = document.createElement('li');
+                        li.className = 'outline-item';
+                        li.dataset.path = path;
+                        const currentStatus = status.get(path) || 'default';
+                        li.classList.add(`status-${currentStatus}`);
+                        if (path === activePath) li.classList.add('active');
+                        li.style.paddingLeft = `${8 + ((node.level || 1) - 1) * 20}px`;
+                        li.innerHTML = `<div class="outline-status-dot"></div><span class="outline-item-title">${node.title}</span>`;
+                        li.onclick = () => AppController.setActiveChapter(path);
+                        ul.appendChild(li);
+                        if (node.children?.length) traverse(node.children, path);
+                    });
                 };
-                request.onupgradeneeded = (event) => {
-                    const db = event.target.result;
-                    stores.forEach(storeName => {
-                        if (!db.objectStoreNames.contains(storeName)) {
-                            db.createObjectStore(storeName, { keyPath: 'id' });
+                traverse(toc.children);
+                container.innerHTML = '';
+                container.appendChild(ul);
+            },
+            async _renderChapterContent(state) {
+                const { currentTOC, activeChapterPath, currentProjectId, flatTOC } = state;
+                const container = this.dom.chapterDisplayContainer;
+                container.dataset.path = activeChapterPath;
+                const node = AppController._getNodeByPath(currentTOC, activeChapterPath);
+                if (!node) { container.innerHTML = ''; return; }
+                const content = await DBService.get(DB_CONFIG.STORES.CONTENTS, `${currentProjectId}_${activeChapterPath}`) || {};
+                
+                const currentIndex = flatTOC.findIndex(item => item.path === activeChapterPath);
+                const prevPath = currentIndex > 0 ? flatTOC[currentIndex - 1].path : null;
+                const nextPath = currentIndex < flatTOC.length - 1 ? flatTOC[currentIndex + 1].path : null;
+
+                container.innerHTML = `
+                    <div class="chapter-container">
+                        <header class="chapter-header">
+                            <div class="chapter-title-group"><h2>${node.title}</h2><p>${node.description || '세부 설명이 없습니다.'}</p></div>
+                            <div class="chapter-nav-controls">
+                                <button id="prev-chapter-btn" class="btn btn-secondary btn-icon" title="이전 챕터" ${!prevPath ? 'disabled' : ''}><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg></button>
+                                <div class="chapter-view-controls">
+                                    <button id="toggle-memo-btn" class="btn btn-secondary btn-sm" title="메모"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L6.832 19.82a4.5 4.5 0 01-1.897 1.13l-2.685.8.8-2.685a4.5 4.5 0 011.13-1.897L16.863 4.487zm0 0L19.5 7.125" /></svg></button>
+                                    <button id="toggle-translation-btn" class="btn btn-secondary btn-sm" title="번역"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 21l5.25-11.25L21 21m-9-3h7.5M3 5.621a48.474 48.474 0 016-.371m0 0c1.12 0 2.233.038 3.334.114M9 5.25V3m3.334 2.364C11.176 10.658 7.69 15.08 3 17.502m9.334-12.138c.896.061 1.785.147 2.666.257m-4.589 8.495a18.023 18.023 0 01-3.827-5.802" /></svg></button>
+                                    <button id="toggle-preview-btn" class="btn btn-secondary btn-sm" title="미리보기"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.432 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>
+                                </div>
+                                <button id="next-chapter-btn" class="btn btn-secondary btn-icon" title="다음 챕터" ${!nextPath ? 'disabled' : ''}><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg></button>
+                            </div>
+                        </header>
+                        <div class="ai-toolkit">
+                            <span class="ai-toolkit-title">AI 도구상자</span>
+                            <div class="ai-toolkit-actions">
+                                <button id="show-prompt-btn" class="btn btn-secondary btn-icon btn-sm" title="프롬프트 보기"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9 5.25h.008v.008H12v-.008z" /></svg></button>
+                                <button id="modal-copy-prompt-btn" class="btn btn-primary btn-sm"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="16" height="16"><path stroke-linecap="round" stroke-linejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 0 1-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 0 1 1.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 0 0-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125T8.25 4.5h3.75a.75.75 0 0 1 .75.75v3.375" /></svg><span>프롬프트 복사</span></button>
+                            </div>
+                        </div>
+                        <div id="writing-grid" class="writing-grid">
+                            <div id="manuscript-pane" class="writing-pane"><div class="writing-pane-header"><div class="writing-pane-title"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M9.804 3.25a.75.75 0 0 1 .392 1.362l-2.694 1.545a.75.75 0 0 1-1.158-.682V4.46a.75.75 0 0 1 .962-.724l2.5 1.014ZM10 5.165l2.5-1.014a.75.75 0 0 1 .962.724v1.012a.75.75 0 0 1-1.158.682l-2.694-1.545a.75.75 0 0 1 .392-1.362Z" /><path d="M4.5 6.375a.75.75 0 0 0-1.5 0v1.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 0-1.5H4.5v-1.5Z" /><path d="M10 10.5a.75.75 0 0 0-1.5 0v1.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 0-1.5H10v-1.5Z" /><path d="M15.5 6.375a.75.75 0 0 0-1.5 0v1.5c0 .414.336.75.75.75h1.5a.75.75 0 0 0 0-1.5H15.5v-1.5Z" /><path fill-rule="evenodd" d="M3 3.5A1.5 1.5 0 0 1 4.5 2h11A1.5 1.5 0 0 1 17 3.5v13A1.5 1.5 0 0 1 15.5 18h-11A1.5 1.5 0 0 1 3 16.5v-13ZM4.5 3.5h11V15h-11v-1.5a.75.75 0 0 0 1.5 0V12a.75.75 0 0 0-1.5 0v-1.5a.75.75 0 0 0 1.5 0V9a.75.75 0 0 0-1.5 0V7.5a.75.75 0 0 0 1.5 0V6a.75.75 0 0 0-1.5 0V4.5a.75.75 0 0 0 1.5 0v-1Z" clip-rule="evenodd" /></svg><span>최종 원고</span></div></div><div class="writing-pane-body"><textarea id="manuscript-textarea" class="form-textarea" placeholder="AI가 생성한 글을 여기에 붙여넣고 편집하세요...">${content.resultText || ''}</textarea></div></div>
+                            <div id="memo-pane" class="writing-pane"><div class="writing-pane-header"><div class="writing-pane-title"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M15.994 3.75a.75.75 0 0 1 .75.75v11.25a.75.75 0 0 1-1.5 0V4.5a.75.75 0 0 1 .75-.75Z" clip-rule="evenodd" /><path fill-rule="evenodd" d="M12 3.75a.75.75 0 0 1 .75.75v11.25a.75.75 0 0 1-1.5 0V4.5a.75.75 0 0 1 .75-.75Z" clip-rule="evenodd" /><path d="M4.5 4.125a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z" /><path d="M4.5 8.125a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z" /><path d="M4.5 12.125a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z" /><path d="M4.5 16.125a.75.75 0 0 1 .75-.75h2.5a.75.75 0 0 1 0 1.5h-2.5a.75.75 0 0 1-.75-.75Z" /></svg><span>메모</span></div></div><div class="writing-pane-body"><textarea id="memo-textarea" class="form-textarea" placeholder="이 챕터에 대한 아이디어나 개요...">${content.notes || ''}</textarea></div></div>
+                            <div id="translation-pane" class="writing-pane"><div class="writing-pane-header"><div class="writing-pane-title"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M7.5 1.75a.75.75 0 0 0-1.5 0V2h3V1.75a.75.75 0 0 0-1.5 0V1zM6.5 3.5v-.25a.75.75 0 0 0-1.5 0V3.5h-1a.75.75 0 0 0 0 1.5h1v1h-1a.75.75 0 0 0 0 1.5h1v1h-1a.75.75 0 0 0 0 1.5h1v1h-1a.75.75 0 0 0 0 1.5h1v.25a.75.75 0 0 0 1.5 0V12h3v.25a.75.75 0 0 0 1.5 0V12h1a.75.75 0 0 0 0-1.5h-1v-1h1a.75.75 0 0 0 0-1.5h-1v-1h1a.75.75 0 0 0 0-1.5h-1v-1h1a.75.75 0 0 0 0-1.5h-1V3.5h-3v.25a.75.75 0 0 0 1.5 0V3.5h-3zm-2.5 7h5v-1h-5v1zm0-2.5h5v-1h-5v1zm0-2.5h5v-1h-5v1z" /><path d="M12.5 1.75a.75.75 0 0 0-1.5 0V2h3V1.75a.75.75 0 0 0-1.5 0V1zM11.5 3.5v-.25a.75.75 0 0 0-1.5 0V3.5h-1a.75.75 0 0 0 0 1.5h1v1h-1a.75.75 0 0 0 0 1.5h1v1h-1a.75.75 0 0 0 0 1.5h1v1h-1a.75.75 0 0 0 0 1.5h1v.25a.75.75 0 0 0 1.5 0V12h3v.25a.75.75 0 0 0 1.5 0V12h1a.75.75 0 0 0 0-1.5h-1v-1h1a.75.75 0 0 0 0-1.5h-1v-1h1a.75.75 0 0 0 0-1.5h-1v-1h1a.75.75 0 0 0 0-1.5h-1V3.5h-3v.25a.75.75 0 0 0 1.5 0V3.5h-3zm-2.5 7h5v-1h-5v1zm0-2.5h5v-1h-5v1zm0-2.5h5v-1h-5v1z" /></svg><span>번역</span></div></div><div class="writing-pane-body"><textarea id="translation-textarea" class="form-textarea" placeholder="원고 번역본...">${content.translation || ''}</textarea></div></div>
+                            <div id="preview-pane" class="writing-pane"><div class="writing-pane-header"><div class="writing-pane-title"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path d="M10 12.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Z" /><path fill-rule="evenodd" d="M.664 10.59a1.651 1.651 0 0 1 0-1.18l3.42-4.28a1.65 1.65 0 0 1 2.332-.334l.823.412a1.65 1.65 0 0 0 1.836 0l.823-.412a1.65 1.65 0 0 1 2.332.334l3.42 4.28a1.651 1.651 0 0 1 0 1.18l-3.42 4.28a1.65 1.65 0 0 1-2.332.334l-.823-.412a1.65 1.65 0 0 0-1.836 0l-.823.412a1.65 1.65 0 0 1-2.332-.334L.664 10.59Z" clip-rule="evenodd" /></svg><span>미리보기</span></div></div><div class="writing-pane-body markdown-preview" id="markdown-preview"></div></div>
+                        </div>
+                    </div>`;
+                AppController.bindChapterContentEvents(prevPath, nextPath);
+                AppController.updateLayout();
+            },
+            renderProjectList(projects, currentProjectId) {
+                const container = this.dom.projectList;
+                container.innerHTML = '';
+                if (!projects.length) { container.innerHTML = '<p style="color: var(--color-text-secondary); font-size: 14px; text-align: center; margin-top: var(--space-4);">프로젝트가 없습니다.</p>'; return; }
+                projects.forEach(proj => {
+                    const item = document.createElement('div');
+                    item.className = `project-item ${currentProjectId === proj.id ? 'active' : ''}`;
+                    item.innerHTML = `<span class="project-item-name">${proj.id}</span><div class="project-item-actions"><button class="delete-project-btn" title="프로젝트 삭제"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" width="18" height="18"><path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.58.22-2.365.468a.75.75 0 1 0 .53 1.405c.743-.238 1.498-.387 2.285-.437V16.25A2.75 2.75 0 0 0 8.75 19h2.5A2.75 2.75 0 0 0 14 16.25V5.182c.787.05 1.542.199 2.285.437a.75.75 0 1 0 .53-1.405C15.999 4.413 15.204 4.27 14.41 4.193V3.75A2.75 2.75 0 0 0 11.25 1h-2.5ZM10 4c.84 0 1.673.025 2.5.075V16.25a1.25 1.25 0 0 1-1.25 1.25h-2.5A1.25 1.25 0 0 1 7.5 16.25V4.075C8.327 4.025 9.16 4 10 4Z" clip-rule="evenodd" /></svg></button></div>`;
+                    item.querySelector('.project-item-name').onclick = () => AppController.switchProject(proj.id);
+                    item.querySelector('.delete-project-btn').onclick = (e) => { e.stopPropagation(); AppController.deleteProject(proj.id); };
+                    container.appendChild(item);
+                });
+            },
+            updateSaveStatus(status) {
+                const indicator = this.dom.saveStatusIndicator;
+                let icon = ''; let title = '';
+                switch (status) {
+                    case 'saving': icon = `<svg class="saving-icon" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 11.667 0l3.181-3.183m-4.991-2.691v4.992h-4.992" /></svg>`; title = '저장 중...'; break;
+                    case 'saved': icon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>`; title = `저장됨 (${new Date().toLocaleTimeString()})`; break;
+                    default: icon = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0 3 3m-3-3-3 3M6.75 19.5a4.5 4.5 0 0 1-1.41-8.775 5.25 5.25 0 0 1 10.233-2.33 3 3 0 0 1 3.758 3.848A3.752 3.752 0 0 1 18 19.5H6.75Z" /></svg>`; title = '모든 변경사항이 저장되었습니다.';
+                }
+                indicator.innerHTML = icon; indicator.title = title;
+            },
+            toggleLoading(show, message = "처리 중...") { this.dom.loadingMessage.textContent = message; this.dom.loadingOverlay.classList.toggle('hidden', !show); },
+            openModal(modal) { modal.classList.remove('hidden'); setTimeout(() => modal.classList.add('visible'), 10); },
+            closeModal(modal) { modal.classList.remove('visible'); setTimeout(() => modal.classList.add('hidden'), 300); },
+            showConfirmation(title, message, okLabel = '확인', cancelLabel = '취소', isDestructive = false) {
+                return new Promise(resolve => {
+                    this.dom.confirmationModalTitle.textContent = title; this.dom.confirmationModalContent.innerHTML = `<pre style="white-space: pre-wrap; text-align: left; font-size: 13px;">${message}</pre>`;
+                    this.dom.confirmOkBtn.textContent = okLabel; this.dom.confirmCancelBtn.textContent = cancelLabel;
+                    this.dom.confirmCancelBtn.classList.toggle('hidden', !cancelLabel);
+                    this.dom.confirmOkBtn.className = `btn ${isDestructive ? 'btn-destructive' : 'btn-primary'}`;
+                    this.openModal(this.dom.confirmationModal);
+                    const cleanup = (result) => { this.closeModal(this.dom.confirmationModal); this.dom.confirmOkBtn.onclick = null; this.dom.confirmCancelBtn.onclick = null; resolve(result); };
+                    this.dom.confirmOkBtn.onclick = () => cleanup(true); this.dom.confirmCancelBtn.onclick = () => cleanup(false);
+                });
+            }
+        };
+
+        const AppController = {
+            debounceTimers: {},
+            init() {
+                UIManager.init();
+                this.setupEventListeners();
+                this.loadInitialData();
+            },
+            async loadInitialData() {
+                UIManager.toggleLoading(true, "애플리케이션 초기화 중...");
+                try {
+                    await DBService.init();
+                    const [projects, templateSetting, lastProjectId] = await Promise.all([ DBService.getAll(DB_CONFIG.STORES.PROJECTS), DBService.get(DB_CONFIG.STORES.SETTINGS, SETTINGS_KEYS.PROMPT_TEMPLATE), localStorage.getItem(SETTINGS_KEYS.CURRENT_PROJECT) ]);
+                    AppState.setState({ projects, promptTemplate: templateSetting?.value || DEFAULT_PROMPT_TEMPLATE_XML });
+                    if (lastProjectId && projects.some(p => p.id === lastProjectId)) { await this.switchProject(lastProjectId, true); }
+                    UIManager.updateSaveStatus('idle');
+                } catch (err) { console.error("Initialization failed:", err); } 
+                finally { UIManager.toggleLoading(false); }
+            },
+            setupEventListeners() {
+                const dom = UIManager.dom;
+                const closeSidebar = () => { dom.sidebar.classList.remove('open'); dom.sidebarOverlay.classList.remove('open'); };
+                dom.menuOpenBtn.onclick = () => { dom.sidebar.classList.add('open'); dom.sidebarOverlay.classList.add('open'); };
+                if (dom.sidebarCloseBtn) dom.sidebarCloseBtn.onclick = closeSidebar;
+                if (dom.sidebarOverlay) dom.sidebarOverlay.onclick = closeSidebar;
+                document.querySelectorAll('.modal-overlay').forEach(modal => { modal.addEventListener('click', e => { if (e.target === modal || e.target.closest('.modal-close-btn')) UIManager.closeModal(modal); }); });
+                dom.renderBtn.onclick = () => this.updateTOC();
+                dom.toggleTocBtn.onclick = () => { dom.tocInputArea.classList.toggle('collapsed'); };
+                dom.exportBtn.onclick = () => this.exportMarkdown();
+                dom.settingsBtn.onclick = () => { dom.promptTemplateInput.value = AppState.getState().promptTemplate; UIManager.openModal(dom.settingsModal); };
+                dom.projectManageBtn.onclick = () => this.openProjectManager();
+                dom.saveTemplateBtn.onclick = () => this.savePromptTemplate();
+                dom.resetTemplateBtn.onclick = () => this.resetPromptTemplate();
+                dom.newProjectForm.onsubmit = (e) => { e.preventDefault(); this.createProject(); };
+                
+                const resizer = dom.resizer;
+                const sidebar = dom.sidebar;
+                let isResizing = false;
+                resizer.addEventListener('mousedown', (e) => { isResizing = true; document.body.style.cursor = 'col-resize'; });
+                document.addEventListener('mousemove', (e) => { if (isResizing) { let newWidth = e.clientX; if (newWidth < 250) newWidth = 250; if (newWidth > 600) newWidth = 600; sidebar.style.width = `${newWidth}px`; } });
+                document.addEventListener('mouseup', () => { isResizing = false; document.body.style.cursor = 'default'; });
+            },
+            bindChapterContentEvents(prevPath, nextPath) {
+                const manuscriptTextarea = document.getElementById('manuscript-textarea');
+                const memoTextarea = document.getElementById('memo-textarea');
+                const translationTextarea = document.getElementById('translation-textarea');
+                
+                document.getElementById('modal-copy-prompt-btn').onclick = (e) => this.copyPromptForPath(AppState.getState().activeChapterPath, e.currentTarget);
+                document.getElementById('toggle-memo-btn').onclick = () => this.togglePane('isMemoVisible');
+                document.getElementById('toggle-translation-btn').onclick = () => this.togglePane('isTranslationVisible');
+                document.getElementById('toggle-preview-btn').onclick = () => this.togglePane('isPreviewVisible');
+                document.getElementById('show-prompt-btn').onclick = () => {
+                    const prompt = this._generatePrompt(AppState.getState().activeChapterPath);
+                    this.showConfirmation('AI 생성 프롬프트', prompt, '확인');
+                };
+                if(prevPath) document.getElementById('prev-chapter-btn').onclick = () => this.setActiveChapter(prevPath);
+                if(nextPath) document.getElementById('next-chapter-btn').onclick = () => this.setActiveChapter(nextPath);
+
+                const debouncedSave = (key) => this.debounce(async () => {
+                    UIManager.updateSaveStatus('saving');
+                    await this.saveChapterContent();
+                    UIManager.updateSaveStatus('saved');
+                }, 1500, key);
+
+                const handleInput = (e, key) => {
+                    const originalValue = e.target.value;
+                    const sanitizedValue = this.sanitizeInput(originalValue);
+                    if (originalValue !== sanitizedValue) {
+                        e.target.value = sanitizedValue;
+                    }
+                    if (key === 'manuscript') this.updateMarkdownPreview();
+                    debouncedSave(key)();
+                };
+
+                manuscriptTextarea.addEventListener('input', (e) => handleInput(e, 'manuscript'));
+                memoTextarea.addEventListener('input', (e) => handleInput(e, 'memo'));
+                translationTextarea.addEventListener('input', (e) => handleInput(e, 'translation'));
+                
+                this.updateMarkdownPreview();
+            },
+            bindProjectDetailsEvents() {
+                const debouncedSave = this.debounce(() => {
+                    UIManager.updateSaveStatus('saving');
+                    this.saveProjectDetails().then(() => UIManager.updateSaveStatus('saved'));
+                }, 1000, 'projectDetails');
+                ['project-genre', 'project-age-group', 'project-audience', 'project-style-example', 'project-materials']
+                    .forEach(id => document.getElementById(id).addEventListener('input', debouncedSave));
+            },
+            debounce(func, delay, key) {
+                return (...args) => {
+                    clearTimeout(this.debounceTimers[key]);
+                    this.debounceTimers[key] = setTimeout(() => { func.apply(this, args); }, delay);
+                };
+            },
+            sanitizeInput(text) {
+                return text.replace(/[\u200B-\u200D\uFEFF\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+            },
+            togglePane(paneStateKey) {
+                const currentState = AppState.getState();
+                AppState.setState({ [paneStateKey]: !currentState[paneStateKey] });
+                this.updateLayout();
+            },
+            updateLayout() {
+                const { isMemoVisible, isTranslationVisible, isPreviewVisible } = AppState.getState();
+                const grid = document.getElementById('writing-grid');
+                if (!grid) return;
+
+                document.getElementById('memo-pane').classList.toggle('hidden', !isMemoVisible);
+                document.getElementById('translation-pane').classList.toggle('hidden', !isTranslationVisible);
+                document.getElementById('preview-pane').classList.toggle('hidden', !isPreviewVisible);
+
+                document.getElementById('toggle-memo-btn').classList.toggle('active', isMemoVisible);
+                document.getElementById('toggle-translation-btn').classList.toggle('active', isTranslationVisible);
+                document.getElementById('toggle-preview-btn').classList.toggle('active', isPreviewVisible);
+
+                const visiblePanes = [true, isMemoVisible, isTranslationVisible, isPreviewVisible].filter(Boolean).length;
+                grid.className = `writing-grid layout-${visiblePanes}-cols`;
+            },
+            updateMarkdownPreview() {
+                const manuscriptText = document.getElementById('manuscript-textarea')?.value || '';
+                const previewPane = document.getElementById('markdown-preview');
+                if (previewPane) {
+                    previewPane.innerHTML = marked.parse(this.sanitizeInput(manuscriptText));
+                }
+            },
+            setActiveChapter(path) {
+                AppState.setState({ activeChapterPath: path });
+            },
+            async updateTOC() {
+                const { currentProjectId } = AppState.getState();
+                if (!currentProjectId) { UIManager.showConfirmation('프로젝트 필요', '먼저 프로젝트를 선택하거나 새로 생성해주세요.'); return; }
+                const input = UIManager.dom.tocInput.value.trim();
+                try {
+                    const tocData = input.startsWith('<') ? this._parseXmlTOC(input) : this._parseJsonTOC(input);
+                    if (!tocData.title || !tocData.children) throw new Error("유효한 목차 데이터가 아닙니다.");
+                    const project = await DBService.get(DB_CONFIG.STORES.PROJECTS, currentProjectId);
+                    project.toc = tocData;
+                    await DBService.put(DB_CONFIG.STORES.PROJECTS, project);
+                    
+                    const flatTOC = this._flattenTOC(tocData);
+                    AppState.setState({ currentTOC: tocData, activeChapterPath: null, flatTOC });
+
+                    await this._recalculateStatus();
+                    UIManager.dom.tocInputArea.classList.add('collapsed');
+                    UIManager.dom.toggleTocBtn.classList.remove('hidden');
+                } catch (err) { UIManager.showConfirmation('목차 오류', `유효한 형식이 아닙니다. ${err.message}`); }
+            },
+            _flattenTOC(toc) {
+                const flat = [];
+                const traverse = (nodes, prefix) => {
+                    nodes.forEach((node, i) => {
+                        const path = prefix ? `${prefix}.${i}` : `${i}`;
+                        flat.push({ path, node });
+                        if (node.children && node.children.length > 0) {
+                            traverse(node.children, path);
                         }
                     });
                 };
-            });
-        },
-        get(storeName, id) {
-            return new Promise((resolve, reject) => {
-                if (!this.db) return reject("DB not initialized");
-                const transaction = this.db.transaction([storeName], 'readonly');
-                const store = transaction.objectStore(storeName);
-                const request = store.get(id);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = (event) => reject(`Get error: ${event.target.errorCode}`);
-            });
-        },
-        getAll(storeName) {
-            return new Promise((resolve, reject) => {
-                if (!this.db) return reject("DB not initialized");
-                const transaction = this.db.transaction([storeName], 'readonly');
-                const store = transaction.objectStore(storeName);
-                const request = store.getAll();
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = (event) => reject(`GetAll error: ${event.target.errorCode}`);
-            });
-        },
-        put(storeName, data) {
-            return new Promise((resolve, reject) => {
-                if (!this.db) return reject("DB not initialized");
-                const transaction = this.db.transaction([storeName], 'readwrite');
-                const store = transaction.objectStore(storeName);
-                const request = store.put(data);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = (event) => reject(`Put error: ${event.target.errorCode}`);
-            });
-        },
-        delete(storeName, id) {
-            return new Promise((resolve, reject) => {
-                if (!this.db) return reject("DB not initialized");
-                const transaction = this.db.transaction([storeName], 'readwrite');
-                const store = transaction.objectStore(storeName);
-                const request = store.delete(id);
-                request.onsuccess = () => resolve();
-                request.onerror = (event) => reject(`Delete error: ${event.target.errorCode}`);
-            });
-        }
-    };
-
-    // --- 2. Application Setup ---
-    const DB_CONFIG = {
-        NAME: 'AIWriterDB',
-        VERSION: 1,
-        STORES: ['projects', 'contents', 'settings']
-    };
-    const APP_ID = 'ai-longform-writer-v1';
-    const SETTINGS_KEYS = {
-        PROMPT_TEMPLATE: `${APP_ID}-prompt-template`,
-        CURRENT_PROJECT: `${APP_ID}-current-project-id`
-    };
-
-    const DEFAULT_PROMPT_TEMPLATE = `
-# Role: Master Author & Storyteller
-
-## Persona:
-You are a world-renowned author, celebrated for your ability to craft compelling narratives, build immersive worlds, and develop profound characters. You have a masterful command of language, structure, and pacing. Your task is to write a single, specific chapter or section of a larger work, based on the provided context.
-
-## Core Task:
-Write the content for the specified chapter, "<<챕터>>". Your writing must be engaging, coherent, and perfectly aligned with the overall tone and structure of the book, "<<책제목>>".
-
-## Context Analysis:
-1.  **Book Title:** <<책제목>>
-2.  **Current Part:** <<파트>> - <<파트설명>>
-3.  **Current Chapter:** <<챕터>> - <<챕터설명>>
-4.  **Overall Table of Contents (Your location is marked with ▶):**
-<<전체목차>>
-5.  **Table of Contents for the Current Part:**
-<<현재파트목차>>
-6.  **Reference Materials (Glossary, Characters, etc.):**
-<<참고자료>>
-
-## Instructions & Constraints:
-1.  **Focus:** Write ONLY the content for the chapter "<<챕터>>". Do not write introductions, summaries, or content for other chapters.
-2.  **Continuity:** Ensure the tone, style, and narrative seamlessly connect with the surrounding chapters as implied by the table of contents.
-3.  **Content Generation:** Based on the chapter title and description, generate high-quality, original content. If the chapter is about a technical subject, be accurate. If it's a story, be creative and emotionally resonant.
-4.  **Format:** Produce only the raw text for the chapter. Do not include titles, headings, or markdown formatting unless it is part of the narrative itself (e.g., a letter within a story).
-5.  **Self-Correction:** Before outputting, review your work. Does it fulfill the specific request for this chapter? Is it consistent with the provided context? Is the quality high enough for a bestselling book? Output only the final, polished chapter text.
-`;
-
-    // --- 3. State Management ---
-    const appState = {
-        currentProjectId: null,
-        projects: [],  
-        currentProjectData: null,
-        promptTemplate: DEFAULT_PROMPT_TEMPLATE,
-        activeChapterPath: null,
-    };
-
-    // --- 4. DOM Elements ---
-    const dom = {
-        sidebar: document.getElementById('sidebar'),
-        menuOpenBtn: document.getElementById('menu-open-btn'),
-        menuCloseBtn: document.getElementById('menu-close-btn'),
-        sidebarOverlay: document.getElementById('sidebar-overlay'),
-        loadingOverlay: document.getElementById('loading-overlay'),
-        loadingMessage: document.getElementById('loading-message'),
-        currentProjectDisplay: document.getElementById('current-project-display'),
-        jsonInput: document.getElementById('json-input'),
-        renderBtn: document.getElementById('render-btn'),
-        outlineContainer: document.getElementById('outline-container'),
-        exportBtn: document.getElementById('export-btn'),
-        welcomeScreen: document.getElementById('welcome-screen'),
-        chapterDisplayContainer: document.getElementById('chapter-display-container'),
-        settingsBtn: document.getElementById('settings-btn'),
-        settingsModal: document.getElementById('settings-modal'),
-        promptTemplateInput: document.getElementById('prompt-template-input'),
-        saveTemplateBtn: document.getElementById('save-template-btn'),
-        resetTemplateBtn: document.getElementById('reset-template-btn'),
-        templateSaveStatus: document.getElementById('template-save-status'),
-        projectManageBtn: document.getElementById('project-manage-btn'),
-        projectModal: document.getElementById('project-modal'),
-        newProjectNameInput: document.getElementById('new-project-name'),
-        createProjectBtn: document.getElementById('create-project-btn'),
-        newProjectStatus: document.getElementById('new-project-status'),
-        projectListContainer: document.getElementById('project-list'),
-        projectMaterialsInput: document.getElementById('project-materials-input'),
-        saveProjectMaterialsBtn: document.getElementById('save-project-materials-btn'),
-        projectMaterialsStatus: document.getElementById('project-materials-status'),
-        writerModal: document.getElementById('writer-modal'),
-        writerModalTitle: document.getElementById('writer-modal-title'),
-        modalPromptTextarea: document.getElementById('modal-prompt-textarea'),
-        modalCopyPromptBtn: document.getElementById('modal-copy-prompt-btn'), // 모달 내 버튼
-        copyStatusMessageModal: document.getElementById('copy-status-message-modal'), // 모달 내 복사 상태 메시지
-        modalNotesTextarea: document.getElementById('modal-notes-textarea'),
-        modalResultTextarea: document.getElementById('modal-result-textarea'),
-        modalSaveBtn: document.getElementById('modal-save-btn'),
-        modalSaveStatus: document.getElementById('modal-save-status'),
-        messageModal: document.getElementById('message-modal'),
-        messageModalTitle: document.getElementById('message-modal-title'),
-        messageModalContent: document.getElementById('message-modal-content'),
-        confirmationModal: document.getElementById('confirmation-modal'),
-        confirmationModalTitle: document.getElementById('confirmation-modal-title'),
-        confirmationModalContent: document.getElementById('confirmation-modal-content'),
-        confirmOkBtn: document.getElementById('confirm-ok-btn'),
-        confirmCancelBtn: document.getElementById('confirm-cancel-btn'),
-    };
-
-    // --- 5. UI & Utility Functions ---
-    const showLoading = (message = "처리 중...") => {
-        dom.loadingMessage.textContent = message;
-        dom.loadingOverlay.classList.remove('hidden');
-    };
-    const hideLoading = () => dom.loadingOverlay.classList.add('hidden');
-
-    const openModal = (modal) => {
-        modal.classList.remove('hidden');
-        setTimeout(() => {
-            modal.classList.remove('opacity-0');
-            modal.querySelector('.modal-content').classList.remove('scale-95');
-        }, 10);
-    };
-
-    const closeModal = (modal) => {
-        modal.classList.add('opacity-0');
-        modal.querySelector('.modal-content').classList.add('scale-95');
-        setTimeout(() => modal.classList.add('hidden'), 300);
-    };
-
-    const showMessageModal = (title, message) => {
-        dom.messageModalTitle.textContent = title;
-        dom.messageModalContent.textContent = message;
-        openModal(dom.messageModal);
-    };
-
-    const showConfirmationModal = (title, message) => {
-        return new Promise(resolve => {
-            dom.confirmationModalTitle.textContent = title;
-            dom.confirmationModalContent.textContent = message;
-            openModal(dom.confirmationModal);
-            const cleanup = (result) => {
-                closeModal(dom.confirmationModal);
-                dom.confirmOkBtn.onclick = null;
-                dom.confirmCancelBtn.onclick = null;
-                resolve(result);
-            };
-            dom.confirmOkBtn.onclick = () => cleanup(true);
-            dom.confirmCancelBtn.onclick = () => cleanup(false);
-        });
-    };
-
-    const openSidebar = () => { dom.sidebar.classList.remove('-translate-x-full'); dom.sidebarOverlay.classList.remove('hidden'); };
-    const closeSidebar = () => { dom.sidebar.classList.add('-translate-x-full'); dom.sidebarOverlay.classList.add('hidden'); };
-
-    /**
-     * Copies text to the clipboard with a fallback mechanism.
-     * @param {string} text - The text to copy.
-     * @param {HTMLElement} statusElement - Optional. The DOM element to display status messages.
-     * @returns {Promise<void>} A promise that resolves on success and rejects on failure.
-     */
-    const copyToClipboard = (text, statusElement = null) => {
-        return new Promise((resolve, reject) => {
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text)
-                    .then(() => {
-                        if (statusElement) {
-                            statusElement.textContent = '✅ 복사 완료!';
-                            setTimeout(() => statusElement.textContent = '', 2000);
-                        }
-                        resolve();
-                    })
-                    .catch(() => fallbackCopy(text, statusElement).then(resolve).catch(reject));
-            } else {
-                fallbackCopy(text, statusElement).then(resolve).catch(reject);
-            }
-        });
-    };
-
-    /**
-     * Fallback method for copying text using document.execCommand.
-     * @param {string} text - The text to copy.
-     * @param {HTMLElement} statusElement - Optional. The DOM element to display status messages.
-     * @returns {Promise<void>}
-     */
-    const fallbackCopy = (text, statusElement = null) => {
-        return new Promise((resolve, reject) => {
-            const textArea = document.createElement("textarea");
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.top = '-9999px';
-            textArea.style.left = '-9999px';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    if (statusElement) {
-                        statusElement.textContent = '✅ 복사 완료! (수동 복사)';
-                        setTimeout(() => statusElement.textContent = '', 2000);
-                    }
-                    resolve();
-                } else {
-                    if (statusElement) {
-                        statusElement.textContent = '❌ 복사 실패!';
-                    }
-                    reject(new Error('Fallback: Unable to copy'));
+                if (toc && toc.children) {
+                    traverse(toc.children, '');
                 }
-            } catch (err) {
-                if (statusElement) {
-                    statusElement.textContent = '❌ 복사 실패!';
-                }
-                reject(err);
-            }
-            document.body.removeChild(textArea);
-        });
-    };
-
-
-    // --- 6. Core Application Logic ---
-
-    const getNodeByPath = (path) => {
-        if (!appState.currentProjectData || !path) return null;
-        let node = { children: appState.currentProjectData.children };
-        const parts = path.split('.').map(Number);
-        for (const index of parts) {
-            if (!node.children?.[index]) return null;
-            node = node.children[index];
-        }
-        return node;
-    };
-
-    const renderOutlineRecursive = async (nodes, parentEl, pathPrefix = '') => {
-        const ul = document.createElement('ul');
-        ul.className = 'space-y-1';
-        parentEl.appendChild(ul);
-
-        for (let i = 0; i < nodes.length; i++) {
-            const child = nodes[i];
-            const path = pathPrefix ? `${pathPrefix}.${i}` : `${i}`;
-            const li = document.createElement('li');
-            li.className = 'outline-item-wrapper';
-            
-            const contentDiv = document.createElement('div');
-            contentDiv.className = 'outline-item p-2 rounded-md text-sm flex items-center justify-between';
-            contentDiv.dataset.path = path;
-            
-            const content = await idb.get('contents', `${appState.currentProjectId}_${path}`);
-            const isCompleted = content && content.resultText && content.resultText.trim() !== '';
-
-            contentDiv.innerHTML = `
-                <div class="flex-grow flex items-center overflow-hidden">
-                    <span class="indent-wrapper flex-shrink-0" style="width: ${(child.level || 1) * 1.0}rem;"></span>
-                    <span class="font-medium text-slate-700 truncate">${child.title}</span>
-                </div>
-                <i class="completion-icon fas fa-check-circle text-emerald-500 ml-2 mr-2 invisible flex-shrink-0"></i>
-            `;
-            if (isCompleted) contentDiv.querySelector('.completion-icon').classList.remove('invisible');
-
-            contentDiv.addEventListener('click', (e) => {
-                e.stopPropagation();
-                document.querySelectorAll('.outline-item.active').forEach(el => el.classList.remove('active'));
-                contentDiv.classList.add('active');
-                openWriterModal(path);
-                if (window.innerWidth < 768) closeSidebar();
-            });
-
-            li.appendChild(contentDiv);
-            ul.appendChild(li);
-
-            if (child.children?.length > 0) {
-                await renderOutlineRecursive(child.children, li, path);
-            }
-        }
-    };
-    
-    const renderOutline = async () => {
-        dom.outlineContainer.innerHTML = '';
-        if (!appState.currentProjectData || !appState.currentProjectData.children) {
-            dom.outlineContainer.innerHTML = '<p class="text-slate-400 text-sm p-2">목차가 비어있습니다.</p>';
-            return;
-        }
-        await renderOutlineRecursive(appState.currentProjectData.children, dom.outlineContainer);
-    };
-
-    const renderMainContent = () => {
-        dom.welcomeScreen.classList.add('hidden');
-        dom.chapterDisplayContainer.classList.remove('hidden');
-        dom.chapterDisplayContainer.innerHTML = '';
-
-        if (!appState.currentProjectData || !appState.currentProjectData.children) return;
-
-        const renderNode = (node, parentEl, path) => {
-            const div = document.createElement('div');
-            const isPart = (node.level === 1);
-            
-            if (isPart) {
-                div.className = 'part-container pt-4';
-                div.innerHTML = `<h2 class="text-3xl font-bold text-slate-800 border-b-2 border-indigo-500 pb-3 mb-6">${node.title}</h2>`;
-            } else {
-                div.className = 'chapter-item bg-white p-5 rounded-lg shadow-sm border border-slate-200 flex justify-between items-center gap-4';
-                div.style.marginLeft = `${((node.level || 2) - 2) * 1.5}rem`;
-                div.innerHTML = `
-                    <div class="flex-grow">
-                        <h3 class="text-lg font-semibold text-slate-800">${node.title}</h3>
-                        <p class="text-sm text-slate-500 mt-1">${node.description || '세부 설명이 없습니다.'}</p>
-                    </div>
-                    <div class="flex items-center space-x-2"> <button class="copy-prompt-btn" title="프롬프트 복사">
-                            <i class="fas fa-copy"></i>
-                            <span class="copy-status-icon text-xs text-green-600 ml-1"></span>
-                        </button>
-                        <button class="edit-chapter-btn bg-white text-indigo-600 px-4 py-2 rounded-lg font-semibold hover:bg-indigo-50 border border-indigo-200 transition flex-shrink-0" title="글쓰기">
-                            <i class="fas fa-edit"></i>
-                        </button>
-                    </div>
-                `;
-                // 글쓰기 버튼 이벤트 리스너
-                div.querySelector('.edit-chapter-btn').onclick = () => openWriterModal(path);
-
-                // 새로 추가된 복사 버튼 이벤트 리스너
-                const copyBtn = div.querySelector('.copy-prompt-btn');
-                const copyStatusIcon = copyBtn.querySelector('.copy-status-icon');
-                copyBtn.onclick = async () => {
-                    const promptText = generatePromptForNode(path);
-                    await copyToClipboard(promptText, copyStatusIcon);
+                return flat;
+            },
+            _parseJsonTOC(jsonString) { return JSON.parse(jsonString); },
+            _parseXmlTOC(xmlString) {
+                const parser = new DOMParser(); const xmlDoc = parser.parseFromString(xmlString, "application/xml");
+                if (xmlDoc.getElementsByTagName("parsererror").length) throw new Error("XML 파싱 오류.");
+                const tocEl = xmlDoc.documentElement;
+                const parseNode = (element, level) => {
+                    const children = Array.from(element.children).map(child => parseNode(child, level + 1));
+                    const node = { title: element.getAttribute('title') || '제목 없음', description: element.getAttribute('description') || '', level: level };
+                    if (children.length > 0) node.children = children;
+                    return node;
                 };
-            }
-            parentEl.appendChild(div);
-
-            if (node.children?.length > 0) {
-                const container = isPart ? div : document.createElement('div');
-                if (!isPart) {
-                    container.className = 'mt-4 space-y-4';
-                    parentEl.appendChild(container);
+                return { title: tocEl.getAttribute('title') || '책 제목', children: Array.from(tocEl.children).map(child => parseNode(child, 1)) };
+            },
+            async switchProject(projectId, isInitialLoad = false) {
+                const { currentProjectId } = AppState.getState();
+                if (!isInitialLoad && currentProjectId === projectId) {
+                    this.openProjectManager(projectId);
+                    return;
                 }
-                node.children.forEach((child, i) => {
-                    renderNode(child, container, `${path}.${i}`);
-                });
-            }
-        };
-
-        appState.currentProjectData.children.forEach((node, i) => {
-            renderNode(node, dom.chapterDisplayContainer, `${i}`);
-        });
-    };
-
-    const openWriterModal = async (path) => {
-        appState.activeChapterPath = path;
-        const node = getNodeByPath(path);
-        if (!node) {
-            showMessageModal('오류', '챕터 정보를 찾을 수 없습니다.');
-            return;
-        }
-
-        const content = await idb.get('contents', `${appState.currentProjectId}_${path}`) || {};
-
-        dom.writerModalTitle.textContent = `글쓰기: ${node.title}`;
-        dom.modalPromptTextarea.value = generatePromptForNode(path);
-        dom.modalNotesTextarea.value = content.notes || '';
-        dom.modalResultTextarea.value = content.resultText || '';
-        dom.modalSaveStatus.textContent = '';
-        dom.copyStatusMessageModal.textContent = ''; // 모달 내 상태 메시지 초기화
-        
-        openModal(dom.writerModal);
-    };
-
-    const generatePromptForNode = (path) => {
-        const node = getNodeByPath(path);
-        if (!node) return "오류: 노드를 찾을 수 없습니다.";
-
-        const pathParts = path.split('.').map(Number);
-        const partNode = pathParts.length > 0 ? getNodeByPath(pathParts[0].toString()) : null;
-        
-        const project = appState.projects.find(p => p.id === appState.currentProjectId);
-        const projectMaterials = project ? project.materials : '';
-
-        const generateOutlineText = (data, currentPath, partOnly = false) => {
-            let text = '';
-            const traverse = (nodes, prefix, level) => {
-                (nodes || []).forEach((node, i) => {
-                    const nodePath = prefix ? `${prefix}.${i}` : `${i}`;
-                    text += `${'  '.repeat(level)}${nodePath === currentPath ? '▶' : '-'} ${node.title}\n`;
-                    if (node.children) traverse(node.children, nodePath, level + 1);
-                });
-            };
-            if (partOnly && partNode) {
-                 traverse(partNode.children, pathParts[0].toString(), 1);
-            } else {
-                 traverse(data.children, '', 0);
-            }
-            return text;
-        };
-
-        const replacements = {
-            '<<책제목>>': appState.currentProjectData.title,
-            '<<파트>>': partNode ? partNode.title : 'N/A',
-            '<<파트설명>>': partNode ? partNode.description : '',
-            '<<챕터>>': node.title,
-            '<<챕터설명>>': node.description,
-            '<<전체목차>>': generateOutlineText(appState.currentProjectData, path),
-            '<<현재파트목차>>': partNode ? generateOutlineText(appState.currentProjectData, path, true) : '',
-            '<<참고자료>>': projectMaterials
-        };
-
-        let template = appState.promptTemplate;
-        for (const [key, value] of Object.entries(replacements)) {
-            const regex = new RegExp(key, 'g');
-            template = template.replace(regex, value || '');
-        }
-        return template;
-    };
-
-
-    const updateChapterCompletionStatus = (path, isCompleted) => {
-        const outlineItem = dom.outlineContainer.querySelector(`.outline-item[data-path="${path}"]`);
-        if (outlineItem) {
-            const icon = outlineItem.querySelector('.completion-icon');
-            if (isCompleted) {
-                icon.classList.remove('invisible');
-            } else {
-                icon.classList.add('invisible');
-            }
-        }
-    };
-    
-    const renderProjectList = () => {
-        dom.projectListContainer.innerHTML = '';
-        if (appState.projects.length === 0) {
-            dom.projectListContainer.innerHTML = '<p class="text-slate-400 text-sm">저장된 프로젝트가 없습니다.</p>';
-            return;
-        }
-        appState.projects.forEach(proj => {
-            const item = document.createElement('div');
-            item.className = `project-item flex justify-between items-center p-3 rounded-lg cursor-pointer hover:bg-slate-100 ${appState.currentProjectId === proj.id ? 'bg-indigo-100 font-semibold' : 'bg-slate-50'}`;
-            item.innerHTML = `
-                <span class="flex-grow truncate pr-4">${proj.id}</span>
-                <button data-project-id="${proj.id}" class="delete-project-btn text-red-500 hover:text-red-700 px-2 opacity-70 hover:opacity-100 flex-shrink-0"><i class="fas fa-trash-alt"></i></button>
-            `;
-            item.querySelector('span').onclick = () => switchProject(proj.id);
-            item.querySelector('.delete-project-btn').onclick = (e) => {
-                e.stopPropagation();
-                deleteProject(proj.id);
-            };
-            dom.projectListContainer.appendChild(item);
-        });
-    };
-
-    const switchProject = async (projectId) => {
-        showLoading("프로젝트 로드 중...");
-        try {
-            const project = await idb.get('projects', projectId);
-            if (project) {
-                appState.currentProjectId = projectId;
-                appState.currentProjectData = project.data;
-                localStorage.setItem(SETTINGS_KEYS.CURRENT_PROJECT, projectId);
-                
-                dom.jsonInput.value = project.data ? JSON.stringify(project.data, null, 2) : '';
-                dom.currentProjectDisplay.textContent = projectId;
-                
-                await renderOutline();
-                renderMainContent();
-                dom.exportBtn.disabled = !appState.currentProjectData;
-                closeModal(dom.projectModal);
-            } else {
-                showMessageModal('오류', '프로젝트를 찾을 수 없습니다.');
-            }
-        } catch (err) {
-            console.error("Failed to switch project:", err);
-            showMessageModal('오류', '프로젝트 전환에 실패했습니다.');
-        } finally {
-            hideLoading();
-        }
-    };
-    
-    const deleteProject = async (projectId) => {
-        const confirmed = await showConfirmationModal('프로젝트 삭제', `'${projectId}' 프로젝트를 정말 삭제하시겠습니까? 관련된 모든 원고 내용이 영구적으로 삭제됩니다.`);
-        if (!confirmed) return;
-
-        showLoading("프로젝트 삭제 중...");
-        try {
-            const allContents = await idb.getAll('contents');
-            const contentsToDelete = allContents.filter(c => c.id.startsWith(`${projectId}_`));
-            for (const content of contentsToDelete) {
-                await idb.delete('contents', content.id);
-            }
-            
-            await idb.delete('projects', projectId);
-
-            appState.projects = appState.projects.filter(p => p.id !== projectId);
-            if (appState.currentProjectId === projectId) {
-                appState.currentProjectId = null;
-                appState.currentProjectData = null;
-                localStorage.removeItem(SETTINGS_KEYS.CURRENT_PROJECT);
-                
-                dom.currentProjectDisplay.textContent = '선택되지 않음';
-                dom.jsonInput.value = '';
-                dom.outlineContainer.innerHTML = '<p class="text-slate-400 text-sm p-2">목차를 생성하면 여기에 표시됩니다.</p>';
-                dom.welcomeScreen.classList.remove('hidden');
-                dom.chapterDisplayContainer.classList.add('hidden');
-                dom.exportBtn.disabled = true;
-            }
-            renderProjectList();
-            showMessageModal('성공', '프로젝트가 삭제되었습니다.');
-
-        } catch (err) {
-            console.error("Failed to delete project:", err);
-            showMessageModal('오류', '프로젝트 삭제에 실패했습니다.');
-        } finally {
-            hideLoading();
-        }
-    };
-
-    // --- 7. Event Handlers ---
-    const setupEventListeners = () => {
-        dom.menuOpenBtn.addEventListener('click', openSidebar);
-        dom.menuCloseBtn.addEventListener('click', closeSidebar);
-        dom.sidebarOverlay.addEventListener('click', closeSidebar);
-
-        document.querySelectorAll('.modal').forEach(modal => {
-            modal.addEventListener('click', e => {
-                const target = e.target;
-                if (target.classList.contains('close-modal-btn') || target.closest('.close-modal-btn') || target.id === modal.id) {
-                    closeModal(modal);
-                }
-            });
-        });
-
-        dom.settingsBtn.onclick = async () => {
-            const settings = await idb.get('settings', SETTINGS_KEYS.PROMPT_TEMPLATE) || {};
-            appState.promptTemplate = settings?.value || DEFAULT_PROMPT_TEMPLATE;
-            dom.promptTemplateInput.value = appState.promptTemplate;
-            dom.templateSaveStatus.textContent = '';
-            openModal(dom.settingsModal);
-        };
-        dom.saveTemplateBtn.onclick = async () => {
-            appState.promptTemplate = dom.promptTemplateInput.value;
-            await idb.put('settings', { id: SETTINGS_KEYS.PROMPT_TEMPLATE, value: appState.promptTemplate });
-            dom.templateSaveStatus.textContent = '✅ 저장되었습니다!';
-            setTimeout(() => dom.templateSaveStatus.textContent = '', 2000);
-        };
-        dom.resetTemplateBtn.onclick = async () => {
-            if (await showConfirmationModal('템플릿 초기화', '정말 기본값으로 되돌리시겠습니까?')) {
-                appState.promptTemplate = DEFAULT_PROMPT_TEMPLATE;
-                dom.promptTemplateInput.value = DEFAULT_PROMPT_TEMPLATE;
-                await idb.put('settings', { id: SETTINGS_KEYS.PROMPT_TEMPLATE, value: appState.promptTemplate });
-            }
-        };
-
-        dom.projectManageBtn.onclick = async () => {
-            appState.projects = await idb.getAll('projects');
-            renderProjectList();
-            const project = appState.projects.find(p => p.id === appState.currentProjectId);
-            dom.projectMaterialsInput.value = project ? project.materials || '' : '';
-            dom.projectMaterialsStatus.textContent = '';
-            openModal(dom.projectModal);
-        };
-        dom.createProjectBtn.onclick = async () => {
-            const newName = dom.newProjectNameInput.value.trim();
-            if (!newName) {
-                dom.newProjectStatus.textContent = '프로젝트 이름을 입력해주세요.'; return;
-            }
-            const exists = await idb.get('projects', newName);
-            if (exists) {
-                dom.newProjectStatus.textContent = '이미 존재하는 프로젝트 이름입니다.'; return;
-            }
-            const newProject = { id: newName, data: null, materials: '' };
-            await idb.put('projects', newProject);
-            appState.projects.push(newProject);
-            dom.newProjectNameInput.value = '';
-            dom.newProjectStatus.textContent = '';
-            await switchProject(newName);
-            renderProjectList();
-        };
-        dom.saveProjectMaterialsBtn.onclick = async () => {
-            if (!appState.currentProjectId) {
-                showMessageModal('오류', '먼저 프로젝트를 선택해주세요.'); return;
-            }
-            const project = await idb.get('projects', appState.currentProjectId);
-            if (project) {
-                project.materials = dom.projectMaterialsInput.value;
-                await idb.put('projects', project);
-                dom.projectMaterialsStatus.textContent = '✅ 참고자료가 저장되었습니다.';
-                setTimeout(() => dom.projectMaterialsStatus.textContent = '', 2000);
-            }
-        };
-        
-        dom.renderBtn.onclick = async () => {
-            if (!appState.currentProjectId) {
-                showMessageModal('프로젝트 필요', '먼저 프로젝트를 선택하거나 새로 생성해주세요.'); return;
-            }
-            try {
-                const jsonData = JSON.parse(dom.jsonInput.value);
-                if (!jsonData.title || !jsonData.children) {
-                    throw new Error("JSON은 'title'과 'children' 속성을 포함해야 합니다.");
-                }
-                
-                const project = await idb.get('projects', appState.currentProjectId);
-                project.data = jsonData;
-                await idb.put('projects', project);
-                appState.currentProjectData = jsonData;
-
-                await renderOutline();
-                renderMainContent();
-                dom.exportBtn.disabled = false;
-                showMessageModal('성공', '목차가 성공적으로 적용되었습니다.');
-
-            } catch (err) {
-                console.error("JSON parsing error:", err);
-                showMessageModal('JSON 오류', `유효한 JSON 형식이 아닙니다. ${err.message}`);
-            }
-        };
-
-        // 모달 내 복사 버튼의 이벤트 리스너
-        dom.modalCopyPromptBtn.onclick = () => {
-            copyToClipboard(dom.modalPromptTextarea.value, dom.copyStatusMessageModal);
-        };
-
-        dom.modalSaveBtn.onclick = async () => {
-            if (!appState.activeChapterPath) return;
-            const contentId = `${appState.currentProjectId}_${appState.activeChapterPath}`;
-            const existingContent = await idb.get('contents', contentId) || { id: contentId };
-            
-            existingContent.notes = dom.modalNotesTextarea.value;
-            existingContent.resultText = dom.modalResultTextarea.value;
-
-            await idb.put('contents', existingContent);
-            
-            const isCompleted = existingContent.resultText && existingContent.resultText.trim() !== '';
-            updateChapterCompletionStatus(appState.activeChapterPath, isCompleted);
-            
-            dom.modalSaveStatus.textContent = '✅ 저장 완료!';
-            setTimeout(() => {
-                dom.modalSaveStatus.textContent = '';
-                closeModal(dom.writerModal);
-            }, 1000);
-        };
-        
-        dom.exportBtn.onclick = async () => {
-            if (!appState.currentProjectData) return;
-            showLoading("원고 생성 중...");
-            let fullText = `# ${appState.currentProjectData.title}\n\n`;
-            
-            const processNode = async (nodes, pathPrefix = '') => {
-                for (let i = 0; i < nodes.length; i++) {
-                    const node = nodes[i];
-                    const path = pathPrefix ? `${pathPrefix}.${i}` : `${i}`;
-                    const headingLevel = '#'.repeat(node.level + 1);
-                    fullText += `${headingLevel} ${node.title}\n\n`;
-                    if (node.description) fullText += `> ${node.description}\n\n`;
-
-                    const content = await idb.get('contents', `${appState.currentProjectId}_${path}`);
-                    if (content && content.resultText) {
-                        fullText += `${content.resultText}\n\n`;
+                if (!isInitialLoad) UIManager.toggleLoading(true, "프로젝트 로드 중...");
+                try {
+                    const project = await DBService.get(DB_CONFIG.STORES.PROJECTS, projectId);
+                    if (project) {
+                        localStorage.setItem(SETTINGS_KEYS.CURRENT_PROJECT, projectId);
+                        UIManager.dom.tocInput.value = project.toc ? JSON.stringify(project.toc, null, 2) : '';
+                        const flatTOC = this._flattenTOC(project.toc);
+                        AppState.setState({ currentProjectId: projectId, currentTOC: project.toc, activeChapterPath: null, flatTOC });
+                        this.openProjectManager(projectId);
+                        await this._recalculateStatus();
+                        if (!isInitialLoad) UIManager.closeModal(UIManager.dom.projectModal);
                     }
-
-                    if (node.children) {
-                        await processNode(node.children, path);
+                } finally { if (!isInitialLoad) UIManager.toggleLoading(false); }
+            },
+            async createProject() {
+                const newName = UIManager.dom.newProjectName.value.trim();
+                if (!newName) return;
+                if (await DBService.get(DB_CONFIG.STORES.PROJECTS, newName)) { alert('이미 존재하는 프로젝트 이름입니다.'); return; }
+                const newProject = { id: newName, toc: null, materials: '', genre: '소설', ageGroup: '성인', audience: '', styleExample: '' };
+                await DBService.put(DB_CONFIG.STORES.PROJECTS, newProject);
+                const { projects } = AppState.getState();
+                AppState.setState({ projects: [...projects, newProject] });
+                UIManager.dom.newProjectName.value = '';
+                this.openProjectManager(newName);
+            },
+            async deleteProject(projectId) {
+                if (!await UIManager.showConfirmation('프로젝트 삭제', `'${projectId}' 프로젝트를 정말 삭제하시겠습니까?`, '삭제', '취소', true)) return;
+                UIManager.toggleLoading(true, "프로젝트 삭제 중...");
+                try {
+                    const contents = await DBService.getAll(DB_CONFIG.STORES.CONTENTS);
+                    const deletePromises = contents.filter(c => c.id.startsWith(`${projectId}_`)).map(c => DBService.delete(DB_CONFIG.STORES.CONTENTS, c.id));
+                    await Promise.all(deletePromises);
+                    await DBService.delete(DB_CONFIG.STORES.PROJECTS, projectId);
+                    const { projects, currentProjectId } = AppState.getState();
+                    const newProjects = projects.filter(p => p.id !== projectId);
+                    const newState = { projects: newProjects };
+                    if (currentProjectId === projectId) {
+                        localStorage.removeItem(SETTINGS_KEYS.CURRENT_PROJECT);
+                        Object.assign(newState, { currentProjectId: null, currentTOC: null, activeChapterPath: null, status: new Map() });
+                        UIManager.dom.tocInput.value = '';
                     }
+                    AppState.setState(newState);
+                    this.openProjectManager();
+                } finally { UIManager.toggleLoading(false); }
+            },
+            openProjectManager(selectedId = null) {
+                const { projects, currentProjectId } = AppState.getState();
+                const idToSelect = selectedId || currentProjectId;
+                UIManager.renderProjectList(projects, idToSelect);
+                const currentProject = projects.find(p => p.id === idToSelect);
+                if (currentProject) {
+                    this.populateProjectDetails(currentProject);
+                    UIManager.dom.projectDetailsForm.classList.remove('hidden');
+                    UIManager.dom.projectDetailsPlaceholder.classList.add('hidden');
+                } else {
+                    UIManager.dom.projectDetailsForm.classList.add('hidden');
+                    UIManager.dom.projectDetailsPlaceholder.classList.remove('hidden');
                 }
-            };
-
-            await processNode(appState.currentProjectData.children);
-            
-            const blob = new Blob([fullText], { type: 'text/markdown;charset=utf-8' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${appState.currentProjectId}.md`;
-            a.click();
-            URL.revokeObjectURL(a.href);
-            hideLoading();
-        };
-    };
-
-    // --- 8. Initialization ---
-    const initializeApp = async () => {
-        showLoading("애플리케이션 초기화 중...");
-        try {
-            await idb.init(DB_CONFIG.NAME, DB_CONFIG.VERSION, DB_CONFIG.STORES);
-            
-            const settings = await idb.get('settings', SETTINGS_KEYS.PROMPT_TEMPLATE);
-            appState.promptTemplate = settings?.value || DEFAULT_PROMPT_TEMPLATE;
-            
-            appState.projects = await idb.getAll('projects');
-            
-            const lastProjectId = localStorage.getItem(SETTINGS_KEYS.CURRENT_PROJECT);
-            if (lastProjectId && appState.projects.some(p => p.id === lastProjectId)) {
-                await switchProject(lastProjectId);
-            } else {
-                dom.welcomeScreen.classList.remove('hidden');
-                dom.chapterDisplayContainer.classList.add('hidden');
+                if (!UIManager.dom.projectModal.classList.contains('visible')) {
+                    UIManager.openModal(UIManager.dom.projectModal);
+                }
+            },
+            populateProjectDetails(project) {
+                const dom = UIManager.dom;
+                dom.projectGenre.value = project.genre || '소설';
+                dom.projectAgeGroup.value = project.ageGroup || '성인';
+                dom.projectAudience.value = project.audience || '';
+                dom.projectStyleExample.value = project.styleExample || '';
+                dom.projectMaterials.value = project.materials || '';
+                this.bindProjectDetailsEvents();
+            },
+            async saveProjectDetails() {
+                const { currentProjectId, projects } = AppState.getState();
+                if (!currentProjectId) return;
+                const dom = UIManager.dom;
+                const project = await DBService.get(DB_CONFIG.STORES.PROJECTS, currentProjectId);
+                project.genre = dom.projectGenre.value;
+                project.ageGroup = dom.projectAgeGroup.value;
+                project.audience = dom.projectAudience.value;
+                project.styleExample = dom.projectStyleExample.value;
+                project.materials = dom.projectMaterials.value;
+                await DBService.put(DB_CONFIG.STORES.PROJECTS, project);
+                const projectIndex = projects.findIndex(p => p.id === currentProjectId);
+                projects[projectIndex] = project;
+                AppState.setState({ projects: [...projects] });
+            },
+            async savePromptTemplate() {
+                const newTemplate = UIManager.dom.promptTemplateInput.value;
+                await DBService.put(DB_CONFIG.STORES.SETTINGS, { id: SETTINGS_KEYS.PROMPT_TEMPLATE, value: newTemplate });
+                AppState.setState({ promptTemplate: newTemplate });
+            },
+            async resetPromptTemplate() {
+                if (!await UIManager.showConfirmation('템플릿 초기화', '정말 기본값으로 되돌리시겠습니까?', '초기화', '취소', true)) return;
+                UIManager.dom.promptTemplateInput.value = DEFAULT_PROMPT_TEMPLATE_XML;
+                await this.savePromptTemplate();
+            },
+            async saveChapterContent() {
+                const { activeChapterPath, currentProjectId, status } = AppState.getState();
+                if (!activeChapterPath) return;
+                const contentId = `${currentProjectId}_${activeChapterPath}`;
+                const content = { 
+                    id: contentId, 
+                    notes: this.sanitizeInput(document.getElementById('memo-textarea').value), 
+                    resultText: this.sanitizeInput(document.getElementById('manuscript-textarea').value),
+                    translation: this.sanitizeInput(document.getElementById('translation-textarea').value)
+                };
+                await DBService.put(DB_CONFIG.STORES.CONTENTS, content);
+                const hasContent = content.resultText.trim() !== '' || content.notes.trim() !== '';
+                if (hasContent) { status.set(activeChapterPath, 'completed'); AppState.setState({ status: new Map(status) }); }
+            },
+            async copyPromptForPath(path, buttonElement) {
+                const prompt = this._generatePrompt(path);
+                await navigator.clipboard.writeText(prompt);
+                const { status } = AppState.getState();
+                if (status.get(path) !== 'completed') { status.set(path, 'copied'); AppState.setState({ status: new Map(status) }); }
+                const originalText = buttonElement.querySelector('span').textContent;
+                buttonElement.querySelector('span').textContent = '복사 완료!';
+                setTimeout(() => { buttonElement.querySelector('span').textContent = '프롬프트 복사'; }, 2000);
+            },
+            async exportMarkdown() {
+                const { currentTOC, currentProjectId } = AppState.getState();
+                if (!currentTOC) return;
+                UIManager.toggleLoading(true, "원고 생성 중...");
+                let fullText = `# ${currentTOC.title}\n\n`;
+                const traverse = async (nodes, prefix = '') => {
+                    for (const [i, node] of (nodes || []).entries()) {
+                        const path = prefix ? `${prefix}.${i}` : `${i}`;
+                        const headingLevel = '#'.repeat((node.level || 1) + 1);
+                        fullText += `${headingLevel} ${node.title}\n\n`;
+                        if (node.description) fullText += `> ${node.description}\n\n`;
+                        const content = await DBService.get(DB_CONFIG.STORES.CONTENTS, `${currentProjectId}_${path}`);
+                        if (content?.resultText) fullText += `${content.resultText}\n\n`;
+                        if (node.children) await traverse(node.children, path);
+                    }
+                };
+                await traverse(currentTOC.children);
+                const blob = new Blob([fullText], { type: 'text/markdown;charset=utf-8' });
+                const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+                a.download = `${currentProjectId || 'manuscript'}.md`; a.click();
+                URL.revokeObjectURL(a.href);
+                UIManager.toggleLoading(false);
+            },
+            async _recalculateStatus() {
+                const { currentProjectId, currentTOC } = AppState.getState();
+                if (!currentProjectId || !currentTOC) return AppState.setState({ status: new Map() });
+                const contents = await DBService.getAll(DB_CONFIG.STORES.CONTENTS);
+                const projectContents = contents.filter(c => c.id.startsWith(`${currentProjectId}_`));
+                const newStatus = new Map();
+                projectContents.forEach(c => {
+                    const path = c.id.substring(currentProjectId.length + 1);
+                    if (c.resultText?.trim() !== '' || c.notes?.trim() !== '') { newStatus.set(path, 'completed'); }
+                });
+                AppState.setState({ status: newStatus });
+            },
+            _getNodeByPath(toc, path) {
+                if (!toc || !path) return null;
+                let node = { children: toc.children };
+                for (const index of path.split('.').map(Number)) {
+                    if (!node.children?.[index]) return null;
+                    node = node.children[index];
+                }
+                return node;
+            },
+            _generatePrompt(path) {
+                const { currentTOC, projects, currentProjectId, promptTemplate } = AppState.getState();
+                const chapterNode = this._getNodeByPath(currentTOC, path);
+                if (!chapterNode) return "Error: Chapter node not found.";
+                const pathParts = path.split('.');
+                const partNode = this._getNodeByPath(currentTOC, pathParts[0]);
+                const project = projects.find(p => p.id === currentProjectId) || {};
+                const generateTocText = (startNode, currentPath, isPartOnly) => {
+                    let text = '';
+                    const traverse = (nodes, prefix, level) => {
+                        (nodes || []).forEach((node, i) => {
+                            const nodePath = prefix ? `${prefix}.${i}` : `${i}`;
+                            text += `${'  '.repeat(level)}${nodePath === currentPath ? '▶' : '-'} ${node.title}\n`;
+                            if (node.children) traverse(node.children, nodePath, level + 1);
+                        });
+                    };
+                    if (isPartOnly) traverse(startNode.children, pathParts[0], 1);
+                    else traverse(startNode.children, '', 0);
+                    return text;
+                };
+                const context = {
+                    bookTitle: currentTOC.title, partTitle: partNode ? partNode.title : 'N/A',
+                    partDescription: partNode ? (partNode.description || '') : '',
+                    chapterTitle: chapterNode.title, chapterDescription: chapterNode.description || '',
+                    fullToc: generateTocText(currentTOC, path, false),
+                    partToc: partNode ? generateTocText(partNode, path, true) : '',
+                    references: project.materials || '없음', projectGenre: project.genre || '지정되지 않음',
+                    projectAudience: project.audience || '지정되지 않음',
+                    projectAgeGroup: project.ageGroup || '지정되지 않음',
+                    projectStyleExample: project.styleExample || '지정되지 않음'
+                };
+                return promptTemplate.replace(/\{\{(\w+)\}\}/g, (_, key) => context[key] || '');
             }
-            
-            setupEventListeners();
-        } catch (err) {
-            console.error("Initialization failed:", err);
-            showMessageModal('초기화 오류', '애플리케이션을 시작할 수 없습니다. 브라우저가 IndexedDB를 지원하는지 확인해주세요.');
-        } finally {
-            hideLoading();
-        }
-    };
+        };
 
-    document.addEventListener('DOMContentLoaded', initializeApp);
-
+        AppController.init();
+    });
     </script>
 </body>
 </html>
