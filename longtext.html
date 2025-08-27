@@ -8,6 +8,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- [추가] ZIP 파일 생성을 위한 JSZip 라이브러리 추가 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
             --font-family-main: 'Noto Sans KR', sans-serif;
@@ -207,6 +209,8 @@
                 <div id="save-status-indicator" class="save-status-indicator"></div>
             </div>
             <div class="header-actions">
+                <!-- [추가] 프롬프트 전체 내보내기 버튼 -->
+                <button id="export-prompts-btn" class="btn btn-secondary"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125V6.375c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v.001c0 .621.504 1.125 1.125 1.125z" /></svg><span>프롬프트 ZIP 다운로드</span></button>
                 <button id="export-btn" class="btn btn-success"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg><span>원고 전체 다운로드</span></button>
                 <button id="settings-btn" class="btn btn-secondary btn-icon" title="프롬프트 템플릿 설정"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg></button>
             </div>
@@ -458,7 +462,7 @@
         const UIManager = {
             dom: {},
             init() {
-                const ids = ['loading-overlay', 'loading-message', 'menu-open-btn', 'sidebar', 'sidebar-close-btn', 'sidebar-overlay', 'resizer', 'current-project-display', 'save-status-indicator', 'toc-input-area', 'toc-input', 'toggle-toc-btn', 'render-btn', 'outline-container', 'export-btn', 'main-content-area', 'welcome-screen', 'chapter-display-container', 'project-manage-btn', 'settings-btn', 'settings-modal', 'prompt-template-input', 'reset-template-btn', 'save-template-btn', 'project-modal', 'new-project-form', 'new-project-name', 'project-details-placeholder', 'project-details-form', 'project-genre', 'project-age-group', 'project-audience', 'project-style-example', 'project-materials', 'project-list', 'confirmation-modal', 'confirmation-modal-title', 'confirmation-modal-content', 'confirm-cancel-btn', 'confirm-ok-btn'];
+                const ids = ['loading-overlay', 'loading-message', 'menu-open-btn', 'sidebar', 'sidebar-close-btn', 'sidebar-overlay', 'resizer', 'current-project-display', 'save-status-indicator', 'toc-input-area', 'toc-input', 'toggle-toc-btn', 'render-btn', 'outline-container', 'export-btn', 'export-prompts-btn', 'main-content-area', 'welcome-screen', 'chapter-display-container', 'project-manage-btn', 'settings-btn', 'settings-modal', 'prompt-template-input', 'reset-template-btn', 'save-template-btn', 'project-modal', 'new-project-form', 'new-project-name', 'project-details-placeholder', 'project-details-form', 'project-genre', 'project-age-group', 'project-audience', 'project-style-example', 'project-materials', 'project-list', 'confirmation-modal', 'confirmation-modal-title', 'confirmation-modal-content', 'confirm-cancel-btn', 'confirm-ok-btn'];
                 ids.forEach(id => {
                     const element = document.getElementById(id);
                     if (element) {
@@ -487,6 +491,8 @@
                 this.dom.currentProjectDisplay.textContent = currentProject?.id || '프로젝트 선택';
                 this.dom.renderBtn.disabled = !currentProjectId;
                 this.dom.exportBtn.disabled = !currentTOC;
+                // [수정] 프롬프트 내보내기 버튼 활성화/비활성화 로직 추가
+                this.dom.exportPromptsBtn.disabled = !currentTOC;
                 this._renderOutline(currentTOC, status, activeChapterPath);
                 if (currentProjectId && activeChapterPath) {
                     this.dom.welcomeScreen.classList.add('hidden');
@@ -636,6 +642,8 @@
                 dom.renderBtn.onclick = () => this.updateTOC();
                 dom.toggleTocBtn.onclick = () => { dom.tocInputArea.classList.toggle('collapsed'); };
                 dom.exportBtn.onclick = () => this.exportMarkdown();
+                // [추가] 프롬프트 내보내기 버튼 이벤트 리스너
+                dom.exportPromptsBtn.onclick = () => this.exportAllPrompts();
                 dom.settingsBtn.onclick = () => { dom.promptTemplateInput.value = AppState.getState().promptTemplate; UIManager.openModal(dom.settingsModal); };
                 dom.projectManageBtn.onclick = () => this.openProjectManager();
                 dom.saveTemplateBtn.onclick = () => this.savePromptTemplate();
@@ -930,6 +938,49 @@
                 a.download = `${currentProjectId || 'manuscript'}.md`; a.click();
                 URL.revokeObjectURL(a.href);
                 UIManager.toggleLoading(false);
+            },
+            // [추가] 모든 프롬프트를 ZIP 파일로 내보내는 함수
+            async exportAllPrompts() {
+                const { flatTOC, currentProjectId } = AppState.getState();
+                if (!flatTOC || flatTOC.length === 0) {
+                    UIManager.showConfirmation('오류', '내보낼 목차 데이터가 없습니다. 먼저 목차를 생성해주세요.');
+                    return;
+                }
+
+                UIManager.toggleLoading(true, "모든 프롬프트 생성 및 압축 중...");
+
+                try {
+                    const zip = new JSZip();
+
+                    // 파일 이름으로 사용할 수 없는 문자를 바꾸는 헬퍼 함수
+                    const sanitizeFilename = (name) => {
+                        return name.replace(/[\/\\?%*:|"<>]/g, '_');
+                    };
+                    
+                    for (const item of flatTOC) {
+                        const { path, node } = item;
+                        const promptText = this._generatePrompt(path);
+                        // 파일명 형식: 0.1_챕터제목.txt
+                        const filename = `${path.replace(/\./g, '-')}__${sanitizeFilename(node.title)}.txt`;
+                        zip.file(filename, promptText);
+                    }
+
+                    const content = await zip.generateAsync({ type: "blob" });
+                    
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(content);
+                    a.download = `${currentProjectId || 'project'}_prompts.zip`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(a.href);
+
+                } catch (error) {
+                    console.error("Failed to export prompts:", error);
+                    UIManager.showConfirmation('오류', `프롬프트 내보내기 중 오류가 발생했습니다: ${error.message}`);
+                } finally {
+                    UIManager.toggleLoading(false);
+                }
             },
             async _recalculateStatus() {
                 const { currentProjectId, currentTOC } = AppState.getState();
