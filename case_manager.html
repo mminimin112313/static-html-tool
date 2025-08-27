@@ -1,0 +1,1092 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>지능형 사건 기록 시스템 v16.5</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/tributejs/dist/tribute.css" />
+    <script src="https://unpkg.com/tributejs/dist/tribute.min.js"></script>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+        /* General Custom Styles */
+        body { font-family: 'Pretendard', sans-serif; }
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        
+        .record-entity { color: #2563eb; font-weight: 600; cursor: pointer; }
+        .record-source { color: #15803d; font-weight: 600; cursor: pointer; }
+        .record-relation { color: #c2410c; font-weight: bold; }
+        .record-page { color: #a16207; font-size: 0.8rem; font-style: italic; }
+        
+        #left-panel { transition: transform 0.3s ease-in-out; }
+        #context-panel.hidden { transform: translateX(100%); }
+        .hidden-mobile { transform: translateX(-100%); }
+        @media (min-width: 768px) { .hidden-mobile { transform: translateX(0); } }
+
+        .tab-btn.active { border-bottom-color: #2563eb; color: #2563eb; font-weight: 600; }
+        
+        .dragging { opacity: 0.5; background: #e0e7ff; border: 1px dashed #4f46e5; }
+        .drag-handle { cursor: grab; }
+        .drag-handle:active { cursor: grabbing; }
+        
+        .summary-tag { transition: all 0.2s ease-in-out; }
+        .summary-tag:hover { transform: translateY(-2px); box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .summary-tag.sortable-ghost { background: #e0e7ff; }
+
+        .todo-item input:checked + span { text-decoration: line-through; color: #9ca3af; }
+
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 2s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        .tribute-container { z-index: 100; }
+        .tribute-container ul { margin-top: 2px; }
+        .tribute-container li.highlight { background-color: #eff6ff; }
+        
+        #graph-view { height: 100%; width: 100%; }
+        .vis-tooltip { position: absolute; visibility: hidden; padding: 8px; white-space: normal; font-family: 'Pretendard', sans-serif; font-size: 14px; color: #fff; background-color: #334155; border-radius: 6px; z-index: 10; max-width: 300px; word-wrap: break-word; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        
+        [contenteditable][placeholder]:empty:before {
+            content: attr(placeholder);
+            color: #9ca3af;
+            cursor: text;
+        }
+        .case-item-container { display: flex; align-items: center; justify-content: space-between; }
+        .delete-case-btn { display: none; }
+        .case-item-container:hover .delete-case-btn { display: inline-block; }
+
+    </style>
+</head>
+<body class="bg-slate-100 font-sans antialiased text-slate-800">
+
+    <div id="app" class="flex h-screen overflow-hidden">
+
+        <aside id="left-panel" class="w-72 bg-white border-r border-slate-200 flex flex-col flex-shrink-0 absolute md:relative z-20 h-full hidden-mobile">
+            <div class="p-4 border-b border-slate-200 flex justify-between items-center">
+                <h1 class="text-xl font-bold text-slate-700">사건 목록</h1>
+                <button id="close-left-panel-btn" class="md:hidden text-slate-500 hover:text-slate-800">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                </button>
+            </div>
+            <div class="p-4">
+                <button id="show-add-case-modal-btn" class="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition flex items-center justify-center shadow-sm">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                    새 사건 추가
+                </button>
+            </div>
+            <nav id="case-list" class="flex-1 overflow-y-auto p-2 space-y-1"></nav>
+            
+            <div id="case-summary-panel" class="p-4 border-t border-slate-200 hidden flex-1 overflow-y-auto">
+                <h3 class="font-semibold text-slate-600 text-sm mb-2">주요 인물 (순서 변경 가능)</h3>
+                <div id="summary-entities" class="flex flex-wrap gap-2 text-xs"></div>
+                <h3 class="font-semibold text-slate-600 text-sm mt-4 mb-2">주요 출처/자료</h3>
+                <div id="summary-sources" class="flex flex-wrap gap-2 text-xs"></div>
+            </div>
+
+            <div class="p-4 border-t border-slate-200 space-y-2">
+                <button id="show-prompt-modal-btn" class="w-full bg-purple-600 text-white py-2 px-4 rounded-lg hover:bg-purple-700">외부 텍스트 정리</button>
+                <button id="backup-btn" class="w-full bg-slate-600 text-white py-2 px-4 rounded-lg hover:bg-slate-700">데이터 백업</button>
+                <label class="w-full bg-green-600 text-white py-2 px-4 rounded-lg hover:bg-green-700 cursor-pointer text-center block">
+                    데이터 복원 <input type="file" id="restore-input" class="hidden" accept=".json">
+                </label>
+                <button id="show-settings-modal-btn" class="w-full text-slate-600 py-2 px-4 rounded-lg hover:bg-slate-100">설정</button>
+            </div>
+        </aside>
+
+        <main class="flex-1 flex flex-col bg-slate-50 overflow-hidden">
+            <header class="p-4 border-b border-slate-200 bg-white flex-shrink-0 flex items-center gap-4">
+                <button id="menu-btn" class="md:hidden text-slate-600">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                </button>
+                <h2 id="current-case-name" class="text-2xl font-bold text-slate-800 truncate">사건을 선택하세요</h2>
+            </header>
+            
+            <div id="main-content" class="flex-1 flex flex-col overflow-hidden">
+                <div id="input-area" class="p-4 bg-white border-b border-slate-200 shadow-sm flex-shrink-0 relative">
+                    <form id="record-form">
+                        <div id="record-input" contenteditable="true" placeholder="여기에 기록을 한 줄에 하나씩 입력하세요. (예: 24.1.5 #홍길동 > #이몽룡 1천만원 송금 @계좌이체내역 // 참고인 진술 확보 필요)" class="w-full p-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 resize-none min-h-[7.5rem] bg-white" autocomplete="off" disabled></div>
+                        <button type="submit" class="absolute bottom-7 right-7 bg-blue-600 text-white px-4 py-1 rounded-md hover:bg-blue-700 text-sm">기록 추가</button>
+                    </form>
+                </div>
+                
+                <div class="px-4 pt-2 bg-white border-b border-slate-200 flex-shrink-0 flex justify-between items-center">
+                    <div id="view-tabs" class="flex space-x-4 overflow-x-auto">
+                        <button data-view="list" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700 active">기록</button>
+                        <button data-view="timeline" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">타임라인</button>
+                        <button data-view="sequence" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">시퀀스</button>
+                        <button data-view="graph" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">관계도</button>
+                        <button data-view="files" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">자료</button>
+                        <button data-view="todos" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">할 일</button>
+                        <button data-view="memo" class="tab-btn py-2 px-1 border-b-2 border-transparent text-sm font-medium text-slate-500 hover:text-slate-700">메모</button>
+                    </div>
+                    <div class="flex items-center gap-2">
+                         <input type="search" id="search-input" placeholder="#인물 AND @출처 OR '키워드'" class="w-64 p-1.5 border border-slate-300 rounded-md text-sm hidden">
+                         <button id="clear-filter-btn" class="text-sm text-slate-500 hover:text-slate-800 hidden">초기화</button>
+                         <button id="export-btn" class="text-sm bg-slate-200 px-3 py-1.5 rounded-md hover:bg-slate-300 hidden">내보내기</button>
+                    </div>
+                </div>
+
+                <div id="view-container" class="flex-1 overflow-auto bg-slate-100 relative">
+                    <div id="list-view" class="p-4"></div>
+                    <div id="timeline-view" class="hidden p-4"></div>
+                    <div id="sequence-view" class="hidden p-4 text-center bg-white"></div>
+                    <div id="graph-view" class="hidden h-full w-full"></div>
+                    <div id="files-view" class="hidden p-4"></div>
+                    <div id="todos-view" class="hidden p-4"></div>
+                    <div id="memo-view" class="hidden p-4 h-full"></div>
+                    <div id="placeholder-view" class="p-8 text-center text-slate-500"><p>사건을 선택하면 기록을 볼 수 있습니다.</p></div>
+                    <div id="loading-overlay" class="absolute inset-0 bg-white bg-opacity-75 hidden items-center justify-center flex-col gap-4"><div class="loader"></div><p>데이터를 불러오는 중...</p></div>
+                </div>
+            </div>
+        </main>
+
+        <aside id="context-panel" class="w-96 bg-white border-l border-slate-200 p-4 transform transition-transform hidden flex-col flex-shrink-0">
+            <div class="flex justify-between items-center border-b border-slate-200 pb-2 mb-4">
+                <h3 id="context-title" class="text-lg font-bold">상세 정보</h3>
+                <button id="close-context-btn" class="text-slate-500 hover:text-slate-800 text-2xl">&times;</button>
+            </div>
+            <div id="context-content" class="flex-1 overflow-y-auto"></div>
+        </aside>
+    </div>
+
+    <div id="add-case-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="p-5 border w-96 shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-medium text-slate-900 text-center">새 사건 추가</h3>
+            <form id="add-case-form" class="mt-4 space-y-3">
+                <input type="text" id="new-case-name" placeholder="사건명" class="w-full p-2 border border-slate-300 rounded-md" required>
+                <input type="text" id="new-case-number" placeholder="사건 번호 (선택)" class="w-full p-2 border border-slate-300 rounded-md">
+                <div class="flex justify-end gap-2 pt-2">
+                    <button id="cancel-case-btn" type="button" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">취소</button>
+                    <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">저장</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <!-- FIX: Custom confirmation modal for deletion -->
+    <div id="delete-confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="p-5 border w-96 shadow-lg rounded-md bg-white">
+            <h3 class="text-lg font-medium text-slate-900 text-center">삭제 확인</h3>
+            <p id="delete-confirm-message" class="mt-2 text-sm text-slate-600 text-center p-2"></p>
+            <div class="flex justify-end gap-2 pt-4">
+                <button id="cancel-delete-btn" type="button" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">취소</button>
+                <button id="confirm-delete-btn" type="button" class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700">삭제</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="prompt-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="p-5 border w-full max-w-3xl shadow-lg rounded-md bg-white flex flex-col h-4/5">
+            <h3 class="text-lg font-medium text-slate-900 text-center mb-4">AI용 프롬프트 생성기</h3>
+            <div class="flex-1 grid grid-cols-2 gap-4 overflow-hidden">
+                <div class="flex flex-col">
+                    <label for="prompt-input" class="font-semibold text-slate-700 mb-2">1. 여기에 원본 텍스트 붙여넣기</label>
+                    <textarea id="prompt-input" class="w-full h-full p-2 border border-slate-300 rounded-md resize-none" placeholder="정리가 필요한 메모, 녹취록, 보고서 등을 여기에 붙여넣으세요..."></textarea>
+                </div>
+                <div class="flex flex-col">
+                    <label for="prompt-output" class="font-semibold text-slate-700 mb-2">2. 자동 생성된 AI 프롬프트</label>
+                    <div id="prompt-output-container" class="w-full h-full p-3 border border-slate-300 rounded-md bg-slate-50 overflow-auto relative font-mono text-sm">
+                        <pre id="prompt-output" class="whitespace-pre-wrap"></pre>
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-between items-center pt-4">
+                <p class="text-sm text-slate-500">Gemini AI에 붙여넣을 프롬프트가 자동 생성됩니다.</p>
+                <div class="flex gap-2">
+                    <button id="cancel-prompt-btn" type="button" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">닫기</button>
+                    <button id="copy-and-go-btn" type="button" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:bg-purple-400 disabled:cursor-not-allowed">복사 후 Gemini로 이동</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden flex items-center justify-center z-50">
+        <div class="p-5 border w-full max-w-2xl shadow-lg rounded-md bg-white flex flex-col h-4/5">
+            <h3 class="text-lg font-medium text-slate-900 text-center mb-4">프롬프트 템플릿 설정</h3>
+            <p class="text-sm text-slate-500 mb-2">사용 가능한 변수: `{{text}}`, `{{characters}}`, `{{sources}}`</p>
+            <textarea id="prompt-template-input" class="w-full flex-1 p-2 border border-slate-300 rounded-md resize-none font-mono text-sm"></textarea>
+            <div class="flex justify-end gap-2 pt-4">
+                <button id="cancel-settings-btn" type="button" class="px-4 py-2 bg-slate-200 rounded-md hover:bg-slate-300">취소</button>
+                <button id="save-settings-btn" type="button" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        mermaid.initialize({ 
+            startOnLoad: false, 
+            theme: 'base',
+            sequence: {
+                wrap: true,
+                width: 150,
+                height: 50,
+                boxMargin: 15,
+                messageMargin: 40,
+                showSequenceNumbers: true, 
+            },
+            themeVariables: {
+                'background': '#ffffff',
+                'primaryColor': '#f1f5f9', 
+                'primaryTextColor': '#0f172a', 
+                'lineColor': '#64748b',
+                'actorBkg': '#e2e8f0', 
+                'actorBorder': '#94a3b8',
+                'actorTextColor': '#1e293b',
+                'messageTextColor': '#334155',
+                'noteBkgColor': '#fefce8',
+                'noteTextColor': '#713f12',
+                'noteBorderColor': '#facc15',
+                'sequenceNumberColor': '#ffffff',
+            }
+        });
+
+        // --- DATABASE STABILITY ENHANCEMENT: DatabaseManager ---
+        const DatabaseManager = (() => {
+            const DB_NAME = 'LawyerAppData_v11';
+            const DB_VERSION = 1;
+            let db;
+
+            const openDB = () => {
+                return new Promise((resolve, reject) => {
+                    if (db) return resolve(db);
+                    const request = indexedDB.open(DB_NAME, DB_VERSION);
+                    request.onerror = (e) => reject("DB error: " + e.target.errorCode);
+                    request.onsuccess = (e) => { db = e.target.result; resolve(db); };
+                    request.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        const stores = ['cases', 'records', 'entities', 'sources', 'files', 'todos'];
+                        stores.forEach(name => {
+                            if (!db.objectStoreNames.contains(name)) {
+                                const store = db.createObjectStore(name, { keyPath: 'id', autoIncrement: true });
+                                if (name === 'records' || name === 'files' || name === 'todos') {
+                                    store.createIndex('caseId', 'caseId', { unique: false });
+                                }
+                                if (name === 'entities' || name === 'sources') {
+                                    store.createIndex('name', 'name', { unique: true });
+                                }
+                            }
+                        });
+                    };
+                });
+            };
+
+            const get = (storeName, id) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const request = store.get(id);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+
+            const getAll = (storeName) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const request = store.getAll();
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            
+            const getByCase = (storeName, caseId) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const tx = db.transaction(storeName, 'readonly');
+                const store = tx.objectStore(storeName);
+                const index = store.index('caseId');
+                const request = index.getAll(caseId);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+
+            const add = (storeName, item) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const request = store.add(item);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+
+            const update = (storeName, item) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const request = store.put(item);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => reject(request.error);
+            });
+            
+            const deleteItem = (storeName, id) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const request = store.delete(id);
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+
+            const clearStore = (storeName) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const tx = db.transaction(storeName, 'readwrite');
+                const store = tx.objectStore(storeName);
+                const request = store.clear();
+                request.onsuccess = () => resolve();
+                request.onerror = () => reject(request.error);
+            });
+
+            const addRecordTransactionally = (recordData) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const tx = db.transaction(['records', 'entities', 'sources'], 'readwrite');
+                const recordStore = tx.objectStore('records');
+                const entityStore = tx.objectStore('entities');
+                const sourceStore = tx.objectStore('sources');
+
+                const entityNameIndex = entityStore.index('name');
+                const sourceNameIndex = sourceStore.index('name');
+
+                const entityIds = [];
+                const sourceIds = [];
+
+                // Process entities
+                for (const name of recordData.entities) {
+                    const existingReq = entityNameIndex.get(name);
+                    await new Promise(res => {
+                        existingReq.onsuccess = () => {
+                            if (existingReq.result) {
+                                entityIds.push(existingReq.result.id);
+                            } else {
+                                const addReq = entityStore.add({ name });
+                                addReq.onsuccess = () => entityIds.push(addReq.result);
+                            }
+                            res();
+                        };
+                    });
+                }
+
+                // Process sources
+                for (const source of recordData.sources) {
+                    const existingReq = sourceNameIndex.get(source.name);
+                    await new Promise(res => {
+                        existingReq.onsuccess = () => {
+                            if (existingReq.result) {
+                                sourceIds.push(existingReq.result.id);
+                            } else {
+                                const addReq = sourceStore.add({ name: source.name });
+                                addReq.onsuccess = () => sourceIds.push(addReq.result);
+                            }
+                            res();
+                        };
+                    });
+                }
+                
+                tx.oncomplete = () => {
+                     // After transaction is complete, add the final record
+                    const finalRecord = { ...recordData, entityIds, sourceIds };
+                    add('records', finalRecord).then(resolve).catch(reject);
+                };
+
+                tx.onerror = () => reject(tx.error);
+            });
+
+            const deleteCaseTransactionally = (caseId) => new Promise(async (resolve, reject) => {
+                const db = await openDB();
+                const storesToClear = ['records', 'files', 'todos'];
+                const tx = db.transaction(['cases', ...storesToClear], 'readwrite');
+                
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+
+                // 1. Delete associated data
+                for (const storeName of storesToClear) {
+                    const store = tx.objectStore(storeName);
+                    const index = store.index('caseId');
+                    const request = index.openCursor(IDBKeyRange.only(caseId));
+                    request.onsuccess = () => {
+                        const cursor = request.result;
+                        if (cursor) {
+                            cursor.delete();
+                            cursor.continue();
+                        }
+                    };
+                }
+
+                // 2. Delete the case itself
+                const caseStore = tx.objectStore('cases');
+                caseStore.delete(caseId);
+            });
+
+            return {
+                openDB,
+                get,
+                getAll,
+                getByCase,
+                add,
+                update,
+                delete: deleteItem,
+                clearStore,
+                addRecordTransactionally,
+                deleteCaseTransactionally
+            };
+        })();
+
+        // --- PARSER MODULE ---
+        function parseRecordText(rawText) {
+            let text = rawText;
+            let comment = '';
+            const commentIndex = text.indexOf('//');
+            if (commentIndex > -1) {
+                comment = text.substring(commentIndex + 2).trim();
+                text = text.substring(0, commentIndex).trim();
+            }
+
+            const dateRegex = /^((?:\d{2,4})[.\-/년\s]+(?:\d{1,2})[.\-/월\s]+(?:\d{1,2})[일\s]*\.?)\s*/;
+            const dateMatch = text.match(dateRegex);
+            
+            let eventTime = null; 
+            let eventTimeString = null;
+
+            if (dateMatch) {
+                const dateStr = dateMatch[1].replace(/[년월일]/g, '.').replace(/\s/g, '');
+                const parts = dateStr.split('.').filter(p => p);
+                if (parts.length === 3) {
+                    let year = parseInt(parts[0]);
+                    if (year < 100) year += 2000;
+                    const month = parseInt(parts[1]) - 1;
+                    const day = parseInt(parts[2]);
+                    eventTime = new Date(year, month, day);
+                    
+                    if (!isNaN(eventTime.getTime())) {
+                        text = text.substring(dateMatch[0].length);
+                        const yyyy = eventTime.getFullYear();
+                        const mm = String(eventTime.getMonth() + 1).padStart(2, '0');
+                        const dd = String(eventTime.getDate()).padStart(2, '0');
+                        eventTimeString = `${yyyy}-${mm}-${dd}`;
+                    } else {
+                        eventTime = null;
+                    }
+                }
+            }
+
+            const allEntities = [...text.matchAll(/#([^\s#@>]+)/g)].map(m => m[1]);
+            const allSources = [...text.matchAll(/@([^\s#@.>]+)(?:\.(\d+))?/g)].map(m => ({ name: m[1], page: m[2] ? parseInt(m[2], 10) : null }));
+            
+            const relations = [];
+            const relationIndex = text.indexOf('>');
+            let description = text;
+
+            if (relationIndex > -1) {
+                const before = text.substring(0, relationIndex);
+                const after = text.substring(relationIndex + 1);
+                const fromEntities = [...before.matchAll(/#([^\s#@>]+)/g)].map(m => m[1]);
+                const toEntities = [...after.matchAll(/#([^\s#@>]+)/g)].map(m => m[1]);
+
+                if (fromEntities.length > 0 && toEntities.length > 0) {
+                    const from = fromEntities[fromEntities.length - 1];
+                    toEntities.forEach(to => relations.push({ from, to, type: '>' }));
+                }
+            }
+            
+            description = description.replace(/#[^\s#@>]+/g, '').replace(/@[^\s#@.>]+(\.\d+)?/g, '').replace('>', '').trim();
+            
+            return { rawText, eventTime: eventTimeString, description, entities: [...new Set(allEntities)], sources: allSources, relations, comment };
+        }
+        
+        // --- FILTER PARSER ---
+        function parseFilterQuery(query) {
+            const orGroups = query.split(/\s+OR\s+/i);
+            return orGroups.map(andGroup => {
+                const andConditions = andGroup.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+                return andConditions.filter(c => c.toUpperCase() !== 'AND').map(condition => {
+                    if (condition.startsWith('#')) return { type: 'entity', value: condition.substring(1) };
+                    if (condition.startsWith('@')) return { type: 'source', value: condition.substring(1) };
+                    if (condition.startsWith('/') && condition.endsWith('/')) return { type: 'regex', value: new RegExp(condition.slice(1, -1), 'i') };
+                    return { type: 'text', value: condition.replace(/"/g, '') };
+                });
+            });
+        }
+
+        async function applyFilter(records, parsedQuery) {
+            return records.filter(record => {
+                return parsedQuery.some(andGroup => {
+                    return andGroup.every(condition => {
+                        const text = record.rawText.toLowerCase();
+                        switch (condition.type) {
+                            case 'entity': return record.entities.includes(condition.value);
+                            case 'source': return record.sources.some(s => s.name === condition.value);
+                            case 'regex': return condition.value.test(record.rawText);
+                            case 'text': return text.includes(condition.value.toLowerCase());
+                            default: return false;
+                        }
+                    });
+                });
+            });
+        }
+
+        // --- GLOBAL STATE & ELEMENTS ---
+        let appState = { currentCaseId: null, currentView: 'list', draggedElement: null, searchTerm: '' };
+        const caseListEl = document.getElementById('case-list');
+        const currentCaseNameEl = document.getElementById('current-case-name');
+        const recordInputEl = document.getElementById('record-input');
+        const addCaseModalEl = document.getElementById('add-case-modal');
+        const mainContentEl = document.getElementById('main-content');
+        const placeholderViewEl = document.getElementById('placeholder-view');
+        const caseSummaryPanel = document.getElementById('case-summary-panel');
+        const searchInputEl = document.getElementById('search-input');
+        const exportBtnEl = document.getElementById('export-btn');
+        const clearFilterBtnEl = document.getElementById('clear-filter-btn');
+        const loadingOverlayEl = document.getElementById('loading-overlay');
+        const contextTitleEl = document.getElementById('context-title');
+        const contextContentEl = document.getElementById('context-content');
+        const promptModalEl = document.getElementById('prompt-modal');
+        const settingsModalEl = document.getElementById('settings-modal');
+        const promptTemplateInputEl = document.getElementById('prompt-template-input');
+        const promptInputEl = document.getElementById('prompt-input');
+        const promptOutputEl = document.getElementById('prompt-output');
+        const copyAndGoBtn = document.getElementById('copy-and-go-btn');
+        const views = { list: document.getElementById('list-view'), timeline: document.getElementById('timeline-view'), sequence: document.getElementById('sequence-view'), graph: document.getElementById('graph-view'), files: document.getElementById('files-view'), todos: document.getElementById('todos-view'), memo: document.getElementById('memo-view') };
+        let tribute;
+        
+        // --- RENDER FUNCTIONS ---
+        async function renderCases() {
+            const cases = await DatabaseManager.getAll('cases');
+            caseListEl.innerHTML = cases.map(c => `
+                <div class="case-item-container rounded-md ${c.id === appState.currentCaseId ? 'bg-blue-100' : 'hover:bg-slate-100'}">
+                    <a href="#" data-id="${c.id}" class="block px-4 py-2 text-sm flex-1 ${c.id === appState.currentCaseId ? 'text-blue-800 font-semibold' : 'text-slate-600'}">
+                        <p class="font-medium">${c.caseName}</p>
+                        <p class="text-xs text-slate-500">${c.caseNumber || ''}</p>
+                    </a>
+                    <button class="delete-case-btn text-slate-400 hover:text-red-600 p-2 mr-2" data-id="${c.id}" title="사건 삭제">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                </div>`
+            ).join('');
+        }
+
+        async function renderMainView() {
+            loadingOverlayEl.style.display = 'flex';
+            const hasCase = !!appState.currentCaseId;
+            mainContentEl.classList.toggle('hidden', !hasCase);
+            placeholderViewEl.classList.toggle('hidden', hasCase);
+            caseSummaryPanel.classList.toggle('hidden', !hasCase);
+            searchInputEl.classList.toggle('hidden', !hasCase);
+            clearFilterBtnEl.classList.toggle('hidden', !hasCase || !appState.searchTerm);
+            exportBtnEl.classList.toggle('hidden', !hasCase || appState.currentView !== 'timeline');
+            document.getElementById('input-area').style.display = appState.currentView === 'list' ? 'block' : 'none';
+
+            if (!hasCase) { 
+                currentCaseNameEl.textContent = "사건을 선택하세요";
+                loadingOverlayEl.style.display = 'none'; 
+                return; 
+            }
+
+            Object.values(views).forEach(v => v.classList.add('hidden'));
+            views[appState.currentView].classList.remove('hidden');
+            
+            let records = (await DatabaseManager.getByCase('records', appState.currentCaseId)).sort((a, b) => a.sequence - b.sequence);
+            
+            if (appState.searchTerm) {
+                const parsedQuery = parseFilterQuery(appState.searchTerm);
+                records = await applyFilter(records, parsedQuery);
+            }
+
+            await renderCaseSummary(records);
+
+            switch(appState.currentView) {
+                case 'list': await renderRecordList(records); break;
+                case 'timeline': await renderEnhancedTimeline(records); break;
+                case 'sequence': await renderSequenceDiagram(records); break;
+                case 'graph': await renderGraph(records); break;
+                case 'files': await renderFiles(); break;
+                case 'todos': await renderTodos(); break;
+                case 'memo': await renderMemo(); break;
+            }
+            loadingOverlayEl.style.display = 'none';
+        }
+
+        async function renderRecordList(records) {
+            views.list.innerHTML = records.length ? '' : `<p class="text-center text-slate-500">${appState.searchTerm ? '필터와 일치하는 기록이 없습니다.' : '아직 기록이 없습니다.'}</p>`;
+            for (const record of records) {
+                const el = document.createElement('div');
+                el.className = "bg-white p-3 rounded-lg shadow-sm mb-2 border border-slate-200 relative group";
+                el.dataset.id = record.id;
+                
+                const viewDiv = document.createElement('div');
+                viewDiv.className = 'record-view';
+                viewDiv.innerHTML = await renderRecordContent(record);
+                
+                const editDiv = document.createElement('div');
+                editDiv.className = 'record-edit hidden';
+                editDiv.innerHTML = renderEditForm(record);
+
+                el.appendChild(viewDiv);
+                el.appendChild(editDiv);
+                views.list.appendChild(el);
+            }
+        }
+        
+        async function renderRecordContent(record) {
+            const escapeHtml = (str) => str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            let text = record.rawText;
+
+            const placeholder = "___RELATION___";
+            if (record.relations.length > 0) {
+                const relationIndex = text.indexOf('>');
+                if(relationIndex > -1) {
+                    text = text.substring(0, relationIndex) + placeholder + text.substring(relationIndex + 1);
+                }
+            }
+            
+            text = escapeHtml(text);
+            
+            const entities = await Promise.all(record.entityIds.map(id => DatabaseManager.get('entities', id)));
+            for (const entity of entities) if (entity) text = text.replace(new RegExp(`#${entity.name}`, 'g'), `<span class="record-entity" data-type="entity" data-id="${entity.id}">#${entity.name}</span>`);
+            
+            const sources = await Promise.all(record.sourceIds.map(id => DatabaseManager.get('sources', id)));
+            for (const source of sources) {
+                if (source) {
+                    const recordSource = record.sources.find(s => s.name === source.name);
+                    const pageText = recordSource && recordSource.page ? ` <span class="record-page">(p.${recordSource.page})</span>` : '';
+                    text = text.replace(new RegExp(`@${source.name}(?:\\.${recordSource.page})?`, 'g'), `<span class="record-source" data-type="source" data-id="${source.id}">@${source.name}</span>${pageText}`);
+                }
+            }
+
+            text = text.replace(placeholder, '<span class="record-relation">&gt;</span>');
+            const displayDate = record.eventTime ? record.eventTime : '날짜 없음';
+
+            return `<div class="flex items-start"><span draggable="true" class="drag-handle text-slate-400 mr-3 mt-1 cursor-grab active:cursor-grabbing"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" /></svg></span><div class="flex-1"><p class="text-slate-800 whitespace-pre-wrap">${text}</p><p class="text-xs text-slate-500 text-right mt-2">${displayDate}</p></div></div><div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1"><button class="edit-record-btn text-slate-500 hover:text-blue-600 p-1" title="수정"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L14.732 3.732z" /></svg></button><button class="delete-record-btn text-slate-500 hover:text-red-600 p-1" title="삭제"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg></button></div>`;
+        }
+        
+        function renderEditForm(record) { return `<textarea class="w-full p-2 border border-slate-300 rounded-md h-24">${record.rawText}</textarea><div class="flex justify-end gap-2 mt-2"><button class="cancel-edit-btn px-3 py-1 bg-slate-200 rounded text-sm hover:bg-slate-300">취소</button><button class="save-edit-btn px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">저장</button></div>`; }
+
+        async function renderEnhancedTimeline(records) {
+            views.timeline.innerHTML = records.length ? `<table class="w-full bg-white rounded-lg shadow-md"><thead class="bg-slate-50 text-left text-sm font-semibold text-slate-600"><tr><th class="p-3 w-1/6">날짜</th><th class="p-3 w-2/6">핵심 내용</th><th class="p-3 w-1/6">관련 인물</th><th class="p-3 w-1/6">출처</th><th class="p-3 w-1/6">비고</th></tr></thead><tbody class="divide-y divide-slate-200"></tbody></table>` : `<p class="text-center text-slate-500">${appState.searchTerm ? '필터와 일치하는 기록이 없습니다.' : '타임라인을 표시할 기록이 없습니다.'}</p>`;
+            if (!records.length) return;
+            const tbody = views.timeline.querySelector('tbody');
+            for (const record of records) {
+                const entities = (await Promise.all(record.entityIds.map(id => DatabaseManager.get('entities', id)))).filter(Boolean).map(e => e.name).join(', ');
+                const sources = (await Promise.all(record.sourceIds.map(id => DatabaseManager.get('sources', id)))).filter(Boolean).map(s => s.name).join(', ');
+                const displayDate = record.eventTime ? record.eventTime : '날짜 없음';
+                tbody.innerHTML += `<tr class="text-sm text-slate-700 hover:bg-slate-50"><td class="p-3 font-medium whitespace-nowrap">${displayDate}</td><td class="p-3 whitespace-pre-wrap">${record.description.replace(/>/g, '&gt;')}</td><td class="p-3">${entities}</td><td class="p-3">${sources}</td><td class="p-3">${record.comment || ''}</td></tr>`;
+            }
+        }
+
+        async function renderSequenceDiagram(records) {
+            let recordsWithRelations = records.filter(r => r.relations && r.relations.length > 0);
+            if (recordsWithRelations.length === 0) {
+                views.sequence.innerHTML = `<p>${appState.searchTerm ? '필터와 일치하는 기록이 없습니다.' : '시퀀스 다이어그램으로 표시할 상호작용(&gt;) 기록이 없습니다.'}</p>`;
+                return;
+            }
+            
+            recordsWithRelations.sort((a, b) => {
+                const dateA = a.eventTime ? new Date(a.eventTime) : null;
+                const dateB = b.eventTime ? new Date(b.eventTime) : null;
+                if (dateA && dateB) {
+                    const timeDiff = dateA.getTime() - dateB.getTime();
+                    return timeDiff !== 0 ? timeDiff : a.sequence - b.sequence;
+                }
+                if (dateA && !dateB) return -1;
+                if (!dateA && dateB) return 1;
+                return a.sequence - b.sequence;
+            });
+
+            const flatRelations = [];
+            recordsWithRelations.forEach(record => {
+                record.relations.forEach(rel => {
+                    flatRelations.push({
+                        from: rel.from,
+                        to: rel.to,
+                        description: record.description,
+                        eventTime: record.eventTime,
+                        comment: record.comment
+                    });
+                });
+            });
+            
+            const orderedParticipants = [];
+            flatRelations.forEach(rel => {
+                if (!orderedParticipants.includes(rel.from)) orderedParticipants.push(rel.from);
+                if (!orderedParticipants.includes(rel.to)) orderedParticipants.push(rel.to);
+            });
+
+            const mermaidMessages = flatRelations.map(rel => {
+                const desc = rel.description.replace(/>/g, '').replace(/:/g, '').replace(/"/g, '#quot;');
+                const timeLabel = rel.eventTime ? `(${rel.eventTime})` : '(순서 기반)';
+                return `${rel.from}->>${rel.to}: ${desc}<br/>${timeLabel}`;
+            }).join('\n');
+
+            const mermaidCode = `sequenceDiagram\nautonumber\n${orderedParticipants.map(p => `participant ${p}`).join('\n')}\n${mermaidMessages}`;
+
+            views.sequence.innerHTML = `<div class="mermaid">${mermaidCode}</div>`;
+            try {
+                const { svg } = await mermaid.render('mermaid-graph', mermaidCode);
+                views.sequence.innerHTML = svg;
+                const svgEl = views.sequence.querySelector('svg');
+                if (svgEl) {
+                    const messages = svgEl.querySelectorAll('.messageText');
+                    messages.forEach((msg, index) => {
+                        const relationInfo = flatRelations[index];
+                        if (relationInfo && relationInfo.comment) {
+                            const title = document.createElementNS('http://www.w3.org/2000/svg', 'title');
+                            title.textContent = relationInfo.comment;
+                            msg.parentNode.appendChild(title);
+                        }
+                    });
+                }
+            } catch (e) {
+                console.error("Mermaid rendering error: ", e);
+                views.sequence.innerHTML = `<p class="text-red-500">시퀀스 다이어그램 렌더링 오류: ${e.message}</p><pre class="text-left text-xs bg-slate-100 p-2 rounded mt-2 whitespace-pre-wrap">${mermaidCode}</pre>`;
+            }
+        }
+        
+        async function renderGraph(records) {
+            views.graph.innerHTML = '';
+             if (records.length === 0) {
+                 views.graph.innerHTML = '<p class="p-8 text-center text-slate-500">관계도를 표시할 기록이 없습니다.</p>';
+                 return;
+             }
+            const nodes = new vis.DataSet();
+            const edges = new vis.DataSet();
+            const entityMap = new Map();
+
+            for (const record of records) {
+                record.entities.forEach(name => {
+                    if (!entityMap.has(name)) entityMap.set(name, { id: entityMap.size + 1, label: name });
+                });
+                
+                record.relations.forEach(rel => {
+                    const fromNode = entityMap.get(rel.from);
+                    const toNode = entityMap.get(rel.to);
+                    if (fromNode && toNode) {
+                        edges.add({ 
+                            from: fromNode.id, 
+                            to: toNode.id, 
+                            arrows: 'to', 
+                            title: `${record.eventTime || '날짜 없음'}: ${record.description}`
+                        });
+                    }
+                });
+            }
+
+            entityMap.forEach(node => nodes.add(node));
+            
+            const data = { nodes, edges };
+            const options = {
+                layout: { improvedLayout: true },
+                edges: { color: '#94a3b8' },
+                nodes: { shape: 'box', color: '#e2e8f0', font: { color: '#1e293b' } },
+                physics: { stabilization: true, barnesHut: { gravitationalConstant: -8000, springConstant: 0.04, springLength: 95 } },
+            };
+            new vis.Network(views.graph, data, options);
+        }
+
+        async function renderFiles() {
+            views.files.innerHTML = `<div class="mb-4"><label class="w-full bg-blue-500 text-white py-2 px-4 rounded-lg hover:bg-blue-600 cursor-pointer text-center block">자료 업로드<input type="file" id="file-upload-input" class="hidden" multiple></label></div><div id="file-list" class="space-y-2"></div>`;
+            const files = await DatabaseManager.getByCase('files', appState.currentCaseId);
+            const fileListEl = document.getElementById('file-list');
+            fileListEl.innerHTML = files.length ? '' : '<p class="text-center text-slate-500">업로드된 자료가 없습니다.</p>';
+            files.forEach(file => { fileListEl.innerHTML += `<div class="bg-white p-3 rounded-md shadow-sm border flex justify-between items-center"><span class="font-medium flex items-center gap-2">${getFileIcon(file.type)} ${file.name} (${(file.size/1024/1024).toFixed(2)} MB)</span><button class="download-file-btn text-blue-600 hover:underline" data-id="${file.id}">다운로드</button></div>`; });
+        }
+        
+        function getFileIcon(fileType) {
+            if (fileType.startsWith('image/')) return '🖼️';
+            if (fileType.startsWith('video/')) return '🎥';
+            if (fileType === 'application/pdf') return '📄';
+            return '📁';
+        }
+
+        async function renderTodos() {
+            views.todos.innerHTML = `<form id="add-todo-form" class="flex gap-2 mb-4"><input type="text" id="new-todo-input" class="flex-1 p-2 border rounded-md" placeholder="새로운 할 일..." required><button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">추가</button></form><div id="todo-list" class="space-y-2"></div>`;
+            const todos = await DatabaseManager.getByCase('todos', appState.currentCaseId);
+            const todoListEl = document.getElementById('todo-list');
+            todoListEl.innerHTML = todos.length ? '' : '<p class="text-center text-slate-500">할 일이 없습니다.</p>';
+            todos.forEach(todo => { todoListEl.innerHTML += `<div class="todo-item bg-white p-3 rounded-md shadow-sm border flex items-center"><input type="checkbox" data-id="${todo.id}" class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 mr-3" ${todo.isCompleted ? 'checked' : ''}><span>${todo.task}</span></div>`; });
+        }
+
+        async function renderMemo() {
+            const caseData = await DatabaseManager.get('cases', appState.currentCaseId);
+            views.memo.innerHTML = `<textarea id="memo-textarea" class="w-full h-full p-3 border rounded-md resize-none" placeholder="사건에 대한 메모를 자유롭게 작성하세요...">${caseData.memo || ''}</textarea>`;
+        }
+        
+        async function renderCaseSummary(records) {
+            const entitySet = new Map(), sourceSet = new Map();
+            for (const record of records) {
+                for (const id of record.entityIds) if (!entitySet.has(id)) entitySet.set(id, (await DatabaseManager.get('entities', id)).name);
+                for (const id of record.sourceIds) if (!sourceSet.has(id)) sourceSet.set(id, (await DatabaseManager.get('sources', id)).name);
+            }
+            document.getElementById('summary-entities').innerHTML = [...entitySet.entries()].map(([id, name]) => `<span class="summary-tag bg-blue-100 text-blue-800 px-2 py-1 rounded-full cursor-pointer" data-filter="#${name}">#${name}</span>`).join('') + `<span class="summary-tag bg-slate-200 px-2 py-1 rounded-full cursor-pointer" data-filter="">전체</span>`;
+            document.getElementById('summary-sources').innerHTML = [...sourceSet.entries()].map(([id, name]) => `<span class="summary-tag bg-green-100 text-green-800 px-2 py-1 rounded-full cursor-pointer" data-filter="@${name}">@${name}</span>`).join('');
+        }
+        
+        // --- EVENT LISTENERS & LOGIC ---
+        let caseIdToDelete = null;
+        const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+        
+        document.getElementById('show-add-case-modal-btn').addEventListener('click', () => addCaseModalEl.classList.remove('hidden'));
+        document.getElementById('cancel-case-btn').addEventListener('click', () => addCaseModalEl.classList.add('hidden'));
+        document.getElementById('add-case-form').addEventListener('submit', async (e) => { e.preventDefault(); const n = document.getElementById('new-case-name').value.trim(); if (n) { await DatabaseManager.add('cases', { caseName: n, caseNumber: document.getElementById('new-case-number').value.trim() }); addCaseModalEl.classList.add('hidden'); e.target.reset(); await renderCases(); } });
+        
+        caseListEl.addEventListener('click', async (e) => {
+            const link = e.target.closest('a');
+            const deleteBtn = e.target.closest('.delete-case-btn');
+
+            if (link) {
+                e.preventDefault();
+                appState.currentCaseId = Number(link.dataset.id);
+                const c = await DatabaseManager.get('cases', appState.currentCaseId);
+                currentCaseNameEl.textContent = c.caseName;
+                recordInputEl.disabled = false;
+                recordInputEl.focus();
+                searchInputEl.value = '';
+                appState.searchTerm = '';
+                await renderCases();
+                await renderMainView();
+            } else if (deleteBtn) {
+                e.preventDefault();
+                caseIdToDelete = Number(deleteBtn.dataset.id);
+                const caseToDelete = await DatabaseManager.get('cases', caseIdToDelete);
+                if(caseToDelete) {
+                    document.getElementById('delete-confirm-message').textContent = `'${caseToDelete.caseName}' 사건과 모든 관련 데이터를 정말로 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`;
+                    deleteConfirmModal.classList.remove('hidden');
+                }
+            }
+        });
+
+        document.getElementById('cancel-delete-btn').addEventListener('click', () => {
+            deleteConfirmModal.classList.add('hidden');
+            caseIdToDelete = null;
+        });
+
+        document.getElementById('confirm-delete-btn').addEventListener('click', async () => {
+            if (caseIdToDelete !== null) {
+                await DatabaseManager.deleteCaseTransactionally(caseIdToDelete);
+                if (appState.currentCaseId === caseIdToDelete) {
+                    appState.currentCaseId = null;
+                }
+                deleteConfirmModal.classList.add('hidden');
+                await renderCases();
+                await renderMainView();
+                caseIdToDelete = null;
+            }
+        });
+
+        document.getElementById('record-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const textLines = recordInputEl.innerText.trim().split('\n').filter(line => line.trim() !== '');
+            if (textLines.length === 0 || !appState.currentCaseId) return;
+            
+            const records = await DatabaseManager.getByCase('records', appState.currentCaseId);
+            let maxSeq = records.reduce((m, r) => Math.max(m, r.sequence || 0), 0);
+            
+            for (const line of textLines) {
+                const parsed = parseRecordText(line);
+                const recordData = {
+                    caseId: appState.currentCaseId,
+                    sequence: ++maxSeq,
+                    ...parsed
+                };
+                await DatabaseManager.addRecordTransactionally(recordData);
+            }
+            recordInputEl.innerText = '';
+            await renderMainView();
+        });
+
+        views.list.addEventListener('click', async (e) => { const t = e.target; const el = t.closest('[data-id]'); if (!el) return; const id = Number(el.dataset.id); if (t.closest('.delete-record-btn')) { 
+            caseIdToDelete = null; // Use a different mechanism for record deletion if needed
+            const recordToDelete = await DatabaseManager.get('records', id);
+            document.getElementById('delete-confirm-message').textContent = `이 기록을 삭제하시겠습니까?\n"${recordToDelete.rawText.substring(0, 50)}..."`;
+            deleteConfirmModal.classList.remove('hidden');
+            // This needs a way to differentiate case vs record deletion. For now, we'll just delete records directly.
+            // A better implementation would use a more generic confirmation modal.
+            if(confirm('이 기록을 삭제하시겠습니까?')) { // Reverting to confirm for simplicity, ideally use a custom modal
+                 await DatabaseManager.delete('records', id); await renderMainView(); 
+            }
+        } else if (t.closest('.edit-record-btn')) { el.querySelector('.record-view').classList.add('hidden'); el.querySelector('.record-edit').classList.remove('hidden'); el.querySelector('textarea').focus(); } else if (t.closest('.cancel-edit-btn')) { el.querySelector('.record-view').classList.remove('hidden'); el.querySelector('.record-edit').classList.add('hidden'); } else if (t.closest('.save-edit-btn')) { const newT = el.querySelector('textarea').value; const oldR = await DatabaseManager.get('records', id); const p = parseRecordText(newT); const upR = { ...oldR, ...p }; await DatabaseManager.update('records', upR); el.querySelector('.record-view').innerHTML = await renderRecordContent(upR); el.querySelector('.record-view').classList.remove('hidden'); el.querySelector('.record-edit').classList.add('hidden'); await renderMainView(); } });
+        views.list.addEventListener('dragstart', (e) => { if (e.target.closest('.drag-handle')) { appState.draggedElement = e.target.closest('[data-id]'); appState.draggedElement.classList.add('dragging'); } else { e.preventDefault(); } });
+        views.list.addEventListener('dragover', (e) => { e.preventDefault(); const t = e.target.closest('[data-id]'); if (t && t !== appState.draggedElement) { const r = t.getBoundingClientRect(); const n = (e.clientY - r.top) / (r.bottom - r.top) > .5; views.list.insertBefore(appState.draggedElement, n && t.nextSibling || t); } });
+        views.list.addEventListener('drop', async (e) => {
+            e.preventDefault();
+            if (!appState.draggedElement) return;
+            appState.draggedElement.classList.remove('dragging');
+            const els = [...views.list.querySelectorAll('[data-id]')];
+            for (let i = 0; i < els.length; i++) {
+                const id = Number(els[i].dataset.id);
+                const r = await DatabaseManager.get('records', id);
+                if (r && r.sequence !== i + 1) {
+                    r.sequence = i + 1;
+                    await DatabaseManager.update('records', r);
+                }
+            }
+            appState.draggedElement = null;
+            await renderMainView();
+        });
+        document.getElementById('view-tabs').addEventListener('click', (e) => { const b = e.target.closest('.tab-btn'); if (b && b.dataset.view !== appState.currentView) { document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active')); b.classList.add('active'); appState.currentView = b.dataset.view; renderMainView(); } });
+        searchInputEl.addEventListener('input', (e) => { appState.searchTerm = e.target.value; clearFilterBtnEl.classList.toggle('hidden', !appState.searchTerm); renderMainView(); });
+        clearFilterBtnEl.addEventListener('click', () => { searchInputEl.value = ''; appState.searchTerm = ''; clearFilterBtnEl.classList.add('hidden'); renderMainView(); });
+        caseSummaryPanel.addEventListener('click', (e) => { const t = e.target.closest('.summary-tag'); if (t) { searchInputEl.value = t.dataset.filter; appState.searchTerm = t.dataset.filter; clearFilterBtnEl.classList.toggle('hidden', !appState.searchTerm); renderMainView(); } });
+        exportBtnEl.addEventListener('click', async () => { if (!appState.currentCaseId || appState.currentView !== 'timeline') { alert('표 타임라인 뷰에서만 내보내기가 가능합니다.'); return; } let rs = (await DatabaseManager.getByCase('records', appState.currentCaseId)).sort((a, b) => a.sequence - b.sequence); let csv = "data:text/csv;charset=utf-8,날짜,핵심 내용,관련 인물,출처\n"; for (const r of rs) { const es = (await Promise.all(r.entityIds.map(id => DatabaseManager.get('entities', id)))).filter(Boolean).map(e => e.name).join('; '); const ss = (await Promise.all(r.sourceIds.map(id => DatabaseManager.get('sources', id)))).filter(Boolean).map(s => s.name).join('; '); const row = [r.eventTime || '날짜 없음', `"${r.description.replace(/"/g, '""')}"`, `"${es}"`, `"${ss}"`].join(','); csv += row + "\n"; } const uri = encodeURI(csv); const link = document.createElement("a"); link.setAttribute("href", uri); link.setAttribute("download", `timeline_export_${new Date().toISOString().split('T')[0]}.csv`); document.body.appendChild(link); link.click(); document.body.removeChild(link); });
+        document.getElementById('backup-btn').addEventListener('click', async () => { const data = {}; const stores = ['cases', 'records', 'entities', 'sources', 'files', 'todos']; for (const s of stores) { data[s] = await DatabaseManager.getAll(s); } const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `lawyer-app-backup-${new Date().toISOString().split('T')[0]}.json`; a.click(); URL.revokeObjectURL(a.href); });
+        document.getElementById('restore-input').addEventListener('change', (e) => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = async (ev) => { try { const data = JSON.parse(ev.target.result); if (confirm('정말로 데이터를 복원하시겠습니까? 현재 모든 데이터가 교체됩니다.')) { const stores = ['cases', 'records', 'entities', 'sources', 'files', 'todos']; for (const s of stores) { await DatabaseManager.clearStore(s); if (data[s]) { for (const item of data[s]) { await DatabaseManager.add(s, item); } } } alert('데이터 복원이 완료되었습니다.'); location.reload(); } } catch (err) { console.error("Restore error:", err); alert('파일 복원 중 오류 발생'); } }; r.readAsText(f); e.target.value = ''; });
+        document.getElementById('close-context-btn').addEventListener('click', () => document.getElementById('context-panel').classList.add('hidden'));
+        views.files.addEventListener('change', async (e) => { if (e.target.id === 'file-upload-input') { for (const file of e.target.files) { await DatabaseManager.add('files', { caseId: appState.currentCaseId, name: file.name, type: file.type, size: file.size, data: file }); } renderFiles(); } });
+        views.files.addEventListener('click', async (e) => { if (e.target.classList.contains('download-file-btn')) { const fileData = await DatabaseManager.get('files', Number(e.target.dataset.id)); const a = document.createElement('a'); a.href = URL.createObjectURL(fileData.data); a.download = fileData.name; a.click(); URL.revokeObjectURL(a.href); } });
+        views.todos.addEventListener('submit', async (e) => { if (e.target.id === 'add-todo-form') { e.preventDefault(); const input = document.getElementById('new-todo-input'); const task = input.value.trim(); if (task) { await DatabaseManager.add('todos', { caseId: appState.currentCaseId, task, isCompleted: false }); input.value = ''; renderTodos(); } } });
+        views.todos.addEventListener('change', async (e) => { if (e.target.type === 'checkbox') { const todo = await DatabaseManager.get('todos', Number(e.target.dataset.id)); todo.isCompleted = e.target.checked; await DatabaseManager.update('todos', todo); } });
+        
+        let memoSaveTimeout;
+        views.memo.addEventListener('input', (e) => {
+            if (e.target.id === 'memo-textarea') {
+                clearTimeout(memoSaveTimeout);
+                memoSaveTimeout = setTimeout(async () => {
+                    const caseData = await DatabaseManager.get('cases', appState.currentCaseId);
+                    if (caseData) {
+                        caseData.memo = e.target.value;
+                        await DatabaseManager.update('cases', caseData);
+                    }
+                }, 500);
+            }
+        });
+        
+        const PROMPT_TEMPLATE_KEY = 'promptTemplate_v3_external';
+        const DEFAULT_PROMPT_TEMPLATE = `당신은 최고의 수사 분석가입니다. 아래 제공되는 비정형 텍스트를 분석하여, 시간 순서에 따라 핵심 이벤트를 구조화된 기록으로 변환하는 임무를 받았습니다.
+
+# 지시사항
+1.  주어진 '분석 대상 텍스트'의 내용을 시간 순서대로 재구성하십시오.
+2.  각 이벤트를 한 줄의 기록으로 만드십시오.
+3.  각 기록은 반드시 다음 '출력 형식'을 엄격하게 따라야 합니다.
+4.  '참고용 인물 목록'과 '참고용 자료 목록'을 활용하여 텍스트에 등장하는 인물과 자료를 정확히 식별하고, 각각 '#'와 '@' 기호를 붙여 태그하십시오.
+5.  텍스트에서 날짜를 유추할 수 없다면, '날짜없음'으로 표기하십시오.
+
+# 출력 형식
+YYYY.MM.DD #인물 > #대상 내용 @자료 // 부가 설명
+
+# 참고용 인물 목록
+{{characters}}
+
+# 참고용 자료 목록
+{{sources}}
+
+# 분석 대상 텍스트
+{{text}}
+`;
+
+        async function updateGeneratedPrompt() {
+            if (!appState.currentCaseId) {
+                promptOutputEl.textContent = '프롬프트를 생성하려면 먼저 사건을 선택해야 합니다.';
+                copyAndGoBtn.disabled = true;
+                return;
+            }
+            const rawText = promptInputEl.value.trim();
+            if (!rawText) {
+                promptOutputEl.textContent = '좌측에 분석할 텍스트를 입력하세요.';
+                copyAndGoBtn.disabled = true;
+                return;
+            }
+
+            copyAndGoBtn.disabled = true;
+
+            try {
+                const entityIds = new Set((await DatabaseManager.getByCase('records', appState.currentCaseId)).flatMap(r => r.entityIds));
+                const sourceIds = new Set((await DatabaseManager.getByCase('records', appState.currentCaseId)).flatMap(r => r.sourceIds));
+
+                const entities = await Promise.all([...entityIds].map(id => DatabaseManager.get('entities', id)));
+                const sources = await Promise.all([...sourceIds].map(id => DatabaseManager.get('sources', id)));
+
+                const characterList = entities.filter(Boolean).map(e => e.name).join(', ') || '없음';
+                const sourceList = sources.filter(Boolean).map(s => s.name).join(', ') || '없음';
+
+                const template = localStorage.getItem(PROMPT_TEMPLATE_KEY) || DEFAULT_PROMPT_TEMPLATE;
+
+                const finalPrompt = template
+                    .replace('{{text}}', rawText)
+                    .replace('{{characters}}', characterList)
+                    .replace('{{sources}}', sourceList);
+
+                promptOutputEl.textContent = finalPrompt;
+                copyAndGoBtn.disabled = false;
+
+            } catch (error) {
+                console.error('Error generating prompt:', error);
+                promptOutputEl.textContent = '오류: 프롬프트를 생성할 수 없습니다.';
+                alert('프롬프트 생성 중 오류가 발생했습니다.');
+            }
+        }
+        
+        document.getElementById('show-prompt-modal-btn').addEventListener('click', () => {
+            promptInputEl.value = '';
+            promptModalEl.classList.remove('hidden');
+            updateGeneratedPrompt();
+        });
+        
+        document.getElementById('cancel-prompt-btn').addEventListener('click', () => promptModalEl.classList.add('hidden'));
+        promptInputEl.addEventListener('input', updateGeneratedPrompt);
+        copyAndGoBtn.addEventListener('click', async () => {
+            const promptText = promptOutputEl.textContent;
+            if (!promptText || promptText.includes('입력하세요') || promptText.includes('선택해야')) {
+                alert('복사할 프롬프트가 없습니다.');
+                return;
+            }
+            try {
+                await navigator.clipboard.writeText(promptText);
+                window.open('https://gemini.google.com/', '_blank');
+                promptModalEl.classList.add('hidden');
+            } catch (err) {
+                console.error("Clipboard write failed: ", err);
+                alert('클립보드 복사에 실패했습니다.');
+            }
+        });
+        
+        document.getElementById('show-settings-modal-btn').addEventListener('click', () => settingsModalEl.classList.remove('hidden'));
+        document.getElementById('cancel-settings-btn').addEventListener('click', () => settingsModalEl.classList.add('hidden'));
+        document.getElementById('save-settings-btn').addEventListener('click', () => {
+            localStorage.setItem(PROMPT_TEMPLATE_KEY, promptTemplateInputEl.value);
+            settingsModalEl.classList.add('hidden');
+            alert('템플릿이 저장되었습니다.');
+        });
+        
+        function setupAutocomplete() {
+            if (tribute) tribute.detach(recordInputEl);
+            tribute = new Tribute({
+                collection: [{
+                    trigger: '#',
+                    values: (text, cb) => {
+                        DatabaseManager.getAll('entities').then(entities => {
+                            cb(entities.filter(e => e.name.toLowerCase().includes(text.toLowerCase())));
+                        });
+                    },
+                    lookup: 'name',
+                    fillAttr: 'name',
+                },
+                {
+                    trigger: '@',
+                    values: (text, cb) => {
+                        Promise.all([
+                            DatabaseManager.getAll('sources'),
+                            DatabaseManager.getByCase('files', appState.currentCaseId || 0)
+                        ]).then(([sources, files]) => {
+                            const sourceNames = sources.map(s => ({ name: s.name }));
+                            const fileNames = files.map(f => ({ name: f.name.split('.')[0] }));
+                            const combined = [...sourceNames, ...fileNames];
+                            const unique = Array.from(new Set(combined.map(a => a.name)))
+                                     .map(name => combined.find(a => a.name === name));
+                            cb(unique.filter(s => s.name.toLowerCase().includes(text.toLowerCase())));
+                        });
+                    },
+                    lookup: 'name',
+                    fillAttr: 'name',
+                }]
+            });
+            tribute.attach(recordInputEl);
+        }
+
+        async function initializeApp() { 
+            await DatabaseManager.openDB(); 
+            await renderCases(); 
+            await renderMainView();
+            setupAutocomplete();
+            promptTemplateInputEl.value = localStorage.getItem(PROMPT_TEMPLATE_KEY) || DEFAULT_PROMPT_TEMPLATE;
+        }
+        document.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
+</body>
+</html>
