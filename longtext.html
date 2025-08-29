@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Writing Workspace - Chapter Viewer</title>
+    <title>AI Writing Workspace - Grid Layout</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
@@ -38,15 +38,25 @@
         ::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 10px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--color-text-secondary); }
 
-        .app-container { display: flex; flex-direction: column; height: 100vh; }
+        /* [수정] 전체 레이아웃을 Flexbox에서 CSS Grid로 변경하여 높이 계산 문제를 근본적으로 해결 */
+        .app-container {
+            display: grid;
+            /* 헤더는 고정 높이, 작업 공간은 나머지 전체 높이를 차지하도록 정의 */
+            grid-template-rows: var(--header-height) 1fr;
+            height: 100vh;
+            overflow: hidden;
+        }
+
         .app-header {
             display: flex; align-items: center; justify-content: space-between;
             padding: var(--space-2) var(--space-3); background-color: var(--color-surface);
-            border-bottom: 1px solid var(--color-border); flex-shrink: 0; height: var(--header-height); z-index: 10;
+            border-bottom: 1px solid var(--color-border);
+            /* Grid 레이아웃의 일부이므로 z-index와 flex-shrink는 여전히 유효하거나 불필요할 수 있음 */
+            z-index: 10;
         }
-        .header-project { display: flex; align-items: center; gap: var(--space-2); }
+        .header-project { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
         .header-project-icon { color: var(--color-primary); }
-        .header-project-title { font-size: 1.25rem; font-weight: 700; }
+        .header-project-title { font-size: 1.25rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .header-actions { display: flex; align-items: center; gap: var(--space-2); }
         
         .viewer-mode-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -59,15 +69,18 @@
         input:checked + .slider:before { transform: translateX(16px); }
 
         .workspace { 
-            display: flex; flex-grow: 1; overflow: hidden; position: relative;
+            display: flex;
+            overflow: hidden; /* 내부 콘텐츠가 넘치지 않도록 함 */
+            position: relative;
+            /* Grid 자식으로서 높이가 1fr로 자동 설정되므로, min-height는 내부 flex layout을 위해 유지 */
             min-height: 0;
         }
         .sidebar { 
             background-color: var(--color-surface); border-right: 1px solid var(--color-border); 
-            display: flex; flex-direction: column; overflow: hidden;
+            display: flex; flex-direction: column;
             width: var(--sidebar-width); flex-shrink: 0;
             transition: margin-left 0.3s ease;
-            min-height: 0;
+            min-height: 0; /* 내부 스크롤을 위해 필수 */
         }
         .sidebar-header { padding: var(--space-2); border-bottom: 1px solid var(--color-border); flex-shrink: 0; position: relative; }
         .sidebar-content { padding: var(--space-2); overflow-y: auto; flex-grow: 1; }
@@ -76,7 +89,6 @@
             overflow-y: auto; padding: var(--space-4); flex-grow: 1; 
         }
         
-        /* [수정] 챕터 뷰어 컨테이너 스타일 */
         .chapter-viewer-container {
             overflow-y: auto;
             padding: var(--space-4) calc(var(--space-4) * 2);
@@ -139,9 +151,9 @@
 
         .chapter-container { max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; flex-grow: 1; min-height: 0; }
         .chapter-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: var(--space-3); padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); flex-wrap: wrap; gap: var(--space-2); flex-shrink: 0; }
-        .chapter-title-group { flex-grow: 1; }
-        .chapter-title-group h2 { font-size: 2.5rem; font-weight: 700; line-height: 1.2; }
-        .chapter-title-group p { font-size: 1.1rem; color: var(--color-text-secondary); margin-top: var(--space-1); }
+        .chapter-title-group { flex-grow: 1; min-width: 0; }
+        .chapter-title-group h2 { font-size: 2.5rem; font-weight: 700; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .chapter-title-group p { font-size: 1.1rem; color: var(--color-text-secondary); margin-top: var(--space-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .chapter-nav-controls { display: flex; align-items: center; gap: var(--space-1); }
         .chapter-view-controls { display: flex; gap: var(--space-1); }
 
@@ -361,11 +373,11 @@
         const DB_CONFIG = { NAME: 'AIWriterWorkspace_Final', VERSION: 1, STORES: { PROJECTS: 'projects', CONTENTS: 'contents', SETTINGS: 'settings' } };
         const SETTINGS_KEYS = { PROMPT_TEMPLATE: 'promptTemplate', CURRENT_PROJECT: 'currentProjectId' };
         const DEFAULT_PROMPT_TEMPLATE_XML = `
-
+        
 <?xml version="1.0" encoding="UTF-8"?>
 <metaPrompt>
   <purpose>
-    주어진 모든 맥락 정보를 종합적으로 분석하여, 특정 장(Chapter)에 해당하는 전문가 수준의 원고 초안을 천천히 심혈을 기울여서 차근차근 생성하는 것. 최대한 길고 자세하며 목적을 달성하여야만 한다.
+    주어진 모든 맥락 정보를 종합적으로 분석하여, 특정 장(Chapter)에 해당하는 전문가 수준의 원고 초안을 천천히 심혈을 기울여서 차근차근 생성하는 것. 최대한 길고 자세하며 목적을 달성하여야만 한다. 캔버스 사용 금지.
   </purpose>
 
   <promptDesignFramework>
@@ -552,7 +564,6 @@
                 this.dom.viewerModeToggleContainer.classList.toggle('hidden', !currentTOC);
                 this.dom.viewerModeCheckbox.checked = isViewerMode;
                 
-                // [수정] 뷰어 모드 렌더링 로직
                 this.dom.mainContentArea.classList.toggle('hidden', isViewerMode);
                 this.dom.chapterViewerContainer.classList.toggle('hidden', !isViewerMode);
                 
@@ -652,10 +663,10 @@
                 
                 let htmlContent = `<h1>${node.title}</h1>`;
                 if (node.description) {
-                    htmlContent += `<blockquote>${node.description}</blockquote>`;
+                    htmlContent += `<blockquote>${node.description}</blockquote><hr>`;
                 }
                 
-                if (content.resultText) {
+                if (content.resultText && content.resultText.trim() !== '') {
                     htmlContent += marked.parse(content.resultText);
                 } else {
                     htmlContent += `<div class="viewer-placeholder"><p>이 챕터에는 아직 작성된 내용이 없습니다.</p></div>`;
@@ -829,7 +840,6 @@
                 }
             },
             setActiveChapter(path) {
-                // [수정] 챕터 변경 시 뷰어 모드는 유지
                 AppState.setState({ activeChapterPath: path });
             },
             async updateTOC() {
