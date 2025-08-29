@@ -3,12 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Writing Workspace - Minimalist UI</title>
+    <title>AI Writing Workspace - Chapter Viewer</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- [추가] ZIP 파일 생성을 위한 JSZip 라이브러리 추가 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
         :root {
@@ -48,17 +47,26 @@
         .header-project { display: flex; align-items: center; gap: var(--space-2); }
         .header-project-icon { color: var(--color-primary); }
         .header-project-title { font-size: 1.25rem; font-weight: 700; }
-        .header-actions { display: flex; align-items: center; gap: var(--space-1); }
+        .header-actions { display: flex; align-items: center; gap: var(--space-2); }
         
-        .workspace { display: flex; flex-grow: 1; overflow: hidden; position: relative; min-height: 0; }
+        .viewer-mode-toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+        .viewer-mode-toggle-label { font-size: 14px; font-weight: 500; color: var(--color-text-secondary); }
+        .switch { position: relative; display: inline-block; width: 40px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--color-primary); }
+        input:checked + .slider:before { transform: translateX(16px); }
+
+        .workspace { 
+            display: flex; flex-grow: 1; overflow: hidden; position: relative;
+            min-height: 0;
+        }
         .sidebar { 
             background-color: var(--color-surface); border-right: 1px solid var(--color-border); 
             display: flex; flex-direction: column; overflow: hidden;
             width: var(--sidebar-width); flex-shrink: 0;
             transition: margin-left 0.3s ease;
-            /* [수정] Flex 아이템의 최소 높이를 0으로 설정하여 내부 스크롤이 올바르게 동작하도록 합니다. */
-            /* Flex 아이템은 기본적으로 콘텐츠 크기 이하로 줄어들지 않으려는 경향이 있는데, */
-            /* 이로 인해 내부의 스크롤 컨테이너가 부모의 높이를 초과하게 만드는 문제를 방지합니다. */
             min-height: 0;
         }
         .sidebar-header { padding: var(--space-2); border-bottom: 1px solid var(--color-border); flex-shrink: 0; position: relative; }
@@ -68,6 +76,31 @@
             overflow-y: auto; padding: var(--space-4); flex-grow: 1; 
         }
         
+        /* [수정] 챕터 뷰어 컨테이너 스타일 */
+        .chapter-viewer-container {
+            overflow-y: auto;
+            padding: var(--space-4) calc(var(--space-4) * 2);
+            background-color: var(--color-bg);
+            flex-grow: 1;
+        }
+        .chapter-viewer-content {
+            max-width: 800px;
+            margin: 0 auto;
+            background-color: var(--color-surface);
+            padding: calc(var(--space-4) * 1.5);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            line-height: 1.7;
+        }
+        .chapter-viewer-content h1, .chapter-viewer-content h2, .chapter-viewer-content h3, .chapter-viewer-content h4 { margin-top: 1.2em; margin-bottom: 0.6em; line-height: 1.3; font-weight: 700; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+        .chapter-viewer-content p { margin-bottom: 1em; }
+        .chapter-viewer-content ul, .chapter-viewer-content ol { padding-left: 2em; margin-bottom: 1em; }
+        .chapter-viewer-content blockquote { border-left: 4px solid var(--color-border); padding-left: 1em; margin-left: 0; color: var(--color-text-secondary); }
+        .chapter-viewer-content code { background-color: var(--color-bg); padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.9em; }
+        .chapter-viewer-content pre { background-color: var(--color-bg); padding: var(--space-2); border-radius: var(--radius-md); overflow-x: auto; }
+        .chapter-viewer-content > :first-child { margin-top: 0; }
+        .viewer-placeholder { text-align: center; color: var(--color-text-secondary); padding: 5rem 0; }
+
         #resizer { width: 5px; cursor: col-resize; background-color: var(--color-border); flex-shrink: 0; transition: background-color 0.2s; }
         #resizer:hover { background-color: var(--color-primary); }
 
@@ -194,6 +227,8 @@
             .project-manager-layout { grid-template-columns: 1fr; }
             .project-manager-list { border-right: none; border-bottom: 1px solid var(--color-border); }
             .writing-grid { grid-template-columns: 1fr; }
+            .chapter-viewer-container { padding: var(--space-2); }
+            .chapter-viewer-content { padding: var(--space-3); }
         }
     </style>
 </head>
@@ -213,9 +248,15 @@
                 <div id="save-status-indicator" class="save-status-indicator"></div>
             </div>
             <div class="header-actions">
-                <!-- [추가] 프롬프트 전체 내보내기 버튼 -->
-                <button id="export-prompts-btn" class="btn btn-secondary"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125V6.375c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v.001c0 .621.504 1.125 1.125 1.125z" /></svg><span>프롬프트 ZIP 다운로드</span></button>
-                <button id="export-btn" class="btn btn-success"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg><span>원고 전체 다운로드</span></button>
+                <div id="viewer-mode-toggle-container" class="viewer-mode-toggle hidden">
+                    <span class="viewer-mode-toggle-label">뷰어 모드</span>
+                    <label class="switch">
+                        <input type="checkbox" id="viewer-mode-checkbox">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <button id="export-prompts-btn" class="btn btn-secondary"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125V6.375c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v.001c0 .621.504 1.125 1.125 1.125z" /></svg><span>프롬프트 ZIP</span></button>
+                <button id="export-btn" class="btn btn-success"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="18" height="18"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" /></svg><span>원고 다운로드</span></button>
                 <button id="settings-btn" class="btn btn-secondary btn-icon" title="프롬프트 템플릿 설정"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg></button>
             </div>
         </header>
@@ -249,6 +290,13 @@
                 </div>
                 <div id="chapter-display-container" class="hidden"></div>
             </div>
+            
+            <div id="chapter-viewer-container" class="chapter-viewer-container hidden">
+                <div id="chapter-viewer-content" class="chapter-viewer-content">
+                    <!-- 챕터 뷰어 내용이 여기에 렌더링됩니다. -->
+                </div>
+            </div>
+
         </main>
     </div>
 
@@ -313,6 +361,7 @@
         const DB_CONFIG = { NAME: 'AIWriterWorkspace_Final', VERSION: 1, STORES: { PROJECTS: 'projects', CONTENTS: 'contents', SETTINGS: 'settings' } };
         const SETTINGS_KEYS = { PROMPT_TEMPLATE: 'promptTemplate', CURRENT_PROJECT: 'currentProjectId' };
         const DEFAULT_PROMPT_TEMPLATE_XML = `
+
 <?xml version="1.0" encoding="UTF-8"?>
 <metaPrompt>
   <purpose>
@@ -438,6 +487,7 @@
   </promptDesignFramework>
 </metaPrompt>
 
+
 `;
 
         const DBService = {
@@ -456,7 +506,8 @@
                 promptTemplate: DEFAULT_PROMPT_TEMPLATE_XML, activeChapterPath: null, 
                 status: new Map(),
                 flatTOC: [],
-                isMemoVisible: true, isTranslationVisible: false, isPreviewVisible: false
+                isMemoVisible: true, isTranslationVisible: false, isPreviewVisible: false,
+                isViewerMode: false
             },
             _listeners: [],
             getState() { return { ...this._state }; },
@@ -467,7 +518,7 @@
         const UIManager = {
             dom: {},
             init() {
-                const ids = ['loading-overlay', 'loading-message', 'menu-open-btn', 'sidebar', 'sidebar-close-btn', 'sidebar-overlay', 'resizer', 'current-project-display', 'save-status-indicator', 'toc-input-area', 'toc-input', 'toggle-toc-btn', 'render-btn', 'outline-container', 'export-btn', 'export-prompts-btn', 'main-content-area', 'welcome-screen', 'chapter-display-container', 'project-manage-btn', 'settings-btn', 'settings-modal', 'prompt-template-input', 'reset-template-btn', 'save-template-btn', 'project-modal', 'new-project-form', 'new-project-name', 'project-details-placeholder', 'project-details-form', 'project-genre', 'project-age-group', 'project-audience', 'project-style-example', 'project-materials', 'project-list', 'confirmation-modal', 'confirmation-modal-title', 'confirmation-modal-content', 'confirm-cancel-btn', 'confirm-ok-btn'];
+                const ids = ['loading-overlay', 'loading-message', 'menu-open-btn', 'sidebar', 'sidebar-close-btn', 'sidebar-overlay', 'resizer', 'current-project-display', 'save-status-indicator', 'toc-input-area', 'toc-input', 'toggle-toc-btn', 'render-btn', 'outline-container', 'export-btn', 'export-prompts-btn', 'main-content-area', 'welcome-screen', 'chapter-display-container', 'project-manage-btn', 'settings-btn', 'settings-modal', 'prompt-template-input', 'reset-template-btn', 'save-template-btn', 'project-modal', 'new-project-form', 'new-project-name', 'project-details-placeholder', 'project-details-form', 'project-genre', 'project-age-group', 'project-audience', 'project-style-example', 'project-materials', 'project-list', 'confirmation-modal', 'confirmation-modal-title', 'confirmation-modal-content', 'confirm-cancel-btn', 'confirm-ok-btn', 'viewer-mode-toggle-container', 'viewer-mode-checkbox', 'chapter-viewer-container', 'chapter-viewer-content'];
                 ids.forEach(id => {
                     const element = document.getElementById(id);
                     if (element) {
@@ -490,19 +541,28 @@
                     this.dom.sidebar.style.width = '320px'; // Reset on mobile
                 }
             },
-            render(state) {
-                const { currentProjectId, projects, currentTOC, activeChapterPath, status } = state;
+            async render(state) {
+                const { currentProjectId, projects, currentTOC, activeChapterPath, status, isViewerMode } = state;
                 const currentProject = projects.find(p => p.id === currentProjectId);
                 this.dom.currentProjectDisplay.textContent = currentProject?.id || '프로젝트 선택';
                 this.dom.renderBtn.disabled = !currentProjectId;
                 this.dom.exportBtn.disabled = !currentTOC;
-                // [수정] 프롬프트 내보내기 버튼 활성화/비활성화 로직 추가
                 this.dom.exportPromptsBtn.disabled = !currentTOC;
+                
+                this.dom.viewerModeToggleContainer.classList.toggle('hidden', !currentTOC);
+                this.dom.viewerModeCheckbox.checked = isViewerMode;
+                
+                // [수정] 뷰어 모드 렌더링 로직
+                this.dom.mainContentArea.classList.toggle('hidden', isViewerMode);
+                this.dom.chapterViewerContainer.classList.toggle('hidden', !isViewerMode);
+                
                 this._renderOutline(currentTOC, status, activeChapterPath);
-                if (currentProjectId && activeChapterPath) {
+                
+                if (isViewerMode) {
+                    await this._renderSingleChapterViewer(state);
+                } else if (currentProjectId && activeChapterPath) {
                     this.dom.welcomeScreen.classList.add('hidden');
                     this.dom.chapterDisplayContainer.classList.remove('hidden');
-                    // Only re-render the whole chapter content if it doesn't exist yet or path changes
                     if (this.dom.chapterDisplayContainer.dataset.path !== activeChapterPath) {
                         this._renderChapterContent(state);
                     }
@@ -580,6 +640,28 @@
                 AppController.bindChapterContentEvents(prevPath, nextPath);
                 AppController.updateLayout();
             },
+            async _renderSingleChapterViewer(state) {
+                const { currentTOC, activeChapterPath, currentProjectId } = state;
+                const viewerContent = this.dom.chapterViewerContent;
+                if (!activeChapterPath) {
+                    viewerContent.innerHTML = `<div class="viewer-placeholder"><h2>챕터 선택</h2><p>왼쪽 사이드바에서 볼 챕터를 선택하세요.</p></div>`;
+                    return;
+                }
+                const node = AppController._getNodeByPath(currentTOC, activeChapterPath);
+                const content = await DBService.get(DB_CONFIG.STORES.CONTENTS, `${currentProjectId}_${activeChapterPath}`) || {};
+                
+                let htmlContent = `<h1>${node.title}</h1>`;
+                if (node.description) {
+                    htmlContent += `<blockquote>${node.description}</blockquote>`;
+                }
+                
+                if (content.resultText) {
+                    htmlContent += marked.parse(content.resultText);
+                } else {
+                    htmlContent += `<div class="viewer-placeholder"><p>이 챕터에는 아직 작성된 내용이 없습니다.</p></div>`;
+                }
+                viewerContent.innerHTML = htmlContent;
+            },
             renderProjectList(projects, currentProjectId) {
                 const container = this.dom.projectList;
                 container.innerHTML = '';
@@ -647,7 +729,6 @@
                 dom.renderBtn.onclick = () => this.updateTOC();
                 dom.toggleTocBtn.onclick = () => { dom.tocInputArea.classList.toggle('collapsed'); };
                 dom.exportBtn.onclick = () => this.exportMarkdown();
-                // [추가] 프롬프트 내보내기 버튼 이벤트 리스너
                 dom.exportPromptsBtn.onclick = () => this.exportAllPrompts();
                 dom.settingsBtn.onclick = () => { dom.promptTemplateInput.value = AppState.getState().promptTemplate; UIManager.openModal(dom.settingsModal); };
                 dom.projectManageBtn.onclick = () => this.openProjectManager();
@@ -655,6 +736,8 @@
                 dom.resetTemplateBtn.onclick = () => this.resetPromptTemplate();
                 dom.newProjectForm.onsubmit = (e) => { e.preventDefault(); this.createProject(); };
                 
+                dom.viewerModeCheckbox.onchange = (e) => this.setViewerMode(e.target.checked);
+
                 const resizer = dom.resizer;
                 const sidebar = dom.sidebar;
                 let isResizing = false;
@@ -746,6 +829,7 @@
                 }
             },
             setActiveChapter(path) {
+                // [수정] 챕터 변경 시 뷰어 모드는 유지
                 AppState.setState({ activeChapterPath: path });
             },
             async updateTOC() {
@@ -809,7 +893,7 @@
                         localStorage.setItem(SETTINGS_KEYS.CURRENT_PROJECT, projectId);
                         UIManager.dom.tocInput.value = project.toc ? JSON.stringify(project.toc, null, 2) : '';
                         const flatTOC = this._flattenTOC(project.toc);
-                        AppState.setState({ currentProjectId: projectId, currentTOC: project.toc, activeChapterPath: null, flatTOC });
+                        AppState.setState({ currentProjectId: projectId, currentTOC: project.toc, activeChapterPath: null, flatTOC, isViewerMode: false });
                         this.openProjectManager(projectId);
                         await this._recalculateStatus();
                         if (!isInitialLoad) UIManager.closeModal(UIManager.dom.projectModal);
@@ -840,7 +924,7 @@
                     const newState = { projects: newProjects };
                     if (currentProjectId === projectId) {
                         localStorage.removeItem(SETTINGS_KEYS.CURRENT_PROJECT);
-                        Object.assign(newState, { currentProjectId: null, currentTOC: null, activeChapterPath: null, status: new Map() });
+                        Object.assign(newState, { currentProjectId: null, currentTOC: null, activeChapterPath: null, status: new Map(), isViewerMode: false });
                         UIManager.dom.tocInput.value = '';
                     }
                     AppState.setState(newState);
@@ -944,34 +1028,23 @@
                 URL.revokeObjectURL(a.href);
                 UIManager.toggleLoading(false);
             },
-            // [추가] 모든 프롬프트를 ZIP 파일로 내보내는 함수
             async exportAllPrompts() {
                 const { flatTOC, currentProjectId } = AppState.getState();
                 if (!flatTOC || flatTOC.length === 0) {
                     UIManager.showConfirmation('오류', '내보낼 목차 데이터가 없습니다. 먼저 목차를 생성해주세요.');
                     return;
                 }
-
                 UIManager.toggleLoading(true, "모든 프롬프트 생성 및 압축 중...");
-
                 try {
                     const zip = new JSZip();
-
-                    // 파일 이름으로 사용할 수 없는 문자를 바꾸는 헬퍼 함수
-                    const sanitizeFilename = (name) => {
-                        return name.replace(/[\/\\?%*:|"<>]/g, '_');
-                    };
-                    
+                    const sanitizeFilename = (name) => name.replace(/[\/\\?%*:|"<>]/g, '_');
                     for (const item of flatTOC) {
                         const { path, node } = item;
                         const promptText = this._generatePrompt(path);
-                        // 파일명 형식: 0-1__챕터제목.txt
                         const filename = `${path.replace(/\./g, '-')}__${sanitizeFilename(node.title)}.txt`;
                         zip.file(filename, promptText);
                     }
-
                     const content = await zip.generateAsync({ type: "blob" });
-                    
                     const a = document.createElement('a');
                     a.href = URL.createObjectURL(content);
                     a.download = `${currentProjectId || 'project'}_prompts.zip`;
@@ -979,7 +1052,6 @@
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(a.href);
-
                 } catch (error) {
                     console.error("Failed to export prompts:", error);
                     UIManager.showConfirmation('오류', `프롬프트 내보내기 중 오류가 발생했습니다: ${error.message}`);
@@ -1040,6 +1112,9 @@
                     projectStyleExample: project.styleExample || '지정되지 않음'
                 };
                 return promptTemplate.replace(/\{\{(\w+)\}\}/g, (_, key) => context[key] || '');
+            },
+            setViewerMode(isViewer) {
+                AppState.setState({ isViewerMode: isViewer });
             }
         };
 
