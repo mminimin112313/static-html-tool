@@ -9,140 +9,187 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f0f4f8; }
-        .progress-bar-inner { transition: width 0.3s ease-out; }
-        .xp-bar-inner { transition: width 0.5s ease-in-out; }
+        /* --- Smart Memorizer Design System --- */
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f8fafc; }
+        .progress-bar-inner, .xp-bar-inner { transition: width 0.5s cubic-bezier(0.25, 1, 0.5, 1); }
         .view { display: none; }
         .view.active { display: block; }
+        
         .blank-input {
-            display: inline-block;
-            vertical-align: bottom;
-            border: 2px solid #cbd5e1; border-bottom-width: 3px; border-radius: 0.5rem;
+            display: inline-block; vertical-align: bottom;
+            border: 2px solid #e2e8f0; border-bottom-width: 3px; border-radius: 0.5rem;
             padding: 0.25rem 0.5rem; margin: 0 0.1rem; text-align: center;
-            outline: none; transition: all 0.2s; background-color: #f1f5f9; font-weight: 500;
+            outline: none; transition: all 0.2s ease-in-out; background-color: #f1f5f9; font-weight: 500;
             line-height: 1.5;
         }
-        .blank-input:focus { border-color: #4338ca; background-color: white; box-shadow: 0 0 0 3px rgba(67, 56, 202, 0.2); }
-        .correct { border-color: #16a34a !important; background-color: #f0fdf4 !important; color: #15803d; }
-        .incorrect { border-color: #dc2626 !important; background-color: #fef2f2 !important; color: #b91c1c; }
-        .feedback-correct { background: linear-gradient(to top, #dcfce7, #f0fdf4); color: #15803d; border-top: 5px solid #22c55e; }
-        .feedback-incorrect { background: linear-gradient(to top, #fee2e2, #fef2f2); color: #b91c1c; border-top: 5px solid #ef4444; }
-        .modal { display: none; }
-        .modal.active { display: flex; }
-        .modal-bg { background-color: rgba(15, 23, 42, 0.5); backdrop-filter: blur(4px); transition: opacity 0.3s ease; }
-        .modal-content { transition: transform 0.3s ease, opacity 0.3s ease; }
-        .modal:not(.active) .modal-bg { opacity: 0; }
-        .modal:not(.active) .modal-content { transform: scale(0.95); opacity: 0; }
-        
+        .blank-input:focus { border-color: #0284c7; background-color: white; box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2); }
+        .blank-input.correct { border-color: #22c55e !important; background-color: #f0fdf4 !important; color: #166534; }
+        .blank-input.incorrect { border-color: #ef4444 !important; background-color: #fef2f2 !important; color: #991b1b; }
+
+        .correct-answer-span {
+            padding: 0.1rem 0.5rem; background-color: #fee2e2; color: #b91c1c;
+            font-weight: 700; border-radius: 0.375rem; border: 1px solid #fca5a5;
+            display: inline-block; vertical-align: bottom; line-height: 1.5; margin: 0 0.1rem;
+        }
+
+        .feedback-correct { background: linear-gradient(to top, #dcfce7, #f0fdf4); color: #166534; border-top: 5px solid #22c55e; }
+        .feedback-incorrect { background: linear-gradient(to top, #fee2e2, #fef2f2); color: #991b1b; border-top: 5px solid #ef4444; }
+
+        .modal { display: none; opacity: 0; transition: opacity 0.3s ease; }
+        .modal.active { display: flex; opacity: 1; }
+        .modal-bg { background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); }
+        .modal-content { transition: transform 0.3s ease, opacity 0.3s ease; transform: scale(0.95); opacity: 0; }
+        .modal.active .modal-content { transform: scale(1); opacity: 1; }
+
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .fade-in { animation: fadeIn 0.5s ease-out forwards; }
 
-        @keyframes combo-pop {
-            0% { transform: scale(0.8); opacity: 0.8; }
-            50% { transform: scale(1.2); opacity: 1; }
-            100% { transform: scale(1); opacity: 1; }
-        }
+        @keyframes combo-pop { 0% { transform: scale(0.8); opacity: 0.8; } 50% { transform: scale(1.2); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
         .combo-pop { animation: combo-pop 0.3s ease-out; }
+        
+        .star.filled { color: #f59e0b; }
+        .star { color: #d1d5db; }
+        .badge { filter: grayscale(1); opacity: 0.4; transition: all 0.3s; }
+        .badge.earned { filter: grayscale(0); opacity: 1; }
+        
+        .tab-btn { border-bottom: 3px solid transparent; }
+        .tab-btn.active { border-bottom-color: #0ea5e9; color: #0284c7; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
     </style>
 </head>
 <body class="antialiased">
 
-    <div id="app" class="max-w-3xl mx-auto p-4 md:py-8">
+    <!-- App Container -->
+    <div id="app" class="max-w-4xl mx-auto p-4 md:py-8">
         
-        <!-- === HOME VIEW === -->
-        <main id="home-view" class="view active">
-            <header class="mb-8 text-center">
-                <h1 class="text-4xl font-black text-slate-800">Smart Memorizer</h1>
-                <p class="text-slate-500 mt-1">형사법 기재례 완전 정복</p>
-                <!-- Level & XP -->
-                <div class="mt-6 max-w-sm mx-auto bg-white p-3 rounded-xl shadow-sm">
-                    <div class="flex justify-between items-center text-sm font-bold mb-1 px-1">
-                        <span id="home-level-display" class="text-teal-600">LV. 1</span>
-                        <span id="home-xp-display" class="text-slate-500">0 / 100 XP</span>
-                    </div>
-                    <div class="w-full h-3 bg-slate-200 rounded-full">
-                        <div id="home-xp-bar" class="h-full bg-teal-400 rounded-full xp-bar-inner"></div>
-                    </div>
-                </div>
-            </header>
-            
-            <div class="space-y-4">
-                <div class="bg-gradient-to-br from-indigo-600 to-violet-700 text-white p-6 rounded-2xl shadow-xl fade-in" style="animation-delay: 100ms;">
-                    <h2 class="text-2xl font-bold flex items-center gap-2"><svg class="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"/></svg>스마트 테스트</h2>
-                    <p class="opacity-80 mb-4 mt-1">AI 코치가 당신의 약점을 분석하여 최적의 문제를 추천합니다.</p>
-                    <button id="start-smart-test-btn" class="w-full bg-white text-indigo-600 font-bold py-3 rounded-lg hover:bg-indigo-50 transition">지금 시작</button>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div class="bg-white p-6 rounded-2xl shadow-lg fade-in" style="animation-delay: 200ms;">
-                        <h2 class="text-xl font-bold flex items-center gap-2"><svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>맞춤형 테스트</h2>
-                        <p class="text-slate-500 my-2">범위, 난이도를 직접 설정하여 공부하세요.</p>
-                        <button id="open-custom-test-modal-btn" class="w-full bg-slate-800 text-white font-bold py-2.5 rounded-lg hover:bg-slate-700 transition">설정하기</button>
-                    </div>
-                    <div class="bg-white p-6 rounded-2xl shadow-lg fade-in" style="animation-delay: 300ms;">
-                        <h2 class="text-xl font-bold flex items-center gap-2"><svg class="w-6 h-6 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>오답 노트</h2>
-                        <p class="text-slate-500 my-2">틀렸던 문제를 다시 풀며 약점을 보완하세요.</p>
-                        <button id="review-mistakes-btn" class="w-full bg-amber-500 text-white font-bold py-2.5 rounded-lg hover:bg-amber-600 transition disabled:bg-slate-300">오답 학습</button>
+        <!-- === Main Header (Global) === -->
+        <header id="main-header" class="bg-white/80 backdrop-blur-lg p-4 rounded-xl shadow-md sticky top-4 z-10 flex items-center justify-between mb-6">
+            <div>
+                <h1 class="text-xl font-black text-slate-800">Smart Memorizer</h1>
+                <div class="flex items-center gap-4 mt-1">
+                    <span id="header-level-display" class="text-sm font-bold text-teal-600">LV. 1</span>
+                    <div class="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+                        <div id="header-xp-bar" class="h-full bg-teal-500 rounded-full xp-bar-inner"></div>
                     </div>
                 </div>
             </div>
-             <button id="settings-btn" class="w-full mt-4 bg-slate-200 text-slate-600 font-bold py-2.5 rounded-lg hover:bg-slate-300 transition flex items-center justify-center gap-2">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                데이터 및 설정 관리
-            </button>
+            <div class="flex items-center gap-2">
+                <button id="header-achievements-btn" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V6a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v2l-3 3v4h18v-4l-3-3z"/><path d="M12 22v-4"/><path d="M8 22h8"/></svg>
+                </button>
+                <button id="header-settings-btn" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l-.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15-.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- === HOME VIEW === -->
+        <main id="home-view" class="view">
+            <!-- Tab Navigation -->
+            <div class="mb-6 border-b">
+                <nav class="flex -mb-px">
+                    <button data-tab="stages" class="home-tab-btn tab-btn text-lg font-bold p-4 text-slate-500 hover:text-sky-600">챕터 스테이지</button>
+                    <button data-tab="free-play" class="home-tab-btn tab-btn text-lg font-bold p-4 text-slate-500 hover:text-sky-600">자유 학습</button>
+                </nav>
+            </div>
+            
+            <!-- Tab Content: Stage Mode -->
+            <div id="stages-tab-content" class="tab-content">
+                <div id="stage-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Stage cards rendered here -->
+                </div>
+            </div>
+
+            <!-- Tab Content: Free Play Mode -->
+            <div id="free-play-tab-content" class="tab-content">
+                 <div class="space-y-4">
+                    <div class="bg-gradient-to-br from-sky-600 to-sky-700 text-white p-6 rounded-2xl shadow-lg shadow-sky-200">
+                        <h2 class="text-2xl font-bold flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.69l.34 2.16 1.83.39-1.43 1.43.34 2.16-1.83-.96-1.83.96.34-2.16-1.43-1.43 1.83-.39L12 2.69zM12 15.31l-.34-2.16-1.83-.39 1.43-1.43-.34-2.16 1.83.96 1.83-.96-.34 2.16 1.43 1.43-1.83.39L12 15.31z"/><path d="M2.69 12l2.16-.34.39-1.83 1.43 1.43 2.16.34-.96 1.83.96 1.83-2.16.34-1.43-1.43-.39 1.83-2.16-.34.96-1.83-.96-1.83z"/><path d="M15.31 12l-2.16.34-.39 1.83-1.43-1.43-2.16-.34.96-1.83-.96-1.83 2.16-.34 1.43 1.43.39-1.83 2.16.34-.96 1.83.96 1.83z"/></svg>스마트 테스트</h2>
+                        <p class="opacity-80 mb-4 mt-1">AI 코치가 당신의 약점을 분석하여 최적의 문제를 추천합니다.</p>
+                        <button id="start-smart-test-btn" class="w-full bg-white text-sky-600 font-bold py-3 rounded-lg hover:bg-sky-50 transition-transform duration-200 hover:scale-105 active:scale-100">지금 시작</button>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div class="bg-white p-6 rounded-2xl shadow-md">
+                            <h2 class="text-xl font-bold flex items-center gap-2 text-slate-800"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"/></svg>맞춤형 테스트</h2>
+                            <p class="text-slate-500 my-2">범위, 난이도를 직접 설정하여 공부하세요.</p>
+                            <button id="open-custom-test-modal-btn" class="w-full bg-slate-800 text-white font-bold py-2.5 rounded-lg hover:bg-slate-700 transition">설정하기</button>
+                        </div>
+                        <div class="bg-white p-6 rounded-2xl shadow-md">
+                            <h2 class="text-xl font-bold flex items-center gap-2 text-slate-800"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>오답 노트</h2>
+                            <p class="text-slate-500 my-2">틀렸던 문제를 다시 풀며 약점을 보완하세요.</p>
+                            <button id="review-mistakes-btn" class="w-full bg-amber-500 text-white font-bold py-2.5 rounded-lg hover:bg-amber-600 transition disabled:bg-slate-300 disabled:cursor-not-allowed">오답 학습</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <!-- === QUIZ VIEW === -->
         <div id="quiz-view" class="view">
-             <!-- Quiz Header -->
-            <div class="mb-4">
-                <div class="flex justify-between items-center text-sm font-bold text-slate-500 mb-2">
-                    <span id="quiz-progress"></span>
-                    <span id="quiz-combo" class="text-orange-500"></span>
-                </div>
-                <div class="w-full h-4 bg-slate-200 rounded-full">
-                    <div id="quiz-time-bar" class="h-4 bg-green-500 rounded-full progress-bar-inner"></div>
-                </div>
-            </div>
-            <!-- Question -->
-            <div id="question-card" class="bg-white p-6 rounded-2xl shadow-lg">
-                <p class="text-xs text-slate-400 font-bold mb-3" id="question-path"></p>
-                <h3 class="text-xl font-bold mb-4" id="question-title"></h3>
-                <div id="question-content" class="text-lg/8 whitespace-pre-wrap"></div>
-            </div>
-            <!-- Feedback & Controls -->
-            <div id="quiz-feedback" class="p-5 mt-4 rounded-xl font-bold text-center hidden"></div>
-            <div class="mt-6">
-                <button id="check-answer-btn" class="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl hover:bg-indigo-700 transition shadow-lg">채점하기</button>
-                <button id="next-question-btn" class="w-full bg-slate-700 text-white font-bold py-4 rounded-xl hover:bg-slate-600 transition shadow-lg hidden">다음 문제</button>
-            </div>
-        </div>
+             <div class="mb-4">
+                 <div class="flex justify-between items-center text-sm font-bold text-slate-500 mb-2">
+                     <span id="quiz-progress"></span>
+                     <div class="flex items-center gap-4">
+                        <span id="quiz-combo" class="text-teal-500 font-black"></span>
+                        <button id="exit-quiz-btn" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-red-500 transition">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                        </button>
+                     </div>
+                 </div>
+                 <div class="w-full h-4 bg-slate-200 rounded-full overflow-hidden">
+                     <div id="quiz-time-bar" class="h-4 bg-sky-500 rounded-full progress-bar-inner"></div>
+                 </div>
+             </div>
+             <div id="question-card" class="bg-white p-6 rounded-2xl shadow-lg">
+                 <p class="text-xs text-slate-400 font-bold mb-3" id="question-path"></p>
+                 <h3 class="text-xl font-bold mb-4 text-slate-800" id="question-title"></h3>
+                 <div id="question-content" class="text-lg/8 whitespace-pre-wrap text-slate-700"></div>
+             </div>
+             <div id="quiz-feedback" class="p-5 mt-4 rounded-xl font-bold text-center hidden"></div>
+             <div class="mt-6">
+                 <button id="check-answer-btn" class="w-full bg-sky-600 text-white font-bold py-4 rounded-xl hover:bg-sky-700 transition shadow-lg hover:shadow-sky-200">채점하기</button>
+                 <button id="next-question-btn" class="w-full bg-slate-700 text-white font-bold py-4 rounded-xl hover:bg-slate-600 transition shadow-lg hidden">다음 문제</button>
+             </div>
+       </div>
 
-        <!-- === RESULT VIEW === -->
-        <div id="result-view" class="view text-center bg-white p-8 rounded-2xl shadow-xl">
-             <h2 class="text-3xl font-black mb-2">학습 완료!</h2>
-            <p class="text-slate-500 mb-6">결과를 확인하고 약점을 보완해 보세요.</p>
-            <div class="mb-6">
-                <span class="text-6xl font-black text-indigo-600" id="final-score"></span>
-                <span class="text-2xl font-bold text-slate-400"> / <span id="total-score"></span></span>
+       <!-- === RESULT VIEW === -->
+       <div id="result-view" class="view text-center">
+            <div class="bg-white p-8 rounded-2xl shadow-xl">
+                <h2 class="text-3xl font-black text-slate-800 mb-2">학습 완료!</h2>
+                <p class="text-slate-500 mb-6">결과를 확인하고 약점을 보완해 보세요.</p>
+                <div class="mb-6">
+                    <span class="text-6xl font-black text-sky-600" id="final-score"></span>
+                    <span class="text-2xl font-bold text-slate-400"> / <span id="total-score"></span></span>
+                </div>
+                <div id="incorrect-list" class="mb-6 text-left bg-slate-50 p-4 rounded-lg"></div>
             </div>
-            <div id="incorrect-list" class="mb-6 text-left"></div>
-            <div class="flex flex-col md:flex-row gap-4">
-                <button id="retry-incorrect-btn-result" class="flex-1 bg-amber-500 text-white font-bold py-3 rounded-lg hover:bg-amber-600 transition disabled:bg-slate-300">오답 다시 풀기</button>
-                <button id="back-to-home-btn" class="flex-1 bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition">홈으로</button>
+            <div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <button id="retry-incorrect-btn-result" class="bg-amber-500 text-white font-bold py-3 rounded-lg hover:bg-amber-600 transition disabled:bg-slate-300 disabled:cursor-not-allowed">오답 다시 풀기</button>
+                <button id="exit-result-btn" class="bg-slate-800 text-white font-bold py-3 rounded-lg hover:bg-slate-700 transition">나가기</button>
+            </div>
+       </div>
+    </div>
+    
+    <!-- === MODALS (unchanged) === -->
+    <div id="achievements-modal" class="modal fixed inset-0 z-50 items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 modal-content">
+            <h2 class="text-2xl font-bold mb-6 text-slate-800">내 업적</h2>
+            <div id="badge-container" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            </div>
+            <div class="mt-8 text-right">
+                <button class="modal-close-btn bg-slate-200 text-slate-700 font-bold py-3 px-6 rounded-lg hover:bg-slate-300 transition">닫기</button>
             </div>
         </div>
     </div>
-    
-    <!-- === MODALS === -->
     <div id="custom-test-modal" class="modal fixed inset-0 z-50 items-center justify-center p-4 modal-bg">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 modal-content">
-            <!-- Modal Content -->
-            <h2 class="text-2xl font-bold mb-6">맞춤형 테스트 설정</h2>
+            <h2 class="text-2xl font-bold mb-6 text-slate-800">맞춤형 테스트 설정</h2>
             <div class="space-y-4">
-                 <div>
+                <div>
                     <label class="font-bold text-slate-700">학습 범위</label>
-                    <div class="mt-2 grid grid-cols-2 gap-2 text-sm border-b pb-4">
-                        <button id="tab-category" class="p-2 rounded-lg bg-indigo-100 text-indigo-700 font-bold">목차별</button>
+                    <div class="mt-2 grid grid-cols-2 gap-2 text-sm border-b pb-2">
+                        <button id="tab-category" class="p-2 rounded-lg bg-sky-100 text-sky-700 font-bold">목차별</button>
                         <button id="tab-importance" class="p-2 rounded-lg bg-slate-100 text-slate-600 font-bold">중요도별</button>
                     </div>
                     <div id="filter-category" class="mt-4 max-h-40 overflow-y-auto space-y-2 p-2 bg-slate-50 rounded-md"></div>
@@ -150,43 +197,41 @@
                 </div>
                 <div>
                     <label for="num-questions" class="font-bold text-slate-700">문제 수 (<span id="num-questions-label">10</span>개)</label>
-                    <input id="num-questions" type="range" min="5" max="50" value="10" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    <input id="num-questions" type="range" min="5" max="50" value="10" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-600">
                 </div>
                  <div>
                     <label for="difficulty-slider" class="font-bold text-slate-700">난이도 (<span id="difficulty-label">쉬움</span>)</label>
-                    <input id="difficulty-slider" type="range" min="1" max="3" value="1" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer">
+                    <input id="difficulty-slider" type="range" min="1" max="3" value="1" class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-sky-600">
                 </div>
             </div>
             <div class="mt-8 flex gap-4">
-                <button id="start-custom-test-btn" class="flex-1 bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition">테스트 시작</button>
+                <button id="start-custom-test-btn" class="flex-1 bg-sky-600 text-white font-bold py-3 rounded-lg hover:bg-sky-700 transition">테스트 시작</button>
                 <button class="modal-close-btn flex-1 bg-slate-200 text-slate-700 font-bold py-3 rounded-lg hover:bg-slate-300 transition">취소</button>
             </div>
         </div>
     </div>
-    
     <div id="settings-modal" class="modal fixed inset-0 z-50 items-center justify-center p-4 modal-bg">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg p-6 modal-content">
-            <!-- Modal Content -->
             <h2 class="text-2xl font-bold mb-6">설정</h2>
             <div class="space-y-6">
                 <div>
                     <h3 class="font-bold text-slate-700 mb-2">문제 데이터 관리</h3>
                     <p class="text-sm text-slate-500 mb-2">JSON 데이터를 붙여넣거나 파일을 업로드하여 문제집을 만드세요.</p>
-                    <textarea id="custom-data-input" class="w-full h-32 p-2 border rounded-md font-mono text-xs" placeholder="JSON 데이터를 여기에 붙여넣으세요..."></textarea>
+                    <textarea id="custom-data-input" class="w-full h-32 p-2 border rounded-md font-mono text-xs focus:ring-2 focus:ring-sky-500 focus:border-sky-500" placeholder="JSON 데이터를 여기에 붙여넣으세요..."></textarea>
                     <div class="flex gap-2 mt-2 flex-wrap">
-                         <button id="save-custom-data-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition text-sm">텍스트 저장</button>
-                         <label class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition text-sm cursor-pointer">
+                        <button id="save-custom-data-btn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition text-sm">텍스트 저장</button>
+                        <label class="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 transition text-sm cursor-pointer">
                             파일에서 불러오기
                             <input type="file" id="json-upload-input" class="hidden" accept=".json,application/json">
-                         </label>
-                         <button id="reset-default-data-btn" class="bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition text-sm">기본값 복원</button>
+                        </label>
+                        <button id="reset-default-data-btn" class="bg-slate-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-slate-600 transition text-sm">기본값 복원</button>
                     </div>
                     <p id="data-feedback" class="text-sm mt-2 font-medium"></p>
                 </div>
                 <div>
                      <h3 class="font-bold text-slate-700 mb-2">학습 기록 초기화</h3>
                      <p class="text-sm text-slate-500 mb-2">모든 레벨, 경험치, 오답 기록이 삭제됩니다. (문제 데이터는 유지됩니다)</p>
-                     <button id="reset-progress-btn" class="bg-red-500 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-600 transition">학습 기록 초기화</button>
+                     <button id="reset-progress-btn" class="bg-red-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-red-700 transition">학습 기록 초기화</button>
                 </div>
             </div>
             <div class="mt-8 text-right">
@@ -194,803 +239,496 @@
             </div>
         </div>
     </div>
-    
     <div id="level-up-modal" class="modal fixed inset-0 z-50 items-center justify-center p-4 modal-bg">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 text-center modal-content">
-            <h2 class="text-3xl font-black text-amber-500 mb-2">LEVEL UP!</h2>
+            <h2 class="text-3xl font-black text-teal-500 mb-2">LEVEL UP!</h2>
             <p class="text-slate-600 font-bold text-lg mb-4">레벨 <span id="new-level"></span>을 달성했습니다!</p>
-            <p>꾸준함이 실력의 비결입니다. 계속 나아가세요!</p>
-            <button class="modal-close-btn mt-6 w-full bg-amber-500 text-white font-bold py-3 rounded-lg hover:bg-amber-600 transition">계속하기</button>
+            <p class="text-slate-500">꾸준함이 실력의 비결입니다. 계속 나아가세요!</p>
+            <button class="modal-close-btn mt-6 w-full bg-teal-500 text-white font-bold py-3 rounded-lg hover:bg-teal-600 transition">계속하기</button>
         </div>
     </div>
-    
+    <div id="confirmation-modal" class="modal fixed inset-0 z-50 items-center justify-center p-4 modal-bg">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center modal-content">
+            <h2 id="confirmation-title" class="text-xl font-bold text-slate-800 mb-4">확인</h2>
+            <p id="confirmation-message" class="text-slate-600 mb-6">정말로 진행하시겠습니까?</p>
+            <div class="flex gap-4">
+                <button id="confirm-btn" class="flex-1 bg-red-600 text-white font-bold py-2.5 rounded-lg hover:bg-red-700 transition">확인</button>
+                <button id="cancel-btn" class="modal-close-btn flex-1 bg-slate-200 text-slate-700 font-bold py-2.5 rounded-lg hover:bg-slate-300 transition">취소</button>
+            </div>
+        </div>
+    </div>
+
 <script>
 // The entire dataset from the PDF is now embedded here.
-const DEFAULT_QUIZ_DATA = [
-  // --- 1. 무죄 ---
-  {
-    "id": "MUJOE-JEONDAN-GIBON",
-    "title": "제325조 전단무죄 - 기본형",
-    "path": "무죄 > 제325조 전단무죄 > 기본형",
-    "category": "무죄",
-    "importance": 1,
-    "content": "○ 주장 및 쟁점\n피고인은 사실관계 인정하나, 다만 (구성요건)에 해당하는지 직권으로 검토함\n\n○ 검토\n관련법리\n이 사건의 경우\n위 법리에 따르면 피고인이 이 부분 공소사실의 기재와 같이 ~하였더라도 ~죄는 성립하지 아니함\n- 소결론\n이 부분 공소사실은 <1>범죄로 되지 아니하므로</1> 형소법 <1>제325조 전단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  {
-    "id": "MUJOE-JEONDAN-BULGABEOL",
-    "title": "전단무죄 - 불가벌적 사후행위",
-    "path": "무죄 > 제325조 전단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나. 다만 ~에 해당하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n~는 절도죄에 <2>수반하는 당연한 경과</2>로서 이미 절도행위의 <2>가벌적 평가</2>에 포함되어 있어 별도로 죄를 구성하지 아니함\n\n나) 이 사건의 경우\n위 법리에 따르면 피고인이 이 부분 공소사실의 기재와 같이 ~하였다고 하더라도 ~죄는 성립하지 아니함\n\n다) 소결론\n이 부분 공소사실은 <1>범죄로 되지 아니하므로</1> 형소법 <1>제325조 전단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  {
-    "id": "MUJOE-JEONDAN-BUSU5",
-    "title": "전단무죄 - 부수법위반죄(제5조)",
-    "path": "무죄 > 제325조 전단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n○ 피고인은 사실관계 인정함\n○ 직권으로 타인에 의해 위조된 수표의 기재사항을 권한 없이 변경한 행위가 부수법 제5조의 변조에 해당하는지, 검사가 위조수표를 폐기구형 하였는데 폐기대상인지 검토함\n\n2) 검토\n가) 관련법리\n부수법 제5조의 '<2>변조</2>'는 <3>진정하게 성립된 수표</3>의 내용을 권한 없는 자가 그 동일성을 해치지 않는 한도에서 변경을 가하는 것이고, <1>이미 타인에 의하여 위조된 수표</1>의 기재사항을 권한 없이 변경하였다고 하더라도 부수법 제5조의 '<1>변조</1>'에 해당하지 않음\n\n나) 이 사건의 경우\n피고인이 이 부분 공소사실 기재와 같이 이미 선행범에 의하여 위조된 가계수표의 액면금 '이백만'원을 '삼백만'원으로 변경하였더라도 부수법 제5조의 변조에 해당하지 않음\n\n다) 폐기구형에 대하여\n수표변조의 점과 관련하여 압수된 제N호증 중 변조부분은 위 점이 범죄로 되지 않는 때에 해당하므로 폐기의 대상이 아님\n\n라) 소결론\n이 부분 공소사실은 <1>범죄가 되지 아니하는 때</1>에 해당하므로 형소법 <1>제325조 전단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  {
-    "id": "MUJOE-JEONDAN-BUSU2",
-    "title": "전단무죄 - 부수법위반죄(제2조 제2항)",
-    "path": "무죄 > 제325조 전단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n○ 피고인은 사실관계 인정함\n○ 다만, 발행일 미기재 수표가 부수법 제2조 제2항이 적용되는 수표에 해당하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n부수법 제2조 제2항의 범죄가 성립되기 위하여는 그 수표가 <2>적법한 제시기간 내에 제시</2>되어야만 하고, <1>발행일이 백지인 수표</1>가 보충 없이 지급제시되었을 때에는 그 제시기간 내에 제시되었는지를 따져 볼 수도 없을 뿐 아니라 그 수표요건이 흠결된 채 제시된 것은 <1>적법한 지급제시</1>라고 할 수도 없어 그 수표 발행 행위를 부수법 제2조 제2항에 해당하는 <1>범죄라고 할 수 없음</1>\n\n나) 이 사건의 경우\n피고인이 공소사실의 기재와 같이 발행일이 백지인 수표번호 00 수표를 발행하여 지급되지 않게 하였더라도 부수법위반죄로 처벌할 수 없음\n\n다) 소결론\n이 부분 공소사실은 <1>범죄가 되지 아니하는 때</1>에 해당하므로 형소법 <1>제325조 전단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  {
-    "id": "MUJOE-JEONDAN-BUJINJEONG",
-    "title": "전단무죄 - 부진정 결과적 가중범",
-    "path": "무죄 > 제325조 전단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나, 다만 특수상해죄에 해당하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n고의범에 대하여 결과적 가중범에 정한 형보다 더 무겁게 처벌하는 규정이 있는 경우에는 그 고의범과 결과적 가중범이 상상적 경합관계에 있으나. 고의범에 대하여 더 무겁게 처벌하는 규정이 없는 경우에는 결과적 가중범이 고의범에 대하여 특별관계에 있으므로 결과적 가중범만 성립하고 고의범은 별도로 죄를 구성하지 않음\n\n나) 이 사건의 경우\n○ 특수공무집행방해치상죄는 ... 부진정 결과적 가중범이고, 고의범인 피해자에 대한 특수상해죄의 법정형은 ... 특수공무집행방해치상죄의 법정형인 3년 이상의 유기징역보다 <2>더 무겁지 아니하므로</2> 특수공무집행방해치상죄는 피해자에 대한 특수상해죄에 대하여 <1>특별관계</1>에 있음\n○ 따라서 피고인이 공소사실 기재와 같이 위험한 물건인 각목으로 피해자에게 상해를 가하였더라도 특수공무집행방해치상죄만 성립하고 별도로 피해자에 대한 특수상해죄는 성립하지 아니함\n\n다) 소결론\n이 부분 공소사실은 범죄로 되지 아니하는 때에 해당하므로 형소법 제325조 전단에 의하여 무죄를 선고하여야 되나, 이와 <1>일죄관계</1>에 있는 특수공무집행방해치상죄를 유죄로 인정하므로 주문에서 <1>따로 무죄를 선고하지 아니함</1>"
-  },
-  {
-    "id": "MUJOE-JEONDAN-ILJOE1",
-    "title": "전단무죄 - 일죄관계(특경법)",
-    "path": "무죄 > 제325조 전단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나, 다만 특경법위반죄에 해당하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n특경법 제3조 제1항은 '재물 또는 재산상 이익의 가액(이득액)'이 5억 원 이상인 때에 가중처벌하고 있는데, 단순일죄의 이득액이나 포괄일죄가 성립하는 경우의 이득액의 합산액을 의미하는 것이고 경합범으로 처벌되는 죄에서 그 이득액을 합한 금액을 의미하는 것은 아님\n\n나) 이 사건의 경우\n이 부분 공소사실은 공소사실 기재 자체에 의하더라도 서로 일시, 피해자가 달라 이를 단순일죄 또는 포괄일죄로 볼 수 없고 <2>실체적 경합범 관계</2>로 보아야 하는데, 피해자별 각 부분의 이득액은 어느 것도 특경법 제3조 제1항 소정의 이득액에 미치지 아니하므로 <1>특경법위반죄로는 처벌할 수 없음</1>\n\n다) 소결론\n이 부분 공소사실은 범죄가 되지 아니하는 때에 해당하므로 형소법 제325조 전단에 의하여 무죄를 선고하여야 하나. 이와 일죄관계에 있는 B의 점을 유죄로 인정하므로 주문에서 따로 무죄를 선고하지 아니함"
-  },
-  {
-    "id": "MUJOE-JEONDAN-ILJOE2",
-    "title": "전단무죄 - 일죄관계(여전법)",
-    "path": "무죄 > 제325조 전단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n피고인은 자백하나 직권으로 사문서위조죄 및 위조사문서행사죄가 성립하는지 검토함\n\n2) 검토\n가) 관련법리\n절취한 신용카드를 사용하기 위하여 매출전표에 서명하고 그 매출전표를 교부하는 행위는 도난 신용카드 사용으로 인한 <1>여전법위반죄에 흡수</1>되어 여전법위반죄 <2>일죄</2>만이 성립하고 별도로 <1>사문서위조죄 및 위조사문서행사죄는 성립하지 않음</1>\n\n나) 이 사건의 경우\n피고인이 위 공소사실 기재와 같이 절취한 신용카드 1장을 이용하여 사문서인 매출전표 1장을 위조하고 그 위조한 매출전표를 A에게 교부하여 행사하였더라도 별도로 사문서위조죄 및 위조사문서행사죄를 구성하지 않음\n\n다) 소결론\n이 부분 공소사실은 범죄로 되지 아니하는 때에 해당하여 형소법 제325조 전단에 의하여 무죄를 선고하여야 되나. 이와 일죄관계에 있는 여전법위반죄를 유죄로 인정한 이상 주문에서 따로 무죄를 선고하지 아니함"
-  },
-  {
-    "id": "MUJOE-HUDAN-GIBON",
-    "title": "제325조 후단무죄 - 기본형",
-    "path": "무죄 > 제325조 후단무죄 > 기본형",
-    "category": "무죄",
-    "importance": 1,
-    "content": "1) 주장 및 쟁점\n피고인과 변호인은 ~라고 다툼 or 피고인과 변호인은 ~는 인정하나 ~는 다툼\n\n2) 검토\n가) 검사가 제출한 증거들\n이 부분 공소사실에 관하여 검사가 제출한 증거로는 A, B, C가 있음\n\n나) 증거능력 없는 증거\n○~는 ~이므로 증거능력 없음\n○~는 ~이므로 증거능력 없음\n\n다) 신빙성 없는 증거\n○(피해자의 진술, 공범의 자백 등)은 ~라는 내용이나, ~라는 점에서 믿기 어려움\n\n라) 부족증거\n나머지 증거만으로는 공소사실을 인정하기 부족하고 달리 이를 인정할 증거가 없음\n\n마) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <1>제325조 후단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  {
-    "id": "MUJOE-HUDAN-BOGANG",
-    "title": "후단무죄 - 자백보강법칙",
-    "path": "무죄 > 제325조 후단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 2,
-    "content": "1) 주장 및 쟁점\n피고인이 자백하므로 보강증거 유무를 검토함\n\n2) 검토\n가) 관련법리\n포괄일죄인 상습범의 경우에도 이를 구성하는 각 범죄사실에 관하여 개별적으로 보강증거가 있어야 함\n\n나) 이 사건의 경우\n○ 피고인은 경찰에서부터 이 부분 공소사실을 자백하고 있으나 피고인의 자백을 아무리 합쳐보아도 자백에 대한 보강증거가 될 수 없음\n○ 피고인의 자백에 부합하는 듯한 증거로서 ... A에 대한 진술조서의 각 진술기재가 있음\n○ 그러나 그 내용은 모두 A가 피고인으로부터 위 범행을 자인하는 것을 들었다는 내용으로서 이는 형소법 제310조의 피고인의 자백에는 포함되지 않으나 피고인의 자백과 동일하게 보아야 할 성질의 것이어서 피고인의 자백에 대한 <1>보강증거가 될 수 없음</1>\n○ ...\n○ 따라서 위 자백은 피고인에게 불이익한 <1>유일한 증거</1>에 해당하여 형소법 <1>제310조</1>에 따라 유죄의 증거로 할 수 없음\n\n다) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <1>제325조 후단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  {
-    "id": "MUJOE-HUDAN-DAEHYANGBEOM",
-    "title": "후단무죄 - 대향범(특가법위반(알선수재)방조)",
-    "path": "무죄 > 제325조 후단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 5,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나. 피고인에게 특가법위반(알선수재)방조죄가 성립하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n특가법상 공무원이 아닌 자에게 금품 등을 <1>제공한 자를 처벌하는 규정이 없는 점</1>에 비추어 볼 때 ... <2>공범에 관한 형법총칙 규정이 적용될 수 없음</2>\n\n다) 이 사건의 경우\n...피고인의 행위는 알선을 의뢰하는 행위로서 ... <1>알선수재범행의 대향범</1>에 해당한다고 볼 수 있을 뿐이므로 알선수재죄의 <1>공동정범이나 방조범으로 처벌할 수 없음</1>\n\n마) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <1>제325조 후단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  {
-    "id": "MUJOE-HUDAN-NON-GONGBEOM",
-    "title": "후단무죄 - 공범 아닌 공동피고인",
-    "path": "무죄 > 제325조 후단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인은 검찰 이래 이 법정에 이르기까지, 피고인이 ... 장물인 정을 알지 못했다고 주장함\n\n2) 검토\n나) 증거능력 없는 증거\n○ ...피고인 甲은 <2>공범 아닌 공동피고인</2>으로서 피고인에 대한 관계에서는 <2>증인의 지위</2>에 있는데, 피고인 甲의 법정진술은 피고인의 지위에서 <1>선서 없이 한 법정진술</1>이므로 <1>증거능력 없음</1>\n○ 증인 A의 법정진술 ... 부분은 피고인 아닌 자가 피고인 아닌 타인의 진술을 그 내용으로 하는 <3>전문진술 또는 전문진술이 기재된 조서</3>로서 ... <1>형소법 제316조 제2항</1>에 정한 공판기일에 진술할 수 없는 경우에 해당하지도 아니하므로 모두 <1>증거능력 없음</1>\n\n다) 부족증거\n나머지 증거만으로는 이 부분 공소사실을 인정하기 부족하고, 달리 이를 인정할 증거가 없음\n\n라) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <1>제325조 후단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  {
-    "id": "MUJOE-HUDAN-JIKJEOPJEUNGGEO",
-    "title": "후단무죄 - 유일한 직접증거의 배척",
-    "path": "무죄 > 제325조 후단무죄 > 응용형",
-    "category": "무죄",
-    "importance": 2,
-    "content": "1) 주장 및 쟁점\n피고인은 ~라고 다툼 or 피고인과 변호인은 ~는 인정하나 ~는 다툼\n\n2) 검토\n다) 신빙성 없는 증거\n○ 이 부분 공소사실에 부합하는 <1>직접증거는 피해자의 진술뿐</1>이고, 나머지 증거들은 <2>간접증거</2>에 불과하므로 위 피해자 진술의 <1>신빙성을 검토함</1>\n○ 피해자의 진술은 ~라는 내용이나, ~라는 점에서 믿기 어려움\n\n라) 부족증거\n나머지 증거들만으로는 공소사실을 인정하기 부족하고 달리 이를 인정할 증거가 없음\n\n마) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <1>제325조 후단</1>에 의하여 <1>무죄</1>를 선고함"
-  },
-  // --- 2. 면소 ---
-  {
-    "id": "MYEONSO-GIPANRYEOK-GIBON",
-    "title": "제326조 제1호 면소 - 기판력 기본형",
-    "path": "면소 > 제326조 제1호 > 기본형",
-    "category": "면소",
-    "importance": 1,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 확정판결의 기판력이 미치는지 검토함\n\n2) 검토\n가) 관련법리\n○ 상습범으로서 포괄일죄의 관계에 있는 수개의 범죄사실 중 일부에 대하여 확정된 유죄판결이 있는 경우, 당해 피고인이 <2>상습범으로 기소되어 처단된 경우</2>에만 그 기판력이 그 <1>사실심판결선고 전</1>의 나머지 범죄에 대하여 미침\n\n라) 소결론\n위 <2>확정판결의 효력</2>은 그와 <2>포괄일죄</2> or <2>상상적 경합</2> 관계에 있는 이 부분 공소사실에 미치므로 형소법 <1>제326조 제1호</1>에 의하여 <1>면소</1>를 선고함"
-  },
-  {
-    "id": "MYEONSO-GIPANRYEOK-HANGSO",
-    "title": "면소 - 기판력(항소기각 결정)",
-    "path": "면소 > 제326조 제1호 > 응용형",
-    "category": "면소",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 상습~죄의 확정판결의 기판력이 미쳐 면소사유가 있는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n...그러나 제1심 판결에 대하여 피고인이 항소하였으나 <2>항소이유서를 제출하지 않아 결정으로 항소가 기각</2>되어 판결이 확정된 경우 ... <1>사실심리의 가능성이 있는 최후의 시점</1>은 <1>항소기각 결정시</1>임\n\n다) 소결론\n이 부분 공소사실은 <1>확정판결이 있은 때</1>에 해당하여 형사소송법 <1>제326조 제1호</1>에 따라 <1>면소</1>를 선고함"
-  },
-  {
-    "id": "MYEONSO-SAMYEON",
-    "title": "제326조 제2호 면소 - 사면",
-    "path": "면소 > 제326조 제2호",
-    "category": "면소",
-    "importance": 5,
-    "content": "위 죄는 20XX. X. X. 대통령령 제N호 <1>일반사면령</1>에 의하여 사면되었으므로 형소법 <1>제326조 제2호</1>에 의하여 <1>면소</1>를 선고함"
-  },
-  {
-    "id": "MYEONSO-GONGSO-GIBON",
-    "title": "제326조 제3호 면소 - 공소시효 완성 기본형",
-    "path": "면소 > 제326조 제3호 > 기본형",
-    "category": "면소",
-    "importance": 1,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 공소시효가 완성되었는지 검토함\n\n2) 검토\n가) 관련법리\n(실체법) ~죄는 ... 그 법정형이 ~인데,\n(소송법) ... 공소시효가 N년임\n\n나) 이 사건의 경우\n이 사건 범행일은 20XX. X. X.이고, 이 사건 공소제기일은 그로부터 N년이 경과한 20XX. X. X.임\n\n다) 소결론\n이 부분 공소사실은 <1>공소시효가 완성된 때</1>에 해당하므로 형소법 <1>제326조 제3호</1>에 의하여 <1>면소</1>를 선고함"
-  },
-  {
-    "id": "MYEONSO-GONGSO-BYEONGYEONG",
-    "title": "면소 - 공소시효(공소장 변경)",
-    "path": "면소 > 제326조 제3호 > 응용형",
-    "category": "면소",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 공소시효 완성 여부를 검토함\n\n2) 검토\n가) 관련법리\n공소시효는 범죄행위가 종료된 때로부터 기산하고, 그 완성 여부는 <1>공소장 변경시가 아니라</1> <1>당초의 공소제기시</1>를 기준으로 판단함\n\n다) 소결론\n이 부분 공소사실은 <1>공소의 시효가 완성된 때</1>에 해당하므로 형소법 <1>제326조 제3호</1>에 의하여 <1>면소</1>를 선고함"
-  },
-  {
-    "id": "MYEONSO-GONGSO-JEONGJI1",
-    "title": "면소 - 공소시효(정지, 대향범)",
-    "path": "면소 > 제326조 제3호 > 응용형",
-    "category": "면소",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 공소시효 완성 여부 검토함\n\n2) 검토\n가) 관련법리\n형소법 제253조 제2항의 공범을 해석할 때는 엄격히 해석해야 되고 ... 뇌물공여죄와 뇌물수수죄처럼 <2>대향범</2>인 경우에는 ... 형소법 제253조 제2항의 공범에는 <1>대향범이 포함되지 않음</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소시효가 완성된 때</1>에 해당하므로 형소법 <1>제326조 제3호</1>에 의하여 <1>면소</1>를 선고함"
-  },
-  {
-    "id": "MYEONSO-GONGSO-JEONGJI2",
-    "title": "면소 - 공소시효(정지 후 재진행)",
-    "path": "면소 > 제326조 제3호 > 응용형",
-    "category": "면소",
-    "importance": 5,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 공소시효 완성 여부 검토함\n\n2) 검토\n가) 관련법리\n...공범 중 1인에 대해 <2>약식명령이 확정</2>되고 그 후 <3>정식재판청구권이 회복</3>되었다고 하는 것만으로는 그 사이에 검사가 다른 공범자에 대한 공소를 제기하지 못할 법률상 장애사유가 있다고 볼 수 없고, ... 다른 공범자에 대한 공소시효는 <1>정지함이 없이 계속 진행함</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소의 시효가 완성되었을 때</1>에 해당하므로 형소법 <1>제326조 제3호</1>에 의하여 <1>면소</1>를 선고함"
-  },
-  {
-    "id": "MYEONSO-GONGSO-BAEKJI",
-    "title": "면소 - 공소시효(발행일 백지 수표)",
-    "path": "면소 > 제326조 제3호 > 응용형",
-    "category": "면소",
-    "importance": 5,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나. 직권으로 공소시효 완성 여부 검토함\n\n2) 검토\n가) 관련 법리\n...발행일을 백지로 하여 수표를 발행하는 경우 위 죄는 <1>수표를 발행한 때에 성립함</1>\n\n나) 이 사건의 경우\n이 사건 공소는 위 당좌수표의 발행일로부터 7년이 경과한 후인 20XX. X. X. 제기되었음이 기록상 명백함\n\n다) 소결론\n이 부분 공소사실은 <1>공소시효가 완성된 때</1>에 해당하므로 형소법 <1>제326조 제3호</1>에 의해 <1>면소</1>를 선고함"
-  },
-  // --- 3. 공소기각 ---
-  {
-    "id": "GONGSO-2HO-JEON-GOSOCHISO",
-    "title": "제327조 제2호 공소기각 - 공소제기 전 고소취소",
-    "path": "공소기각 > 제327조 제2호 > 친고죄",
-    "category": "공소기각",
-    "importance": 2,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계는 인정하나, 고소취소와 관련하여 친족상도례를 적용하여 공소기각하여야 하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n~죄는 ... 피해자의 고소가 있어야 공소를 제기할 수 있음\n\n나) 이 사건의 경우\n...고소인은 <2>이 사건 공소제기 전</2>인 20XX. X. X. 이 부분 <1>고소를 취소함</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <1>제327조 제2호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-2HO-GOSO-EOMNEUN",
-    "title": "제327조 제2호 공소기각 - 고소가 없는 경우",
-    "path": "공소기각 > 제327조 제2호 > 친고죄",
-    "category": "공소기각",
-    "importance": 2,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 다만 공소제기의 절차가 적법한지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n~죄는 ... 피해자의 고소가 있어야 공소를 제기할 수 있음\n\n나) 이 사건의 경우\n...피해자가 피고인을 고소한 사실을 <1>인정할 아무런 증거가 없음</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <1>제327조 제2호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-2HO-GOSODOGWA",
-    "title": "제327조 제2호 공소기각 - 고소기간 도과",
-    "path": "공소기각 > 제327조 제2호 > 친고죄",
-    "category": "공소기각",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 다만 공소제기의 절차가 적법한지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n...피해자는 <1>범인을 알게 된 날부터 6월</1>을 경과하면 고소하지 못함(<2>형소법 제230조 제1항</2>)\n\n나) 이 사건의 경우\n...그때로부터 6월이 경과하였음이 역수상 명백한 ... 위 고소는 <1>고소기간이 경과된 뒤에 제기된 것으로서 부적법함</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <1>제327조 제2호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-2HO-GOSOCHUWAN",
-    "title": "제327조 제2호 공소기각 - 고소의 추완 불인정",
-    "path": "공소기각 > 제327조 제2호 > 친고죄",
-    "category": "공소기각",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 공소제기의 절차가 적법한지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n...<1>공소제기 이후 고소의 추완은 허용되지 않음</1>\n\n나) 이 사건의 경우\n...당초~죄(비친고죄)로 공소제기 되었다가 ... ~죄(친고죄)로 교환적으로 변경되었는데, ...<2>공소제기 이후</2>인 20XX. X. X. 비로소 피해자로부터 <1>고소가 제기된 사실</1>이 인정됨\n\n다) 소결론\n위 변경된 공소사실에 대한 공소는 피해자의 고소 없이 제기된 것으로서 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <1>제327조 제2호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-2HO-BANEUI-JEON",
-    "title": "제327조 제2호 공소기각 - 반의사불벌죄(공소제기 전)",
-    "path": "공소기각 > 제327조 제2호 > 반의사불벌죄",
-    "category": "공소기각",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인은 자백하나, 직권으로 공소기각 여부를 판단함\n\n2) 검토\n가) 관련법리\n...피해자의 <1>명시한 의사에 반하여 공소를 제기할 수 없음</1>\n\n나) 이 사건의 경우\n...피해자가 <2>이 사건 공소제기 전</2>인 20XX. X. X. 이미 피고인에 대한 <1>처벌을 바라지 않는다는 의사를 명시적으로 표시</1>한 사실 ... 인정됨\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <1>제327조 제2호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-2HO-GYOTONG-BOHUM",
-    "title": "제327조 제2호 공소기각 - 교통범죄(종합보험)",
-    "path": "공소기각 > 제327조 제2호 > 교통범죄",
-    "category": "공소기각",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나. 직권으로 공소기각 여부를 판단함\n\n2) 검토\n가) 관련법리\n...운전자에 대하여는 ... <1>종합보험에 가입한 경우 공소를 제기할 수 없음</1>\n\n나) 이 사건의 경우\n...피고인은 이 사건 사고 당시 자신이 운전한 승용차에 관하여 <2>자동차 종합보험에 가입한 사실</2>을 인정할 수 있음\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효인 때</1>에 해당하므로 형소법 <1>제327조 제2호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-3HO-IJUNGGISO",
-    "title": "제327조 제3호 공소기각 - 이중기소",
-    "path": "공소기각 > 제327조 제3호",
-    "category": "공소기각",
-    "importance": 5,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 다만 이중기소에 해당하는지 직권으로 검토함\n\n2) 검토\n다) 이 부분 공소사실과의 관계\n위 범죄사실과 이 부분 공소사실은 ... 그 <2>사회적 사실관계가 기본적인 점에서 동일함</2>\n\n라) 소결론\n<1>공소가 제기된 사건에 대하여 다시 공소가 제기</1>되었으므로 형소법 <1>제327조 제3호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-4HO-JAEGISO",
-    "title": "제327조 제4호 공소기각 - 공소취소 후 재기소",
-    "path": "공소기각 > 제327조 제4호",
-    "category": "공소기각",
-    "importance": 5,
-    "content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나. 직권으로 공소기각 여부를 판단함\n\n2) 검토\n가) 관련법리\n형소법 제329조에 의하면 공소취소에 의하여 공소기각결정이 확정된 경우에는 <1>다른 중요한 증거를 발견한 경우에 한하여</1> 다시 공소를 제기할 수 있음\n\n다) 소결론\n이 부분 공소사실은 <1>형소법 제329조를 위반하여 공소가 제기</1>되었을 때에 해당하므로 형소법 <1>제327조 제4호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-5HO-HU-GOSOCHISO",
-    "title": "제327조 제5호 공소기각 - 공소제기 후 고소취소",
-    "path": "공소기각 > 제327조 제5호",
-    "category": "공소기각",
-    "importance": 2,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 다만 Z이 고소취하서를 제출하였으므로 ... 직권으로 검토함\n\n2) 검토\n나) 이 사건의 경우\n...Z이 <2>이 사건 공소제기 후</2>인 20XX. X. X. <1>고소를 취소한 사실</1>을 인정할 수 있음\n\n다) 소결론\n이 부분 각 공소사실은 <1>고소가 있어야 공소를 제기할 수 있는 사건에서 고소가 취소되었을 때</1>에 해당하므로 형소법 <1>제327조 제5호</1>에 의하여 공소를 <1>기각</1>함."
-  },
-  {
-    "id": "GONGSO-5HO-GONGBEOM-GOSOCHISO",
-    "title": "제327조 제5호 공소기각 - 공범에 대한 고소취소",
-    "path": "공소기각 > 제327조 제5호",
-    "category": "공소기각",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n...피고인 乙에 대한 고소를 취소하였으므로 위 고소취소의 효력을 직권으로 검토함\n\n2) 검토\n가) 관련법리\n...형소법 제233조에 의해 친고죄의 공범 중 그 1인 또는 수인에 대한 고소 또는 그 취소는 <1>다른 공범자에 대하여도 효력이 있음</1>\n\n나) 이 사건의 경우\n...피고인 Z에 대한 고소를 취소한 사실을 인정할 수 있음\n○ 피고인 Z에 대한 고소의 취소는 <1>공범인 피고인 甲에 대해서도 효력이 있음</1>\n\n다) 소결론\n이 부분 각 공소사실은 ... <1>고소가 취소되었을 때</1>에 해당하므로 형소법 <1>제327조 제5호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-6HO-HU-CHEOLHWE",
-    "title": "제327조 제6호 공소기각 - 공소제기 후 처벌불원",
-    "path": "공소기각 > 제327조 제6호",
-    "category": "공소기각",
-    "importance": 2,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 공소기각사유가 있는지 직권으로 검토함\n\n2) 검토\n나) 이 사건의 경우\n피해자가 작성한 합의서의 기재에 의하면, 피해자는 <2>이 사건 공소제기 후</2>인 20XX. X. X. 피고인에 대한 <1>처벌을 원하지 아니하는 의사표시</1> or 피고인에 대한 <1>처벌을 원하는 의사표시를 철회</1>한 사실을 인정할 수 있음\n\n다) 소결론\n이 부분 공소사실은 ... <1>처벌을 원하지 아니하는 의사표시를 한 때</1> or <1>처벌을 원하는 의사표시를 철회하였을 때</1>에 해당하므로 형소법 <1>제327조 제6호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-6HO-SUPYOHOESU",
-    "title": "제327조 제6호 공소기각 - 수표회수",
-    "path": "공소기각 > 제327조 제6호",
-    "category": "공소기각",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 공소기각사유가 있는지 직권으로 검토함\n\n2) 검토\n가) 관련 법리\n...부정수표 단속법 ... <1>수표를 회수</1>하거나, 회수하지 못하였을 경우라도 수표소지인의 <1>명시한 의사에 반하여는 공소를 제기할 수 없다</1>고 규정하고 있음\n○ 이는 부정수표가 회수된 경우에는 수표소지인이 부정수표 발행자 또는 작성자의 처벌을 원하지 아니하는 것과 마찬가지로 보아 <2>반의사불벌죄</2>로 규정한 취지임\n\n다) 소결론\n이 부분 공소는 ... <1>처벌을 원하는 의사표시를 철회하였을 때</1>에 해당하므로, 형소법 <1>제327조 제6호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-6HO-GONGBEOM-SUPYOHOESU",
-    "title": "제327조 제6호 공소기각 - 공범의 수표회수",
-    "path": "공소기각 > 제327조 제6호",
-    "category": "공소기각",
-    "importance": 5,
-    "content": "1) 주장 및 쟁점\n피고인이 자백하나, 직권으로 공소기각 사유 검토함\n\n2) 검토\n가) 관련법리\n...<2>부정수표의 회수</2>는 그 회수사실 자체가 <2>소극적 소추조건</2>이 되는 것이므로, 부정수표가 공범에 의하여 회수된 경우 회수 당시 소지인의 의사에 관계없이 그 효력이 <1>다른 공범자에게도 당연히 미침</1>\n\n다) 소결론\n이 부분 공소는 ... <1>처벌을 원하는 의사표시를 철회하였을 때</1>에 해당하므로, 형소법 <1>제327조 제6호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GONGSO-GYEJEONG-4HO",
-    "title": "제328조 제1항 제4호 공소기각결정",
-    "path": "공소기각 > 제328조",
-    "category": "공소기각",
-    "importance": 5,
-    "content": "1) 주장 및 쟁점\n피고인이 자백하나, 직권으로 공소기각 여부 검토함\n\n2) 검토\n나) 이 사건의 경우\n...이 사건 수표가 그 제시일인 10일 이내에 제시되지 아니한 사실이 <2>공소사실 자체에 의하여 명백</2>한데, 이는 <1>공소장에 기재된 사실이 진실하더라도 죄가 될 만한 사실이 포함되지 않은 때</1>에 해당함\n\n다) 소결론\n형소법 <1>제328조 제1항 제4호</1>에 의하여 공소를 <1>기각</1>함"
-  },
-  // --- 4. 경합 ---
-  {
-    "id": "GYEONGHAP-MUJOE-GONGSO",
-    "title": "경합 - 무죄와 공소기각",
-    "path": "무죄·면소·공소기각사유의 경합",
-    "category": "경합",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 무죄사유와 공소기각사유의 존부를 검토함\n\n2) 검토\n가) 발행일 미기재 수표에 관하여\n...결국 이 부분 공소사실은 <2>범죄로 되지 아니하는 경우</2>에 해당함\n\n나) 수표회수에 관하여\n...이 부분 공소는 피해자의 명시한 의사에 반하여 공소를 제기할 수 없는 사건에서 <2>처벌을 원하는 의사표시를 철회하였을 때</2>에 해당함\n\n다) 소결론\n이 부분 공소사실에 대하여는 <2>무죄사유</2>와 <2>공소기각사유</2>가 <1>경합</1>하나 <1>형식재판 우선의 원칙</1>에 따라 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GYEONGHAP-MYEONSO-GONGSO",
-    "title": "경합 - 면소와 공소기각",
-    "path": "무죄·면소·공소기각사유의 경합",
-    "category": "경합",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 면소사유와 공소기각사유의 존부를 검토함\n\n2) 검토\n가) 확정판결의 기판력에 대한 검토\n...이 부분 공소사실은 <2>확정판결이 있은 때</2>에 해당함\n\n나) 친족상도례 적용에 대한 검토\n...그렇다면 이 부분에 관한 공소는 <2>공소제기절차가 법률의 규정에 위반하여 무효일 때</2>에 해당함 or ...<2>고소가 취소되었을 때</2>에 해당함\n\n다) 소결론\n이 부분 공소사실에 대하여는 <2>면소사유</2>와 <2>공소기각사유</2>가 <1>경합</1>하나 <1>형식재판 우선의 원칙</1>에 따라 공소를 <1>기각</1>함"
-  },
-  {
-    "id": "GYEONGHAP-BUNDAN",
-    "title": "경합 - 범죄사실 분단",
-    "path": "무죄·면소·공소기각사유의 경합",
-    "category": "경합",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n...변호인은 상습절도죄의 확정판결의 기판력이 이 부분 공소사실에 미친다고 주장함\n\n2) 검토\n가) 확정판결의 기판력이 미치는지 여부\n(1) 관련법리\n...<1>확정판결 전후 범죄사실의 일죄성이 분단</1>되어 그 확정판결의 사실심판결 선고 전의 범죄사실과 확정된 범죄사실만이 포괄하여 하나의 상습범을 구성하고 그 후의 범죄사실은 <2>경합범 관계</2>에 있는 별개의 상습범이 됨\n\n다) 소결론\n...이 부분 공소사실에 대하여는 <2>면소사유</2>와 <2>공소기각사유</2>가 <1>경합</1>하나 형식재판 우선의 원칙에 따라 <1>공소기각</1>으로 판단하여야 됨\n...이 부분 공소사실은 나머지 ... 공소사실과 <1>분단</1>되었으므로 주문에서 공소기각을 선고함"
-  },
-  // --- 5. 유죄 ---
-  {
-    "id": "YUJOE-A1-GONGBEOMJABAEK",
-    "title": "유죄 - 보강법칙(공범 자백)",
-    "path": "유죄 > 유죄 A1 > 공범 자백",
-    "category": "유죄",
-    "importance": 2,
-    "content": "1) 주장 및 쟁점\n피고인이 자백하므로 보강증거 유무를 검토함\n\n2) 검토\n가) 관련법리\n○ <1>공범인 공동피고인</1>들의 각 진술은 상호간에 서로 <1>보강증거가 될 수 있음</1>\n○ 이러한 법리는 ... <2>수뢰자·증뢰자</2>, <2>마약 매도인 매수인</2>과 같은 <1>필요적 공범</1>에도 마찬가지로 적용됨\n\n다) 소결론\n유죄로 인정함"
-  },
-  {
-    "id": "YUJOE-A1-BOGANGJEUNGGEO",
-    "title": "유죄 - 보강법칙(보강증거 인정)",
-    "path": "유죄 > 유죄 A1 > 보강증거 인정",
-    "category": "유죄",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나, 변호인은 피해자가 작성한 진술서가 피고인의 자백을 보강하는 증거가 될 수 없다고 주장함\n\n2) 검토\n가) 관련법리\n...자백에 대한 보강증거는 ... 피고인의 자백이 <2>가공적인 것이 아닌 진실한 것임</2>을 인정할 수 있는 정도이면 <1>충분하고</1>, <1>직접증거가 아닌 간접증거나 정황증거</1>도 보강증거가 될 수 있음\n\n나) 이 사건의 경우\n...피해자 작성 진술서의 기재는 ... 피고인의 자백이 가공적인 것이 아닌 진실한 것임을 인정할 수 있는 정도이므로 <1>보강증거가 될 수 있음</1>\n○ 변호인의 위 주장은 <1>받아들이지 아니함</1>\n\n라) 소결론\n유죄로 인정함"
-  },
-  {
-    "id": "YUJOE-A2-HAPDONGBEOM",
-    "title": "유죄 - 합동범 및 중지미수 주장 배척",
-    "path": "유죄 > 유죄 A2 > 주장 배척",
-    "category": "유죄",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n피고인 A는 합동절도의 범행을 공모한 사실은 있으나 범행현장에 있지 않았고 망을 보지도 않았으므로 합동절도의 죄책을 부담하지 않고, 설령 유죄로 인정되더라도 중지미수에 해당하므로 미수감경을 해야 된다고 주장함\n\n2) 검토\n가) 합동절도의 죄책을 부담하는지에 대한 판단\n(1) 관련법리\n...<2>공모에는 참여하였으나 현장에서 절도의 실행행위를 직접 분담하지 아니한 범인</2>도 ... 정범성의 표지를 갖춘 경우 <1>합동절도의 공동정범</1>으로서의 죄책을 부담함\n\n나) 중지미수에 대한 판단\n(1) 관련법리\n<1>공범자 중 1인</1>은 다른 공범의 범행을 <1>중지하게 하지 않은 이상</1> 자기만의 범의를 철회, 포기하여도 <1>중지미수로 인정될 수 없음</1>\n\n라) 소결론\n유죄로 인정함"
-  },
-  {
-    "id": "YUJOE-A2-GYEOLGWAJEOK",
-    "title": "유죄 - 결과적 가중범 공동정범",
-    "path": "유죄 > 유죄 A2 > 주장 배척",
-    "category": "유죄",
-    "importance": 3,
-    "content": "1) 주장 및 쟁점\n변호인은 피고인이 (결과적 가중범)을 예견할 수 없었으므로 (결과적 가중범)의 죄책을 부담하지 않는다고 주장함\n\n2) 검토\n가) 관련법리\n2인 이상이 합동하여 (기본범죄)를 하였는데 범인 중의 1인이 (결과적 가중범)을 가한 경우, 나머지 범인이 이를 <1>예견하지 못한 것</1>으로 볼 수 없다면 <1>(결과적 가중범)의 죄책을 면할 수 없음</1>\n\n라) 소결론\n유죄로 인정함"
-  },
-  {
-    "id": "YUJOE-A2-BONRAEJEUNGGEO",
-    "title": "유죄 - 본래증거 주장 배척",
-    "path": "유죄 > 유죄 A2 > 주장 배척",
-    "category": "유죄",
-    "importance": 4,
-    "content": "1) 주장 및 쟁점\n...변호인은 증인 A의 증언은 ... 전문증거에 해당하는데 ... 증거능력이 없다고 다툼\n\n2) 검토\n가) 관련법리\n...<2>원진술의 내용</2>이 요증사실인 경우에는 <1>전문증거</1>이나, <2>원진술의 존재 자체</2>가 요증사실인 경우에는 <1>본래증거</1>이지 전문증거가 아님\n\n나) 이 사건의 경우\n...피고인의 위와 같은 원진술의 존재 자체가 ... 요증사실이므로 ... <1>전문증거가 아니라 본래증거</1>에 해당하고 전문법칙이 적용될 여지가 없음\n\n라) 소결론\n유죄로 인정함"
-  },
-  {
-    "id": "YUJOE-A3-SINBINGSEONG",
-    "title": "유죄 - 공소사실 부인(진술 신빙성)",
-    "path": "유죄 > 유죄 A3 > 공소사실 부인",
-    "category": "유죄",
-    "importance": 1,
-    "content": "1) 주장 및 쟁점\n피고인은 자신이 ~한 사실은 인정하나, ~한 사실은 없다고 주장함\n\n2) 검토\n다) 이 사건의 경우\n○ (피해자의 진술, 공범의 자백, 피고인의 수사단계 진술)은 ~라는 점에 비추어 볼 때 <1>신빙성이 매우 높음</1>\n○ 한편, 공소사실과 반대되는 증거인 피고인의 번복진술 등은 위와 배치되는 것으로서 ~라는 점에서 <1>신빙성을 인정하기 어려움</1>\n\n마) 소결론\n유죄로 인정함"
-  },
-  {
-    "id": "YUJOE-A3-GANJEOBJEUNGGEO",
-    "title": "유죄 - 공소사실 부인(간접증거)",
-    "path": "유죄 > 유죄 A3 > 공소사실 부인",
-    "category": "유죄",
-    "importance": 2,
-    "content": "1) 주장 및 쟁점\n피고인은 이 부분 공소사실 부인함\n\n2) 검토\n가) 인정사실\n증거능력 있고 신빙성 있는 증거들 A. B. C에 의하면 ~라는 사실을 인정할 수 있음\n\n나) 판단\n○ 위 증거들 및 인정사실을 종합하면 ① 피고인 외의 제3자의 존재 가능성. ② 피고인이 절도 외에 다른 경위로 도난물품을 소지하게 되었을 가능성. ③ 피고인이 도난물품을 소지하게 된 경위에 관한 설명이 납득 가능한지의 여부, ④ 피고인에게 유사한 전과가 있는지의 여부 등에 비추어 피고인이 ~한 사실이 인정됨\n○ 피고인의 위 주장은 <1>받아들이지 아니함</1>\n\n라) 소결론\n유죄로 인정함"
-  },
-  {
-    "id": "YUJOE-B-CHUKSO",
-    "title": "유죄 - 축소사실 인정",
-    "path": "유죄 > 유죄 B > 축소사실 인정",
-    "category": "유죄",
-    "importance": 2,
-    "content": "가. 결론\n○ A의 점: 이유 무죄\n○ 이 부분 공소사실에 포함된 B의 점: 유죄\n\n나. 논거\n나) B의 점\n(1) 관련법리\n...법원이 (<1>축소사실</1>)을 인정하더라도 피고인의 <2>방어권 행사</2>에 <3>실질적으로 불이익을 초래할 염려가 없어</3> <1>공소장 변경 없이</1> 직권으로 ~죄를 인정할 수 있음"
-  },
-  {
-    "id": "YUJOE-B-TEUKGYEONG",
-    "title": "유죄 - 축소사실(특경법위반(배임) → 배임)",
-    "path": "유죄 > 유죄 B > 축소사실 인정",
-    "category": "유죄",
-    "importance": 3,
-    "content": "가. 결론\n○ 특경법위반(배임)의 점: 이유 무죄\n○ 이에 포함된 배임의 점: 유죄\n\n나. 논거\n가) 특경법위반(배임)죄 성립 여부\n(1) 관련법리\n...<2>경합범</2>으로 처벌되는 죄에서 그 이득액을 <1>합한 금액을 의미하는 것은 아님</1>\n(3) 소결론\n...무죄를 선고하여야 되나. 이와 <1>일죄관계</1>에 있는 배임죄를 유죄로 인정한 이상 주문에서 <1>따로 무죄를 선고하지 아니함</1>\n\n나) 배임죄 성립 여부\n(1) 관련법리\n...법원이 배임죄를 인정하더라도 피고인의 <2>방어권 행사</2>에 <3>실질적으로 불이익을 초래할 염려가 없어</3> <1>공소장 변경 없이</1> 직권으로 B죄를 인정할 수 있음"
-  },
-  // --- 6. 증거능력 ---
-  {
-    "id": "JEUNGGEO-SAGYEONG-PISIN",
-    "title": "증거능력 - 사경 피신조서",
-    "path": "증거능력 > 전문증거",
-    "category": "증거능력",
-    "importance": 1,
-    "content": "○ 피고인에 대한 사경 피신조서\n피고인에 대한 제1회 사경 피신조서는 피고인이 <1>내용부인</1> 하므로 피고인에 대하여 <1>증거능력 없음</1>\n\n○ 공범에 대한 사경 피신조서\n甲에 대한 제1회 사경 피신조서는 공범인 피고인이 <1>내용부인 취지로 부동의</1> 하므로 <1>증거능력 없음</1>"
-  },
-  {
-    "id": "JEUNGGEO-SAGYEONG-SAMANG",
-    "title": "증거능력 - 사망한 공범의 사경 피신조서",
-    "path": "증거능력 > 전문증거",
-    "category": "증거능력",
-    "importance": 4,
-    "content": "○ 사망한 공범에 대한 사경 피신조서\n甲에 대한 사경 피신조서는 공범인 피고인이 내용부인 취지로 부동의 하고, 甲이 <2>사망하여 법정에서 진술할 수 없는 경우</2>에도 <1>형소법 제312조 제3항</1>이 적용되므로 증거능력이 없고 <1>형소법 제314조</1>에 의해서도 증거능력을 인정할 수 없음"
-  },
-  {
-    "id": "JEUNGGEO-GEOMSA-PISIN",
-    "title": "증거능력 - 검사 피신조서",
-    "path": "증거능력 > 전문증거",
-    "category": "증거능력",
-    "importance": 2,
-    "content": "○ 피고인에 대한 검사 피신조서\n피고인에 대한 검사 피신조서 중 ... 피고인이 <1>내용부인</1> 하였으므로 <1>증거능력 없음</1>\n\n○ 분리기소된 공범에 대한 검사 피신조서\n피고인이 내용부인 취지로 부동의 하고, 원진술자인 A의 법정증언이나 영상녹화물 또는 그 밖의 객관적 방법에 의하여 그 <2>진정성립이 인정되지 아니하여</2> <1>형소법 제312조 제4항</1>의 요건을 갖추지 못하였고 ... 증거능력 없음"
-  },
-  {
-    "id": "JEUNGGEO-GONGBEOMANIN-PISIN",
-    "title": "증거능력 - 공범 아닌 공동피고인 법정진술",
-    "path": "증거능력 > 전문증거",
-    "category": "증거능력",
-    "importance": 3,
-    "content": "피고인 甲의 법정진술은, ... 피고인 甲은 피고인에 대해서 <2>공범 아닌 공동피고인</2>으로서 <2>증인의 지위</2>에 있으므로 피고인의 지위에서 <1>선서 없이 한 법정진술</1>로서 <1>증거능력 없음</1>"
-  },
-  {
-    "id": "JEUNGGEO-JEONMUNJINSUL",
-    "title": "증거능력 - 전문진술 및 재전문진술",
-    "path": "증거능력 > 전문증거",
-    "category": "증거능력",
-    "importance": 3,
-    "content": "○ 전문진술 또는 전문진술이 기재된 조서\n...<2>원진술자</2>가 ... <1>진술할 수 없는 때</1>에 해당하고 그 진술에 대해서 <1>특신상태</1>가 인정되므로 <1>형소법 제312조 제4항</1> 및 <1>제316조 제2항</1>에 의해 <1>증거능력 인정됨</1>\n\n○ 재전문진술 또는 재전문진술이 기재된 조서\n...<1>재전문진술</1> 또는 <1>재전문진술이 기재된 조서</1>인데 피고인이 <1>증거로 하는 데 동의하지 않았으므로</1> <1>증거능력 없음</1>"
-  },
-  {
-    "id": "JEUNGGEO-NOKCHIROK",
-    "title": "증거능력 - 녹음테이프 및 녹취록",
-    "path": "증거능력 > 전문증거",
-    "category": "증거능력",
-    "importance": 4,
-    "content": "A는 <2>대화의 당사자</2>로서 통비법 제3조에 위반되지는 않으나, 이는 실질적으로 형소법 <1>제313조 제1항</1>의 '피고인의 진술이 기재된 서류'라고 할 것인데, 피고인이 증거로 하는 데 <1>동의하지 않았고</1>, 작성자 A에 의하여 <1>성립의 진정이 인정되지도 않았으므로</1> <1>증거능력 없음</1>"
-  },
-  {
-    "id": "JEUNGGEO-WIBEOP-SUJIP",
-    "title": "증거능력 - 위법수집증거",
-    "path": "증거능력 > 위법수집증거",
-    "category": "증거능력",
-    "importance": 2,
-    "content": "(1) 관련법리\n○ 수사기관이 헌법과 형소법이 정한 절차에 따르지 아니하고 수집한 증거는 물론 이에 기초하여 획득한 <1>2차 증거</1> 역시 <2>원칙적으로</2> 유죄인정의 증거로 삼을 수 없음\n○ 다만 수사기관의 절차위반행위가 적법절차의 실질적인 내용을 침해하는 것이 아니고 오히려 그 증거능력을 배제하는 것이 형사사법정의 실현에 반하는 결과를 초래한다고 평가되는 <2>예외적인 경우</2>에는 이를 유죄인정의 증거로 사용할 수 있음\n○ 따라서 법원은 ... <1>인과관계의 희석 또는 단절</1> 여부를 판단하여 2차증거의 증거능력을 판단하여야 함"
-  },
-  // --- 7. 몰수추징 ---
-  {
-    "id": "MOLSU-SuroejaBanhan",
-    "title": "몰수추징 - 수뢰자 뇌물 반환",
-    "path": "몰수·추징",
-    "category": "몰수·추징",
-    "importance": 4,
-    "content": "가) 관련법리\n수뢰자가 뇌물을 <2>그대로 보관했다가</2> 증뢰자에게 반환한 때에는 <1>증뢰자로부터 몰수·추징</1>하여야 되나, 수뢰자가 ... <2>소비하거나</2> ... <2>예금한 것</2>은 뇌물의 처분행위에 해당하므로 그 후 수뢰자가 증뢰자에게 같은 액수의 돈을 반환하였다고 하더라도 뇌물 그 자체의 반환으로 볼 수 없으므로 <1>수뢰자로부터 그 가액을 추징</1>해야 됨"
-  },
-  {
-    "id": "MOLSU-MAYAK",
-    "title": "몰수추징 - 마약",
-    "path": "몰수·추징",
-    "category": "몰수·추징",
-    "importance": 4,
-    "content": "가) 피고인 A\n○ 압수된 ... 필로폰 ... 을 피고인 A로부터 각 <1>몰수</1>(<2>마약류 관리에 관한 법률 제67조 본문</2>)\n○ 압수된 필로폰 중 <2>감정과정에서 소모</2>된 ... 은 피고인 A의 <3>귀책사유에 의하지 아니한 사유</3>로 몰수가 불가능한 경우이므로, 피고인 A로부터 그 가액을 <1>추징할 수 없음</1>"
-  },
-  {
-    "id": "MOLSU-SANGSANG",
-    "title": "몰수추징 - 상상적 경합범",
-    "path": "몰수·추징",
-    "category": "몰수·추징",
-    "importance": 5,
-    "content": "가) 관련법리\n<1>상상적 경합범</1>에 관한 형법 제40조의 취지에 비추어보면 <2>가벼운 죄</2>에서 정한 <2>병과형 또는 부가형</2>의 법조가 있을 때에는 형이 더 무거운 죄에 정한 형으로 처벌하기로 한 경우에도 <1>가벼운 죄에서 정한 병과형 또는 부가형의 법조 역시 적용됨</1>"
-  },
-  {
-    "id": "MOLSU-TEUKJEONG",
-    "title": "몰수추징 - 뇌물 불특정",
-    "path": "몰수·추징",
-    "category": "몰수·추징",
-    "importance": 5,
-    "content": "가) 관련법리\n형법 제134조의 몰수는 <2>특정된 물건</2>에 대한 것이고, 추징은 본래 몰수할 수 있었음을 전제로 하는 것이므로 뇌물에 공할 금품이 <1>특정되지 않았던 것</1>은 <1>몰수할 수 없고</1> 그 <1>가액을 추징할 수도 없음</1>"
-  }
-]
-;
+const DEFAULT_QUIZ_DATA =[{"id": "JEONDAN-MUJOE-GIBON","title": "제325조 전단무죄 - 기본형","path": "무죄 > 전단무죄 > 기본형","category": "전단무죄","importance": 1,"content": "○ 주장 및 쟁점\n피고인은 사실관계 인정하나, 다만 (구성요건)에 해당하는지 직권으로 검토함\n\n○ 검토\n관련법리\n이 사건의 경우\n위 법리에 따르면 피고인이 이 부분 공소사실의 기재와 같이 ~하였더라도 ~죄는 성립하지 아니함\n- 소결론\n이 부분 공소사실은 <1>범죄로 되지 아니하므로</1> 형소법 <2>제325조 전단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "JEONDAN-MUJOE-BULGABEOL","title": "전단무죄 - 불가벌적 사후행위","path": "무죄 > 전단무죄 > 응용형","category": "전단무죄","importance": 3,"content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나. 다만 ~에 해당하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n~는 절도죄에 <3>수반하는 당연한 경과</3>로서 이미 절도행위의 <2>가벌적 평가</2>에 포함되어 있어 별도로 죄를 구성하지 아니함\n\n나) 이 사건의 경우\n위 법리에 따르면 피고인이 이 부분 공소사실의 기재와 같이 ~하였다고 하더라도 ~죄는 성립하지 아니함\n\n다) 소결론\n이 부분 공소사실은 <1>범죄로 되지 아니하므로</1> 형소법 <2>제325조 전단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "JEONDAN-MUJOE-BUSU5","title": "전단무죄 - 부수법위반죄(제5조)","path": "무죄 > 전단무죄 > 응용형","category": "전단무죄","importance": 4,"content": "1) 주장 및 쟁점\n○ 피고인은 사실관계 인정함\n○ 직권으로 타인에 의해 위조된 수표의 기재사항을 권한 없이 변경한 행위가 부수법 제5조의 변조에 해당하는지, 검사가 위조수표를 폐기구형 하였는데 폐기대상인지 검토함\n\n2) 검토\n가) 관련법리\n부수법 제5조의 '<2>변조</2>'는 <3>진정하게 성립된 수표</3>의 내용을 권한 없는 자가 그 동일성을 해치지 않는 한도에서 변경을 가하는 것이고, <1>이미 타인에 의하여 위조된 수표</1>의 기재사항을 권한 없이 변경하였다고 하더라도 부수법 제5조의 '<2>변조</2>'에 해당하지 않음\n\n나) 이 사건의 경우\n피고인이 이 부분 공소사실 기재와 같이 이미 선행범에 의하여 위조된 가계수표의 액면금 '이백만'원을 '삼백만'원으로 변경하였더라도 부수법 제5조의 변조에 해당하지 않음\n\n다) 폐기구형에 대하여\n수표변조의 점과 관련하여 압수된 제N호증 중 변조부분은 위 점이 범죄로 되지 않는 때에 해당하므로 폐기의 대상이 아님\n\n라) 소결론\n이 부분 공소사실은 <1>범죄가 되지 아니하는 때</1>에 해당하므로 형소법 <2>제325조 전단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "JEONDAN-MUJOE-BUSU2","title": "전단무죄 - 부수법위반죄(제2조 제2항)","path": "무죄 > 전단무죄 > 응용형","category": "전단무죄","importance": 4,"content": "1) 주장 및 쟁점\n○ 피고인은 사실관계 인정함\n○ 다만, 발행일 미기재 수표가 부수법 제2조 제2항이 적용되는 수표에 해당하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n부수법 제2조 제2항의 범죄가 성립되기 위하여는 그 수표가 <3>적법한 제시기간 내에 제시</3>되어야만 하고, <2>발행일이 백지인 수표</2>가 보충 없이 지급제시되었을 때에는 그 제시기간 내에 제시되었는지를 따져 볼 수도 없을 뿐 아니라 그 수표요건이 흠결된 채 제시된 것은 <2>적법한 지급제시</2>라고 할 수도 없어 그 수표 발행 행위를 부수법 제2조 제2항에 해당하는 <1>범죄라고 할 수 없음</1>\n\n나) 이 사건의 경우\n피고인이 공소사실의 기재와 같이 발행일이 백지인 수표번호 00 수표를 발행하여 지급되지 않게 하였더라도 부수법위반죄로 처벌할 수 없음\n\n다) 소결론\n이 부분 공소사실은 <1>범죄가 되지 아니하는 때</1>에 해당하므로 형소법 <2>제325조 전단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "JEONDAN-MUJOE-BUJINJEONG","title": "전단무죄 - 부진정 결과적 가중범","path": "무죄 > 전단무죄 > 응용형","category": "전단무죄","importance": 3,"content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나, 다만 특수상해죄에 해당하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n고의범에 대하여 결과적 가중범에 정한 형보다 더 무겁게 처벌하는 규정이 있는 경우에는 그 고의범과 결과적 가중범이 상상적 경합관계에 있으나. 고의범에 대하여 더 무겁게 처벌하는 규정이 없는 경우에는 결과적 가중범이 고의범에 대하여 특별관계에 있으므로 결과적 가중범만 성립하고 고의범은 별도로 죄를 구성하지 않음\n\n나) 이 사건의 경우\n○ 특수공무집행방해치상죄는 ... 부진정 결과적 가중범이고, 고의범인 피해자에 대한 특수상해죄의 법정형은 ... 특수공무집행방해치상죄의 법정형인 3년 이상의 유기징역보다 <3>더 무겁지 아니하므로</3> 특수공무집행방해치상죄는 피해자에 대한 특수상해죄에 대하여 <2>특별관계</2>에 있음\n○ 따라서 피고인이 공소사실 기재와 같이 위험한 물건인 각목으로 피해자에게 상해를 가하였더라도 특수공무집행방해치상죄만 성립하고 별도로 피해자에 대한 특수상해죄는 성립하지 아니함\n\n다) 소결론\n이 부분 공소사실은 범죄로 되지 아니하는 때에 해당하므로 형소법 제325조 전단에 의하여 무죄를 선고하여야 되나, 이와 <1>일죄관계</1>에 있는 특수공무집행방해치상죄를 유죄로 인정하므로 주문에서 <1>따로 무죄를 선고하지 아니함</1>"},{"id": "JEONDAN-MUJOE-ILJOE1","title": "전단무죄 - 일죄관계(특경법)","path": "무죄 > 전단무죄 > 응용형","category": "전단무죄","importance": 4,"content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나, 다만 특경법위반죄에 해당하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n특경법 제3조 제1항은 '재물 또는 재산상 이익의 가액(이득액)'이 5억 원 이상인 때에 가중처벌하고 있는데, 단순일죄의 이득액이나 포괄일죄가 성립하는 경우의 이득액의 합산액을 의미하는 것이고 경합범으로 처벌되는 죄에서 그 이득액을 합한 금액을 의미하는 것은 아님\n\n나) 이 사건의 경우\n이 부분 공소사실은 공소사실 기재 자체에 의하더라도 서로 일시, 피해자가 달라 이를 단순일죄 또는 포괄일죄로 볼 수 없고 <2>실체적 경합범 관계</2>로 보아야 하는데, 피해자별 각 부분의 이득액은 어느 것도 특경법 제3조 제1항 소정의 이득액에 미치지 아니하므로 <1>특경법위반죄로는 처벌할 수 없음</1>\n\n다) 소결론\n이 부분 공소사실은 범죄가 되지 아니하는 때에 해당하므로 형소법 제325조 전단에 의하여 무죄를 선고하여야 하나. 이와 일죄관계에 있는 B의 점을 유죄로 인정하므로 주문에서 따로 무죄를 선고하지 아니함"},{"id": "JEONDAN-MUJOE-ILJOE2","title": "전단무죄 - 일죄관계(여전법)","path": "무죄 > 전단무죄 > 응용형","category": "전단무죄","importance": 4,"content": "1) 주장 및 쟁점\n피고인은 자백하나 직권으로 사문서위조죄 및 위조사문서행사죄가 성립하는지 검토함\n\n2) 검토\n가) 관련법리\n절취한 신용카드를 사용하기 위하여 매출전표에 서명하고 그 매출전표를 교부하는 행위는 도난 신용카드 사용으로 인한 <2>여전법위반죄에 흡수</2>되어 여전법위반죄 <2>일죄</2>만이 성립하고 별도로 <1>사문서위조죄 및 위조사문서행사죄는 성립하지 않음</1>\n\n나) 이 사건의 경우\n피고인이 위 공소사실 기재와 같이 절취한 신용카드 1장을 이용하여 사문서인 매출전표 1장을 위조하고 그 위조한 매출전표를 A에게 교부하여 행사하였더라도 별도로 사문서위조죄 및 위조사문서행사죄를 구성하지 않음\n\n다) 소결론\n이 부분 공소사실은 범죄로 되지 아니하는 때에 해당하여 형소법 제325조 전단에 의하여 무죄를 선고하여야 되나. 이와 일죄관계에 있는 여전법위반죄를 유죄로 인정한 이상 주문에서 따로 무죄를 선고하지 아니함"},{"id": "HUDAN-MUJOE-GIBON","title": "제325조 후단무죄 - 기본형","path": "무죄 > 후단무죄 > 기본형","category": "후단무죄","importance": 1,"content": "1) 주장 및 쟁점\n피고인과 변호인은 ~라고 다툼 or 피고인과 변호인은 ~는 인정하나 ~는 다툼\n\n2) 검토\n가) 검사가 제출한 증거들\n이 부분 공소사실에 관하여 검사가 제출한 증거로는 A, B, C가 있음\n\n나) 증거능력 없는 증거\n○~는 ~이므로 증거능력 없음\n○~는 ~이므로 증거능력 없음\n\n다) 신빙성 없는 증거\n○(피해자의 진술, 공범의 자백 등)은 ~라는 내용이나, ~라는 점에서 믿기 어려움\n\n라) 부족증거\n나머지 증거만으로는 공소사실을 인정하기 부족하고 달리 이를 인정할 증거가 없음\n\n마) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <2>제325조 후단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "HUDAN-MUJOE-BOGANG","title": "후단무죄 - 자백보강법칙","path": "무죄 > 후단무죄 > 응용형","category": "후단무죄","importance": 2,"content": "1) 주장 및 쟁점\n피고인이 자백하므로 보강증거 유무를 검토함\n\n2) 검토\n가) 관련법리\n포괄일죄인 상습범의 경우에도 이를 구성하는 각 범죄사실에 관하여 개별적으로 보강증거가 있어야 함\n\n나) 이 사건의 경우\n○ 피고인은 경찰에서부터 이 부분 공소사실을 자백하고 있으나 피고인의 자백을 아무리 합쳐보아도 자백에 대한 보강증거가 될 수 없음\n○ 피고인의 자백에 부합하는 듯한 증거로서 ... A에 대한 진술조서의 각 진술기재가 있음\n○ 그러나 그 내용은 모두 A가 피고인으로부터 위 범행을 자인하는 것을 들었다는 내용으로서 이는 형소법 제310조의 피고인의 자백에는 포함되지 않으나 피고인의 자백과 동일하게 보아야 할 성질의 것이어서 피고인의 자백에 대한 <2>보강증거가 될 수 없음</2>\n○ ...\n○ 따라서 위 자백은 피고인에게 불이익한 <1>유일한 증거</1>에 해당하여 형소법 <3>제310조</3>에 따라 유죄의 증거로 할 수 없음\n\n다) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <2>제325조 후단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "HUDAN-MUJOE-DAEHYANGBEOM","title": "후단무죄 - 대향범(알선수재방조)","path": "무죄 > 후단무죄 > 응용형","category": "후단무죄","importance": 5,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나. 피고인에게 특가법위반(알선수재)방조죄가 성립하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n특가법상 공무원이 아닌 자에게 금품 등을 <3>제공한 자를 처벌하는 규정이 없는 점</3>에 비추어 볼 때 ... <2>공범에 관한 형법총칙 규정이 적용될 수 없음</2>\n\n다) 이 사건의 경우\n...피고인의 행위는 알선을 의뢰하는 행위로서 ... <2>알선수재범행의 대향범</2>에 해당한다고 볼 수 있을 뿐이므로 알선수재죄의 <1>공동정범이나 방조범으로 처벌할 수 없음</1>\n\n마) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <2>제325조 후단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "HUDAN-MUJOE-NON-GONGBEOM","title": "후단무죄 - 공범 아닌 공동피고인","path": "무죄 > 후단무죄 > 응용형","category": "후단무죄","importance": 3,"content": "1) 주장 및 쟁점\n피고인은 검찰 이래 이 법정에 이르기까지, 피고인이 ... 장물인 정을 알지 못했다고 주장함\n\n2) 검토\n나) 증거능력 없는 증거\n○ ...피고인 甲은 <2>공범 아닌 공동피고인</2>으로서 피고인에 대한 관계에서는 <2>증인의 지위</2>에 있는데, 피고인 甲의 법정진술은 피고인의 지위에서 <1>선서 없이 한 법정진술</1>이므로 <1>증거능력 없음</1>\n○ 증인 A의 법정진술 ... 부분은 피고인 아닌 자가 피고인 아닌 타인의 진술을 그 내용으로 하는 <3>전문진술 또는 전문진술이 기재된 조서</3>로서 ... <2>형소법 제316조 제2항</2>에 정한 공판기일에 진술할 수 없는 경우에 해당하지도 아니하므로 모두 <1>증거능력 없음</1>\n\n다) 부족증거\n나머지 증거만으로는 이 부분 공소사실을 인정하기 부족하고, 달리 이를 인정할 증거가 없음\n\n라) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <2>제325조 후단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "HUDAN-MUJOE-JIKJEOPJEUNGGEO","title": "후단무죄 - 유일한 직접증거의 배척","path": "무죄 > 후단무죄 > 응용형","category": "후단무죄","importance": 2,"content": "1) 주장 및 쟁점\n피고인은 ~라고 다툼 or 피고인과 변호인은 ~는 인정하나 ~는 다툼\n\n2) 검토\n다) 신빙성 없는 증거\n○ 이 부분 공소사실에 부합하는 <1>직접증거는 피해자의 진술뿐</1>이고, 나머지 증거들은 <2>간접증거</2>에 불과하므로 위 피해자 진술의 <1>신빙성을 검토함</1>\n○ 피해자의 진술은 ~라는 내용이나, ~라는 점에서 믿기 어려움\n\n라) 부족증거\n나머지 증거들만으로는 공소사실을 인정하기 부족하고 달리 이를 인정할 증거가 없음\n\n마) 소결론\n이 부분 공소사실은 <1>범죄의 증명이 없는 때</1>에 해당하므로 형소법 <2>제325조 후단</2>에 의하여 <1>무죄</1>를 선고함"},{"id": "MYEONSO-GIPANRYEOK-GIBON","title": "제326조 제1호 면소 - 기판력 기본형","path": "면소 > 제326조 제1호 > 기본형","category": "면소","importance": 1,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 확정판결의 기판력이 미치는지 검토함\n\n2) 검토\n가) 관련법리\n○ 상습범으로서 포괄일죄의 관계에 있는 수개의 범죄사실 중 일부에 대하여 확정된 유죄판결이 있는 경우, 당해 피고인이 <3>상습범으로 기소되어 처단된 경우</3>에만 그 기판력이 그 <2>사실심판결선고 전</2>의 나머지 범죄에 대하여 미침\n\n라) 소결론\n위 <2>확정판결의 효력</2>은 그와 <2>포괄일죄</2> or <2>상상적 경합</2> 관계에 있는 이 부분 공소사실에 미치므로 형소법 <2>제326조 제1호</2>에 의하여 <1>면소</1>를 선고함"},{"id": "MYEONSO-GIPANRYEOK-HANGSO","title": "면소 - 기판력(항소기각 결정)","path": "면소 > 제326조 제1호 > 응용형","category": "면소","importance": 4,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 상습~죄의 확정판결의 기판력이 미쳐 면소사유가 있는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n...그러나 제1심 판결에 대하여 피고인이 항소하였으나 <2>항소이유서를 제출하지 않아 결정으로 항소가 기각</2>되어 판결이 확정된 경우 ... <1>사실심리의 가능성이 있는 최후의 시점</1>은 <1>항소기각 결정시</1>임\n\n다) 소결론\n이 부분 공소사실은 <1>확정판결이 있은 때</1>에 해당하여 형사소송법 <2>제326조 제1호</2>에 따라 <1>면소</1>를 선고함"},{"id": "MYEONSO-SAMYEON","title": "제326조 제2호 면소 - 사면","path": "면소 > 제326조 제2호","category": "면소","importance": 5,"content": "위 죄는 20XX. X. X. 대통령령 제N호 <1>일반사면령</1>에 의하여 사면되었으므로 형소법 <2>제326조 제2호</2>에 의하여 <1>면소</1>를 선고함"},{"id": "MYEONSO-GONGSO-GIBON","title": "제326조 제3호 면소 - 공소시효 완성 기본형","path": "면소 > 제326조 제3호 > 기본형","category": "면소","importance": 1,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 공소시효가 완성되었는지 검토함\n\n2) 검토\n가) 관련법리\n(실체법) ~죄는 ... 그 법정형이 ~인데,\n(소송법) ... 공소시효가 N년임\n\n나) 이 사건의 경우\n이 사건 범행일은 20XX. X. X.이고, 이 사건 공소제기일은 그로부터 N년이 경과한 20XX. X. X.임\n\n다) 소결론\n이 부분 공소사실은 <1>공소시효가 완성된 때</1>에 해당하므로 형소법 <2>제326조 제3호</2>에 의하여 <1>면소</1>를 선고함"},{"id": "MYEONSO-GONGSO-BYEONGYEONG","title": "면소 - 공소시효(공소장 변경)","path": "면소 > 제326조 제3호 > 응용형","category": "면소","importance": 3,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 공소시효 완성 여부를 검토함\n\n2) 검토\n가) 관련법리\n공소시효는 범죄행위가 종료된 때로부터 기산하고, 그 완성 여부는 <2>공소장 변경시가 아니라</2> <1>당초의 공소제기시</1>를 기준으로 판단함\n\n다) 소결론\n이 부분 공소사실은 <1>공소의 시효가 완성된 때</1>에 해당하므로 형소법 <2>제326조 제3호</2>에 의하여 <1>면소</1>를 선고함"},{"id": "MYEONSO-GONGSO-JEONGJI1","title": "면소 - 공소시효(정지, 대향범)","path": "면소 > 제326조 제3호 > 응용형","category": "면소","importance": 4,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 공소시효 완성 여부 검토함\n\n2) 검토\n가) 관련법리\n형소법 제253조 제2항의 공범을 해석할 때는 엄격히 해석해야 되고 ... 뇌물공여죄와 뇌물수수죄처럼 <2>대향범</2>인 경우에는 ... 형소법 제253조 제2항의 공범에는 <1>대향범이 포함되지 않음</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소시효가 완성된 때</1>에 해당하므로 형소법 <2>제326조 제3호</2>에 의하여 <1>면소</1>를 선고함"},{"id": "MYEONSO-GONGSO-JEONGJI2","title": "면소 - 공소시효(정지 후 재진행)","path": "면소 > 제326조 제3호 > 응용형","category": "면소","importance": 5,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 공소시효 완성 여부 검토함\n\n2) 검토\n가) 관련법리\n...공범 중 1인에 대해 <2>약식명령이 확정</2>되고 그 후 <3>정식재판청구권이 회복</3>되었다고 하는 것만으로는 그 사이에 검사가 다른 공범자에 대한 공소를 제기하지 못할 법률상 장애사유가 있다고 볼 수 없고, ... 다른 공범자에 대한 공소시효는 <1>정지함이 없이 계속 진행함</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소의 시효가 완성되었을 때</1>에 해당하므로 형소법 <2>제326조 제3호</2>에 의하여 <1>면소</1>를 선고함"},{"id": "MYEONSO-GONGSO-BAEKJI","title": "면소 - 공소시효(발행일 백지 수표)","path": "면소 > 제326조 제3호 > 응용형","category": "면소","importance": 5,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나. 직권으로 공소시효 완성 여부 검토함\n\n2) 검토\n가) 관련 법리\n...발행일을 백지로 하여 수표를 발행하는 경우 위 죄는 <1>수표를 발행한 때에 성립함</1>\n\n나) 이 사건의 경우\n이 사건 공소는 위 당좌수표의 발행일로부터 7년이 경과한 후인 20XX. X. X. 제기되었음이 기록상 명백함\n\n다) 소결론\n이 부분 공소사실은 <1>공소시효가 완성된 때</1>에 해당하므로 형소법 <2>제326조 제3호</2>에 의해 <1>면소</1>를 선고함"},{"id": "GONGSO-2HO-JEON-GOSOCHISO","title": "제327조 제2호 공소기각 - 공소제기 전 고소취소","path": "공소기각 > 제327조 제2호 > 친고죄","category": "공소기각","importance": 2,"content": "1) 주장 및 쟁점\n피고인이 사실관계는 인정하나, 고소취소와 관련하여 친족상도례를 적용하여 공소기각하여야 하는지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n~죄는 ... 피해자의 고소가 있어야 공소를 제기할 수 있음\n\n나) 이 사건의 경우\n...고소인은 <2>이 사건 공소제기 전</2>인 20XX. X. X. 이 부분 <1>고소를 취소함</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <2>제327조 제2호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-2HO-GOSO-EOMNEUN","title": "제327조 제2호 공소기각 - 고소가 없는 경우","path": "공소기각 > 제327조 제2호 > 친고죄","category": "공소기각","importance": 2,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 다만 공소제기의 절차가 적법한지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n~죄는 ... 피해자의 고소가 있어야 공소를 제기할 수 있음\n\n나) 이 사건의 경우\n...피해자가 피고인을 고소한 사실을 <1>인정할 아무런 증거가 없음</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <2>제327조 제2호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-2HO-GOSODOGWA","title": "제327조 제2호 공소기각 - 고소기간 도과","path": "공소기각 > 제327조 제2호 > 친고죄","category": "공소기각","importance": 3,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 다만 공소제기의 절차가 적법한지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n...피해자는 <1>범인을 알게 된 날부터 6월</1>을 경과하면 고소하지 못함(<2>형소법 제230조 제1항</2>)\n\n나) 이 사건의 경우\n...그때로부터 6월이 경과하였음이 역수상 명백한 ... 위 고소는 <1>고소기간이 경과된 뒤에 제기된 것으로서 부적법함</1>\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <2>제327조 제2호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-2HO-GOSOCHUWAN","title": "제327조 제2호 공소기각 - 고소의 추완 불인정","path": "공소기각 > 제327조 제2호 > 친고죄","category": "공소기각","importance": 4,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 공소제기의 절차가 적법한지 직권으로 검토함\n\n2) 검토\n가) 관련법리\n...<1>공소제기 이후 고소의 추완은 허용되지 않음</1>\n\n나) 이 사건의 경우\n...당초~죄(비친고죄)로 공소제기 되었다가 ... ~죄(친고죄)로 교환적으로 변경되었는데, ...<2>공소제기 이후</2>인 20XX. X. X. 비로소 피해자로부터 <1>고소가 제기된 사실</1>이 인정됨\n\n다) 소결론\n위 변경된 공소사실에 대한 공소는 피해자의 고소 없이 제기된 것으로서 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <2>제327조 제2호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-2HO-BANEUI-JEON","title": "제327조 제2호 공소기각 - 반의사불벌죄(공소제기 전)","path": "공소기각 > 제327조 제2호 > 반의사불벌죄","category": "공소기각","importance": 3,"content": "1) 주장 및 쟁점\n피고인은 자백하나, 직권으로 공소기각 여부를 판단함\n\n2) 검토\n가) 관련법리\n...피해자의 <1>명시한 의사에 반하여 공소를 제기할 수 없음</1>\n\n나) 이 사건의 경우\n...피해자가 <2>이 사건 공소제기 전</2>인 20XX. X. X. 이미 피고인에 대한 <1>처벌을 바라지 않는다는 의사를 명시적으로 표시</1>한 사실 ... 인정됨\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효일 때</1>에 해당하므로 형소법 <2>제327조 제2호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-2HO-GYOTONG-BOHUM","title": "제327조 제2호 공소기각 - 교통범죄(종합보험)","path": "공소기각 > 제327조 제2호 > 교통범죄","category": "공소기각","importance": 3,"content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나. 직권으로 공소기각 여부를 판단함\n\n2) 검토\n가) 관련법리\n...운전자에 대하여는 ... <1>종합보험에 가입한 경우 공소를 제기할 수 없음</1>\n\n나) 이 사건의 경우\n...피고인은 이 사건 사고 당시 자신이 운전한 승용차에 관하여 <2>자동차 종합보험에 가입한 사실</2>을 인정할 수 있음\n\n다) 소결론\n이 부분 공소사실은 <1>공소제기의 절차가 법률의 규정에 위반하여 무효인 때</1>에 해당하므로 형소법 <2>제327조 제2호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-3HO-IJUNGGISO","title": "제327조 제3호 공소기각 - 이중기소","path": "공소기각 > 제327조 제3호","category": "공소기각","importance": 5,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 다만 이중기소에 해당하는지 직권으로 검토함\n\n2) 검토\n다) 이 부분 공소사실과의 관계\n위 범죄사실과 이 부분 공소사실은 ... 그 <2>사회적 사실관계가 기본적인 점에서 동일함</2>\n\n라) 소결론\n<1>공소가 제기된 사건에 대하여 다시 공소가 제기</1>되었으므로 형소법 <2>제327조 제3호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-4HO-JAEGISO","title": "제327조 제4호 공소기각 - 공소취소 후 재기소","path": "공소기각 > 제327조 제4호","category": "공소기각","importance": 5,"content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나. 직권으로 공소기각 여부를 판단함\n\n2) 검토\n가) 관련법리\n형소법 제329조에 의하면 공소취소에 의하여 공소기각결정이 확정된 경우에는 <1>다른 중요한 증거를 발견한 경우에 한하여</1> 다시 공소를 제기할 수 있음\n\n다) 소결론\n이 부분 공소사실은 <1>형소법 제329조를 위반하여 공소가 제기</1>되었을 때에 해당하므로 형소법 <2>제327조 제4호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-5HO-HU-GOSOCHISO","title": "제327조 제5호 공소기각 - 공소제기 후 고소취소","path": "공소기각 > 제327조 제5호","category": "공소기각","importance": 2,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 다만 Z이 고소취하서를 제출하였으므로 ... 직권으로 검토함\n\n2) 검토\n나) 이 사건의 경우\n...Z이 <2>이 사건 공소제기 후</2>인 20XX. X. X. <1>고소를 취소한 사실</1>을 인정할 수 있음\n\n다) 소결론\n이 부분 각 공소사실은 <1>고소가 있어야 공소를 제기할 수 있는 사건에서 고소가 취소되었을 때</1>에 해당하므로 형소법 <2>제327조 제5호</2>에 의하여 공소를 <1>기각</1>함."},{"id": "GONGSO-5HO-GONGBEOM-GOSOCHISO","title": "제327조 제5호 공소기각 - 공범에 대한 고소취소","path": "공소기각 > 제327조 제5호","category": "공소기각","importance": 3,"content": "1) 주장 및 쟁점\n...피고인 乙에 대한 고소를 취소하였으므로 위 고소취소의 효력을 직권으로 검토함\n\n2) 검토\n가) 관련법리\n...형소법 제233조에 의해 친고죄의 공범 중 그 1인 또는 수인에 대한 고소 또는 그 취소는 <1>다른 공범자에 대하여도 효력이 있음</1>\n\n나) 이 사건의 경우\n...피고인 Z에 대한 고소를 취소한 사실을 인정할 수 있음\n○ 피고인 Z에 대한 고소의 취소는 <1>공범인 피고인 甲에 대해서도 효력이 있음</1>\n\n다) 소결론\n이 부분 각 공소사실은 ... <1>고소가 취소되었을 때</1>에 해당하므로 형소법 <2>제327조 제5호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-6HO-HU-CHEOLHWE","title": "제327조 제6호 공소기각 - 공소제기 후 처벌불원","path": "공소기각 > 제327조 제6호","category": "공소기각","importance": 2,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 공소기각사유가 있는지 직권으로 검토함\n\n2) 검토\n나) 이 사건의 경우\n피해자가 작성한 합의서의 기재에 의하면, 피해자는 <2>이 사건 공소제기 후</2>인 20XX. X. X. 피고인에 대한 <1>처벌을 원하지 아니하는 의사표시</1> or 피고인에 대한 <1>처벌을 원하는 의사표시를 철회</1>한 사실을 인정할 수 있음\n\n다) 소결론\n이 부분 공소사실은 ... <1>처벌을 원하지 아니하는 의사표시를 한 때</1> or <1>처벌을 원하는 의사표시를 철회하였을 때</1>에 해당하므로 형소법 <2>제327조 제6호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-6HO-SUPYOHOESU","title": "제327조 제6호 공소기각 - 수표회수","path": "공소기각 > 제327조 제6호","category": "공소기각","importance": 4,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 공소기각사유가 있는지 직권으로 검토함\n\n2) 검토\n가) 관련 법리\n...부정수표 단속법 ... <1>수표를 회수</1>하거나, 회수하지 못하였을 경우라도 수표소지인의 <1>명시한 의사에 반하여는 공소를 제기할 수 없다</1>고 규정하고 있음\n○ 이는 부정수표가 회수된 경우에는 수표소지인이 부정수표 발행자 또는 작성자의 처벌을 원하지 아니하는 것과 마찬가지로 보아 <2>반의사불벌죄</2>로 규정한 취지임\n\n다) 소결론\n이 부분 공소는 ... <1>처벌을 원하는 의사표시를 철회하였을 때</1>에 해당하므로, 형소법 <2>제327조 제6호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-6HO-GONGBEOM-SUPYOHOESU","title": "제327조 제6호 공소기각 - 공범의 수표회수","path": "공소기각 > 제327조 제6호","category": "공소기각","importance": 5,"content": "1) 주장 및 쟁점\n피고인이 자백하나, 직권으로 공소기각 사유 검토함\n\n2) 검토\n가) 관련법리\n...<2>부정수표의 회수</2>는 그 회수사실 자체가 <2>소극적 소추조건</2>이 되는 것이므로, 부정수표가 공범에 의하여 회수된 경우 회수 당시 소지인의 의사에 관계없이 그 효력이 <1>다른 공범자에게도 당연히 미침</1>\n\n다) 소결론\n이 부분 공소는 ... <1>처벌을 원하는 의사표시를 철회하였을 때</1>에 해당하므로, 형소법 <2>제327조 제6호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GONGSO-GYEJEONG-4HO","title": "제328조 제1항 제4호 공소기각결정","path": "공소기각 > 제328조","category": "공소기각","importance": 5,"content": "1) 주장 및 쟁점\n피고인이 자백하나, 직권으로 공소기각 여부 검토함\n\n2) 검토\n나) 이 사건의 경우\n...이 사건 수표가 그 제시일인 10일 이내에 제시되지 아니한 사실이 <2>공소사실 자체에 의하여 명백</2>한데, 이는 <1>공소장에 기재된 사실이 진실하더라도 죄가 될 만한 사실이 포함되지 않은 때</1>에 해당함\n\n다) 소결론\n형소법 <2>제328조 제1항 제4호</2>에 의하여 공소를 <1>기각</1>함"},{"id": "GYEONGHAP-MUJOE-GONGSO","title": "경합 - 무죄와 공소기각","path": "무죄·면소·공소기각사유의 경합","category": "경합","importance": 3,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 무죄사유와 공소기각사유의 존부를 검토함\n\n2) 검토\n가) 발행일 미기재 수표에 관하여\n...결국 이 부분 공소사실은 <2>범죄로 되지 아니하는 경우</2>에 해당함\n\n나) 수표회수에 관하여\n...이 부분 공소는 피해자의 명시한 의사에 반하여 공소를 제기할 수 없는 사건에서 <2>처벌을 원하는 의사표시를 철회하였을 때</2>에 해당함\n\n다) 소결론\n이 부분 공소사실에 대하여는 <2>무죄사유</2>와 <2>공소기각사유</2>가 <1>경합</1>하나 <1>형식재판 우선의 원칙</1>에 따라 공소를 <1>기각</1>함"},{"id": "GYEONGHAP-MYEONSO-GONGSO","title": "경합 - 면소와 공소기각","path": "무죄·면소·공소기각사유의 경합","category": "경합","importance": 3,"content": "1) 주장 및 쟁점\n피고인이 사실관계 인정하나, 직권으로 면소사유와 공소기각사유의 존부를 검토함\n\n2) 검토\n가) 확정판결의 기판력에 대한 검토\n...이 부분 공소사실은 <2>확정판결이 있은 때</2>에 해당함\n\n나) 친족상도례 적용에 대한 검토\n...그렇다면 이 부분에 관한 공소는 <2>공소제기절차가 법률의 규정에 위반하여 무효일 때</2>에 해당함 or ...<2>고소가 취소되었을 때</2>에 해당함\n\n다) 소결론\n이 부분 공소사실에 대하여는 <2>면소사유</2>와 <2>공소기각사유</2>가 <1>경합</1>하나 <1>형식재판 우선의 원칙</1>에 따라 공소를 <1>기각</1>함"},{"id": "GYEONGHAP-BUNDAN","title": "경합 - 범죄사실 분단","path": "무죄·면소·공소기각사유의 경합","category": "경합","importance": 4,"content": "1) 주장 및 쟁점\n...변호인은 상습절도죄의 확정판결의 기판력이 이 부분 공소사실에 미친다고 주장함\n\n2) 검토\n가) 확정판결의 기판력이 미치는지 여부\n(1) 관련법리\n...<1>확정판결 전후 범죄사실의 일죄성이 분단</1>되어 그 확정판결의 사실심판결 선고 전의 범죄사실과 확정된 범죄사실만이 포괄하여 하나의 상습범을 구성하고 그 후의 범죄사실은 <2>경합범 관계</2>에 있는 별개의 상습범이 됨\n\n다) 소결론\n...이 부분 공소사실에 대하여는 <2>면소사유</2>와 <2>공소기각사유</2>가 <1>경합</1>하나 형식재판 우선의 원칙에 따라 <1>공소기각</1>으로 판단하여야 됨\n...이 부분 공소사실은 나머지 ... 공소사실과 <1>분단</1>되었으므로 주문에서 공소기각을 선고함"},{"id": "YUJOE-A1-GONGBEOMJABAEK","title": "유죄 - 보강법칙(공범 자백)","path": "유죄 > 유죄 A1 > 공범 자백","category": "유죄","importance": 2,"content": "1) 주장 및 쟁점\n피고인이 자백하므로 보강증거 유무를 검토함\n\n2) 검토\n가) 관련법리\n○ <1>공범인 공동피고인</1>들의 각 진술은 상호간에 서로 <1>보강증거가 될 수 있음</1>\n○ 이러한 법리는 ... <2>수뢰자·증뢰자</2>, <2>마약 매도인 매수인</2>과 같은 <1>필요적 공범</1>에도 마찬가지로 적용됨\n\n다) 소결론\n유죄로 인정함"},{"id": "YUJOE-A1-BOGANGJEUNGGEO","title": "유죄 - 보강법칙(보강증거 인정)","path": "유죄 > 유죄 A1 > 보강증거 인정","category": "유죄","importance": 3,"content": "1) 주장 및 쟁점\n피고인은 사실관계 인정하나, 변호인은 피해자가 작성한 진술서가 피고인의 자백을 보강하는 증거가 될 수 없다고 주장함\n\n2) 검토\n가) 관련법리\n...자백에 대한 보강증거는 ... 피고인의 자백이 <2>가공적인 것이 아닌 진실한 것임</2>을 인정할 수 있는 정도이면 <1>충분하고</1>, <1>직접증거가 아닌 간접증거나 정황증거</1>도 보강증거가 될 수 있음\n\n나) 이 사건의 경우\n...피해자 작성 진술서의 기재는 ... 피고인의 자백이 가공적인 것이 아닌 진실한 것임을 인정할 수 있는 정도이므로 <1>보강증거가 될 수 있음</1>\n○ 변호인의 위 주장은 <1>받아들이지 아니함</1>\n\n라) 소결론\n유죄로 인정함"},{"id": "YUJOE-A2-HAPDONGBEOM","title": "유죄 - 합동범 및 중지미수 주장 배척","path": "유죄 > 유죄 A2 > 주장 배척","category": "유죄","importance": 4,"content": "1) 주장 및 쟁점\n피고인 A는 합동절도의 범행을 공모한 사실은 있으나 범행현장에 있지 않았고 망을 보지도 않았으므로 합동절도의 죄책을 부담하지 않고, 설령 유죄로 인정되더라도 중지미수에 해당하므로 미수감경을 해야 된다고 주장함\n\n2) 검토\n가) 합동절도의 죄책을 부담하는지에 대한 판단\n(1) 관련법리\n...<2>공모에는 참여하였으나 현장에서 절도의 실행행위를 직접 분담하지 아니한 범인</2>도 ... 정범성의 표지를 갖춘 경우 <1>합동절도의 공동정범</1>으로서의 죄책을 부담함\n\n나) 중지미수에 대한 판단\n(1) 관련법리\n<1>공범자 중 1인</1>은 다른 공범의 범행을 <1>중지하게 하지 않은 이상</1> 자기만의 범의를 철회, 포기하여도 <1>중지미수로 인정될 수 없음</1>\n\n라) 소결론\n유죄로 인정함"},{"id": "YUJOE-A2-GYEOLGWAJEOK","title": "유죄 - 결과적 가중범 공동정범","path": "유죄 > 유죄 A2 > 주장 배척","category": "유죄","importance": 3,"content": "1) 주장 및 쟁점\n변호인은 피고인이 (결과적 가중범)을 예견할 수 없었으므로 (결과적 가중범)의 죄책을 부담하지 않는다고 주장함\n\n2) 검토\n가) 관련법리\n2인 이상이 합동하여 (기본범죄)를 하였는데 범인 중의 1인이 (결과적 가중범)을 가한 경우, 나머지 범인이 이를 <1>예견하지 못한 것</1>으로 볼 수 없다면 <1>(결과적 가중범)의 죄책을 면할 수 없음</1>\n\n라) 소결론\n유죄로 인정함"},{"id": "YUJOE-A2-BONRAEJEUNGGEO","title": "유죄 - 본래증거 주장 배척","path": "유죄 > 유죄 A2 > 주장 배척","category": "유죄","importance": 4,"content": "1) 주장 및 쟁점\n...변호인은 증인 A의 증언은 ... 전문증거에 해당하는데 ... 증거능력이 없다고 다툼\n\n2) 검토\n가) 관련법리\n...<2>원진술의 내용</2>이 요증사실인 경우에는 <1>전문증거</1>이나, <2>원진술의 존재 자체</2>가 요증사실인 경우에는 <1>본래증거</1>이지 전문증거가 아님\n\n나) 이 사건의 경우\n...피고인의 위와 같은 원진술의 존재 자체가 ... 요증사실이므로 ... <1>전문증거가 아니라 본래증거</1>에 해당하고 전문법칙이 적용될 여지가 없음\n\n라) 소결론\n유죄로 인정함"},{"id": "YUJOE-A3-SINBINGSEONG","title": "유죄 - 공소사실 부인(진술 신빙성)","path": "유죄 > 유죄 A3 > 공소사실 부인","category": "유죄","importance": 1,"content": "1) 주장 및 쟁점\n피고인은 자신이 ~한 사실은 인정하나, ~한 사실은 없다고 주장함\n\n2) 검토\n다) 이 사건의 경우\n○ (피해자의 진술, 공범의 자백, 피고인의 수사단계 진술)은 ~라는 점에 비추어 볼 때 <1>신빙성이 매우 높음</1>\n○ 한편, 공소사실과 반대되는 증거인 피고인의 번복진술 등은 위와 배치되는 것으로서 ~라는 점에서 <1>신빙성을 인정하기 어려움</1>\n\n마) 소결론\n유죄로 인정함"},{"id": "YUJOE-A3-GANJEOBJEUNGGEO","title": "유죄 - 공소사실 부인(간접증거)","path": "유죄 > 유죄 A3 > 공소사실 부인","category": "유죄","importance": 2,"content": "1) 주장 및 쟁점\n피고인은 이 부분 공소사실 부인함\n\n2) 검토\n가) 인정사실\n증거능력 있고 신빙성 있는 증거들 A. B. C에 의하면 ~라는 사실을 인정할 수 있음\n\n나) 판단\n○ 위 증거들 및 인정사실을 종합하면 ① 피고인 외의 제3자의 존재 가능성. ② 피고인이 절도 외에 다른 경위로 도난물품을 소지하게 되었을 가능성. ③ 피고인이 도난물품을 소지하게 된 경위에 관한 설명이 납득 가능한지의 여부, ④ 피고인에게 유사한 전과가 있는지의 여부 등에 비추어 피고인이 ~한 사실이 인정됨\n○ 피고인의 위 주장은 <1>받아들이지 아니함</1>\n\n라) 소결론\n유죄로 인정함"},{"id": "YUJOE-B-CHUKSO","title": "유죄 - 축소사실 인정","path": "유죄 > 유죄 B > 축소사실 인정","category": "유죄","importance": 2,"content": "가. 결론\n○ A의 점: 이유 무죄\n○ 이 부분 공소사실에 포함된 B의 점: 유죄\n\n나. 논거\n나) B의 점\n(1) 관련법리\n...법원이 (<1>축소사실</1>)을 인정하더라도 피고인의 <2>방어권 행사</2>에 <3>실질적으로 불이익을 초래할 염려가 없어</3> <1>공소장 변경 없이</1> 직권으로 ~죄를 인정할 수 있음"},{"id": "YUJOE-B-TEUKGYEONG","title": "유죄 - 축소사실(특경법위반(배임) → 배임)","path": "유죄 > 유죄 B > 축소사실 인정","category": "유죄","importance": 3,"content": "가. 결론\n○ 특경법위반(배임)의 점: 이유 무죄\n○ 이에 포함된 배임의 점: 유죄\n\n나. 논거\n가) 특경법위반(배임)죄 성립 여부\n(1) 관련법리\n...<2>경합범</2>으로 처벌되는 죄에서 그 이득액을 <1>합한 금액을 의미하는 것은 아님</1>\n(3) 소결론\n...무죄를 선고하여야 되나. 이와 <1>일죄관계</1>에 있는 배임죄를 유죄로 인정한 이상 주문에서 <1>따로 무죄를 선고하지 아니함</1>\n\n나) 배임죄 성립 여부\n(1) 관련법리\n...법원이 배임죄를 인정하더라도 피고인의 <2>방어권 행사</2>에 <3>실질적으로 불이익을 초래할 염려가 없어</3> <1>공소장 변경 없이</1> 직권으로 B죄를 인정할 수 있음"},{"id": "JEUNGGEO-SAGYEONG-PISIN","title": "증거능력 - 사경 피신조서","path": "증거능력 > 전문증거","category": "증거능력","importance": 1,"content": "○ 피고인에 대한 사경 피신조서\n피고인에 대한 제1회 사경 피신조서는 피고인이 <1>내용부인</1> 하므로 피고인에 대하여 <1>증거능력 없음</1>\n\n○ 공범에 대한 사경 피신조서\n甲에 대한 제1회 사경 피신조서는 공범인 피고인이 <1>내용부인 취지로 부동의</1> 하므로 <1>증거능력 없음</1>"},{"id": "JEUNGGEO-SAGYEONG-SAMANG","title": "증거능력 - 사망한 공범의 사경 피신조서","path": "증거능력 > 전문증거","category": "증거능력","importance": 4,"content": "○ 사망한 공범에 대한 사경 피신조서\n甲에 대한 사경 피신조서는 공범인 피고인이 내용부인 취지로 부동의 하고, 甲이 <2>사망하여 법정에서 진술할 수 없는 경우</2>에도 <1>형소법 제312조 제3항</1>이 적용되므로 증거능력이 없고 <1>형소법 제314조</1>에 의해서도 증거능력을 인정할 수 없음"},{"id": "JEUNGGEO-GEOMSA-PISIN","title": "증거능력 - 검사 피신조서","path": "증거능력 > 전문증거","category": "증거능력","importance": 2,"content": "○ 피고인에 대한 검사 피신조서\n피고인에 대한 검사 피신조서 중 ... 피고인이 <1>내용부인</1> 하였으므로 <1>증거능력 없음</1>\n\n○ 분리기소된 공범에 대한 검사 피신조서\n피고인이 내용부인 취지로 부동의 하고, 원진술자인 A의 법정증언이나 영상녹화물 또는 그 밖의 객관적 방법에 의하여 그 <2>진정성립이 인정되지 아니하여</2> <1>형소법 제312조 제4항</1>의 요건을 갖추지 못하였고 ... 증거능력 없음"},{"id": "JEUNGGEO-GONGBEOMANIN-PISIN","title": "증거능력 - 공범 아닌 공동피고인 법정진술","path": "증거능력 > 전문증거","category": "증거능력","importance": 3,"content": "피고인 甲의 법정진술은, ... 피고인 甲은 피고인에 대해서 <2>공범 아닌 공동피고인</2>으로서 <2>증인의 지위</2>에 있으므로 피고인의 지위에서 <1>선서 없이 한 법정진술</1>로서 <1>증거능력 없음</1>"},{"id": "JEUNGGEO-JEONMUNJINSUL","title": "증거능력 - 전문진술 및 재전문진술","path": "증거능력 > 전문증거","category": "증거능력","importance": 3,"content": "○ 전문진술 또는 전문진술이 기재된 조서\n...<2>원진술자</2>가 ... <1>진술할 수 없는 때</1>에 해당하고 그 진술에 대해서 <1>특신상태</1>가 인정되므로 <1>형소법 제312조 제4항</1> 및 <1>제316조 제2항</1>에 의해 <1>증거능력 인정됨</1>\n\n○ 재전문진술 또는 재전문진술이 기재된 조서\n...<1>재전문진술</1> 또는 <1>재전문진술이 기재된 조서</1>인데 피고인이 <1>증거로 하는 데 동의하지 않았으므로</1> <1>증거능력 없음</1>"},{"id": "JEUNGGEO-NOKCHIROK","title": "증거능력 - 녹음테이프 및 녹취록","path": "증거능력 > 전문증거","category": "증거능력","importance": 4,"content": "A는 <2>대화의 당사자</2>로서 통비법 제3조에 위반되지는 않으나, 이는 실질적으로 형소법 <1>제313조 제1항</1>의 '피고인의 진술이 기재된 서류'라고 할 것인데, 피고인이 증거로 하는 데 <1>동의하지 않았고</1>, 작성자 A에 의하여 <1>성립의 진정이 인정되지도 않았으므로</1> <1>증거능력 없음</1>"},{"id": "JEUNGGEO-WIBEOP-SUJIP","title": "증거능력 - 위법수집증거","path": "증거능력 > 위법수집증거","category": "증거능력","importance": 2,"content": "(1) 관련법리\n○ 수사기관이 헌법과 형소법이 정한 절차에 따르지 아니하고 수집한 증거는 물론 이에 기초하여 획득한 <1>2차 증거</1> 역시 <2>원칙적으로</2> 유죄인정의 증거로 삼을 수 없음\n○ 다만 수사기관의 절차위반행위가 적법절차의 실질적인 내용을 침해하는 것이 아니고 오히려 그 증거능력을 배제하는 것이 형사사법정의 실현에 반하는 결과를 초래한다고 평가되는 <2>예외적인 경우</2>에는 이를 유죄인정의 증거로 사용할 수 있음\n○ 따라서 법원은 ... <1>인과관계의 희석 또는 단절</1> 여부를 판단하여 2차증거의 증거능력을 판단하여야 함"},{"id": "MOLSU-SUROEJA-BANHAN","title": "몰수추징 - 수뢰자 뇌물 반환","path": "몰수·추징","category": "몰수·추징","importance": 4,"content": "가) 관련법리\n수뢰자가 뇌물을 <2>그대로 보관했다가</2> 증뢰자에게 반환한 때에는 <1>증뢰자로부터 몰수·추징</1>하여야 되나, 수뢰자가 ... <2>소비하거나</2> ... <2>예금한 것</2>은 뇌물의 처분행위에 해당하므로 그 후 수뢰자가 증뢰자에게 같은 액수의 돈을 반환하였다고 하더라도 뇌물 그 자체의 반환으로 볼 수 없으므로 <1>수뢰자로부터 그 가액을 추징</1>해야 됨"},{"id": "MOLSU-MAYAK","title": "몰수추징 - 마약","path": "몰수·추징","category": "몰수·추징","importance": 4,"content": "가) 피고인 A\n○ 압수된 ... 필로폰 ... 을 피고인 A로부터 각 <1>몰수</1>(<2>마약류 관리에 관한 법률 제67조 본문</2>)\n○ 압수된 필로폰 중 <2>감정과정에서 소모</2>된 ... 은 피고인 A의 <3>귀책사유에 의하지 아니한 사유</3>로 몰수가 불가능한 경우이므로, 피고인 A로부터 그 가액을 <1>추징할 수 없음</1>"},{"id": "MOLSU-SANGSANG","title": "몰수추징 - 상상적 경합범","path": "몰수·추징","category": "몰수·추징","importance": 5,"content": "가) 관련법리\n<1>상상적 경합범</1>에 관한 형법 제40조의 취지에 비추어보면 <2>가벼운 죄</2>에서 정한 <2>병과형 또는 부가형</2>의 법조가 있을 때에는 형이 더 무거운 죄에 정한 형으로 처벌하기로 한 경우에도 <1>가벼운 죄에서 정한 병과형 또는 부가형의 법조 역시 적용됨</1>"},{"id": "MOLSU-TEUKJEONG","title": "몰수추징 - 뇌물 불특정","path": "몰수·추징","category": "몰수·추징","importance": 5,"content": "가) 관련법리\n형법 제134조의 몰수는 <2>특정된 물건</2>에 대한 것이고, 추징은 본래 몰수할 수 있었음을 전제로 하는 것이므로 뇌물에 공할 금품이 <1>특정되지 않았던 것</1>은 <1>몰수할 수 없고</1> 그 <1>가액을 추징할 수도 없음</1>"}];
 
-// App Logic
 document.addEventListener('DOMContentLoaded', () => {
-    const app = {
-        // --- Properties ---
-        quizData: [], userProgress: {}, playerState: { level: 1, xp: 0 },
-        currentQuizSet: [], currentQuestionIndex: 0, currentScore: 0, quizDifficulty: 1, combo: 0, isAnswerChecked: false,
-        quizTimer: null, questionTimeLimit: 30, // seconds per question
 
-        // --- Initialization ---
-        init() {
-            this.elements = {
-                homeView: document.getElementById('home-view'), quizView: document.getElementById('quiz-view'), resultView: document.getElementById('result-view'),
-                homeLevelDisplay: document.getElementById('home-level-display'), homeXpDisplay: document.getElementById('home-xp-display'), homeXpBar: document.getElementById('home-xp-bar'),
-                startSmartTestBtn: document.getElementById('start-smart-test-btn'), openCustomTestModalBtn: document.getElementById('open-custom-test-modal-btn'),
-                reviewMistakesBtn: document.getElementById('review-mistakes-btn'), settingsBtn: document.getElementById('settings-btn'),
-                quizProgress: document.getElementById('quiz-progress'), quizCombo: document.getElementById('quiz-combo'), quizTimeBar: document.getElementById('quiz-time-bar'),
-                questionPath: document.getElementById('question-path'), questionTitle: document.getElementById('question-title'), questionContent: document.getElementById('question-content'),
-                quizFeedback: document.getElementById('quiz-feedback'), checkAnswerBtn: document.getElementById('check-answer-btn'), nextQuestionBtn: document.getElementById('next-question-btn'),
-                finalScore: document.getElementById('final-score'), totalScore: document.getElementById('total-score'), incorrectList: document.getElementById('incorrect-list'),
-                retryIncorrectBtnResult: document.getElementById('retry-incorrect-btn-result'), backToHomeBtn: document.getElementById('back-to-home-btn'),
-                modals: document.querySelectorAll('.modal'), customTestModal: document.getElementById('custom-test-modal'), settingsModal: document.getElementById('settings-modal'), levelUpModal: document.getElementById('level-up-modal'),
-                tabCategory: document.getElementById('tab-category'), tabImportance: document.getElementById('tab-importance'), filterCategory: document.getElementById('filter-category'),
-                filterImportance: document.getElementById('filter-importance'), numQuestions: document.getElementById('num-questions'), numQuestionsLabel: document.getElementById('num-questions-label'),
-                difficultySlider: document.getElementById('difficulty-slider'), difficultyLabel: document.getElementById('difficulty-label'), startCustomTestBtn: document.getElementById('start-custom-test-btn'),
-                customDataInput: document.getElementById('custom-data-input'), saveCustomDataBtn: document.getElementById('save-custom-data-btn'), jsonUploadInput: document.getElementById('json-upload-input'),
-                resetDefaultDataBtn: document.getElementById('reset-default-data-btn'), dataFeedback: document.getElementById('data-feedback'), resetProgressBtn: document.getElementById('reset-progress-btn'),
-                newLevel: document.getElementById('new-level'),
-            };
-            this.loadData();
-            this.updatePlayerUI();
-            this.addEventListeners();
-            this.renderFilterOptions();
-            this.updateMistakeButtonState();
-        },
+    /** @module DOM */
+    const DOM = {
+        views: { home: document.getElementById('home-view'), quiz: document.getElementById('quiz-view'), result: document.getElementById('result-view'), },
+        header: { levelDisplay: document.getElementById('header-level-display'), xpBar: document.getElementById('header-xp-bar'), achievementsBtn: document.getElementById('header-achievements-btn'), settingsBtn: document.getElementById('header-settings-btn'), },
+        home: { tabBtns: document.querySelectorAll('.home-tab-btn'), tabContents: document.querySelectorAll('.tab-content'), stageContainer: document.getElementById('stage-container'), startSmartTestBtn: document.getElementById('start-smart-test-btn'), openCustomTestModalBtn: document.getElementById('open-custom-test-modal-btn'), reviewMistakesBtn: document.getElementById('review-mistakes-btn'), },
+        quiz: { progress: document.getElementById('quiz-progress'), combo: document.getElementById('quiz-combo'), timeBar: document.getElementById('quiz-time-bar'), path: document.getElementById('question-path'), title: document.getElementById('question-title'), content: document.getElementById('question-content'), feedback: document.getElementById('quiz-feedback'), checkAnswerBtn: document.getElementById('check-answer-btn'), nextQuestionBtn: document.getElementById('next-question-btn'), exitQuizBtn: document.getElementById('exit-quiz-btn'), },
+        result: { finalScore: document.getElementById('final-score'), totalScore: document.getElementById('total-score'), incorrectList: document.getElementById('incorrect-list'), retryIncorrectBtn: document.getElementById('retry-incorrect-btn-result'), exitBtn: document.getElementById('exit-result-btn'), },
+        modals: { customTest: document.getElementById('custom-test-modal'), settings: document.getElementById('settings-modal'), levelUp: document.getElementById('level-up-modal'), confirmation: document.getElementById('confirmation-modal'), achievements: document.getElementById('achievements-modal'), },
+        customTest: { tabCategory: document.getElementById('tab-category'), tabImportance: document.getElementById('tab-importance'), filterCategory: document.getElementById('filter-category'), filterImportance: document.getElementById('filter-importance'), numQuestions: document.getElementById('num-questions'), numQuestionsLabel: document.getElementById('num-questions-label'), difficultySlider: document.getElementById('difficulty-slider'), difficultyLabel: document.getElementById('difficulty-label'), startBtn: document.getElementById('start-custom-test-btn'), },
+        settings: { customDataInput: document.getElementById('custom-data-input'), saveCustomDataBtn: document.getElementById('save-custom-data-btn'), jsonUploadInput: document.getElementById('json-upload-input'), resetDefaultDataBtn: document.getElementById('reset-default-data-btn'), dataFeedback: document.getElementById('data-feedback'), resetProgressBtn: document.getElementById('reset-progress-btn'), },
+        levelUp: { newLevel: document.getElementById('new-level'), },
+        confirmation: { title: document.getElementById('confirmation-title'), message: document.getElementById('confirmation-message'), confirmBtn: document.getElementById('confirm-btn'), cancelBtn: document.getElementById('cancel-btn'), },
+        achievements: { badgeContainer: document.getElementById('badge-container') },
+        getAllModals: () => document.querySelectorAll('.modal'),
+        getModalCloseBtns: () => document.querySelectorAll('.modal-close-btn'),
+    };
 
-        // --- Data Handling ---
-        safeJsonParse(str) {
+    /** @module State */
+    const State = {
+        quizData: [], userProgress: {}, player: { level: 1, xp: 0 },
+        stageProgress: {}, badges: {},
+        currentQuiz: { questions: [], currentIndex: 0, score: 0, combo: 0, difficulty: 1, type: 'custom' },
+        timers: { quizTimer: null, }
+    };
+    
+    /** @module BadgeData */
+    const BadgeData = {
+        'combo_10': { title: '콤보 마스터', description: '10 콤보를 달성하세요.', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v2"/><path d="M12 22v-3"/><path d="m15 15-3-3-3 3"/><path d="M12 12V6.5"/><path d="M15.2 9.2a4.5 4.5 0 0 1-6.4 0"/><path d="M17 12a7 7 0 0 1-10 0"/></svg>' },
+        'all_stages_master': { title: '완전 정복', description: '모든 챕터를 마스터하세요.', icon: '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.4c1.9 1.4 2.5 4.3 1.4 6.2-1.1 1.9-3.8 2.8-5.7 1.9-1.9-.9-2.8-3.5-1.9-5.4.9-2 3.6-2.8 5.2-2.7z"/><path d="m14 13.9 7.6-3.4c.5-.2.9-.7.8-1.2l-.6-3.3c-.1-.5-.7-1-1.2-.8L13 8.1"/><path d="m14 13.9 2.5 6.1c.3.7-.3 1.4-1.1 1.4H8.4c-.8 0-1.4-.6-1.1-1.4L9.8 14"/><path d="m4.1 11.2 7.6 3.4"/><path d="M10 8.8 5 11"/></svg>' }
+    };
+
+    /** @module DataService */
+    const DataService = {
+        _safeParse(key, defaultValue = null) {
             try {
-                const data = JSON.parse(str);
-                if (Array.isArray(data) && data.length > 0 && data[0].id && data[0].content) return data;
-                return null;
-            } catch (e) { return null; }
+                const item = localStorage.getItem(key);
+                if (!item) return defaultValue;
+                const data = JSON.parse(item);
+                return (typeof data === 'object' && data !== null) ? data : defaultValue;
+            } catch (e) { console.error(`Error parsing data for key "${key}":`, e); return defaultValue; }
         },
-        loadData() {
-            const customData = this.safeJsonParse(localStorage.getItem('customQuizData'));
-            this.quizData = customData || DEFAULT_QUIZ_DATA;
-            this.userProgress = this.safeJsonParse(localStorage.getItem('userProgress')) || {};
-            this.playerState = this.safeJsonParse(localStorage.getItem('playerState')) || { level: 1, xp: 0 };
+        load() {
+            const customData = this._safeParse('customQuizData');
+            State.quizData = (Array.isArray(customData) && customData.length > 0) ? customData : DEFAULT_QUIZ_DATA;
+            State.userProgress = this._safeParse('userProgress', {});
+            State.player = this._safeParse('playerState', { level: 1, xp: 0 });
+            State.stageProgress = this._safeParse('stageProgress', {});
+            State.badges = this._safeParse('badges', {});
         },
-        saveData() {
-            localStorage.setItem('userProgress', JSON.stringify(this.userProgress));
-            localStorage.setItem('playerState', JSON.stringify(this.playerState));
+        save() {
+            localStorage.setItem('userProgress', JSON.stringify(State.userProgress));
+            localStorage.setItem('playerState', JSON.stringify(State.player));
+            localStorage.setItem('stageProgress', JSON.stringify(State.stageProgress));
+            localStorage.setItem('badges', JSON.stringify(State.badges));
         },
+        saveCustomData(data) { localStorage.setItem('customQuizData', JSON.stringify(data)); },
+        clearCustomData() { localStorage.removeItem('customQuizData'); },
+        clearProgress() {
+            localStorage.removeItem('userProgress'); localStorage.removeItem('playerState');
+            localStorage.removeItem('stageProgress'); localStorage.removeItem('badges');
+        }
+    };
 
-        // --- Event Listeners ---
-        addEventListeners() {
-            this.elements.startSmartTestBtn.addEventListener('click', () => this.startSmartTest());
-            this.elements.openCustomTestModalBtn.addEventListener('click', () => this.openModal(this.elements.customTestModal));
-            this.elements.reviewMistakesBtn.addEventListener('click', () => this.reviewMistakes());
-            this.elements.settingsBtn.addEventListener('click', () => this.openModal(this.elements.settingsModal));
-            this.elements.checkAnswerBtn.addEventListener('click', () => this.checkAnswer());
-            this.elements.nextQuestionBtn.addEventListener('click', () => this.nextQuestion());
-            this.elements.backToHomeBtn.addEventListener('click', () => this.showView('home-view'));
-            this.elements.retryIncorrectBtnResult.addEventListener('click', () => this.reviewMistakes());
-            this.elements.modals.forEach(modal => {
-                modal.addEventListener('click', (e) => {
-                    if (e.target === modal || e.target.closest('.modal-close-btn')) this.closeModal(modal);
-                });
-            });
-            this.elements.tabCategory.addEventListener('click', () => this.switchFilterTab('category'));
-            this.elements.tabImportance.addEventListener('click', () => this.switchFilterTab('importance'));
-            this.elements.numQuestions.addEventListener('input', (e) => this.elements.numQuestionsLabel.textContent = e.target.value);
-            this.elements.difficultySlider.addEventListener('input', (e) => {
-                const labels = { '1': '쉬움', '2': '보통', '3': '어려움' };
-                this.elements.difficultyLabel.textContent = labels[e.target.value];
-            });
-            this.elements.startCustomTestBtn.addEventListener('click', () => this.startCustomTest());
-            this.elements.saveCustomDataBtn.addEventListener('click', () => this.saveCustomDataFromText());
-            this.elements.jsonUploadInput.addEventListener('change', (e) => this.handleFileUpload(e));
-            this.elements.resetDefaultDataBtn.addEventListener('click', () => this.resetDefaultData());
-            this.elements.resetProgressBtn.addEventListener('click', () => this.resetProgress());
+    /** @module UI */
+    const UI = {
+        showView(viewName) { 
+            Object.values(DOM.views).forEach(v => v.classList.remove('active')); 
+            if (DOM.views[viewName]) {
+                 DOM.views[viewName].classList.add('active'); 
+            }
+            document.getElementById('main-header').style.display = viewName === 'home' ? 'flex' : 'none';
         },
-
-        // --- Modals ---
         openModal(modal) { modal.classList.add('active'); },
         closeModal(modal) { modal.classList.remove('active'); },
-        
-        // --- UI & Rendering ---
-        showView(viewId) {
-            document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-            document.getElementById(viewId).classList.add('active');
+        showConfirmation(message, onConfirm) {
+            DOM.confirmation.message.textContent = message;
+            const newConfirmBtn = DOM.confirmation.confirmBtn.cloneNode(true);
+            DOM.confirmation.confirmBtn.parentNode.replaceChild(newConfirmBtn, DOM.confirmation.confirmBtn);
+            DOM.confirmation.confirmBtn = newConfirmBtn;
+            DOM.confirmation.confirmBtn.addEventListener('click', () => { onConfirm(); this.closeModal(DOM.modals.confirmation); }, { once: true });
+            this.openModal(DOM.modals.confirmation);
         },
-        updatePlayerUI() {
-            const { level, xp } = this.playerState;
+        updatePlayerStatus() {
+            const { level, xp } = State.player;
             const xpForNextLevel = Math.floor(100 * Math.pow(1.5, level - 1));
-            this.elements.homeLevelDisplay.textContent = `LV. ${level}`;
-            this.elements.homeXpDisplay.textContent = `${xp} / ${xpForNextLevel} XP`;
+            DOM.header.levelDisplay.textContent = `LV. ${level}`;
             const xpPercentage = Math.min(100, (xp / xpForNextLevel) * 100);
-            this.elements.homeXpBar.style.width = `${xpPercentage}%`;
+            DOM.header.xpBar.style.width = `${xpPercentage}%`;
         },
         updateMistakeButtonState() {
-            const mistakeCount = Object.keys(this.userProgress).filter(id => this.userProgress[id].incorrectCount > 0).length;
-            this.elements.reviewMistakesBtn.textContent = `오답 학습 (${mistakeCount}개)`;
-            this.elements.reviewMistakesBtn.disabled = mistakeCount === 0;
-            if (this.elements.retryIncorrectBtnResult) this.elements.retryIncorrectBtnResult.disabled = mistakeCount === 0;
+            const mistakeCount = Object.keys(State.userProgress).filter(id => State.userProgress[id].incorrectCount > 0).length;
+            DOM.home.reviewMistakesBtn.textContent = `오답 학습 (${mistakeCount}개)`;
+            DOM.home.reviewMistakesBtn.disabled = mistakeCount === 0;
+            if (DOM.result.retryIncorrectBtn) DOM.result.retryIncorrectBtn.disabled = mistakeCount === 0;
+        },
+        renderStages() {
+            const categories = [...new Set(State.quizData.map(q => q.category))];
+            DOM.home.stageContainer.innerHTML = categories.map((category, index) => {
+                const progress = State.stageProgress[category] || { levelsPassed: [] };
+                const stars = [1, 2, 3].map(level => `<span class="star ${progress.levelsPassed.includes(level) ? 'filled' : ''}">★</span>`).join('');
+                return `
+                <div class="bg-white p-4 rounded-xl shadow-md border">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm text-slate-500">챕터 ${index + 1}</p>
+                            <h3 class="font-bold text-slate-800 text-lg">${category}</h3>
+                        </div>
+                        <div class="flex">${stars}</div>
+                    </div>
+                    <div class="mt-4 flex gap-2">
+                        ${[1,2,3].map(level => `
+                            <button data-stage-category="${category}" data-stage-level="${level}" 
+                                    class="stage-start-btn flex-1 text-sm font-bold py-2 rounded-lg 
+                                    ${progress.levelsPassed.includes(level) ? 'bg-teal-500 text-white' : 'bg-slate-200 hover:bg-slate-300'}"
+                                    ${level > 1 && !progress.levelsPassed.includes(level - 1) ? 'disabled' : ''}>
+                                LV.${level}
+                            </button>
+                        `).join('')}
+                    </div>
+                </div>`;
+            }).join('');
+        },
+        renderBadges() {
+            let badgeHTML = '';
+            const categories = [...new Set(State.quizData.map(q => q.category))];
+            categories.forEach(category => {
+                const badgeId = `master_${category}`;
+                const earned = State.badges[badgeId];
+                badgeHTML += `
+                <div class="text-center">
+                    <div class="w-20 h-20 mx-auto rounded-full flex items-center justify-center bg-slate-100 badge ${earned ? 'earned' : ''}">
+                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2z"></path></svg>
+                    </div>
+                    <p class="font-bold text-sm mt-2">${category} 마스터</p>
+                    <p class="text-xs text-slate-500">"${category}" 챕터의 모든 레벨 클리어</p>
+                </div>`;
+            });
+            for (const badgeId in BadgeData) {
+                const badge = BadgeData[badgeId];
+                const earned = State.badges[badgeId];
+                 badgeHTML += `
+                <div class="text-center">
+                    <div class="w-20 h-20 mx-auto rounded-full flex items-center justify-center bg-slate-100 badge ${earned ? 'earned' : ''}">${badge.icon}</div>
+                    <p class="font-bold text-sm mt-2">${badge.title}</p>
+                    <p class="text-xs text-slate-500">${badge.description}</p>
+                </div>`;
+            }
+            DOM.achievements.badgeContainer.innerHTML = badgeHTML;
         },
         renderFilterOptions() {
-            const categories = [...new Set(this.quizData.map(q => q.category))];
-            const importances = [...new Set(this.quizData.map(q => q.importance))].sort((a, b) => a - b);
+            const categories = [...new Set(State.quizData.map(q => q.category))];
+            const importances = [...new Set(State.quizData.map(q => q.importance))].sort((a, b) => a - b);
             const impLabels = {1:'핵심', 2:'주요', 3:'보통', 4:'지역', 5:'기타'};
-
-            this.elements.filterCategory.innerHTML = categories.map(c => `<label class="flex items-center space-x-2 p-1.5 hover:bg-slate-100 rounded-md cursor-pointer"><input type="checkbox" data-filter-type="category" value="${c}" checked class="form-checkbox h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"><span>${c}</span></label>`).join('');
-            this.elements.filterImportance.innerHTML = importances.map(i => `<label class="flex items-center space-x-2 p-1.5 hover:bg-slate-100 rounded-md cursor-pointer"><input type="checkbox" data-filter-type="importance" value="${i}" checked class="form-checkbox h-4 w-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500"><span>${impLabels[i] || `중요도 ${i}`}</span></label>`).join('');
+            const createCheckbox = (type, value, checked, label) => `<label class="flex items-center space-x-2 p-1.5 hover:bg-slate-100 rounded-md cursor-pointer"><input type="checkbox" data-filter-type="${type}" value="${value}" ${checked ? 'checked' : ''} class="form-checkbox h-4 w-4 text-sky-600 border-slate-300 rounded focus:ring-sky-500"><span>${label}</span></label>`;
+            DOM.customTest.filterCategory.innerHTML = categories.map(c => createCheckbox("category", c, true, c)).join('');
+            DOM.customTest.filterImportance.innerHTML = importances.map(i => createCheckbox("importance", i, true, impLabels[i] || `중요도 ${i}`)).join('');
         },
-        switchFilterTab(tab) {
-             if (tab === 'category') {
-                this.elements.tabCategory.className = 'p-2 rounded-lg bg-indigo-100 text-indigo-700 font-bold';
-                this.elements.tabImportance.className = 'p-2 rounded-lg bg-slate-100 text-slate-600 font-bold';
-                this.elements.filterCategory.classList.remove('hidden');
-                this.elements.filterImportance.classList.add('hidden');
+        switchFilterTab(tabName) {
+            const isCategory = tabName === 'category';
+            DOM.customTest.tabCategory.className = `p-2 rounded-lg font-bold ${isCategory ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`;
+            DOM.customTest.tabImportance.className = `p-2 rounded-lg font-bold ${!isCategory ? 'bg-sky-100 text-sky-700' : 'bg-slate-100 text-slate-600'}`;
+            DOM.customTest.filterCategory.classList.toggle('hidden', !isCategory);
+            DOM.customTest.filterImportance.classList.toggle('hidden', isCategory);
+        },
+        renderQuestion() {
+            const { questions, currentIndex, combo, difficulty } = State.currentQuiz;
+            const q = questions[currentIndex];
+            DOM.quiz.progress.textContent = `문제 ${currentIndex + 1} / ${questions.length}`;
+            DOM.quiz.combo.textContent = combo > 1 ? `${combo} COMBO` : '';
+            DOM.quiz.combo.classList.remove('combo-pop');
+            if (combo > 1) { void DOM.quiz.combo.offsetWidth; DOM.quiz.combo.classList.add('combo-pop'); }
+            DOM.quiz.title.textContent = q.questionData.title;
+            DOM.quiz.path.textContent = q.questionData.path;
+            const regex = /<([1-3])>(.*?)<\/([1-3])>/g;
+            const contentHTML = q.questionData.content.replace(regex, (match, level, text) => {
+                return parseInt(level, 10) <= difficulty ? `<input type="text" class="blank-input" data-answer="${text.trim()}" style="width: ${Math.max(60, text.trim().length * 18)}px; max-width: 90%;">` : `<span class="font-bold text-sky-700">${text}</span>`;
+            });
+            DOM.quiz.content.innerHTML = contentHTML;
+            DOM.quiz.feedback.classList.add('hidden');
+            DOM.quiz.checkAnswerBtn.classList.remove('hidden');
+            DOM.quiz.nextQuestionBtn.classList.add('hidden');
+        },
+        renderFeedback(isCorrect, isTimeOut) {
+             const inputs = DOM.quiz.content.querySelectorAll('.blank-input');
+             if (isCorrect) {
+                DOM.quiz.feedback.textContent = '정답입니다!';
+                DOM.quiz.feedback.className = 'p-5 mt-4 rounded-xl font-bold text-center feedback-correct';
+                inputs.forEach(input => input.disabled = true);
+             } else {
+                DOM.quiz.feedback.textContent = isTimeOut ? '시간 초과! 정답을 확인하세요.' : '오답입니다. 정답을 확인하세요.';
+                DOM.quiz.feedback.className = 'p-5 mt-4 rounded-xl font-bold text-center feedback-incorrect';
+                inputs.forEach(input => {
+                    const isUserCorrect = input.classList.contains('correct');
+                    if (!isUserCorrect) {
+                        const correctAnswerSpan = document.createElement('span');
+                        correctAnswerSpan.textContent = input.dataset.answer;
+                        correctAnswerSpan.className = 'correct-answer-span';
+                        input.replaceWith(correctAnswerSpan);
+                    } else {
+                        input.disabled = true;
+                    }
+                });
+             }
+             
+             DOM.quiz.feedback.classList.remove('hidden');
+             DOM.quiz.checkAnswerBtn.classList.add('hidden');
+             DOM.quiz.nextQuestionBtn.classList.remove('hidden');
+        },
+        renderResult() {
+            const { score, questions } = State.currentQuiz;
+            DOM.result.finalScore.textContent = score;
+            DOM.result.totalScore.textContent = questions.length;
+            const incorrectQuestions = questions.filter(q => q.status === 'incorrect');
+            if (incorrectQuestions.length > 0) {
+                 DOM.result.incorrectList.innerHTML = `<h3 class="font-bold mb-2 text-slate-800">이번 세션의 오답</h3><ul class="list-disc list-inside text-slate-700 space-y-1">${incorrectQuestions.map(q => `<li>${q.questionData.title}</li>`).join('')}</ul>`;
             } else {
-                this.elements.tabImportance.className = 'p-2 rounded-lg bg-indigo-100 text-indigo-700 font-bold';
-                this.elements.tabCategory.className = 'p-2 rounded-lg bg-slate-100 text-slate-600 font-bold';
-                this.elements.filterImportance.classList.remove('hidden');
-                this.elements.filterCategory.classList.add('hidden');
+                DOM.result.incorrectList.innerHTML = `<p class="text-center font-bold text-green-600">🎉 완벽합니다! 이번 학습에서 틀린 문제가 없습니다.</p>`;
             }
+            this.showView('result');
         },
+        switchHomeTab(tabId) {
+            DOM.home.tabContents.forEach(content => content.classList.remove('active'));
+            document.getElementById(`${tabId}-tab-content`).classList.add('active');
+            DOM.home.tabBtns.forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.tab === tabId);
+            });
+        },
+    };
 
-        // --- Gamification ---
-        addXp(amount) {
-            const oldLevel = this.playerState.level;
-            this.playerState.xp += amount;
-            let xpForNextLevel = Math.floor(100 * Math.pow(1.5, this.playerState.level - 1));
-            while (this.playerState.xp >= xpForNextLevel) {
-                this.playerState.level++;
-                this.playerState.xp -= xpForNextLevel;
-                xpForNextLevel = Math.floor(100 * Math.pow(1.5, this.playerState.level - 1));
+    /** @module QuizEngine */
+    const QuizEngine = {
+        questionTimeLimit: 30,
+        start(questionsData, difficulty, type, stageInfo = {}) {
+            if (questionsData.length === 0) { 
+                UI.showConfirmation('선택한 범위에 해당하는 문제가 없습니다. 다른 조건을 선택해주세요.', () => UI.closeModal(DOM.modals.confirmation));
+                return;
             }
-            if (this.playerState.level > oldLevel) {
-                this.elements.newLevel.textContent = this.playerState.level;
-                this.openModal(this.elements.levelUpModal);
-            }
-            this.updatePlayerUI();
-        },
-        
-        // --- Quiz Logic ---
-        startQuiz(questions, difficulty) {
-            if (questions.length === 0) { alert('선택한 범위에 해당하는 문제가 없습니다.'); return; }
-            this.currentQuizSet = questions.sort(() => Math.random() - 0.5);
-            this.quizDifficulty = difficulty;
-            this.currentQuestionIndex = 0;
-            this.currentScore = 0;
-            this.combo = 0;
-            this.closeModal(this.elements.customTestModal);
-            this.showView('quiz-view');
+            State.currentQuiz = {
+                questions: questionsData.sort(() => Math.random() - 0.5).map(q => ({ questionData: q, status: 'pending' })),
+                currentIndex: 0, score: 0, combo: 0, difficulty, type, stageInfo
+            };
+            UI.closeModal(DOM.modals.customTest);
+            UI.showView('quiz');
             this.loadQuestion();
         },
-        startSmartTest() {
-            const now = Date.now();
-            const questionScores = this.quizData.map(q => {
-                const p = this.userProgress[q.id] || { correctStreak: 0, incorrectCount: 0, lastAnswered: 0 };
-                const daysSince = (now - p.lastAnswered) / (1000 * 60 * 60 * 24);
-                let score = 1 + p.incorrectCount * 2 - p.correctStreak * 1.5 + (daysSince > 1 ? Math.log(daysSince) * 2 : 0);
-                return { id: q.id, score };
-            });
-            questionScores.sort((a, b) => b.score - a.score);
-            const numQuestions = parseInt(this.elements.numQuestions.value, 10);
-            const selectedIds = questionScores.slice(0, numQuestions).map(item => item.id);
-            const questions = this.quizData.filter(q => selectedIds.includes(q.id));
-            this.startQuiz(questions, 2);
-        },
-        startCustomTest() {
-            const num = parseInt(this.elements.numQuestions.value, 10);
-            const diff = parseInt(this.elements.difficultySlider.value, 10);
-            const activeTab = this.elements.filterCategory.classList.contains('hidden') ? 'importance' : 'category';
-            const selectedFilters = [...document.querySelectorAll(`input[data-filter-type="${activeTab}"]:checked`)].map(cb => cb.value);
-            
-            let filteredQuestions = this.quizData.filter(q => selectedFilters.includes(String(q[activeTab])));
-            if (filteredQuestions.length > num) {
-                filteredQuestions = filteredQuestions.sort(() => Math.random() - 0.5).slice(0, num);
-            }
-            this.startQuiz(filteredQuestions, diff);
-        },
-        reviewMistakes() {
-            const mistakeIds = Object.keys(this.userProgress).filter(id => this.userProgress[id].incorrectCount > 0);
-            const questions = this.quizData.filter(q => mistakeIds.includes(q.id));
-            this.startQuiz(questions, 1);
-        },
         loadQuestion() {
-            if (this.currentQuestionIndex >= this.currentQuizSet.length) { this.showResult(); return; }
-            this.isAnswerChecked = false;
-            const q = this.currentQuizSet[this.currentQuestionIndex];
-            this.elements.quizProgress.textContent = `문제 ${this.currentQuestionIndex + 1} / ${this.currentQuizSet.length}`;
-            this.elements.quizCombo.textContent = this.combo > 1 ? `${this.combo} COMBO` : '';
-            this.elements.quizCombo.classList.remove('combo-pop');
-            if(this.combo > 1) { void this.elements.quizCombo.offsetWidth; this.elements.quizCombo.classList.add('combo-pop'); }
-            this.elements.questionTitle.textContent = q.title;
-            this.elements.questionPath.textContent = q.path;
-            
-            let content = q.content;
-            const regex = /<([1-3])>(.*?)<\/([1-3])>/g;
-            content = content.replace(regex, (match, level, text) => {
-                if (parseInt(level, 10) <= this.quizDifficulty) {
-                    return `<input type="text" class="blank-input" data-answer="${text.trim()}" style="width: ${Math.max(60, text.trim().length * 18)}px; max-width: 90%;">`;
+            if (State.currentQuiz.currentIndex >= State.currentQuiz.questions.length) {
+                if(State.currentQuiz.type === 'stage') {
+                    this._checkStageCompletion();
                 }
-                return `<span class="font-bold text-indigo-700">${text}</span>`;
-            });
-            this.elements.questionContent.innerHTML = content;
-            this.elements.quizFeedback.classList.add('hidden');
-            this.elements.checkAnswerBtn.classList.remove('hidden');
-            this.elements.nextQuestionBtn.classList.add('hidden');
-            this.startQuestionTimer();
+                UI.renderResult();
+                DataService.save();
+                return;
+            }
+            UI.renderQuestion();
+            this._startQuestionTimer();
         },
-        startQuestionTimer() {
-             clearInterval(this.questionTimer);
-             this.elements.quizTimeBar.style.transition = 'none';
-             this.elements.quizTimeBar.style.width = '100%';
-             setTimeout(() => { this.elements.quizTimeBar.style.transition = `width ${this.questionTimeLimit}s linear`; this.elements.quizTimeBar.style.width = '0%'; }, 100);
-             this.questionTimer = setTimeout(() => { if (!this.isAnswerChecked) this.checkAnswer(true); }, this.questionTimeLimit * 1000);
+        nextQuestion() { State.currentQuiz.currentIndex++; this.loadQuestion(); },
+        _startQuestionTimer() {
+            clearInterval(State.timers.quizTimer);
+            DOM.quiz.timeBar.style.transition = 'none';
+            DOM.quiz.timeBar.style.width = '100%';
+            setTimeout(() => {
+                DOM.quiz.timeBar.style.transition = `width ${this.questionTimeLimit}s linear`;
+                DOM.quiz.timeBar.style.width = '0%';
+            }, 50);
+            State.timers.quizTimer = setTimeout(() => this.checkAnswer(true), this.questionTimeLimit * 1000);
         },
         checkAnswer(isTimeOut = false) {
-            clearInterval(this.questionTimer);
-            if (this.isAnswerChecked) return;
-            this.isAnswerChecked = true;
-            let allCorrect = true;
-            const inputs = this.elements.questionContent.querySelectorAll('.blank-input');
-            if (isTimeOut || inputs.length === 0) allCorrect = false;
+            clearInterval(State.timers.quizTimer);
             
-            if (inputs.length > 0) {
-                 inputs.forEach(input => {
+            const inputs = DOM.quiz.content.querySelectorAll('.blank-input');
+            
+            if (inputs.length === 0) {
+                this._updateProgress(false); 
+                this.nextQuestion();
+                return;
+            }
+
+            let allCorrect = !isTimeOut;
+            if (allCorrect) {
+                inputs.forEach(input => {
                     const userAnswer = input.value.trim().replace(/\s/g, '');
                     const correctAnswer = input.dataset.answer.trim().replace(/\s/g, '');
                     if (userAnswer === correctAnswer) input.classList.add('correct');
                     else { input.classList.add('incorrect'); allCorrect = false; }
-                    input.disabled = true;
                 });
             }
 
-            const qId = this.currentQuizSet[this.currentQuestionIndex].id;
-            const progress = this.userProgress[qId] || { correctStreak: 0, incorrectCount: 0, lastAnswered: 0 };
+            this._updateProgress(allCorrect);
+            UI.renderFeedback(allCorrect, isTimeOut);
             
-            if (allCorrect) {
-                this.currentScore++; this.combo++; progress.correctStreak++; progress.incorrectCount = Math.max(0, progress.incorrectCount - 1);
-                this.addXp(10 + this.combo * 2);
-                this.elements.quizFeedback.textContent = '정답입니다!';
-                this.elements.quizFeedback.className = 'p-5 mt-4 rounded-xl font-bold text-center feedback-correct';
-            } else {
-                this.combo = 0; progress.correctStreak = 0; progress.incorrectCount++; this.addXp(5);
-                this.elements.quizFeedback.textContent = isTimeOut ? '시간 초과!' : '오답입니다. 정답을 확인하세요.';
-                this.elements.quizFeedback.className = 'p-5 mt-4 rounded-xl font-bold text-center feedback-incorrect';
-                inputs.forEach(input => { if (!input.classList.contains('correct')) { input.value = input.dataset.answer; input.classList.add('incorrect'); }});
+            if(isTimeOut){
+                setTimeout(() => {
+                    this.nextQuestion();
+                }, 3000); 
             }
-            progress.lastAnswered = Date.now(); this.userProgress[qId] = progress; this.saveData();
-            this.elements.quizFeedback.classList.remove('hidden');
-            this.elements.checkAnswerBtn.classList.add('hidden');
-            this.elements.nextQuestionBtn.classList.remove('hidden');
-            this.updateMistakeButtonState();
+            DataService.save();
         },
-        nextQuestion() { this.currentQuestionIndex++; this.loadQuestion(); },
-        showResult() {
-            this.showView('result-view');
-            this.elements.finalScore.textContent = this.currentScore;
-            this.elements.totalScore.textContent = this.currentQuizSet.length;
-            const incorrectQuestions = this.currentQuizSet.filter((q, index) => {
-                const inputs = this.elements.questionContent.querySelectorAll('.blank-input'); // Need to re-evaluate based on quiz state, this is a simplification
-                // A better approach would be to store correctness per question during checkAnswer
-                const p = this.userProgress[q.id];
-                return p && p.correctStreak === 0;
+        _updateProgress(isCorrect) {
+            const currentQuestion = State.currentQuiz.questions[State.currentQuiz.currentIndex];
+            const qId = currentQuestion.questionData.id;
+            const progress = State.userProgress[qId] || { correctStreak: 0, incorrectCount: 0, lastAnswered: 0 };
+            
+            if (isCorrect) {
+                State.currentQuiz.score++; State.currentQuiz.combo++; currentQuestion.status = 'correct';
+                progress.correctStreak++; progress.incorrectCount = Math.max(0, progress.incorrectCount - 1);
+                this._addXp(10 + State.currentQuiz.combo * 2);
+            } else {
+                State.currentQuiz.combo = 0; currentQuestion.status = 'incorrect';
+                progress.correctStreak = 0; progress.incorrectCount++;
+                this._addXp(5);
+            }
+            this._checkAndAwardBadges();
+            progress.lastAnswered = Date.now();
+            State.userProgress[qId] = progress;
+            UI.updateMistakeButtonState();
+        },
+        _addXp(amount) {
+            const oldLevel = State.player.level;
+            State.player.xp += amount;
+            let xpForNextLevel = Math.floor(100 * Math.pow(1.5, State.player.level - 1));
+            while (State.player.xp >= xpForNextLevel) {
+                State.player.level++; State.player.xp -= xpForNextLevel;
+                xpForNextLevel = Math.floor(100 * Math.pow(1.5, State.player.level - 1));
+            }
+            if (State.player.level > oldLevel) {
+                DOM.levelUp.newLevel.textContent = State.player.level;
+                UI.openModal(DOM.modals.levelUp);
+            }
+            UI.updatePlayerStatus();
+        },
+        _checkStageCompletion() {
+            const { score, questions, stageInfo } = State.currentQuiz;
+            const passThreshold = 0.8;
+            if (score / questions.length >= passThreshold) {
+                const { category, level } = stageInfo;
+                if (!State.stageProgress[category]) {
+                    State.stageProgress[category] = { levelsPassed: [] };
+                }
+                if (!State.stageProgress[category].levelsPassed.includes(level)) {
+                    State.stageProgress[category].levelsPassed.push(level);
+                }
+                this._checkAndAwardBadges(category);
+            }
+        },
+        _checkAndAwardBadges(completedCategory = null) {
+            if (State.currentQuiz.combo >= 10 && !State.badges['combo_10']) { State.badges['combo_10'] = true; }
+            if (completedCategory) {
+                const progress = State.stageProgress[completedCategory];
+                if (progress && progress.levelsPassed.length === 3) { State.badges[`master_${completedCategory}`] = true; }
+            }
+            const categories = [...new Set(State.quizData.map(q => q.category))];
+            const allMastered = categories.every(cat => State.badges[`master_${cat}`]);
+            if(allMastered && !State.badges['all_stages_master']){ State.badges['all_stages_master'] = true; }
+        }
+    };
+    
+    /** @module App */
+    const App = {
+        init() {
+            DataService.load();
+            this.setupEventListeners();
+            UI.renderStages();
+            UI.renderBadges();
+            UI.renderFilterOptions();
+            UI.updatePlayerStatus();
+            UI.updateMistakeButtonState();
+            UI.switchHomeTab('stages');
+            UI.showView('home');
+        },
+        setupEventListeners() {
+            DOM.header.achievementsBtn.addEventListener('click', () => { UI.renderBadges(); UI.openModal(DOM.modals.achievements); });
+            DOM.header.settingsBtn.addEventListener('click', () => UI.openModal(DOM.modals.settings));
+            DOM.home.tabBtns.forEach(btn => btn.addEventListener('click', () => UI.switchHomeTab(btn.dataset.tab)));
+            DOM.home.startSmartTestBtn.addEventListener('click', () => this.startSmartTest());
+            DOM.home.openCustomTestModalBtn.addEventListener('click', () => UI.openModal(DOM.modals.customTest));
+            DOM.home.reviewMistakesBtn.addEventListener('click', () => this.reviewMistakes());
+            DOM.home.stageContainer.addEventListener('click', e => {
+                const btn = e.target.closest('.stage-start-btn');
+                if (btn && !btn.disabled) {
+                    const { stageCategory, stageLevel } = btn.dataset;
+                    this.startStageTest(stageCategory, parseInt(stageLevel, 10));
+                }
             });
-
-            if (this.currentScore < this.currentQuizSet.length) {
-                const incorrects = this.currentQuizSet.filter(q => !q.isCorrectInSession); // Assume isCorrectInSession is set during checkAnswer
-                this.elements.incorrectList.innerHTML = `<h3 class="font-bold mb-2">이번 세션의 오답</h3><ul class="list-disc list-inside text-slate-700 space-y-1">${incorrects.map(q => `<li>${q.title}</li>`).join('')}</ul>`;
-            } else {
-                this.elements.incorrectList.innerHTML = `<p class="text-center font-bold text-green-600">🎉 완벽합니다! 이번 학습에서 틀린 문제가 없습니다.</p>`;
-            }
+            DOM.quiz.exitQuizBtn.addEventListener('click', () => UI.showConfirmation("학습을 중단하고 나가시겠습니까?\n현재 진행 상황은 저장되지 않습니다.", () => UI.showView('home')));
+            DOM.quiz.checkAnswerBtn.addEventListener('click', () => QuizEngine.checkAnswer(false));
+            DOM.quiz.nextQuestionBtn.addEventListener('click', () => QuizEngine.nextQuestion());
+            DOM.result.exitBtn.addEventListener('click', () => { UI.renderStages(); UI.showView('home'); });
+            DOM.result.retryIncorrectBtn.addEventListener('click', () => this.reviewMistakes());
+            DOM.getAllModals().forEach(modal => modal.addEventListener('click', e => { if (e.target === modal) UI.closeModal(modal); }));
+            DOM.getModalCloseBtns().forEach(btn => btn.addEventListener('click', e => UI.closeModal(e.target.closest('.modal'))));
+            DOM.customTest.tabCategory.addEventListener('click', () => UI.switchFilterTab('category'));
+            DOM.customTest.tabImportance.addEventListener('click', () => UI.switchFilterTab('importance'));
+            DOM.customTest.numQuestions.addEventListener('input', e => DOM.customTest.numQuestionsLabel.textContent = e.target.value);
+            DOM.customTest.difficultySlider.addEventListener('input', e => { DOM.customTest.difficultyLabel.textContent = { '1': '쉬움', '2': '보통', '3': '어려움' }[e.target.value]; });
+            DOM.customTest.startBtn.addEventListener('click', () => this.startCustomTest());
+            DOM.settings.saveCustomDataBtn.addEventListener('click', () => this.saveCustomDataFromText());
+            DOM.settings.jsonUploadInput.addEventListener('change', e => this.handleFileUpload(e));
+            DOM.settings.resetDefaultDataBtn.addEventListener('click', () => UI.showConfirmation('정말로 기본 문제 데이터로 복원하시겠습니까?', () => this.resetDefaultData()));
+            DOM.settings.resetProgressBtn.addEventListener('click', () => UI.showConfirmation('모든 학습 기록을 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.', () => this.resetProgress()));
         },
-
-        // --- Settings Logic ---
+        startStageTest(category, level) {
+            const questions = State.quizData.filter(q => q.category === category);
+            QuizEngine.start(questions, level, 'stage', { category, level });
+        },
+        startSmartTest() {
+            const now = Date.now();
+            const questionScores = State.quizData.map(q => {
+                const p = State.userProgress[q.id] || { correctStreak: 0, incorrectCount: 0, lastAnswered: 0 };
+                const daysSince = p.lastAnswered > 0 ? (now - p.lastAnswered) / 86400000 : 100;
+                let score = 1 + (p.incorrectCount * 2) - (p.correctStreak * 1.5) + (Math.log(daysSince + 1) * 2);
+                return { id: q.id, score };
+            });
+            questionScores.sort((a, b) => b.score - a.score);
+            const selectedIds = questionScores.slice(0, 10).map(item => item.id);
+            const questions = State.quizData.filter(q => selectedIds.includes(q.id));
+            QuizEngine.start(questions, 2, 'smart');
+        },
+        startCustomTest() {
+            const num = parseInt(DOM.customTest.numQuestions.value, 10);
+            const diff = parseInt(DOM.customTest.difficultySlider.value, 10);
+            const activeTab = DOM.customTest.filterCategory.classList.contains('hidden') ? 'importance' : 'category';
+            const selectedFilters = [...document.querySelectorAll(`input[data-filter-type="${activeTab}"]:checked`)].map(cb => cb.value);
+            let filteredQuestions = State.quizData.filter(q => selectedFilters.includes(String(q[activeTab])));
+            if (filteredQuestions.length > num) filteredQuestions = filteredQuestions.sort(() => Math.random() - 0.5).slice(0, num);
+            QuizEngine.start(filteredQuestions, diff, 'custom');
+        },
+        reviewMistakes() {
+            const mistakeIds = Object.keys(State.userProgress).filter(id => State.userProgress[id].incorrectCount > 0);
+            const questions = State.quizData.filter(q => mistakeIds.includes(q.id));
+            QuizEngine.start(questions, 1, 'mistake');
+        },
         saveCustomDataFromText() {
-            const data = this.safeJsonParse(this.elements.customDataInput.value);
-            if (data) {
-                localStorage.setItem('customQuizData', JSON.stringify(data));
-                this.quizData = data; this.renderFilterOptions();
-                this.elements.dataFeedback.textContent = '✅ 데이터가 성공적으로 저장되었습니다.';
-                this.elements.dataFeedback.className = 'text-sm mt-2 font-medium text-green-600';
-            } else {
-                this.elements.dataFeedback.textContent = '❌ 유효하지 않은 JSON 형식입니다.';
-                this.elements.dataFeedback.className = 'text-sm mt-2 font-medium text-red-600';
+            try {
+                const data = JSON.parse(DOM.settings.customDataInput.value);
+                if (Array.isArray(data) && data.length > 0 && data[0].id && data[0].content) {
+                    DataService.saveCustomData(data); State.quizData = data; UI.renderFilterOptions(); UI.renderStages();
+                    DOM.settings.dataFeedback.textContent = '✅ 데이터가 성공적으로 저장되었습니다.';
+                    DOM.settings.dataFeedback.className = 'text-sm mt-2 font-medium text-green-600';
+                } else { throw new Error('Invalid data structure'); }
+            } catch (e) {
+                DOM.settings.dataFeedback.textContent = '❌ 유효하지 않은 JSON 형식입니다. 데이터 구조를 확인해주세요.';
+                DOM.settings.dataFeedback.className = 'text-sm mt-2 font-medium text-red-600';
             }
         },
         handleFileUpload(event) {
             const file = event.target.files[0]; if (!file) return;
             const reader = new FileReader();
-            reader.onload = (e) => {
-                this.elements.customDataInput.value = e.target.result;
-                this.saveCustomDataFromText();
-            };
+            reader.onload = e => { DOM.settings.customDataInput.value = e.target.result; this.saveCustomDataFromText(); };
             reader.readAsText(file);
         },
         resetDefaultData() {
-            if (confirm('정말로 기본 문제 데이터로 복원하시겠습니까?')) {
-                localStorage.removeItem('customQuizData');
-                this.quizData = DEFAULT_QUIZ_DATA; this.renderFilterOptions();
-                this.elements.customDataInput.value = '';
-                this.elements.dataFeedback.textContent = '기본 데이터로 복원되었습니다.';
-                this.elements.dataFeedback.className = 'text-sm mt-2 font-medium text-slate-600';
-            }
+            DataService.clearCustomData(); State.quizData = DEFAULT_QUIZ_DATA; UI.renderFilterOptions(); UI.renderStages();
+            DOM.settings.customDataInput.value = '';
+            DOM.settings.dataFeedback.textContent = '기본 데이터로 복원되었습니다.';
+            DOM.settings.dataFeedback.className = 'text-sm mt-2 font-medium text-slate-600';
         },
         resetProgress() {
-            if (confirm('정말로 모든 학습 기록을 초기화하시겠습니까?')) {
-                localStorage.removeItem('userProgress'); localStorage.removeItem('playerState');
-                this.userProgress = {}; this.playerState = { level: 1, xp: 0 };
-                this.updatePlayerUI(); this.updateMistakeButtonState(); alert('학습 기록이 초기화되었습니다.');
-            }
+            DataService.clearProgress(); State.userProgress = {}; State.player = { level: 1, xp: 0 }; State.stageProgress = {}; State.badges = {};
+            UI.updatePlayerStatus(); UI.updateMistakeButtonState(); UI.renderStages();
         }
     };
-    app.init();
+    
+    App.init();
 });
 </script>
 </body>
