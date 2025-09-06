@@ -503,7 +503,7 @@
         <div class="header-group header-group--separator">
              <div id="paneToggleControls" class="pane-toggle-controls">
                 <!-- Buttons will be populated by JS to allow reordering -->
-            </div>
+             </div>
         </div>
 
         <div style="flex-grow: 1;"></div>
@@ -607,29 +607,65 @@ function toast(msg, type = 'info') {
   els.toastWrap.appendChild(div);
   setTimeout(() => div.remove(), 2800);
 }
+
+/**
+ * [FIXED] Splits a text into chunks, respecting a character limit, while trying to preserve line breaks.
+ * This revised function correctly handles single lines that are longer than the character limit by splitting them intelligently.
+ * @param {string} text The text to be chunked.
+ * @param {number} limit The maximum number of characters per chunk.
+ * @returns {string[]} An array of text chunks.
+ */
 function chunkTextByLinesAndLimit(text, limit) {
+    if (!text || limit <= 0) return [];
+
     const lines = text.split('\n');
-    if (!lines || lines.length === 0) return [];
     const chunks = [];
-    let currentChunk = '';
-    for (const line of lines) {
-        if (line.length > limit) {
-            if (currentChunk.length > 0) chunks.push(currentChunk);
-            chunks.push(line);
-            currentChunk = '';
-            continue;
+    let currentChunk = "";
+
+    for (let line of lines) {
+        // Handle oversized lines by breaking them down first.
+        while (line.length > limit) {
+            // If there's a current chunk, push it to finalize it before dealing with the oversized line.
+            if (currentChunk.length > 0) {
+                chunks.push(currentChunk);
+                currentChunk = "";
+            }
+
+            // Find a smart split position, preferring a space to avoid breaking words.
+            let splitPos = line.lastIndexOf(' ', limit);
+
+            // If no space is found or it's too early in the line, perform a hard split at the limit.
+            if (splitPos <= 0) { // Also handles splitPos === -1
+                splitPos = limit;
+            }
+
+            chunks.push(line.substring(0, splitPos));
+            line = line.substring(splitPos).trimStart(); // Prepare the remainder of the line for the next iteration.
         }
+
+        // After handling potential oversized parts, process the remaining (or original) line.
         const lengthWithNewline = currentChunk.length > 0 ? currentChunk.length + 1 + line.length : line.length;
+
         if (lengthWithNewline > limit && currentChunk.length > 0) {
             chunks.push(currentChunk);
             currentChunk = line;
         } else {
-            if (currentChunk.length > 0) currentChunk += '\n';
-            currentChunk += line;
+            if (currentChunk.length > 0) {
+                currentChunk += '\n' + line;
+            } else {
+                currentChunk = line;
+            }
         }
     }
-    if (currentChunk.length > 0) chunks.push(currentChunk);
-    return chunks;
+
+    // Add the last remaining chunk if it exists.
+    if (currentChunk.length > 0) {
+        chunks.push(currentChunk);
+    }
+
+    // In case the input was just one long string with no newlines,
+    // the loop might produce an empty first chunk. Filter it out.
+    return chunks.filter(chunk => chunk.length > 0);
 }
 
 
