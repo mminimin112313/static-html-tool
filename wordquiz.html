@@ -1,0 +1,1226 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Vocabulary Hub</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        /* ==========================================================================
+           1. Design System & Base Styles
+           ========================================================================== */
+        :root {
+            --background-light: #f8fafc; /* slate-50 */
+            --background-dark: #0f172a;  /* slate-900 */
+            --card-light: #ffffff;
+            --card-dark: #1e293b; /* slate-800 */
+            --text-light-primary: #0f172a; /* slate-900 */
+            --text-light-secondary: #64748b; /* slate-500 */
+            --text-dark-primary: #f8fafc; /* slate-50 */
+            --text-dark-secondary: #94a3b8; /* slate-400 */
+            --primary-accent: #3b82f6; /* blue-500 */
+            --primary-accent-hover: #2563eb; /* blue-600 */
+            --secondary-accent: #10b981; /* emerald-500 */
+            --secondary-accent-hover: #059669; /* emerald-600 */
+            --danger-accent: #ef4444; /* red-500 */
+            --danger-accent-hover: #dc2626; /* red-600 */
+            --border-light: #e2e8f0; /* slate-200 */
+            --border-dark: #334155; /* slate-700 */
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+
+        html.dark { color-scheme: dark; }
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background-color: var(--background-light);
+            color: var(--text-light-primary);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        .dark body {
+            background-color: var(--background-dark);
+            color: var(--text-dark-primary);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--border-light); }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        .dark ::-webkit-scrollbar-track { background: var(--border-dark); }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        .dark ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+        
+        /* Animations */
+        .fade-in { animation: fadeIn 0.5s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+
+        .fade-in-up { animation: fadeInUp 0.5s ease-in-out forwards; opacity:0; }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* Card Flip Animation */
+        .perspective { perspective: 1000px; }
+        .flip-card-inner { transition: transform 0.7s; transform-style: preserve-3d; }
+        .flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
+        .flip-card-front, .flip-card-back { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+        .flip-card-back { transform: rotateY(180deg); }
+
+        /* Highlighted Text (q tag) */
+        q {
+            font-weight: 600;
+            color: var(--primary-accent);
+        }
+
+        /* General Accessibility & UX improvements */
+        button, input[type="text"], input[type="password"], select, textarea {
+            outline-offset: 2px;
+        }
+        button:focus-visible, input[type="text"]:focus-visible, input[type="password"]:focus-visible, select:focus-visible, textarea:focus-visible {
+            outline: 2px solid var(--primary-accent);
+        }
+
+        /* Smooth timer bar transition */
+        #quiz-timer-bar {
+            transition: width 1s linear;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-50">
+    <div id="app" class="h-screen w-screen flex flex-col"></div>
+
+    <script type="module">
+        // =================================================================================
+        // 1. CONFIGURATION & CONSTANTS
+        // =================================================================================
+        const DB_CONFIG = {
+            NAME: 'AI_Vocabulary_Hub_DB', VERSION: 2, // Version increased for schema change
+            STORES: { USER_PROFILE: 'userProfile', CATEGORIES: 'categories', DECKS: 'decks', CARDS: 'cards', SETTINGS: 'settings', QUIZ_SESSIONS: 'quizSessions' }
+        };
+        const XP_PER_CORRECT = 10;
+        const LEVEL_THRESHOLDS = [0, 100, 250, 500, 1000, 2000, 4000, 8000, 16000, 32000];
+        const SRS_INTERVALS = [14400, 28800, 86400, 259200, 604800, 1209600, 2592000, 7776000]; // in seconds
+        const ACHIEVEMENTS = {
+            FIRST_DECK: { id: 'FIRST_DECK', title: '첫 걸음', description: '첫 단어장을 만들었습니다!' },
+            FIRST_QUIZ: { id: 'FIRST_QUIZ', title: '학습 시작', description: '첫 퀴즈를 완료했습니다!' },
+            TEN_CARDS: { id: 'TEN_CARDS', title: '열정의 시작', description: '누적 10개 단어 생성!' },
+            PERFECT_QUIZ: { id: 'PERFECT_QUIZ', title: '완벽주의자', description: '퀴즈에서 만점을 받았습니다!' },
+            MASTERED_CARD: { id: 'MASTERED_CARD', title: '단어의 지배자', description: '첫 단어를 마스터했습니다!' }
+        };
+        const QUIZ_TYPE = { MEANING: 'meaning', CLOZE: 'cloze' };
+        const LANGUAGES = ['English', 'Korean', 'Japanese', 'Chinese', 'Spanish', 'French', 'German', 'Russian'];
+        const QUIZ_TIME_LIMIT = 15; // in seconds
+        const DEFAULT_QUIZ_QUESTION_COUNT = 20;
+        const DEFAULT_PROMPT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
+<request>
+  <task>
+    For each {{sourceLang}} word provided, create one or more vocabulary learning cards.
+    If a word has multiple common meanings, create a separate card for each meaning.
+    Each card must contain:
+    1. A practical {{sourceLang}} example sentence. The target word in this sentence MUST be wrapped in <q> tags.
+    2. A natural {{targetLang}} translation of the sentence. The corresponding {{targetLang}} translation of the target word MUST also be wrapped in <q> tags.
+  </task>
+  <wordList>
+    {{wordList}}
+  </wordList>
+  <outputFormat>
+    Respond ONLY with a valid JSON array of objects inside a <json_response> tag. Each object represents one card and must have "word", "sentence", and "translation" keys.
+  </outputFormat>
+</request>`;
+
+
+        // =================================================================================
+        // 2. DATABASE MODULE (IndexedDB)
+        // =================================================================================
+        const DB = (() => {
+            let db = null;
+            const init = () => new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_CONFIG.NAME, DB_CONFIG.VERSION);
+                request.onupgradeneeded = e => {
+                    db = e.target.result;
+                    Object.values(DB_CONFIG.STORES).forEach(storeName => {
+                        if (!db.objectStoreNames.contains(storeName)) {
+                            const store = db.createObjectStore(storeName, { keyPath: 'id', autoIncrement: !['userProfile', 'settings', 'quizSessions'].includes(storeName) });
+                            if (storeName === 'cards') store.createIndex('deckId', 'deckId');
+                            if (storeName === 'decks') store.createIndex('categoryId', 'categoryId');
+                        }
+                    });
+                };
+                request.onsuccess = e => { db = e.target.result; resolve(db); };
+                request.onerror = e => reject(e.target.error);
+            });
+            const getStore = (name, mode = 'readonly') => db.transaction(name, mode).objectStore(name);
+            const promisify = request => new Promise((resolve, reject) => {
+                request.onsuccess = e => resolve(e.target.result);
+                request.onerror = e => reject(e.target.error);
+            });
+            return {
+                init, add: (name, data) => promisify(getStore(name, 'readwrite').add(data)), get: (name, key) => promisify(getStore(name).get(key)),
+                getAll: (name) => promisify(getStore(name).getAll()), getAllByIndex: (name, index, query) => promisify(getStore(name).index(index).getAll(query)),
+                update: (name, data) => promisify(getStore(name, 'readwrite').put(data)), delete: (name, key) => promisify(getStore(name, 'readwrite').delete(key)),
+            };
+        })();
+
+        // =================================================================================
+        // 3. STATE MANAGER
+        // =================================================================================
+        const state = {
+            _data: {
+                isLoading: true, currentView: 'dashboard', currentDeckId: null, isAddingWords: false,
+                categories: [], decks: [], cards: [], userProfile: { id: 'main', level: 1, xp: 0, achievements: [] },
+                reviewCardCount: 0, apiKey: null, toast: {}, modal: {}, promptTemplate: DEFAULT_PROMPT_TEMPLATE,
+                quizQuestionCount: DEFAULT_QUIZ_QUESTION_COUNT,
+                savedQuizSession: null,
+                quizState: { 
+                    active: false, type: null, cards: [], currentIndex: 0, score: 0, 
+                    incorrectCards: [], isAnswered: false, timeLeft: QUIZ_TIME_LIMIT, quizHistory: [] 
+                },
+                learnState: { active: false, cards: [], currentIndex: 0 }
+            },
+            listeners: [], get data() { return this._data; }, setState(newState) {
+                // Deep merge for nested objects like quizState
+                if (newState.quizState) {
+                    newState.quizState = { ...this._data.quizState, ...newState.quizState };
+                }
+                Object.assign(this._data, newState); 
+                this.notify(); 
+            },
+            subscribe(listener) { this.listeners.push(listener); }, notify() { this.listeners.forEach(listener => listener(this._data)); }
+        };
+        
+        // =================================================================================
+        // 4. QUIZ TIMER & LOGIC HELPERS
+        // =================================================================================
+        let quizTimerId = null; 
+
+        const stopQuestionTimer = () => {
+            if (quizTimerId) {
+                clearInterval(quizTimerId);
+                quizTimerId = null;
+            }
+        };
+
+        const processAnswer = async (isCorrect, userAnswer = '', isTimeUp = false) => {
+            stopQuestionTimer();
+            const { quizState } = state.data;
+            const currentCard = quizState.cards[quizState.currentIndex];
+            
+            const newHistory = [...quizState.quizHistory, { card: currentCard, userAnswer, isCorrect }];
+            
+            state.setState({ quizState: { isAnswered: true, quizHistory: newHistory }});
+            
+            const feedbackArea = document.getElementById('feedback-area');
+            const inputElement = document.getElementById('answer-input') || document.getElementById('cloze-answer-input');
+
+            await api.updateCardReview(currentCard, isCorrect);
+            
+            const correctText = quizState.type === QUIZ_TYPE.MEANING ? extractQTagContent(currentCard.translation) : extractQTagContent(currentCard.sentence);
+
+            if (isTimeUp) {
+                feedbackArea.innerHTML = `<span class="text-yellow-500 font-bold">시간 초과!</span> 정답: <q>${correctText}</q>`;
+                state.setState({ quizState: { incorrectCards: [...state.data.quizState.incorrectCards, currentCard] } });
+            } else if (isCorrect) {
+                feedbackArea.innerHTML = `<span class="text-emerald-500">정답! ${I('check-circle', 'inline-block w-6 h-6')}</span>`;
+                if(inputElement) inputElement.classList.add('border-emerald-500');
+                state.setState({ quizState: { score: state.data.quizState.score + 1 } });
+            } else {
+                feedbackArea.innerHTML = `<span class="text-red-500">오답!</span> 정답: <q>${correctText}</q>`;
+                if(inputElement) inputElement.classList.add('border-red-500');
+                state.setState({ quizState: { incorrectCards: [...state.data.quizState.incorrectCards, currentCard] } });
+            }
+
+            setTimeout(() => {
+                const currentQuizState = state.data.quizState; // get the latest state
+                if (currentQuizState.currentIndex + 1 < currentQuizState.cards.length) {
+                    state.setState({ quizState: { currentIndex: currentQuizState.currentIndex + 1, isAnswered: false, timeLeft: QUIZ_TIME_LIMIT } });
+                    startQuestionTimer();
+                } else {
+                    api.endQuiz();
+                }
+            }, 1200);
+        };
+
+        const startQuestionTimer = () => {
+            stopQuestionTimer(); 
+            state.setState({ quizState: { timeLeft: QUIZ_TIME_LIMIT } });
+            
+            // Force one render right at the start
+            const timerBar = document.getElementById('quiz-timer-bar');
+            if(timerBar) timerBar.style.width = '100%';
+
+            setTimeout(() => {
+                const timerBar = document.getElementById('quiz-timer-bar');
+                if(timerBar) timerBar.style.width = '0%';
+            }, 100);
+
+            quizTimerId = setInterval(() => {
+                const currentQuizState = state.data.quizState;
+                if (currentQuizState.timeLeft > 0) {
+                    state.setState({ quizState: { timeLeft: currentQuizState.timeLeft - 1 } });
+                } else {
+                    stopQuestionTimer();
+                    const inputElement = document.getElementById('answer-input') || document.getElementById('cloze-answer-input');
+                    processAnswer(false, inputElement?.value || '', true); 
+                }
+            }, 1000);
+        };
+
+
+        // =================================================================================
+        // 5. API & SERVICES
+        // =================================================================================
+        const Services = {
+            checkAndGrantAchievement: (achievementId) => {
+                const { userProfile } = state.data;
+                if (!userProfile.achievements.includes(achievementId)) {
+                    const achievement = ACHIEVEMENTS[achievementId];
+                    const updatedProfile = { ...userProfile, achievements: [...userProfile.achievements, achievementId] };
+                    api.updateUserProfile(updatedProfile);
+                    showToast(`${achievement.title} 업적 달성!`, 'success');
+                }
+            },
+            updateSrsData: (card, isCorrect) => {
+                let { srsLevel = 0, streak = 0 } = card;
+
+                if (isCorrect) {
+                    srsLevel = Math.min(srsLevel + 1, SRS_INTERVALS.length - 1);
+                    streak++;
+                    if (srsLevel === SRS_INTERVALS.length - 1) {
+                        Services.checkAndGrantAchievement('MASTERED_CARD');
+                    }
+                } else {
+                    srsLevel = Math.max(0, srsLevel - 2);
+                    streak = 0;
+                }
+                const interval = SRS_INTERVALS[srsLevel] * 1000;
+                const nextReviewAt = new Date(Date.now() + interval);
+
+                return { ...card, srsLevel, streak, nextReviewAt, lastReviewedAt: new Date(), lastAnswerCorrect: isCorrect };
+            },
+            buildXMLPrompt: (words, sourceLang, targetLang) => {
+                const { promptTemplate } = state.data;
+                if (!promptTemplate) return '';
+                const wordListXML = words.map(word => `<word>${word}</word>`).join('\n    ');
+                
+                let finalPrompt = promptTemplate.replace('{{wordList}}', wordListXML);
+                finalPrompt = finalPrompt.replace(/{{sourceLang}}/g, sourceLang);
+                finalPrompt = finalPrompt.replace(/{{targetLang}}/g, targetLang);
+                return finalPrompt;
+            }
+        };
+
+        const api = {
+            async loadInitialData() {
+                state.setState({ isLoading: true });
+                try {
+                    const [categories, decks, settings, profile, allCards, savedSession] = await Promise.all([
+                        DB.getAll(DB_CONFIG.STORES.CATEGORIES), DB.getAll(DB_CONFIG.STORES.DECKS),
+                        DB.get(DB_CONFIG.STORES.SETTINGS, 'appSettings'), DB.get(DB_CONFIG.STORES.USER_PROFILE, 'main'),
+                        DB.getAll(DB_CONFIG.STORES.CARDS), DB.get(DB_CONFIG.STORES.QUIZ_SESSIONS, 'current')
+                    ]);
+                    const now = new Date();
+                    const reviewCardCount = allCards.filter(c => c.nextReviewAt && new Date(c.nextReviewAt) <= now).length;
+                    
+                    const decksWithLangAndStats = await Promise.all(decks.map(async (deck) => {
+                        const cardsInDeck = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', deck.id);
+                        const learnedCards = cardsInDeck.filter(c => (c.srsLevel || 0) > 0).length;
+                        const mastery = cardsInDeck.length > 0 ? (learnedCards / cardsInDeck.length) * 100 : 0;
+                        return {
+                           ...deck,
+                           sourceLang: deck.sourceLang || 'English',
+                           targetLang: deck.targetLang || 'Korean',
+                           cardCount: cardsInDeck.length,
+                           mastery: Math.round(mastery)
+                        }
+                    }));
+
+                    state.setState({
+                        categories, decks: decksWithLangAndStats, reviewCardCount,
+                        apiKey: settings?.apiKey || null,
+                        promptTemplate: settings?.promptTemplate || DEFAULT_PROMPT_TEMPLATE,
+                        quizQuestionCount: settings?.quizQuestionCount || DEFAULT_QUIZ_QUESTION_COUNT,
+                        userProfile: profile || { id: 'main', level: 1, xp: 0, achievements: [] },
+                        savedQuizSession: savedSession
+                    });
+                    
+                    if (categories.length === 0 && decks.length === 0) {
+                       showModal(OnboardingModalContent());
+                    }
+                } catch (e) { console.error('Failed to load data:', e); showToast('데이터 로딩 실패.', 'error'); }
+                finally { state.setState({ isLoading: false }); }
+            },
+            async saveSettings(key, template, questionCount) {
+                const count = parseInt(questionCount, 10) || DEFAULT_QUIZ_QUESTION_COUNT;
+                await DB.update(DB_CONFIG.STORES.SETTINGS, { id: 'appSettings', apiKey: key, promptTemplate: template, quizQuestionCount: count });
+                state.setState({ apiKey: key, promptTemplate: template, quizQuestionCount: count });
+                showToast('설정이 저장되었습니다.', 'success');
+            },
+            async updateUserProfile(profile) {
+                await DB.update(DB_CONFIG.STORES.USER_PROFILE, profile);
+                state.setState({ userProfile: profile });
+            },
+            async addCategory(name) {
+                if (!name || !name.trim()) return showToast('카테고리 이름을 입력하세요.', 'warning');
+                await DB.add(DB_CONFIG.STORES.CATEGORIES, { name, createdAt: new Date() });
+                await api.loadInitialData();
+            },
+            async updateCategory(id, name) {
+                if (!name || !name.trim()) return showToast('카테고리 이름을 입력하세요.', 'warning');
+                const cat = await DB.get(DB_CONFIG.STORES.CATEGORIES, id);
+                await DB.update(DB_CONFIG.STORES.CATEGORIES, { ...cat, name });
+                await api.loadInitialData();
+            },
+            async deleteCategory(id) {
+                const decksToDelete = await DB.getAllByIndex(DB_CONFIG.STORES.DECKS, 'categoryId', id);
+                for (const deck of decksToDelete) {
+                    await api.deleteDeck(deck.id, true);
+                }
+                await DB.delete(DB_CONFIG.STORES.CATEGORIES, id);
+                await api.loadInitialData();
+            },
+            async addDeck(categoryId, name, sourceLang, targetLang) {
+                if (!name || !name.trim()) return showToast('단어장 이름을 입력하세요.', 'warning');
+                await DB.add(DB_CONFIG.STORES.DECKS, { categoryId, name, sourceLang, targetLang, createdAt: new Date() });
+                Services.checkAndGrantAchievement('FIRST_DECK');
+                await api.loadInitialData();
+            },
+            async updateDeck(id, name, sourceLang, targetLang) {
+                if (!name || !name.trim()) return showToast('단어장 이름을 입력하세요.', 'warning');
+                const deck = await DB.get(DB_CONFIG.STORES.DECKS, id);
+                await DB.update(DB_CONFIG.STORES.DECKS, { ...deck, name, sourceLang, targetLang });
+                await api.loadInitialData();
+            },
+            async deleteDeck(id, fromCategoryDelete = false) {
+                 const cardsToDelete = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', id);
+                 for (const card of cardsToDelete) {
+                     await DB.delete(DB_CONFIG.STORES.CARDS, card.id);
+                 }
+                 await DB.delete(DB_CONFIG.STORES.DECKS, id);
+                 if (!fromCategoryDelete) await api.loadInitialData();
+            },
+            async loadDeckDetailData(deckId) {
+                state.setState({ isLoading: true, currentDeckId: deckId, isAddingWords: false });
+                const cards = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', deckId);
+                state.setState({ cards, isLoading: false, isAddingWords: cards.length === 0 });
+            },
+            async addCardsFromText(deckId, jsonText) {
+                 try {
+                     const parsedCards = JSON.parse(jsonText);
+                     if (!Array.isArray(parsedCards)) throw new Error("JSON is not an array.");
+                     let createdCount = 0;
+                     for (const card of parsedCards) {
+                         if (card.word && card.sentence && card.translation) {
+                            await DB.add(DB_CONFIG.STORES.CARDS, { deckId, ...card, srsLevel: 0, nextReviewAt: new Date(), streak: 0, lastAnswerCorrect: null });
+                            createdCount++;
+                         }
+                     }
+                     if (createdCount > 0) {
+                         const allCardsInDb = await DB.getAll(DB_CONFIG.STORES.CARDS);
+                         if(allCardsInDb.length >= 10) Services.checkAndGrantAchievement('TEN_CARDS');
+                         await api.loadDeckDetailData(deckId);
+                         showToast(`${createdCount}개의 카드가 생성되었습니다.`, 'success');
+                     } else {
+                         throw new Error("No valid cards found in JSON.");
+                     }
+                     return true;
+                 } catch (e) { console.error("Manual add Error:", e); showToast('유효하지 않은 JSON 형식입니다. 다시 시도하세요.', 'error'); return false; }
+            },
+            async addCardsFromAI(deckId, wordsText) {
+                if (!state.data.apiKey) return showModal(SettingsModalContent(true));
+                const words = wordsText.split('\n').map(w => w.trim()).filter(Boolean);
+                if (!words.length || words.length > 100) return showToast(words.length ? '최대 100개까지 가능합니다.' : '단어를 입력하세요.', 'warning');
+                
+                const currentDeck = state.data.decks.find(d => d.id === deckId);
+                if (!currentDeck) return showToast('단어장을 찾을 수 없습니다.', 'error');
+                const { sourceLang, targetLang } = currentDeck;
+
+                state.setState({ isLoading: true });
+                showToast('AI가 학습 카드를 생성 중입니다...', 'info');
+                try {
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${state.data.apiKey}`;
+                    const prompt = Services.buildXMLPrompt(words, sourceLang, targetLang);
+                    const payload = { contents: [{ parts: [{ text: prompt }] }] };
+                    const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+                    const result = await res.json();
+                    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    const jsonMatch = responseText.match(/<json_response>([\s\S]*?)<\/json_response>/);
+                    if (!jsonMatch || !jsonMatch[1]) throw new Error("JSON response not found in AI output.");
+                    await api.addCardsFromText(deckId, jsonMatch[1].trim());
+                } catch (e) { console.error("AI Error:", e); showToast('AI 카드 생성 실패. API 키를 확인하거나 나중에 다시 시도하세요.', 'error'); }
+                finally { state.setState({ isLoading: false }); }
+            },
+            async updateCard(cardId, newWord, newSentence, newTranslation) {
+                const card = await DB.get(DB_CONFIG.STORES.CARDS, cardId);
+                await DB.update(DB_CONFIG.STORES.CARDS, { ...card, word: newWord, sentence: newSentence, translation: newTranslation });
+                await api.loadDeckDetailData(card.deckId);
+                showToast('카드가 수정되었습니다.', 'success');
+            },
+            async deleteCard(cardId) {
+                const card = await DB.get(DB_CONFIG.STORES.CARDS, cardId);
+                await DB.delete(DB_CONFIG.STORES.CARDS, cardId);
+                await api.loadDeckDetailData(card.deckId);
+            },
+            async updateCardReview(card, isCorrect) {
+                const updatedCard = Services.updateSrsData(card, isCorrect);
+                await DB.update(DB_CONFIG.STORES.CARDS, updatedCard);
+            },
+            async startSmartReviewSession() {
+                const allCards = await DB.getAll(DB_CONFIG.STORES.CARDS);
+                const now = new Date();
+                const reviewCards = allCards.filter(c => c.nextReviewAt && new Date(c.nextReviewAt) <= now);
+                if (reviewCards.length === 0) return showToast('복습할 카드가 없습니다!', 'info');
+                api.startQuizSession(reviewCards, QUIZ_TYPE.MEANING);
+            },
+            startLearnSession(cards) {
+                if (cards.length === 0) return showToast('학습할 카드가 없습니다.', 'warning');
+                state.setState({ currentView: 'learn', learnState: { active: true, cards, currentIndex: 0 } });
+            },
+            startQuizSession(allCards, type) {
+                if (allCards.length < 1) return showToast('퀴즈를 진행할 카드가 없습니다.', 'warning');
+
+                const calculateWeight = (card) => {
+                    if (!card.lastReviewedAt) return Infinity; 
+                    
+                    const srsFactor = (SRS_INTERVALS.length - (card.srsLevel || 0)) * 5;
+                    const streakFactor = 15 / ((card.streak || 0) + 1);
+                    const recencyFactor = Math.min(20, (Date.now() - new Date(card.lastReviewedAt).getTime()) / (1000 * 60 * 60 * 24));
+                    const correctnessFactor = card.lastAnswerCorrect === false ? 30 : 0;
+                    
+                    return srsFactor + streakFactor + recencyFactor + correctnessFactor;
+                };
+
+                const weightedCards = allCards.map(card => ({ card, weight: calculateWeight(card) }))
+                                             .sort((a, b) => b.weight - a.weight);
+                
+                const questionCount = Math.min(allCards.length, state.data.quizQuestionCount);
+                const selectedCards = weightedCards.slice(0, questionCount).map(item => item.card);
+
+                const shuffled = [...selectedCards].sort(() => Math.random() - 0.5);
+                state.setState({ 
+                    currentView: 'quiz', 
+                    quizState: { 
+                        active: true, type, cards: shuffled, currentIndex: 0, score: 0, 
+                        incorrectCards: [], isAnswered: false, timeLeft: QUIZ_TIME_LIMIT, quizHistory: []
+                    } 
+                });
+                startQuestionTimer();
+            },
+            async resumeQuizSession() {
+                const savedSession = await DB.get(DB_CONFIG.STORES.QUIZ_SESSIONS, 'current');
+                if (savedSession) {
+                    state.setState({
+                        currentView: 'quiz',
+                        quizState: savedSession.quizState,
+                    });
+                    startQuestionTimer();
+                } else {
+                    showToast('저장된 퀴즈가 없습니다.', 'info');
+                }
+            },
+            async saveQuizSession() {
+                const { quizState } = state.data;
+                await DB.update(DB_CONFIG.STORES.QUIZ_SESSIONS, { id: 'current', quizState });
+                showToast('퀴즈 진행 상황이 저장되었습니다.', 'success');
+                api.loadInitialData().then(() => state.setState({ currentView: 'dashboard'}));
+            },
+            async deleteQuizSession() {
+                await DB.delete(DB_CONFIG.STORES.QUIZ_SESSIONS, 'current');
+                state.setState({ savedQuizSession: null });
+            },
+            endQuiz() {
+                stopQuestionTimer();
+                const { quizState, userProfile } = state.data;
+                if(quizState.score === quizState.cards.length) {
+                    Services.checkAndGrantAchievement('PERFECT_QUIZ');
+                }
+                const newXp = userProfile.xp + quizState.score * XP_PER_CORRECT;
+                let newLevel = userProfile.level;
+                while (LEVEL_THRESHOLDS[newLevel] && newXp >= LEVEL_THRESHOLDS[newLevel]) {
+                    newLevel++;
+                }
+                
+                api.updateUserProfile({ ...userProfile, xp: newXp, level: newLevel });
+                Services.checkAndGrantAchievement('FIRST_QUIZ');
+                api.deleteQuizSession();
+                state.setState({ currentView: 'quizReview' });
+            }
+        };
+
+        // =================================================================================
+        // 6. UI COMPONENTS & HELPERS
+        // =================================================================================
+        const I = (name, classes = "w-4 h-4") => `<i data-lucide="${name}" class="${classes}"></i>`;
+        const showToast = (message, type = 'info', duration = 3000) => { state.setState({ toast: { message, type, visible: true } }); setTimeout(() => state.setState({ toast: { ...state.data.toast, visible: false } }), duration); };
+        const showModal = (content) => { state.setState({ modal: { visible: true, content } }); };
+        const closeModal = () => { state.setState({ modal: { visible: false, content: '' } }); };
+        const ToastComponent = ({ message, type, visible }) => visible ? `<div class="fixed top-5 right-5 z-[100] ${ {info:'bg-blue-500', success:'bg-emerald-500', warning:'bg-yellow-500', error:'bg-red-500'}[type] } text-white py-2 px-4 rounded-lg shadow-lg fade-in">${message}</div>` : '';
+        const ModalComponent = ({ visible, content }) => visible ? `<div id="modal-backdrop" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 fade-in"><div id="modal-content" class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-2xl m-4">${content}</div></div>` : '';
+        const SettingsModalContent = (fromError = false) => `
+            <h3 class="text-xl font-bold mb-6">설정</h3>
+            ${fromError ? `<p class="text-red-400 text-sm mb-4">AI 기능을 사용하려면 Google AI API 키가 필요합니다.</p>` : ''}
+            <div class="space-y-4">
+                <div>
+                    <label for="api-key-input" class="block text-sm font-medium mb-1">Google AI API Key</label>
+                    <input id="api-key-input" type="password" value="${state.data.apiKey || ''}" class="w-full border p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600" placeholder="API 키를 여기에 붙여넣으세요">
+                    <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-xs text-blue-500 hover:underline">여기서 API 키를 발급받으세요.</a>
+                </div>
+                 <div>
+                    <label for="quiz-question-count-input" class="block text-sm font-medium mb-1">퀴즈 문제 수</label>
+                    <input id="quiz-question-count-input" type="number" value="${state.data.quizQuestionCount}" class="w-full border p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600">
+                </div>
+                <div>
+                    <label for="prompt-template-input" class="block text-sm font-medium mb-1">AI 프롬프트 템플릿</label>
+                    <textarea id="prompt-template-input" class="w-full h-48 p-2 text-xs font-mono bg-slate-100 dark:bg-slate-900 rounded border dark:border-slate-600">${state.data.promptTemplate}</textarea>
+                    <p class="text-xs text-slate-500 mt-1">사용 가능한 변수: <code class="bg-slate-200 dark:bg-slate-700 rounded px-1">{{sourceLang}}</code>, <code class="bg-slate-200 dark:bg-slate-700 rounded px-1">{{targetLang}}</code>, <code class="bg-slate-200 dark:bg-slate-700 rounded px-1">{{wordList}}</code></p>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-6">
+                <button id="modal-cancel" class="bg-slate-300 dark:bg-slate-600 hover:bg-slate-400 font-bold py-2 px-4 rounded">취소</button>
+                <button id="modal-confirm-save-settings" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">저장</button>
+            </div>`;
+        const OnboardingModalContent = () => `
+            <h3 class="text-xl font-bold mb-4 flex items-center gap-2">${I('party-popper', 'w-6 h-6 text-yellow-400')} AI Vocabulary Hub에 오신 것을 환영합니다!</h3>
+            <p class="mb-2 text-slate-600 dark:text-slate-300">이 앱은 당신만의 단어장을 만들고, AI와 함께 효율적으로 단어를 암기할 수 있도록 돕습니다.</p>
+            <p class="font-semibold mb-4">시작하는 방법:</p>
+            <ol class="list-decimal list-inside space-y-2 mb-4">
+                <li><span class="font-bold">'새 카테고리'</span>를 눌러 'TOEIC'이나 '비즈니스 영어' 같은 주제를 만드세요.</li>
+                <li>카테고리 안에서 <span class="font-bold">'단어장 추가'</span> 버튼으로 세부 단어장을 만드세요. (이때 학습할 언어를 선택할 수 있습니다!)</li>
+                <li>단어장에 들어가 단어를 입력하고 <span class="font-bold">'AI로 자동 생성'</span>을 눌러보세요! (설정에서 API 키 입력 필요)</li>
+            </ol>
+            <div class="flex justify-end gap-2 mt-4">
+                <button id="modal-cancel" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">시작하기</button>
+            </div>`;
+        const extractQTagContent = (str) => {
+            if (!str) return '';
+            const match = str.match(/<q>(.*?)<\/q>/);
+            return match ? match[1].trim() : '';
+        }
+        const renderClozeSentence = (sentence, isDisabled) => sentence.replace(/<q>.*?<\/q>/, `<input id="cloze-answer-input" type="text" class="inline-block w-32 text-center text-lg border-b-2 p-1 bg-transparent border-slate-400 focus:outline-none focus:border-blue-500 transition-colors" autocomplete="off" autofocus ${isDisabled ? 'disabled' : ''}>`);
+
+        // =================================================================================
+        // 7. VIEWS
+        // =================================================================================
+        const MainHeader = ({ profile }) => `
+            <header class="bg-white dark:bg-slate-800 shadow-lg p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10">
+                <div class="flex items-center gap-2">
+                    <div class="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-lg">
+                        ${I('brain-circuit', 'w-8 h-8 text-blue-500')}
+                    </div>
+                    <h1 class="text-2xl font-bold cursor-pointer" id="home-btn">AI Vocabulary Hub</h1>
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="text-sm text-right">
+                        <span class="font-bold text-lg">Lv. ${profile.level}</span>
+                        <div class="w-32 bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 mt-1" title="${profile.xp} XP">
+                            <div class="bg-blue-500 h-2.5 rounded-full transition-all duration-500" style="width: ${Math.min(100, (profile.xp - (LEVEL_THRESHOLDS[profile.level - 1] || 0)) / ((LEVEL_THRESHOLDS[profile.level] || Infinity) - (LEVEL_THRESHOLDS[profile.level - 1] || 0)) * 100)}%"></div>
+                        </div>
+                    </div>
+                    <button id="profile-btn" class="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" title="내 정보">${I('user')}</button>
+                    <button id="settings-btn" class="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" title="설정">${I('settings')}</button>
+                </div>
+            </header>`;
+            
+        const DashboardView = ({ categories, decks, userProfile, reviewCardCount, savedQuizSession }) => `
+            ${MainHeader({ profile: userProfile })}
+            <main class="flex-1 p-6 overflow-y-auto">
+                <div class="max-w-7xl mx-auto">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                        <button id="start-smart-review-btn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-5 px-5 rounded-lg flex items-center justify-center gap-3 text-lg transition-all hover:scale-105 shadow-md hover:shadow-lg relative lg:col-span-1">
+                            ${I('sparkles')} 스마트 복습 시작 
+                            <span class="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full h-6 w-6 flex items-center justify-center">${reviewCardCount}</span>
+                        </button>
+                        ${savedQuizSession ? `
+                        <button id="resume-quiz-btn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-5 px-5 rounded-lg flex items-center justify-center gap-3 text-lg transition-all hover:scale-105 shadow-md hover:shadow-lg relative lg:col-span-1">
+                            ${I('play-circle')} 퀴즈 이어하기
+                        </button>
+                        ` : ''}
+                        <button id="add-category-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-5 px-5 rounded-lg flex items-center justify-center gap-3 text-lg transition-all hover:scale-105 shadow-md hover:shadow-lg lg:col-start-3 lg:col-span-1">
+                            ${I('plus-circle')} 새 카테고리
+                        </button>
+                    </div>
+                    <div id="category-list" class="space-y-8">
+                        ${categories.map((category, index) => `
+                            <div class="bg-white dark:bg-slate-800 rounded-lg shadow-md p-5 group fade-in-up" style="animation-delay: ${index * 100}ms">
+                                <div class="flex justify-between items-center mb-4">
+                                    <h2 class="text-2xl font-bold">${category.name}</h2>
+                                    <div class="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                                        <button class="edit-category-btn p-1.5 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" data-id="${category.id}" data-name="${category.name}">${I('file-pen-line', 'w-5 h-5')}</button>
+                                        <button class="delete-category-btn p-1.5 text-slate-500 hover:text-red-500" data-id="${category.id}" data-name="${category.name}">${I('trash-2', 'w-5 h-5')}</button>
+                                        <button class="add-deck-btn bg-blue-500 hover:bg-blue-600 text-white text-sm py-1.5 px-4 rounded-full flex items-center gap-1.5 transition-colors" data-category-id="${category.id}">${I('plus','w-4 h-4')} 단어장 추가</button>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                    ${decks.filter(d => d.categoryId === category.id).map(deck => `
+                                        <div class="deck-item bg-slate-50 dark:bg-slate-700/50 rounded-lg p-4 group/deck relative cursor-pointer hover:shadow-lg hover:-translate-y-1 transition-all duration-300" data-deck-id="${deck.id}">
+                                            <div class="flex justify-between items-start">
+                                                <h3 class="font-semibold text-lg pr-10">${deck.name}</h3>
+                                                <div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/deck:opacity-100 transition-opacity">
+                                                    <button class="edit-deck-btn p-1 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200" data-id="${deck.id}" data-name="${deck.name}" data-sl="${deck.sourceLang}" data-tl="${deck.targetLang}" title="수정">${I('file-pen-line','w-3.5 h-3.5')}</button>
+                                                    <button class="delete-deck-btn p-1 text-slate-500 hover:text-red-500" data-id="${deck.id}" data-name="${deck.name}" title="삭제">${I('trash-2','w-3.5 h-3.5')}</button>
+                                                </div>
+                                            </div>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">${deck.sourceLang} → ${deck.targetLang}</p>
+                                            <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">${deck.cardCount} cards</p>
+                                            <div class="w-full bg-slate-200 dark:bg-slate-600 rounded-full h-2 mt-2">
+                                                <div class="bg-emerald-500 h-2 rounded-full" style="width: ${deck.mastery}%" title="숙련도 ${deck.mastery}%"></div>
+                                            </div>
+                                        </div>`).join('')}
+                                </div>
+                            </div>`).join('') || `<div class="text-center py-20 text-slate-500"><p class="text-lg">카테고리가 없습니다. '새 카테고리'를 눌러 시작하세요.</p></div>`}
+                    </div>
+                </div>
+            </main>`;
+
+        // ... DeckDetailView, LearnView and other views remain mostly the same ...
+        // Small changes are made to QuizView and a new QuizReviewView is added.
+        const DeckDetailView = ({ deck, cards, isAddingWords }) => {
+             if (!deck) return `<div class="flex items-center justify-center h-full"><p>단어장을 찾을 수 없습니다.</p></div>`;
+             
+             const AddWordsPanel = () => `
+                <div class="bg-white dark:bg-slate-800 rounded-lg shadow-md p-5 flex flex-col h-full">
+                    <div class="flex justify-between items-center mb-4">
+                        <h2 class="text-xl font-semibold">단어 추가 (${deck.sourceLang})</h2>
+                        ${cards.length > 0 ? `<button id="back-to-learn-panel-btn" class="text-sm bg-slate-200 dark:bg-slate-700 py-1 px-3 rounded-full flex items-center gap-1">${I('arrow-left', 'w-3 h-3')} 학습으로</button>` : ''}
+                    </div>
+                    <textarea id="word-input-area" class="flex-1 w-full p-3 border rounded bg-slate-100 dark:bg-slate-700 border-slate-300 dark:border-slate-600 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition" placeholder="학습할 단어를 한 줄에 하나씩 입력하세요..."></textarea>
+                    <div class="grid grid-cols-2 gap-4 mt-4">
+                        <button id="generate-ai-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors shadow hover:shadow-md">${I('wand-sparkles')} AI로 자동 생성</button>
+                        <button id="manual-generate-btn" class="w-full bg-slate-500 hover:bg-slate-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors shadow hover:shadow-md">${I('edit-3')} 수동 생성 가이드</button>
+                    </div>
+                </div>`;
+            
+            const LearnPanel = () => `
+                <div class="bg-white dark:bg-slate-800 rounded-lg shadow-md p-5 flex flex-col h-full justify-between">
+                    <div>
+                        <h2 class="text-2xl font-bold mb-3">학습 준비 완료</h2>
+                        <p class="text-slate-600 dark:text-slate-300">이 단어장에 ${cards.length}개의 학습 카드가 있습니다. 바로 학습을 시작하거나 단어를 더 추가할 수 있습니다.</p>
+                    </div>
+                    <div class="space-y-4 mt-6">
+                         <button id="start-learning-btn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 text-lg transition-transform hover:scale-105">${I('book-open')} 학습 모드</button>
+                         <button id="start-quiz-meaning-btn" class="w-full bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 text-lg transition-transform hover:scale-105">${I('swords')} 뜻 맞추기 퀴즈</button>
+                         <button id="start-quiz-cloze-btn" class="w-full bg-purple-500 hover:bg-purple-600 text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 text-lg transition-transform hover:scale-105">${I('pencil-ruler')} 빈칸 채우기 퀴즈</button>
+                    </div>
+                    <button id="toggle-add-words-btn" class="w-full mt-8 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-sm py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-colors">${I('plus', 'w-4 h-4')} 단어 더 추가하기</button>
+                </div>`;
+
+            return `
+            <header class="bg-white dark:bg-slate-800 shadow-lg p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
+                <div class="flex items-center gap-3">
+                    <button id="back-to-dashboard-btn" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">${I('arrow-left')}</button>
+                    <div>
+                        <h1 class="text-2xl font-bold">${deck.name}</h1>
+                        <p class="text-sm text-slate-500">${deck.sourceLang} → ${deck.targetLang}</p>
+                    </div>
+                </div>
+            </header>
+            <main class="flex-1 flex flex-col md:flex-row gap-6 p-6 overflow-hidden">
+                <!-- Left Panel -->
+                <div class="w-full md:w-1/2 h-full">
+                    ${isAddingWords ? AddWordsPanel() : LearnPanel()}
+                </div>
+                <!-- Right Panel: Word List -->
+                <div class="bg-white dark:bg-slate-800 rounded-lg shadow-md p-5 flex flex-col w-full md:w-1/2 min-h-0">
+                    <h2 class="text-xl font-semibold mb-3 flex-shrink-0">학습 세트 (${cards.length}개)</h2>
+                    <div class="flex-1 overflow-y-auto space-y-2 pr-2 overscroll-contain">${cards.map(c => `
+                        <div class="bg-slate-50 dark:bg-slate-700/50 rounded-lg p-3 group/card relative">
+                            <div class="flex items-center justify-between">
+                                <p class="font-bold text-slate-800 dark:text-slate-100">${c.word}</p>
+                                ${(c.srsLevel || 0) >= 7 ? I('award', 'w-4 h-4 text-yellow-500') : ''}
+                            </div>
+                            <p class="text-sm text-slate-600 dark:text-slate-300 mt-1">${c.sentence.replace(/<q>/g, '<q>').replace(/<\/q>/g, '</q>')}</p>
+                            <p class="text-sm text-blue-600 dark:text-blue-400 mt-1">${c.translation.replace(/<q>/g, '<q>').replace(/<\/q>/g, '</q>')}</p>
+                            <div class="absolute top-2 right-2 flex gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                                <button class="edit-card-btn p-1 text-slate-500 hover:text-blue-500" data-id="${c.id}" title="수정">${I('file-pen-line','w-3.5 h-3.5')}</button>
+                                <button class="delete-card-btn p-1 text-slate-500 hover:text-red-500" data-id="${c.id}" title="삭제">${I('trash-2','w-3.5 h-3.5')}</button>
+                            </div>
+                        </div>`).join('') || `<div class="text-center py-10 text-slate-500"><p>추가된 단어가 없습니다.</p></div>`}
+                    </div>
+                </div>
+            </main>`;
+        }
+        const LearnView = ({ learnState }) => {
+            const card = learnState.cards[learnState.currentIndex];
+            const currentDeck = state.data.decks.find(d => d.id === card.deckId);
+            const sourceLangCode = currentDeck?.sourceLang.substring(0, 2).toLowerCase() + '-US' // simple mapping
+            return `
+            <header class="bg-white dark:bg-slate-800 shadow-lg p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700"><div class="flex items-center gap-3"><button id="back-to-deck-btn" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">${I('arrow-left')}</button><h1 class="text-2xl font-bold">학습 모드</h1></div><div class="font-semibold text-lg">${learnState.currentIndex + 1} / ${learnState.cards.length}</div></header>
+            <main class="flex-1 flex flex-col items-center justify-center p-6">
+                <div class="w-full max-w-2xl perspective">
+                    <div id="flashcard" class="flip-card w-full h-80 relative cursor-pointer" data-tts-text="${card.word}" data-tts-lang="${sourceLangCode}">
+                        <div class="flip-card-inner absolute w-full h-full">
+                            <div class="flip-card-front absolute w-full h-full bg-white dark:bg-slate-800 rounded-lg shadow-xl flex flex-col items-center justify-center p-6 text-center border border-slate-200 dark:border-slate-700">
+                                <p class="text-5xl font-extrabold tracking-tight">${card.word}</p>
+                                <button id="tts-btn" class="mt-4 p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">${I('volume-2')}</button>
+                            </div>
+                            <div class="flip-card-back absolute w-full h-full bg-white dark:bg-slate-800 rounded-lg shadow-xl flex flex-col items-center justify-center p-6 text-center space-y-4 border border-slate-200 dark:border-slate-700">
+                                <p class="text-xl">${card.sentence.replace(/<q>/g, '<q>').replace(/<\/q>/g, '</q>')}</p>
+                                <p class="text-xl font-semibold text-blue-500">${card.translation.replace(/<q>/g, '<q>').replace(/<\/q>/g, '</q>')}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex items-center justify-between w-full max-w-2xl mt-8">
+                    <button id="prev-card-btn" class="p-4 rounded-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors disabled:opacity-50" ${learnState.currentIndex === 0 ? 'disabled' : ''}>${I('arrow-left')}</button>
+                    <span class="text-sm text-slate-500">카드를 클릭하거나 스페이스바를 누르세요</span>
+                    <button id="next-card-btn" class="p-4 rounded-full bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors disabled:opacity-50" ${learnState.currentIndex === learnState.cards.length - 1 ? 'disabled' : ''}>${I('arrow-right')}</button>
+                </div>
+            </main>`;
+        };
+        const QuizView = ({ quizState }) => {
+            const card = quizState.cards[quizState.currentIndex];
+            const QuestionArea = () => {
+                if (quizState.type === QUIZ_TYPE.MEANING) {
+                    return `<p class="text-slate-500 text-lg">다음 단어의 뜻은?</p><h2 class="text-6xl font-extrabold my-8 text-blue-500" id="quiz-question-word">${card.word}</h2>`;
+                }
+                if (quizState.type === QUIZ_TYPE.CLOZE) {
+                    return `<p class="text-slate-500 text-lg">빈칸에 알맞은 단어는?</p><h2 class="text-3xl font-bold my-6 text-center leading-relaxed">${renderClozeSentence(card.sentence, quizState.isAnswered)}</h2><p class="text-lg text-slate-500 dark:text-slate-400 mt-4">${card.translation}</p>`;
+                }
+                return '';
+            };
+
+            const timePercentage = (quizState.timeLeft / QUIZ_TIME_LIMIT) * 100;
+            const timeColor = timePercentage > 50 ? 'bg-emerald-500' : timePercentage > 25 ? 'bg-yellow-500' : 'bg-red-500';
+
+            return `
+            <header class="bg-white dark:bg-slate-800 shadow-lg p-4 sticky top-0 z-10">
+                <div class="flex items-center justify-between gap-4">
+                    <button id="exit-quiz-btn" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">${I('x')}</button>
+                    <div class="font-bold text-lg w-16 text-center">${quizState.currentIndex + 1} / ${quizState.cards.length}</div>
+                    <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-4 overflow-hidden">
+                        <div id="quiz-timer-bar" class="${timeColor} h-4" style="width: 100%"></div>
+                    </div>
+                    <div id="quiz-timer-text" class="font-bold text-lg w-12 text-right">${quizState.timeLeft}s</div>
+                </div>
+            </header>
+            <main class="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                ${QuestionArea()}
+                <form id="quiz-form" class="w-full max-w-md">
+                    ${quizState.type === QUIZ_TYPE.MEANING ? `<input id="answer-input" type="text" class="w-full text-center text-xl border-b-2 p-2 bg-transparent border-slate-400 focus:outline-none focus:border-blue-500 transition-colors" autocomplete="off" autofocus ${quizState.isAnswered ? 'disabled' : ''}>` : ''}
+                    <div id="feedback-area" class="h-10 mt-4 text-lg font-semibold"></div>
+                    <button type="submit" class="mt-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-12 rounded-lg text-lg transition-colors shadow hover:shadow-md disabled:bg-slate-400 dark:disabled:bg-slate-600 disabled:cursor-not-allowed" ${quizState.isAnswered ? 'disabled' : ''}>제출</button>
+                </form>
+            </main>`;
+        };
+        const QuizReviewView = ({ quizState, userProfile }) => `
+            <header class="bg-white dark:bg-slate-800 shadow-lg p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
+                <h1 class="text-2xl font-bold">퀴즈 결과 및 리뷰</h1>
+            </header>
+            <main class="flex-1 p-6 overflow-y-auto">
+                <div class="max-w-4xl mx-auto">
+                    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-md p-6 mb-6 text-center">
+                        <h2 class="text-2xl font-bold">최종 점수</h2>
+                        <p class="text-6xl font-extrabold my-4">${quizState.score} / ${quizState.cards.length}</p>
+                        <p class="text-yellow-400 font-semibold text-xl flex items-center justify-center gap-2">${I('award', 'inline-block w-6 h-6')} +${quizState.score * XP_PER_CORRECT} XP</p>
+                    </div>
+                    <div class="bg-white dark:bg-slate-800 rounded-lg shadow-md p-6">
+                        <h3 class="text-xl font-bold mb-4">상세 리뷰</h3>
+                        <div class="space-y-3">
+                        ${quizState.quizHistory.map(item => `
+                            <div class="p-3 rounded-lg ${item.isCorrect ? 'bg-emerald-50 dark:bg-emerald-900/50' : 'bg-red-50 dark:bg-red-900/50'}">
+                                <div class="flex items-center gap-3">
+                                    ${item.isCorrect ? I('check-circle', 'w-5 h-5 text-emerald-500') : I('x-circle', 'w-5 h-5 text-red-500')}
+                                    <p class="font-bold text-lg">${item.card.word}</p>
+                                </div>
+                                <div class="pl-8 mt-1 text-sm space-y-1">
+                                    <p><span class="font-semibold">제출한 답:</span> ${item.userAnswer || '<span class="text-slate-500">미입력</span>'}</p>
+                                    <p><span class="font-semibold">정답:</span> ${extractQTagContent(item.card.translation)}</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                        </div>
+                    </div>
+                     <div class="flex justify-center gap-4 mt-8">
+                        <button id="back-to-dashboard-btn" class="bg-slate-500 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">완료</button>
+                        ${quizState.incorrectCards.length > 0 ? `<button id="retry-incorrect-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">틀린 문제 다시 풀기</button>` : ''}
+                    </div>
+                </div>
+            </main>`;
+
+        const ProfileView = ({ userProfile, allCards }) => {
+            const totalCards = allCards.length;
+            const learnedCards = allCards.filter(c => (c.srsLevel || 0) > 0).length;
+            const masteredCards = allCards.filter(c => (c.srsLevel || 0) >= 7).length;
+
+            return `
+            ${MainHeader({profile: userProfile})}
+            <main class="flex-1 p-6 overflow-y-auto">
+                <div class="max-w-4xl mx-auto">
+                    <h1 class="text-3xl font-bold mb-6">내 정보</h1>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center">
+                            <h3 class="text-sm font-semibold text-slate-500">총 단어</h3>
+                            <p class="text-3xl font-bold">${totalCards}</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center">
+                            <h3 class="text-sm font-semibold text-slate-500">학습한 단어</h3>
+                            <p class="text-3xl font-bold">${learnedCards}</p>
+                        </div>
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center">
+                            <h3 class="text-sm font-semibold text-slate-500">마스터한 단어</h3>
+                            <p class="text-3xl font-bold">${masteredCards}</p>
+                        </div>
+                    </div>
+
+                     <div class="bg-white dark:bg-slate-800 rounded-lg shadow-md p-6">
+                        <h3 class="text-xl font-bold mb-4">획득한 업적</h3>
+                        <div class="space-y-4">
+                            ${Object.values(ACHIEVEMENTS).map(ach => `
+                                <div class="flex items-center gap-4 ${userProfile.achievements.includes(ach.id) ? '' : 'opacity-40'}">
+                                    <div class="p-2 bg-yellow-400 rounded-full text-white">${I('award', 'w-6 h-6')}</div>
+                                    <div>
+                                        <p class="font-bold">${ach.title}</p>
+                                        <p class="text-sm text-slate-500">${ach.description}</p>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            </main>
+            `;
+        };
+
+        // =================================================================================
+        // 8. APP & ROUTER
+        // =================================================================================
+        const App = (appState) => {
+            const { isLoading, currentView, toast, modal } = appState;
+            if (isLoading && !modal.visible) return `<div class="h-screen w-screen flex items-center justify-center text-slate-500"><svg class="animate-spin -ml-1 mr-3 h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><span class="ml-3 text-lg">로딩 중...</span></div>`;
+            
+            let viewContent = '';
+            switch(currentView) {
+                case 'dashboard': viewContent = DashboardView(appState); break;
+                case 'deckDetail':
+                    const deck = appState.decks.find(d => d.id === appState.currentDeckId);
+                    viewContent = DeckDetailView({ ...appState, deck });
+                    break;
+                case 'learn': viewContent = LearnView(appState); break;
+                case 'quiz': viewContent = QuizView(appState); break;
+                case 'quizReview': viewContent = QuizReviewView(appState); break;
+                case 'profile': viewContent = ProfileView(appState); break;
+                default: viewContent = `<p>Not Found</p>`;
+            }
+            return `${viewContent}${ToastComponent(toast)}${ModalComponent(modal)}`;
+        };
+        
+        let prevState = null;
+
+        function render(appState) {
+            // Simple diffing logic to prevent focus loss on timer update
+            if (
+                prevState &&
+                prevState.currentView === 'quiz' &&
+                appState.currentView === 'quiz' &&
+                prevState.quizState.currentIndex === appState.quizState.currentIndex &&
+                !appState.quizState.isAnswered &&
+                prevState.quizState.timeLeft !== appState.quizState.timeLeft
+            ) {
+                const timerBar = document.getElementById('quiz-timer-bar');
+                const timerText = document.getElementById('quiz-timer-text');
+
+                if (timerBar && timerText) {
+                    const timePercentage = (appState.quizState.timeLeft / QUIZ_TIME_LIMIT) * 100;
+                    const timeColor = timePercentage > 50 ? 'bg-emerald-500' : timePercentage > 25 ? 'bg-yellow-500' : 'bg-red-500';
+                    
+                    //timerBar.style.width = `${timePercentage}%`;
+                    timerBar.className = `h-4 rounded-full ${timeColor}`; // Overwrite classes but keep base styles
+                    timerText.textContent = `${appState.quizState.timeLeft}s`;
+                    
+                    prevState = JSON.parse(JSON.stringify(appState));
+                    return; 
+                }
+            }
+
+            document.getElementById('app').innerHTML = App(appState);
+            lucide.createIcons();
+            prevState = JSON.parse(JSON.stringify(appState));
+        }
+
+        // =================================================================================
+        // 9. EVENT HANDLERS
+        // =================================================================================
+        function handleGlobalClicks(event) {
+            const target = event.target.closest('button, .deck-item, #home-btn, #flashcard');
+            if (!target) return;
+            const id = target.id;
+            const classList = target.classList;
+
+            if(target.tagName === 'BUTTON' && target.closest('.deck-item')) { event.stopPropagation(); }
+
+            if (id === 'home-btn' || id === 'back-to-dashboard-btn') return api.loadInitialData().then(() => state.setState({ currentView: 'dashboard' }));
+            if (id === 'back-to-deck-btn') return state.setState({ currentView: 'deckDetail' });
+            if (id === 'back-to-learn-panel-btn') return state.setState({ isAddingWords: false });
+            if (id === 'start-smart-review-btn') return api.startSmartReviewSession();
+            if (id === 'resume-quiz-btn') return api.resumeQuizSession();
+            if (id === 'profile-btn') return state.setState({ currentView: 'profile' });
+
+            if (classList.contains('deck-item')) {
+                const deckId = parseInt(target.dataset.deckId);
+                state.setState({ currentView: 'deckDetail', currentDeckId: deckId, cards: [] });
+                api.loadDeckDetailData(deckId);
+                return;
+            }
+
+            if (id === 'exit-quiz-btn') {
+                return showModal(`
+                    <h3 class="text-lg font-bold mb-4">퀴즈 중단</h3>
+                    <p>퀴즈를 중단하시겠습니까? 진행 상황은 자동으로 저장됩니다.</p>
+                    <div class="flex justify-end gap-2 mt-6">
+                        <button id="modal-cancel" class="bg-slate-300 dark:bg-slate-600 py-2 px-4 rounded">계속하기</button>
+                        <button id="modal-confirm-exit-quiz" class="bg-red-500 text-white py-2 px-4 rounded">나가기</button>
+                    </div>`);
+            }
+            if (id === 'modal-confirm-exit-quiz') {
+                stopQuestionTimer();
+                api.saveQuizSession();
+                closeModal();
+            }
+
+            if (id === 'settings-btn') return showModal(SettingsModalContent());
+            if (id === 'add-category-btn') return showModal(`<h3 class="text-lg font-bold mb-4">새 카테고리</h3><input id="modal-input" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600" placeholder="카테고리 이름"><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel" class="bg-slate-300 dark:bg-slate-600 py-2 px-4 rounded">취소</button><button id="modal-confirm-add-category" class="bg-blue-500 text-white py-2 px-4 rounded">생성</button></div>`);
+            if (classList.contains('edit-category-btn')) return showModal(`<h3 class="text-lg font-bold mb-4">카테고리 수정</h3><input id="modal-input" value="${target.dataset.name}" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600"><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel">취소</button><button id="modal-confirm-edit-category" data-id="${target.dataset.id}" class="bg-blue-500 text-white py-2 px-4 rounded">수정</button></div>`);
+            
+            const DeleteConfirmModalContent = (type, id, name) => `
+                <h3 class="text-lg font-bold mb-4">${type} 삭제</h3>
+                <p>정말로 '${name}' ${type}을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p>
+                <p class="text-sm my-4">삭제를 확인하려면 아래에 <span class="font-bold text-red-500">${name}</span> 을(를) 입력하세요.</p>
+                <input id="delete-confirm-input" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 border dark:border-slate-600">
+                <div class="flex justify-end gap-2 mt-4">
+                    <button id="modal-cancel">취소</button>
+                    <button id="modal-confirm-delete" data-type="${type}" data-id="${id}" data-name="${name}" class="bg-red-500 text-white py-2 px-4 rounded opacity-50 cursor-not-allowed" disabled>삭제</button>
+                </div>
+            `;
+            if (classList.contains('delete-category-btn')) return showModal(DeleteConfirmModalContent('카테고리', target.dataset.id, target.dataset.name));
+            if (classList.contains('delete-deck-btn')) return showModal(DeleteConfirmModalContent('단어장', target.dataset.id, target.dataset.name));
+
+            if (id === 'modal-confirm-delete') {
+                const { type, id: itemId, name } = target.dataset;
+                if (type === '카테고리') api.deleteCategory(parseInt(itemId));
+                if (type === '단어장') api.deleteDeck(parseInt(itemId));
+                closeModal();
+            }
+
+            const langOptions = (selected) => LANGUAGES.map(l => `<option value="${l}" ${l === selected ? 'selected' : ''}>${l}</option>`).join('');
+            const DeckModalContent = (title, deck = {}) => `
+                <h3 class="text-lg font-bold mb-4">${title}</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label for="deck-name-input">단어장 이름</label>
+                        <input id="deck-name-input" value="${deck.name || ''}" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1" placeholder="단어장 이름">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label for="source-lang-select">학습할 언어 (Source)</label>
+                            <select id="source-lang-select" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1">${langOptions(deck.sourceLang || 'English')}</select>
+                        </div>
+                        <div>
+                            <label for="target-lang-select">의미 언어 (Target)</label>
+                            <select id="target-lang-select" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1">${langOptions(deck.targetLang || 'Korean')}</select>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-6">
+                    <button id="modal-cancel" class="bg-slate-400 text-white py-2 px-4 rounded">취소</button>
+                    <button id="${deck.id ? 'modal-confirm-edit-deck' : 'modal-confirm-add-deck'}" data-category-id="${deck.categoryId}" data-id="${deck.id}" class="bg-blue-500 text-white py-2 px-4 rounded">저장</button>
+                </div>
+            `;
+
+            if (classList.contains('add-deck-btn')) return showModal(DeckModalContent('새 단어장', { categoryId: target.dataset.categoryId }));
+            if (classList.contains('edit-deck-btn')) return showModal(DeckModalContent('단어장 수정', { id: target.dataset.id, name: target.dataset.name, sourceLang: target.dataset.sl, targetLang: target.dataset.tl }));
+            
+            if (classList.contains('edit-card-btn')) {
+                const cardId = parseInt(target.dataset.id);
+                const card = state.data.cards.find(c => c.id === cardId);
+                return showModal(`
+                    <h3 class="text-lg font-bold mb-4">카드 수정</h3>
+                    <div class="space-y-3">
+                        <div><label class="text-sm">단어</label><input id="edit-card-word" value="${card.word}" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700"></div>
+                        <div><label class="text-sm">예문</label><textarea id="edit-card-sentence" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700">${card.sentence}</textarea></div>
+                        <div><label class="text-sm">번역</label><textarea id="edit-card-translation" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700">${card.translation}</textarea></div>
+                    </div>
+                     <div class="flex justify-end gap-2 mt-4">
+                        <button id="modal-cancel">취소</button>
+                        <button id="modal-confirm-edit-card" data-id="${cardId}" class="bg-blue-500 text-white py-2 px-4 rounded">수정</button>
+                    </div>
+                `);
+            }
+            if (id === 'modal-confirm-edit-card') {
+                const cardId = parseInt(target.dataset.id);
+                const word = document.getElementById('edit-card-word').value;
+                const sentence = document.getElementById('edit-card-sentence').value;
+                const translation = document.getElementById('edit-card-translation').value;
+                api.updateCard(cardId, word, sentence, translation);
+                closeModal();
+            }
+
+            if (classList.contains('delete-card-btn')) {
+                const cardId = parseInt(target.dataset.id);
+                return showModal(`<p>이 카드를 삭제하시겠습니까?</p><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel">취소</button><button id="modal-confirm-delete-card" data-id="${cardId}" class="bg-red-500 text-white py-2 px-4 rounded">삭제</button></div>`);
+            }
+            
+            if (id === 'modal-cancel') return closeModal();
+            if (id === 'modal-confirm-save-settings') { 
+                const key = document.getElementById('api-key-input').value;
+                const template = document.getElementById('prompt-template-input').value;
+                const count = document.getElementById('quiz-question-count-input').value;
+                api.saveSettings(key, template, count); 
+                closeModal(); 
+            }
+            if (id === 'modal-confirm-add-category') { api.addCategory(document.getElementById('modal-input').value); closeModal(); }
+            if (id === 'modal-confirm-edit-category') { api.updateCategory(parseInt(target.dataset.id), document.getElementById('modal-input').value); closeModal(); }
+            
+            if (id === 'modal-confirm-add-deck' || id === 'modal-confirm-edit-deck') {
+                const name = document.getElementById('deck-name-input').value;
+                const sourceLang = document.getElementById('source-lang-select').value;
+                const targetLang = document.getElementById('target-lang-select').value;
+                if (id === 'modal-confirm-add-deck') {
+                    api.addDeck(parseInt(target.dataset.categoryId), name, sourceLang, targetLang);
+                } else {
+                    api.updateDeck(parseInt(target.dataset.id), name, sourceLang, targetLang);
+                }
+                closeModal();
+            }
+
+            if (id === 'modal-confirm-delete-card') { api.deleteCard(parseInt(target.dataset.id)); closeModal(); }
+
+            // ... other click handlers ...
+             if (id === 'generate-ai-btn') { api.addCardsFromAI(state.data.currentDeckId, document.getElementById('word-input-area').value); document.getElementById('word-input-area').value = ''; }
+            if (id === 'manual-generate-btn') {
+                const words = document.getElementById('word-input-area').value.split('\n').map(w=>w.trim()).filter(Boolean);
+                const currentDeck = state.data.decks.find(d => d.id === state.data.currentDeckId);
+                const promptText = Services.buildXMLPrompt(words.length > 0 ? words : ['sample word'], currentDeck.sourceLang, currentDeck.targetLang);
+                return showModal(`
+                    <h3 class="text-lg font-bold mb-4">수동 생성 가이드</h3>
+                    <p class="text-sm mb-2">1. 아래 프롬프트를 복사하여 ChatGPT 등 외부 AI 서비스에 붙여넣으세요.</p>
+                    <textarea id="prompt-output" readonly class="w-full h-32 p-2 text-xs bg-slate-100 dark:bg-slate-700 rounded">${promptText}</textarea>
+                    <button id="copy-prompt-btn" class="w-full mt-2 bg-blue-500 text-white py-2 rounded flex items-center justify-center gap-2">${I('copy')} 프롬프트 복사</button>
+                    <p class="text-sm mt-4 mb-2">2. AI가 생성한 <span class="font-bold text-red-500">&lt;json_response&gt;</span> 태그 안의 <span class="font-bold text-red-500">[ ... ]</span> JSON 배열만 복사하여 아래에 붙여넣고 '적용' 버튼을 누르세요.</p>
+                    <textarea id="manual-input-area" class="w-full h-24 p-2 border rounded bg-slate-100 dark:bg-slate-700" placeholder="[ { ... } ] 형식의 JSON 결과를 여기에 붙여넣으세요..."></textarea>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button id="modal-cancel" class="bg-slate-500 text-white py-2 px-4 rounded">닫기</button>
+                        <button id="modal-confirm-manual-add" class="bg-emerald-500 text-white py-2 px-4 rounded">적용</button>
+                    </div>`);
+            }
+            if (id === 'copy-prompt-btn') {
+                document.getElementById('prompt-output').select();
+                document.execCommand('copy');
+                showToast('프롬프트가 복사되었습니다.', 'success');
+            }
+            if (id === 'modal-confirm-manual-add') {
+                const jsonText = document.getElementById('manual-input-area').value;
+                if(jsonText) {
+                    api.addCardsFromText(state.data.currentDeckId, jsonText).then(success => {
+                        if (success) closeModal();
+                    });
+                } else { showToast('JSON 결과를 입력하세요.', 'warning'); }
+            }
+            if (id === 'toggle-add-words-btn') return state.setState({ isAddingWords: true });
+            if (id === 'start-learning-btn') return api.startLearnSession(state.data.cards);
+            if (id === 'start-quiz-meaning-btn') return api.startQuizSession(state.data.cards, QUIZ_TYPE.MEANING);
+            if (id === 'start-quiz-cloze-btn') return api.startQuizSession(state.data.cards, QUIZ_TYPE.CLOZE);
+            if (id === 'retry-incorrect-btn') {
+                const { quizState } = state.data;
+                api.startQuizSession(quizState.incorrectCards, quizState.type);
+            }
+            
+            if (id === 'flashcard') document.getElementById('flashcard').classList.toggle('flipped');
+            if (id === 'prev-card-btn') {
+                 document.getElementById('flashcard').classList.remove('flipped');
+                 setTimeout(() => state.setState({ learnState: { ...state.data.learnState, currentIndex: Math.max(0, state.data.learnState.currentIndex - 1) } }), 200);
+            }
+            if (id === 'next-card-btn') {
+                document.getElementById('flashcard').classList.remove('flipped');
+                setTimeout(() => state.setState({ learnState: { ...state.data.learnState, currentIndex: Math.min(state.data.learnState.cards.length - 1, state.data.learnState.currentIndex + 1) } }), 200);
+            }
+            if (id === 'tts-btn') {
+                const cardElement = event.target.closest('#flashcard') || document.querySelector('#quiz-question-word');
+                if (!cardElement) return;
+                const textToSpeak = cardElement.dataset.ttsText || cardElement.textContent;
+                const langCode = cardElement.dataset.ttsLang || state.data.decks.find(d => d.id === state.data.currentDeckId)?.sourceLang.substring(0, 2).toLowerCase() + '-US';
+                const utterance = new SpeechSynthesisUtterance(textToSpeak);
+                utterance.lang = langCode;
+                speechSynthesis.speak(utterance);
+            }
+        }
+        
+        async function handleGlobalSubmit(event) {
+            event.preventDefault();
+            if (event.target.id !== 'quiz-form' || state.data.quizState.isAnswered) return;
+            
+            const { quizState } = state.data;
+            const currentCard = quizState.cards[quizState.currentIndex];
+            let userAnswer = '', isCorrect;
+            
+            const inputElement = document.getElementById('answer-input') || document.getElementById('cloze-answer-input');
+            if(inputElement) {
+                userAnswer = inputElement.value.trim();
+            }
+
+            if (quizState.type === QUIZ_TYPE.MEANING) {
+                const correctAnswer = extractQTagContent(currentCard.translation);
+                isCorrect = userAnswer.length > 0 && correctAnswer.toLowerCase().includes(userAnswer.toLowerCase());
+            } else if (quizState.type === QUIZ_TYPE.CLOZE) {
+                const correctAnswer = extractQTagContent(currentCard.sentence);
+                isCorrect = userAnswer.toLowerCase() === correctAnswer.toLowerCase();
+            }
+            
+            processAnswer(isCorrect, userAnswer);
+        }
+
+        function handleGlobalInput(event) {
+            const target = event.target;
+            if (target.id === 'delete-confirm-input') {
+                const modalContent = target.closest('#modal-content');
+                const confirmButton = modalContent.querySelector('#modal-confirm-delete');
+                const expectedName = confirmButton.dataset.name;
+                if (target.value === expectedName) {
+                    confirmButton.disabled = false;
+                    confirmButton.classList.remove('opacity-50', 'cursor-not-allowed');
+                } else {
+                    confirmButton.disabled = true;
+                    confirmButton.classList.add('opacity-50', 'cursor-not-allowed');
+                }
+            }
+        }
+
+        function handleGlobalKeydown(event) {
+            const { currentView, learnState } = state.data;
+            if (event.key === 'Escape' && state.data.modal.visible) closeModal();
+
+            if (currentView === 'learn') {
+                if (event.key === 'ArrowLeft') document.getElementById('prev-card-btn')?.click();
+                if (event.key === 'ArrowRight') document.getElementById('next-card-btn')?.click();
+                if (event.key === ' ') {
+                    event.preventDefault();
+                    document.getElementById('flashcard')?.click();
+                }
+            }
+        }
+
+        // =================================================================================
+        // 10. INITIALIZATION
+        // =================================================================================
+        async function main() {
+            state.subscribe(render);
+            await DB.init();
+            await api.loadInitialData();
+            document.getElementById('app').addEventListener('click', handleGlobalClicks);
+            document.getElementById('app').addEventListener('submit', handleGlobalSubmit);
+            document.getElementById('app').addEventListener('input', handleGlobalInput);
+            document.addEventListener('keydown', handleGlobalKeydown);
+            
+            const applyTheme = (isDark) => document.documentElement.classList.toggle('dark', isDark);
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            applyTheme(mediaQuery.matches);
+            mediaQuery.addEventListener('change', e => applyTheme(e.matches));
+        }
+        main();
+    </script>
+</body>
+</html>
+
