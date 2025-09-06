@@ -48,6 +48,19 @@
         line-height: 1.6;
     }
 
+    #dropZoneOverlay {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background-color: rgba(249, 250, 251, 0.95);
+        z-index: 9998;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        border: 3px dashed var(--color-primary);
+        pointer-events: none;
+    }
+
     .app-header {
         position: sticky;
         top: 0;
@@ -570,6 +583,12 @@
         </section>
     </main>
     
+    <div id="dropZoneOverlay">
+        <i data-lucide="upload-cloud" style="width: 80px; height: 80px; color: var(--color-primary); margin-bottom: 24px;"></i>
+        <h2 style="font-size: 2rem; font-weight: 600; color: var(--color-primary);">번역 파일 가져오기</h2>
+        <p style="font-size: 1.1rem; color: var(--color-text-secondary); margin-top: 8px;">ZIP 또는 텍스트 파일을 여기에 놓아 번역을 자동으로 업데이트하세요.</p>
+    </div>
+
     <dialog id="settingsDlg"></dialog>
     <dialog id="historyDialog" style="width: 800px; max-width: 95vw;"></dialog>
     <dialog id="projectMgmtDlg" style="width: 600px; max-width: 95vw;"></dialog>
@@ -1492,6 +1511,141 @@ function setupPaneToggles() {
     });
 }
 
+// --- DRAG & DROP IMPORT ---
+let dragCounter = 0;
+
+function handleDragEnter(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter++;
+    if (dragCounter === 1 && currentProjectId) {
+        els.dropZoneOverlay.style.display = 'flex';
+    }
+}
+
+function handleDragLeave(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter--;
+    if (dragCounter === 0) {
+        els.dropZoneOverlay.style.display = 'none';
+    }
+}
+
+function handleDragOver(e) {
+    e.preventDefault();
+    e.stopPropagation();
+}
+
+async function handleDrop(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter = 0;
+    els.dropZoneOverlay.style.display = 'none';
+
+    if (!currentProjectId) {
+        toast('먼저 프로젝트를 열어주세요.', 'error');
+        return;
+    }
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    toast('파일 처리 중... 잠시만 기다려주세요.');
+    
+    const updatedSourceFiles = new Set();
+    const translationsMap = new Map();
+    const projectFiles = await getFilesOfCurrent();
+    const allPromises = [];
+
+    for (const file of files) {
+        allPromises.push(processDroppedItem(file));
+    }
+
+    async function processDroppedItem(item) {
+        const itemName = item.name.toLowerCase();
+        if (itemName.endsWith('.zip')) {
+            try {
+                const zip = await JSZip.loadAsync(item);
+                const zipFilePromises = [];
+                zip.forEach((relativePath, zipEntry) => {
+                    if (!zipEntry.dir && isTextLike(relativePath)) {
+                        zipFilePromises.push(async () => {
+                            const content = await zipEntry.async('string');
+                            await aggregateTranslation({ name: relativePath, content });
+                        });
+                    }
+                });
+                await Promise.all(zipFilePromises.map(p => p()));
+            } catch (err) {
+                toast(`ZIP 파일 처리 중 오류 발생: ${item.name}`, 'error');
+            }
+        } else if (isTextLike(itemName)) {
+            const content = await item.text();
+            await aggregateTranslation({ name: item.name, content });
+        }
+    }
+
+    async function aggregateTranslation({ name, content }) {
+        const droppedBasename = name.split('/').pop().replace(/\.[^/.]+$/, "");
+        
+        let bestMatch = null;
+        let longestMatchLength = 0;
+
+        for (const projFile of projectFiles) {
+            const projBasename = projFile.path.split('/').pop().replace(/\.[^/.]+$/, "");
+            if (droppedBasename.startsWith(projBasename) && projBasename.length > longestMatchLength) {
+                longestMatchLength = projBasename.length;
+                bestMatch = projFile;
+            }
+        }
+
+        if (bestMatch) {
+            const partRegex = /_part(\d+)$/;
+            const match = droppedBasename.match(partRegex);
+            const partNumber = match ? parseInt(match[1], 10) : 1;
+
+            if (!translationsMap.has(bestMatch.path)) {
+                translationsMap.set(bestMatch.path, []);
+            }
+            translationsMap.get(bestMatch.path).push({ content, partNumber });
+        } else {
+            toast(`일치하는 원본 파일을 찾을 수 없습니다: ${name}`, 'info');
+        }
+    }
+    
+    await Promise.all(allPromises);
+
+    if (translationsMap.size === 0) {
+        toast('가져올 유효한 번역 파일을 찾지 못했습니다.', 'info');
+        return;
+    }
+    
+    let successCount = 0;
+    for (const [path, parts] of translationsMap.entries()) {
+        parts.sort((a, b) => a.partNumber - b.partNumber);
+        const fullTranslation = parts.map(p => p.content).join('\n\n');
+
+        const fileRec = await idbGet('files', [currentProjectId, path]);
+        if (fileRec) {
+            fileRec.translation = fullTranslation;
+            fileRec.status = 2; // Mark as done
+            await idbPut('files', fileRec);
+            successCount++;
+            updatedSourceFiles.add(path);
+        }
+    }
+    
+    if (successCount > 0) {
+        toast(`${successCount}개 파일의 번역을 성공적으로 가져왔습니다.`, 'ok');
+        await renderTree();
+        await updateProjectSwitcher();
+        if (updatedSourceFiles.has(currentFilePath)) {
+            await openFile(currentFilePath, false);
+        }
+    }
+}
+
 
 // --- EVENT LISTENERS ---
 function setupEventListeners() {
@@ -1549,6 +1703,13 @@ function setupEventListeners() {
     els.btnSettingsMenu.addEventListener('click', (e) => { e.stopPropagation(); els.projectSwitcherMenu.style.display = 'none'; els.settingsDropdownMenu.style.display = 'block'; });
     document.addEventListener('click', () => { els.projectSwitcherMenu.style.display = 'none'; els.settingsDropdownMenu.style.display = 'none'; });
     setupPaneToggles();
+
+    // Add Drag and Drop listeners
+    const body = document.body;
+    body.addEventListener('dragenter', handleDragEnter);
+    body.addEventListener('dragleave', handleDragLeave);
+    body.addEventListener('dragover', handleDragOver);
+    body.addEventListener('drop', handleDrop);
 }
 
 // --- INITIALIZATION ---
@@ -1570,3 +1731,4 @@ document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
 </html>
+
