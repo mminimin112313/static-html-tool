@@ -186,7 +186,7 @@
                 reviewCardCount: 0, apiKey: null, toast: {}, modal: {}, promptTemplate: DEFAULT_PROMPT_TEMPLATE,
                 quizQuestionCount: DEFAULT_QUIZ_QUESTION_COUNT,
                 savedQuizSession: null,
-                searchQuery: '', sortCriteria: 'priority-desc', themeColor: 'blue', // Default sort
+                searchQuery: '', sortCriteria: 'priority-desc', themeColor: 'blue',
                 activityLog: {},
                 bulkEditState: { enabled: false, selectedCards: new Set() },
                 quizState: { 
@@ -290,61 +290,30 @@
         // 5. SERVICES & UTILITIES
         // =================================================================================
         
-        /**
-         * A dedicated service for handling Text-to-Speech (TTS) functionality.
-         * It loads available voices from the browser and intelligently selects the best voice
-         * for the requested language to improve pronunciation accuracy.
-         */
         const TTSService = (() => {
             let voices = [];
-
-            const loadVoices = () => {
-                voices = speechSynthesis.getVoices();
-            };
-
-            // Load voices initially and set up a listener for when the voice list changes.
+            const loadVoices = () => { voices = speechSynthesis.getVoices(); };
             loadVoices();
-            if (speechSynthesis.onvoiceschanged !== undefined) {
-                speechSynthesis.onvoiceschanged = loadVoices;
-            }
-
-            /**
-             * Speaks the given text in the specified language.
-             * @param {string} text - The text to be spoken.
-             * @param {string} langCode - The language code (e.g., 'en-US', 'fr-FR').
-             */
+            if (speechSynthesis.onvoiceschanged !== undefined) { speechSynthesis.onvoiceschanged = loadVoices; }
             const speak = (text, langCode) => {
                 if (!text || !langCode) return;
-                
-                speechSynthesis.cancel(); // Cancel any ongoing speech
-
+                speechSynthesis.cancel();
                 const utterance = new SpeechSynthesisUtterance(text);
                 utterance.lang = langCode;
-
-                // Find a specific voice for the given language for better pronunciation.
-                // 1. Try for an exact match (e.g., 'fr-FR')
                 let voice = voices.find(v => v.lang === langCode);
-                
-                // 2. If no exact match, try for a partial match (e.g., 'fr')
                 if (!voice) {
                     const langBase = langCode.split('-')[0];
                     voice = voices.find(v => v.lang.startsWith(langBase));
                 }
-                
-                // 3. If a suitable voice is found, use it. If not, inform the user.
                 if (voice) {
                     utterance.voice = voice;
                     speechSynthesis.speak(utterance);
                 } else {
-                    const langName = mapCodeToLang(langCode);
-                    showToast(`${langName} 음성을 찾을 수 없습니다. OS 또는 브라우저에 해당 언어 팩 설치가 필요할 수 있습니다.`, 'warning', 5000);
+                    showToast(`${mapCodeToLang(langCode)} 음성을 찾을 수 없습니다.`, 'warning');
                     console.warn(`TTS voice not found for language: ${langCode}.`);
                 }
             };
-
-            return {
-                speak
-            };
+            return { speak };
         })();
 
         const Services = {
@@ -360,27 +329,22 @@
             updateSrsData: (card, isCorrect) => {
                 let { srsLevel = 0, streak = 0 } = card;
                 const maxSrsLevel = SRS_INTERVALS.length - 1;
-
                 if (isCorrect) {
                     srsLevel = Math.min(srsLevel + 1, maxSrsLevel);
                     streak++;
-                    if (srsLevel === maxSrsLevel) {
-                        Services.checkAndGrantAchievement('MASTERED_CARD');
-                    }
+                    if (srsLevel === maxSrsLevel) Services.checkAndGrantAchievement('MASTERED_CARD');
                 } else {
                     srsLevel = card.srsLevel === maxSrsLevel ? 0 : Math.max(0, srsLevel - 2);
                     streak = 0;
                 }
                 const interval = SRS_INTERVALS[srsLevel] * 1000;
                 const nextReviewAt = new Date(Date.now() + interval);
-
                 return { ...card, srsLevel, streak, nextReviewAt, lastReviewedAt: new Date(), lastAnswerCorrect: isCorrect };
             },
             buildXMLPrompt: (words, sourceLang, targetLang) => {
                 const { promptTemplate } = state.data;
                 if (!promptTemplate) return '';
                 const wordListXML = words.map(word => `<word>${word}</word>`).join('\n    ');
-                
                 let finalPrompt = promptTemplate.replace('{{wordList}}', wordListXML);
                 finalPrompt = finalPrompt.replace(/{{sourceLang}}/g, sourceLang);
                 finalPrompt = finalPrompt.replace(/{{targetLang}}/g, targetLang);
@@ -388,48 +352,27 @@
             },
             calculateWeight: (card) => {
                 if (!card.lastReviewedAt) return Infinity; 
-                
                 const maxSrsLevel = SRS_INTERVALS.length - 1;
-                
-                if ((card.srsLevel || 0) === maxSrsLevel && Math.random() > 0.1) {
-                    return -1;
-                }
-
+                if ((card.srsLevel || 0) === maxSrsLevel && Math.random() > 0.1) return -1;
                 const srsFactor = (maxSrsLevel - (card.srsLevel || 0)) * 5;
                 const streakFactor = 15 / ((card.streak || 0) + 1);
                 const recencyFactor = Math.min(20, (Date.now() - new Date(card.lastReviewedAt).getTime()) / (1000 * 60 * 60 * 24));
                 const correctnessFactor = card.lastAnswerCorrect === false ? 30 : 0;
-                
                 return srsFactor + streakFactor + recencyFactor + correctnessFactor;
             },
-            /**
-             * Sorts an array of cards based on a given criteria string.
-             * @param {Array} cards - The array of card objects to sort.
-             * @param {string} sortCriteria - The sorting criteria (e.g., 'priority-desc', 'word-asc').
-             * @returns {Array} The sorted array of cards.
-             */
             sortCards(cards, sortCriteria) {
                 const [sortKey, sortOrder] = sortCriteria.split('-');
-                const sorted = [...cards]; // Create a new array to avoid mutating the original
-
+                const sorted = [...cards];
                 sorted.sort((a, b) => {
-                    if (sortKey === 'priority') {
-                        // Priority is always descending
-                        return Services.calculateWeight(b) - Services.calculateWeight(a);
-                    }
-
+                    if (sortKey === 'priority') return Services.calculateWeight(b) - Services.calculateWeight(a);
                     let valA = a[sortKey];
                     let valB = b[sortKey];
-
-                    // Handle cases where property might not exist
                     if (valA === undefined || valA === null) valA = sortKey === 'word' ? '' : 0;
                     if (valB === undefined || valB === null) valB = sortKey === 'word' ? '' : 0;
-
                     if (sortKey === 'word') {
                         valA = String(valA).toLowerCase();
                         valB = String(valB).toLowerCase();
                     }
-
                     if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
                     if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
                     return 0;
@@ -451,30 +394,17 @@
                     const now = new Date();
                     const reviewCardCount = allCards.filter(c => c.nextReviewAt && new Date(c.nextReviewAt) <= now).length;
                     
-                    const categories = dbCategories.map(c => ({
-                        ...c,
-                        sourceLang: c.sourceLang || 'English',
-                        targetLang: c.targetLang || 'Korean'
-                    }));
+                    const categories = dbCategories.map(c => ({ ...c, sourceLang: c.sourceLang || 'English', targetLang: c.targetLang || 'Korean' }));
 
                     const decksWithLangAndStats = await Promise.all(dbDecks.map(async (deck) => {
                         const parentCategory = categories.find(c => c.id === deck.categoryId);
                         const cardsInDeck = allCards.filter(c => c.deckId === deck.id);
                         const learnedCards = cardsInDeck.filter(c => (c.srsLevel || 0) > 0).length;
                         const mastery = cardsInDeck.length > 0 ? (learnedCards / cardsInDeck.length) * 100 : 0;
-                        return {
-                           ...deck,
-                            sourceLang: parentCategory?.sourceLang,
-                            targetLang: parentCategory?.targetLang,
-                            cardCount: cardsInDeck.length,
-                            mastery: Math.round(mastery)
-                        }
+                        return { ...deck, sourceLang: parentCategory?.sourceLang, targetLang: parentCategory?.targetLang, cardCount: cardsInDeck.length, mastery: Math.round(mastery) };
                     }));
                     
-                    const activityMap = activityLog.reduce((acc, log) => {
-                        acc[log.date] = log.count;
-                        return acc;
-                    }, {});
+                    const activityMap = activityLog.reduce((acc, log) => ({ ...acc, [log.date]: log.count }), {});
 
                     state.setState({
                         categories, decks: decksWithLangAndStats, reviewCardCount, allCards,
@@ -483,13 +413,10 @@
                         quizQuestionCount: settings?.quizQuestionCount || DEFAULT_QUIZ_QUESTION_COUNT,
                         themeColor: settings?.themeColor || 'blue',
                         userProfile: profile || { id: 'main', level: 1, xp: 0, achievements: [] },
-                        savedQuizSession: savedSession,
-                        activityLog: activityMap,
+                        savedQuizSession: savedSession, activityLog: activityMap,
                     });
                     
-                    if (categories.length === 0 && decksWithLangAndStats.length === 0) {
-                       showModal(OnboardingModalContent());
-                    }
+                    if (categories.length === 0 && decksWithLangAndStats.length === 0) showModal(OnboardingModalContent());
                 } catch (e) { console.error('Failed to load data:', e); showToast('데이터 로딩 실패.', 'error'); }
                 finally { state.setState({ isLoading: false }); }
             },
@@ -513,24 +440,15 @@
                 
                 let newStreak = state.data.userProfile.streak || 0;
                 if (lastLog.toDateString() !== new Date().toDateString()) {
-                    if (lastLog.toDateString() === yesterday.toDateString()) {
-                        newStreak++;
-                    } else {
-                        newStreak = 1;
-                    }
+                    newStreak = (lastLog.toDateString() === yesterday.toDateString()) ? newStreak + 1 : 1;
                 }
-                
                 if (newStreak >= 7) Services.checkAndGrantAchievement('STREAK_7');
-
                 const currentHour = new Date().getHours();
                 if(currentHour >= 0 && currentHour < 4) Services.checkAndGrantAchievement('NIGHT_OWL');
-
                 api.updateUserProfile({...state.data.userProfile, streak: newStreak, lastLogin: new Date().toISOString() });
             },
             async bulkDeleteCards(cardIds) {
-                for (const id of cardIds) {
-                    await DB.delete(DB_CONFIG.STORES.CARDS, id);
-                }
+                for (const id of cardIds) await DB.delete(DB_CONFIG.STORES.CARDS, id);
                 await api.loadDeckDetailData(state.data.currentDeckId);
                 state.setState({ bulkEditState: { enabled: false, selectedCards: new Set() }});
                 showToast(`${cardIds.size}개의 카드를 삭제했습니다.`, 'success');
@@ -538,37 +456,16 @@
             async bulkMoveCards(cardIds, targetDeckId) {
                 for (const id of cardIds) {
                     const card = await DB.get(DB_CONFIG.STORES.CARDS, id);
-                    if(card) {
-                        await DB.update(DB_CONFIG.STORES.CARDS, {...card, deckId: targetDeckId});
-                    }
+                    if(card) await DB.update(DB_CONFIG.STORES.CARDS, {...card, deckId: targetDeckId});
                 }
                 await api.loadDeckDetailData(state.data.currentDeckId);
                 state.setState({ bulkEditState: { enabled: false, selectedCards: new Set() }});
                 showToast(`${cardIds.size}개의 카드를 이동했습니다.`, 'success');
             },
-            async mergeDecks(deckIds, newDeckName) {
-                if (!newDeckName || !newDeckName.trim()) return showToast('새 단어장 이름을 입력하세요.', 'warning');
-                const firstDeck = state.data.decks.find(d => d.id === deckIds[0]);
-                if (!firstDeck) return;
-                
-                const newDeckId = await DB.add(DB_CONFIG.STORES.DECKS, {
-                    categoryId: firstDeck.categoryId,
-                    name: newDeckName,
-                    createdAt: new Date()
-                });
-
-                for (const deckId of deckIds) {
-                    const cardsToMove = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', deckId);
-                    for (const card of cardsToMove) {
-                        await DB.update(DB_CONFIG.STORES.CARDS, {...card, deckId: newDeckId });
-                    }
-                }
-                await api.loadInitialData();
-                showToast('단어장이 병합되었습니다.', 'success');
-            },
             async exportDeck(deckId, format) {
                 const cards = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', deckId);
                 const deck = state.data.decks.find(d => d.id === deckId);
+                if (!deck) return showToast('내보낼 단어장을 찾을 수 없습니다.', 'error');
                 let data, mimeType, extension;
 
                 if (format === 'json') {
@@ -577,8 +474,9 @@
                     extension = 'json';
                 } else { // csv
                     const headers = 'word,sentence,translation';
-                    const rows = cards.map(c => `"${c.word}","${c.sentence}","${c.translation}"`).join('\n');
-                    data = `${headers}\n${rows}`;
+                    const escapeCsv = (str) => `"${String(str).replace(/"/g, '""')}"`;
+                    const rows = cards.map(c => [escapeCsv(c.word), escapeCsv(c.sentence), escapeCsv(c.translation)].join(',')).join('\n');
+                    data = "\uFEFF" + `${headers}\n${rows}`;
                     mimeType = 'text/csv;charset=utf-8;';
                     extension = 'csv';
                 }
@@ -587,111 +485,73 @@
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
                 link.download = `${deck.name}.${extension}`;
+                document.body.appendChild(link);
                 link.click();
+                document.body.removeChild(link);
                 URL.revokeObjectURL(link.href);
+                showToast(`${deck.name} 단어장을 ${format.toUpperCase()} 형식으로 내보냈습니다.`, 'success');
             },
             async importCards(deckId, data, format) {
                 let cardsToImport = [];
                 try {
                     if (format === 'json') {
                         cardsToImport = JSON.parse(data);
+                        if (!Array.isArray(cardsToImport)) throw new Error('JSON is not an array.');
                     } else { // csv
-                        const rows = data.split('\n');
-                        const headers = rows.shift().split(',').map(h => h.trim());
-                        const wordIndex = headers.indexOf('word');
-                        const sentenceIndex = headers.indexOf('sentence');
-                        const translationIndex = headers.indexOf('translation');
-
-                        if (wordIndex === -1 || sentenceIndex === -1 || translationIndex === -1) {
-                            throw new Error('Invalid CSV headers');
+                        const rows = data.split('\n').filter(row => row.trim() !== '');
+                        if(rows.length < 2) throw new Error('CSV 파일에 데이터가 없습니다 (헤더 포함 최소 2줄 필요).');
+                        const headers = rows.shift().toLowerCase().split(',').map(h => h.trim().replace(/"/g, ''));
+                        const requiredHeaders = ['word', 'sentence', 'translation'];
+                        if (!requiredHeaders.every(h => headers.includes(h))) {
+                            throw new Error(`잘못된 CSV 헤더입니다. 필수 헤더: ${requiredHeaders.join(', ')}`);
                         }
-
+                        const headerMap = headers.reduce((acc, h, i) => ({ ...acc, [h]: i }), {});
                         cardsToImport = rows.map(row => {
-                            const values = row.split('","').map(v => v.replace(/"/g, ''));
-                            return {
-                                word: values[wordIndex],
-                                sentence: values[sentenceIndex],
-                                translation: values[translationIndex]
-                            };
+                            const values = row.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/).map(v => v.replace(/^"|"$/g, '').replace(/""/g, '"'));
+                            return { word: values[headerMap.word], sentence: values[headerMap.sentence], translation: values[headerMap.translation] };
                         });
                     }
                 } catch(e) {
-                    showToast('파일 형식이 잘못되었습니다.', 'error');
-                    return;
+                    console.error("Import parsing error:", e);
+                    return showToast(`파일 처리 중 오류: ${e.message}`, 'error');
                 }
                 
-                await api.addCardsFromText(deckId, JSON.stringify(cardsToImport));
-                closeModal();
-            },
-            async updateUserProfile(profile) {
-                await DB.update(DB_CONFIG.STORES.USER_PROFILE, profile);
-                state.setState({ userProfile: profile });
-            },
-            async addCategory(name, sourceLang, targetLang) {
-                if (!name || !name.trim()) return showToast('카테고리 이름을 입력하세요.', 'warning');
-                await DB.add(DB_CONFIG.STORES.CATEGORIES, { name, sourceLang, targetLang, createdAt: new Date() });
-                await api.loadInitialData();
-            },
-            async updateCategory(id, name, sourceLang, targetLang) {
-                if (!name || !name.trim()) return showToast('카테고리 이름을 입력하세요.', 'warning');
-                const cat = await DB.get(DB_CONFIG.STORES.CATEGORIES, id);
-                await DB.update(DB_CONFIG.STORES.CATEGORIES, { ...cat, name, sourceLang, targetLang });
-                await api.loadInitialData();
-            },
-            async deleteCategory(id) {
-                const decksToDelete = await DB.getAllByIndex(DB_CONFIG.STORES.DECKS, 'categoryId', id);
-                for (const deck of decksToDelete) {
-                    await api.deleteDeck(deck.id, true);
+                const addedCount = await api.addCardsFromParsedData(deckId, cardsToImport);
+                if (addedCount > 0) {
+                    showToast(`${addedCount}개의 카드를 성공적으로 가져왔습니다.`, 'success');
+                    await api.loadDeckDetailData(deckId);
+                    closeModal();
+                } else {
+                    showToast('가져올 유효한 카드가 없습니다.', 'warning');
                 }
-                await DB.delete(DB_CONFIG.STORES.CATEGORIES, id);
-                await api.loadInitialData();
             },
-            async addDeck(categoryId, name) {
-                if (!name || !name.trim()) return showToast('단어장 이름을 입력하세요.', 'warning');
-                await DB.add(DB_CONFIG.STORES.DECKS, { categoryId, name, createdAt: new Date() });
-                Services.checkAndGrantAchievement('FIRST_DECK');
-                await api.loadInitialData();
-            },
-            async updateDeck(id, name) {
-                if (!name || !name.trim()) return showToast('단어장 이름을 입력하세요.', 'warning');
-                const deck = await DB.get(DB_CONFIG.STORES.DECKS, id);
-                await DB.update(DB_CONFIG.STORES.DECKS, { ...deck, name });
-                await api.loadInitialData();
-            },
-            async deleteDeck(id, fromCategoryDelete = false) {
-                 const cardsToDelete = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', id);
-                 for (const card of cardsToDelete) {
-                     await DB.delete(DB_CONFIG.STORES.CARDS, card.id);
-                 }
-                 await DB.delete(DB_CONFIG.STORES.DECKS, id);
-                 if (!fromCategoryDelete) await api.loadInitialData();
-            },
-            async loadDeckDetailData(deckId) {
-                state.setState({ isLoading: true, currentDeckId: deckId, isAddingWords: false });
-                const cards = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', deckId);
-                state.setState({ cards, isLoading: false, isAddingWords: cards.length === 0 });
+            async addCardsFromParsedData(deckId, parsedCards) {
+                let createdCount = 0;
+                for (const card of parsedCards) {
+                    if (card.word && card.sentence && card.translation) {
+                        await DB.add(DB_CONFIG.STORES.CARDS, { deckId, ...card, srsLevel: 0, nextReviewAt: new Date(), streak: 0, lastAnswerCorrect: null, createdAt: new Date() });
+                        createdCount++;
+                    }
+                }
+                if(createdCount > 0) {
+                    const allCardsInDb = await DB.getAll(DB_CONFIG.STORES.CARDS);
+                    if(allCardsInDb.length >= 10) Services.checkAndGrantAchievement('TEN_CARDS');
+                }
+                return createdCount;
             },
             async addCardsFromText(deckId, jsonText) {
-                 try {
-                     const parsedCards = JSON.parse(jsonText);
-                     if (!Array.isArray(parsedCards)) throw new Error("JSON is not an array.");
-                     let createdCount = 0;
-                     for (const card of parsedCards) {
-                         if (card.word && card.sentence && card.translation) {
-                             await DB.add(DB_CONFIG.STORES.CARDS, { deckId, ...card, srsLevel: 0, nextReviewAt: new Date(), streak: 0, lastAnswerCorrect: null, createdAt: new Date() });
-                             createdCount++;
-                         }
-                     }
-                     if (createdCount > 0) {
-                         const allCardsInDb = await DB.getAll(DB_CONFIG.STORES.CARDS);
-                         if(allCardsInDb.length >= 10) Services.checkAndGrantAchievement('TEN_CARDS');
-                         await api.loadDeckDetailData(deckId);
-                         showToast(`${createdCount}개의 카드가 생성되었습니다.`, 'success');
-                     } else {
-                         throw new Error("No valid cards found in JSON.");
-                     }
-                     return true;
-                 } catch (e) { console.error("Manual add Error:", e); showToast('유효하지 않은 JSON 형식입니다. 다시 시도하세요.', 'error'); return false; }
+                try {
+                    const parsedCards = JSON.parse(jsonText);
+                    if (!Array.isArray(parsedCards)) throw new Error("JSON이 배열이 아닙니다.");
+                    const createdCount = await api.addCardsFromParsedData(deckId, parsedCards);
+                    if (createdCount > 0) {
+                        await api.loadDeckDetailData(deckId);
+                        showToast(`${createdCount}개의 카드가 생성되었습니다.`, 'success');
+                    } else {
+                        throw new Error("유효한 카드가 없습니다.");
+                    }
+                    return true;
+                } catch (e) { console.error("Manual add Error:", e); showToast('유효하지 않은 JSON 형식입니다. 다시 시도하세요.', 'error'); return false; }
             },
             async addCardsFromAI(deckId, wordsText) {
                 if (!state.data.apiKey) return showModal(SettingsModalContent(true));
@@ -709,137 +569,41 @@
                     const prompt = Services.buildXMLPrompt(words, sourceLang, targetLang);
                     const payload = { contents: [{ parts: [{ text: prompt }] }] };
                     const res = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+                    if (!res.ok) throw new Error(`API 오류: ${res.statusText}`);
                     const result = await res.json();
                     const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
                     const jsonMatch = responseText.match(/<json_response>([\s\S]*?)<\/json_response>/);
-                    if (!jsonMatch || !jsonMatch[1]) throw new Error("JSON response not found in AI output.");
+                    if (!jsonMatch || !jsonMatch[1]) throw new Error("AI 출력에서 JSON 응답을 찾을 수 없습니다.");
                     await api.addCardsFromText(deckId, jsonMatch[1].trim());
                 } catch (e) { console.error("AI Error:", e); showToast('AI 카드 생성 실패. API 키를 확인하거나 나중에 다시 시도하세요.', 'error'); }
                 finally { state.setState({ isLoading: false }); }
             },
-            async updateCard(cardId, newWord, newSentence, newTranslation) {
-                const card = await DB.get(DB_CONFIG.STORES.CARDS, cardId);
-                await DB.update(DB_CONFIG.STORES.CARDS, { ...card, word: newWord, sentence: newSentence, translation: newTranslation });
-                await api.loadDeckDetailData(card.deckId);
-                showToast('카드가 수정되었습니다.', 'success');
-            },
-            async deleteCard(cardId) {
-                const card = await DB.get(DB_CONFIG.STORES.CARDS, cardId);
-                await DB.delete(DB_CONFIG.STORES.CARDS, cardId);
-                await api.loadDeckDetailData(card.deckId);
-            },
-            async updateCardReview(card, isCorrect) {
-                const updatedCard = Services.updateSrsData(card, isCorrect);
-                await DB.update(DB_CONFIG.STORES.CARDS, updatedCard);
-            },
-            async startSmartReviewSession() {
-                const allCards = await DB.getAll(DB_CONFIG.STORES.CARDS);
-                const now = new Date();
-                const reviewCards = allCards.filter(c => c.nextReviewAt && new Date(c.nextReviewAt) <= now);
-                if (reviewCards.length === 0) return showToast('복습할 카드가 없습니다!', 'info');
-                api.startQuizSession(reviewCards, QUIZ_TYPE.MEANING);
-            },
-            startLearnSession(cards) {
-                if (cards.length === 0) return showToast('학습할 카드가 없습니다.', 'warning');
-                state.setState({ currentView: 'learn', learnState: { active: true, cards, currentIndex: 0 } });
-            },
-            startQuizSession(allCards, type) {
-                if (allCards.length < 1) return showToast('퀴즈를 진행할 카드가 없습니다.', 'warning');
-
-                const weightedCards = allCards.map(card => ({ card, weight: Services.calculateWeight(card) }))
-                                              .filter(item => item.weight > 0)
-                                              .sort((a, b) => b.weight - a.weight);
-                
-                const questionCount = Math.min(weightedCards.length, state.data.quizQuestionCount);
-                if(questionCount === 0) return showToast('지금은 퀴즈를 진행할 단어가 없습니다.', 'info');
-                
-                const selectedCards = weightedCards.slice(0, questionCount).map(item => item.card);
-
-                const shuffled = [...selectedCards].sort(() => Math.random() - 0.5);
-                state.setState({ 
-                    currentView: 'quiz', 
-                    quizState: { 
-                        active: true, type, cards: shuffled, currentIndex: 0, score: 0, 
-                        incorrectCards: [], isAnswered: false, timeLeft: QUIZ_TIME_LIMIT, quizHistory: []
-                    } 
-                });
-                startQuestionTimer();
-            },
-            async resumeQuizSession() {
-                const savedSession = await DB.get(DB_CONFIG.STORES.QUIZ_SESSIONS, 'current');
-                if (savedSession) {
-                    state.setState({
-                        currentView: 'quiz',
-                        quizState: savedSession.quizState,
-                    });
-                    startQuestionTimer();
-                } else {
-                    showToast('저장된 퀴즈가 없습니다.', 'info');
-                }
-            },
-            async saveQuizSession() {
-                const { quizState } = state.data;
-                await DB.update(DB_CONFIG.STORES.QUIZ_SESSIONS, { id: 'current', quizState });
-                showToast('퀴즈 진행 상황이 저장되었습니다.', 'success');
-                api.loadInitialData().then(() => state.setState({ currentView: 'dashboard'}));
-            },
-            async deleteQuizSession() {
-                await DB.delete(DB_CONFIG.STORES.QUIZ_SESSIONS, 'current');
-                state.setState({ savedQuizSession: null });
-            },
-            endQuiz() {
-                stopQuestionTimer();
-                const { quizState, userProfile } = state.data;
-                if(quizState.score === quizState.cards.length && quizState.cards.length > 0) {
-                    Services.checkAndGrantAchievement('PERFECT_QUIZ');
-                }
-                const newXp = userProfile.xp + quizState.score * XP_PER_CORRECT;
-                let newLevel = userProfile.level;
-                while (LEVEL_THRESHOLDS[newLevel] && newXp >= LEVEL_THRESHOLDS[newLevel]) {
-                    newLevel++;
-                }
-                
-                api.updateUserProfile({ ...userProfile, xp: newXp, level: newLevel });
-                Services.checkAndGrantAchievement('FIRST_QUIZ');
-                api.deleteQuizSession();
-                state.setState({ currentView: 'quizReview' });
-            },
-            async markCardAsKnown(cardId) {
-                const card = await DB.get(DB_CONFIG.STORES.CARDS, cardId);
-                if (card) {
-                    const maxSrsLevel = SRS_INTERVALS.length - 1;
-                    const updatedCard = { ...card, srsLevel: maxSrsLevel, nextReviewAt: new Date(Date.now() + SRS_INTERVALS[maxSrsLevel] * 1000) };
-                    await DB.update(DB_CONFIG.STORES.CARDS, updatedCard);
-                    return card; // Return original card for context (e.g., getting the name for a toast)
-                }
-                return null;
-            }
+            async updateUserProfile(profile) { await DB.update(DB_CONFIG.STORES.USER_PROFILE, profile); state.setState({ userProfile: profile }); },
+            async addCategory(name, sourceLang, targetLang) { if (!name || !name.trim()) return showToast('카테고리 이름을 입력하세요.', 'warning'); await DB.add(DB_CONFIG.STORES.CATEGORIES, { name, sourceLang, targetLang, createdAt: new Date() }); await api.loadInitialData(); },
+            async updateCategory(id, name, sourceLang, targetLang) { if (!name || !name.trim()) return showToast('카테고리 이름을 입력하세요.', 'warning'); const cat = await DB.get(DB_CONFIG.STORES.CATEGORIES, id); await DB.update(DB_CONFIG.STORES.CATEGORIES, { ...cat, name, sourceLang, targetLang }); await api.loadInitialData(); },
+            async deleteCategory(id) { const decksToDelete = await DB.getAllByIndex(DB_CONFIG.STORES.DECKS, 'categoryId', id); for (const deck of decksToDelete) { await api.deleteDeck(deck.id, true); } await DB.delete(DB_CONFIG.STORES.CATEGORIES, id); await api.loadInitialData(); },
+            async addDeck(categoryId, name) { if (!name || !name.trim()) return showToast('단어장 이름을 입력하세요.', 'warning'); await DB.add(DB_CONFIG.STORES.DECKS, { categoryId, name, createdAt: new Date() }); Services.checkAndGrantAchievement('FIRST_DECK'); await api.loadInitialData(); },
+            async updateDeck(id, name) { if (!name || !name.trim()) return showToast('단어장 이름을 입력하세요.', 'warning'); const deck = await DB.get(DB_CONFIG.STORES.DECKS, id); await DB.update(DB_CONFIG.STORES.DECKS, { ...deck, name }); await api.loadInitialData(); },
+            async deleteDeck(id, fromCategoryDelete = false) { const cardsToDelete = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', id); for (const card of cardsToDelete) await DB.delete(DB_CONFIG.STORES.CARDS, card.id); await DB.delete(DB_CONFIG.STORES.DECKS, id); if (!fromCategoryDelete) await api.loadInitialData(); },
+            async loadDeckDetailData(deckId) { state.setState({ isLoading: true, currentDeckId: deckId, isAddingWords: false }); const cards = await DB.getAllByIndex(DB_CONFIG.STORES.CARDS, 'deckId', deckId); state.setState({ cards, isLoading: false, isAddingWords: cards.length === 0 }); },
+            async updateCard(cardId, newWord, newSentence, newTranslation) { const card = await DB.get(DB_CONFIG.STORES.CARDS, cardId); await DB.update(DB_CONFIG.STORES.CARDS, { ...card, word: newWord, sentence: newSentence, translation: newTranslation }); await api.loadDeckDetailData(card.deckId); showToast('카드가 수정되었습니다.', 'success'); },
+            async deleteCard(cardId) { const card = await DB.get(DB_CONFIG.STORES.CARDS, cardId); await DB.delete(DB_CONFIG.STORES.CARDS, cardId); await api.loadDeckDetailData(card.deckId); },
+            async updateCardReview(card, isCorrect) { const updatedCard = Services.updateSrsData(card, isCorrect); await DB.update(DB_CONFIG.STORES.CARDS, updatedCard); },
+            async startSmartReviewSession() { const allCards = await DB.getAll(DB_CONFIG.STORES.CARDS); const now = new Date(); const reviewCards = allCards.filter(c => c.nextReviewAt && new Date(c.nextReviewAt) <= now); if (reviewCards.length === 0) return showToast('복습할 카드가 없습니다!', 'info'); api.startQuizSession(reviewCards, QUIZ_TYPE.MEANING); },
+            startLearnSession(cards) { if (cards.length === 0) return showToast('학습할 카드가 없습니다.', 'warning'); state.setState({ currentView: 'learn', learnState: { active: true, cards, currentIndex: 0 } }); },
+            startQuizSession(allCards, type) { if (allCards.length < 1) return showToast('퀴즈를 진행할 카드가 없습니다.', 'warning'); const weightedCards = allCards.map(card => ({ card, weight: Services.calculateWeight(card) })).filter(item => item.weight > 0).sort((a, b) => b.weight - a.weight); const questionCount = Math.min(weightedCards.length, state.data.quizQuestionCount); if(questionCount === 0) return showToast('지금은 퀴즈를 진행할 단어가 없습니다.', 'info'); const selectedCards = weightedCards.slice(0, questionCount).map(item => item.card); const shuffled = [...selectedCards].sort(() => Math.random() - 0.5); state.setState({ currentView: 'quiz', quizState: { active: true, type, cards: shuffled, currentIndex: 0, score: 0, incorrectCards: [], isAnswered: false, timeLeft: QUIZ_TIME_LIMIT, quizHistory: [] } }); startQuestionTimer(); },
+            async resumeQuizSession() { const savedSession = await DB.get(DB_CONFIG.STORES.QUIZ_SESSIONS, 'current'); if (savedSession) { state.setState({ currentView: 'quiz', quizState: savedSession.quizState, }); startQuestionTimer(); } else { showToast('저장된 퀴즈가 없습니다.', 'info'); } },
+            async saveQuizSession() { const { quizState } = state.data; await DB.update(DB_CONFIG.STORES.QUIZ_SESSIONS, { id: 'current', quizState }); showToast('퀴즈 진행 상황이 저장되었습니다.', 'success'); api.loadInitialData().then(() => state.setState({ currentView: 'dashboard'})); },
+            async deleteQuizSession() { await DB.delete(DB_CONFIG.STORES.QUIZ_SESSIONS, 'current'); state.setState({ savedQuizSession: null }); },
+            endQuiz() { stopQuestionTimer(); const { quizState, userProfile } = state.data; if(quizState.score === quizState.cards.length && quizState.cards.length > 0) Services.checkAndGrantAchievement('PERFECT_QUIZ'); const newXp = userProfile.xp + quizState.score * XP_PER_CORRECT; let newLevel = userProfile.level; while (LEVEL_THRESHOLDS[newLevel] && newXp >= LEVEL_THRESHOLDS[newLevel]) newLevel++; api.updateUserProfile({ ...userProfile, xp: newXp, level: newLevel }); Services.checkAndGrantAchievement('FIRST_QUIZ'); api.deleteQuizSession(); state.setState({ currentView: 'quizReview' }); },
+            async markCardAsKnown(cardId) { const card = await DB.get(DB_CONFIG.STORES.CARDS, cardId); if (card) { const maxSrsLevel = SRS_INTERVALS.length - 1; const updatedCard = { ...card, srsLevel: maxSrsLevel, nextReviewAt: new Date(Date.now() + SRS_INTERVALS[maxSrsLevel] * 1000) }; await DB.update(DB_CONFIG.STORES.CARDS, updatedCard); return card; } return null; }
         };
 
         // =================================================================================
         // 6. UI COMPONENTS & HELPERS
         // =================================================================================
-        const mapLangToCode = (lang) => {
-            const langMap = {
-                'English': 'en-US', 'Korean': 'ko-KR', 'Japanese': 'ja-JP', 'Chinese': 'zh-CN',
-                'Spanish': 'es-ES', 'French': 'fr-FR', 'German': 'de-DE', 'Russian': 'ru-RU'
-            };
-            return langMap[lang] || 'en-US';
-        };
-        const mapCodeToLang = (code) => {
-            const codeMap = {
-                'en-US': 'English', 'ko-KR': 'Korean', 'ja-JP': 'Japanese', 'zh-CN': 'Chinese',
-                'es-ES': 'Spanish', 'fr-FR': 'French', 'de-DE': 'German', 'ru-RU': 'Russian'
-            };
-            const baseCode = code.split('-')[0];
-            for (const key in codeMap) {
-                if (key.startsWith(baseCode)) {
-                    return codeMap[key];
-                }
-            }
-            return code; // Fallback to the code itself if no match is found
-        };
+        const mapLangToCode = (lang) => ({'English':'en-US','Korean':'ko-KR','Japanese':'ja-JP','Chinese':'zh-CN','Spanish':'es-ES','French':'fr-FR','German':'de-DE','Russian':'ru-RU'}[lang] || 'en-US');
+        const mapCodeToLang = (code) => { const codeMap = {'en-US':'English','ko-KR':'Korean','ja-JP':'Japanese','zh-CN':'Chinese','es-ES':'Spanish','fr-FR':'French','de-DE':'German','ru-RU':'Russian'}; const baseCode = code.split('-')[0]; for (const key in codeMap) if (key.startsWith(baseCode)) return codeMap[key]; return code; };
         const I = (name, classes = "w-4 h-4") => `<i data-lucide="${name}" class="${classes}"></i>`;
         const showToast = (message, type = 'info', duration = 3000) => { state.setState({ toast: { message, type, visible: true } }); setTimeout(() => state.setState({ toast: { ...state.data.toast, visible: false } }), duration); };
         const showModal = (content) => { state.setState({ modal: { visible: true, content } }); };
@@ -853,9 +617,7 @@
                 <div>
                     <label class="block text-sm font-medium mb-1">테마 색상</label>
                     <div class="flex gap-2">
-                        ${['blue', 'green', 'purple', 'red'].map(color => `
-                            <button data-color="${color}" class="theme-color-btn h-8 w-8 rounded-full bg-${color}-500 ${state.data.themeColor === color ? 'ring-2 ring-offset-2 dark:ring-offset-slate-800 ring-blue-500' : ''}"></button>
-                        `).join('')}
+                        ${['blue', 'green', 'purple', 'red'].map(color => `<button data-color="${color}" class="theme-color-btn h-8 w-8 rounded-full bg-${color}-500 ${state.data.themeColor === color ? 'ring-2 ring-offset-2 dark:ring-offset-slate-800 ring-blue-500' : ''}"></button>`).join('')}
                     </div>
                 </div>
                 <div>
@@ -889,26 +651,39 @@
             <div class="flex justify-end gap-2 mt-4">
                 <button id="modal-cancel" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">시작하기</button>
             </div>`;
-        const extractQTagContent = (str) => {
-            if (!str) return '';
-            const match = str.match(/<q>(.*?)<\/q>/);
-            return match ? match[1].trim() : '';
-        }
+        const ExportModalContent = (deckId) => `
+            <h3 class="text-lg font-bold mb-4">단어장 내보내기</h3>
+            <p class="mb-4">내보낼 파일 형식을 선택하세요.</p>
+            <div class="flex justify-center gap-4">
+                <button id="modal-export-json-btn" data-deck-id="${deckId}" class="bg-blue-500 text-white py-2 px-6 rounded-lg flex items-center gap-2">${I('file-json-2')} JSON</button>
+                <button id="modal-export-csv-btn" data-deck-id="${deckId}" class="bg-emerald-500 text-white py-2 px-6 rounded-lg flex items-center gap-2">${I('file-spreadsheet')} CSV</button>
+            </div>`;
+        const ImportModalContent = (deckId) => `
+            <h3 class="text-lg font-bold mb-4">단어장 가져오기</h3>
+            <div class="space-y-4">
+                <div>
+                    <label for="import-file-input" class="block text-sm font-medium mb-2">파일 선택 (.json 또는 .csv)</label>
+                    <input type="file" id="import-file-input" accept=".json,.csv" class="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                </div>
+                <div>
+                    <p class="block text-sm font-medium mb-2">파일 형식</p>
+                    <div class="flex gap-4">
+                        <label><input type="radio" name="import-format" value="json" checked> JSON</label>
+                        <label><input type="radio" name="import-format" value="csv"> CSV</label>
+                    </div>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-6">
+                <button id="modal-cancel" class="bg-slate-400 text-white py-2 px-4 rounded">취소</button>
+                <button id="modal-confirm-import" data-deck-id="${deckId}" class="bg-blue-500 text-white py-2 px-4 rounded">가져오기</button>
+            </div>`;
+        const extractQTagContent = (str) => { const match = str.match(/<q>(.*?)<\/q>/); return match ? match[1].trim() : ''; }
         const renderClozeSentence = (sentence, isDisabled) => sentence.replace(/<q>.*?<\/q>/, `<input id="cloze-answer-input" type="text" class="inline-block w-32 text-center text-lg border-b-2 p-1 bg-transparent border-slate-400 focus:outline-none focus:border-blue-500 transition-colors" autocomplete="off" autofocus ${isDisabled ? 'disabled' : ''}>`);
         const SpecialCharacterPanel = (lang) => {
-            const charMap = {
-                'French': ['é', 'è', 'ê', 'ë', 'ç', 'à', 'â', 'î', 'ô', 'û', 'ù', 'œ'],
-                'German': ['ä', 'ö', 'ü', 'ß'],
-                'Spanish': ['á', 'é', 'í', 'ó', 'ú', 'ñ', 'ü', '¡', '¿'],
-            };
+            const charMap = {'French':['é','è','ê','ë','ç','à','â','î','ô','û','ù','œ'],'German':['ä','ö','ü','ß'],'Spanish':['á','é','í','ó','ú','ñ','ü','¡','¿']};
             const chars = charMap[lang];
             if (!chars) return '';
-
-            return `
-                <div class="mt-4 flex flex-wrap justify-center gap-2">
-                    ${chars.map(char => `<button type="button" class="special-char-btn bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 font-mono text-lg rounded-md w-10 h-10" data-char="${char}">${char}</button>`).join('')}
-                </div>
-            `;
+            return `<div class="mt-4 flex flex-wrap justify-center gap-2">${chars.map(char => `<button type="button" class="special-char-btn bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 font-mono text-lg rounded-md w-10 h-10" data-char="${char}">${char}</button>`).join('')}</div>`;
         };
         
         // =================================================================================
@@ -917,9 +692,7 @@
         const MainHeader = ({ profile, searchQuery }) => `
             <header class="bg-white dark:bg-slate-800 shadow-lg p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10">
                 <div class="flex items-center gap-2">
-                    <div class="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-lg">
-                        ${I('brain-circuit', 'w-8 h-8 text-blue-500')}
-                    </div>
+                    <div class="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-lg"> ${I('brain-circuit', 'w-8 h-8 text-blue-500')} </div>
                     <h1 class="text-2xl font-bold cursor-pointer" id="home-btn">AI Vocabulary Hub</h1>
                 </div>
                 <div class="flex items-center gap-2 w-1/3">
@@ -1002,7 +775,6 @@
         const DeckDetailView = ({ deck, cards, isAddingWords, sortCriteria, bulkEditState, searchQuery }) => {
             if (!deck) return `<div class="flex items-center justify-center h-full"><p>단어장을 찾을 수 없습니다.</p></div>`;
 
-            // Use the centralized sorting service
             const sortedCards = Services.sortCards(cards, sortCriteria);
             
             const lowerQuery = searchQuery.toLowerCase();
@@ -1051,8 +823,8 @@
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
-                    <button id="deck-import-btn" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700" title="가져오기">${I('import')}</button>
-                    <button id="deck-export-btn" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700" title="내보내기">${I('export')}</button>
+                    <button id="deck-import-btn" data-deck-id="${deck.id}" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700" title="가져오기">${I('import')}</button>
+                    <button id="deck-export-btn" data-deck-id="${deck.id}" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700" title="내보내기">${I('export')}</button>
                 </div>
             </header>
             <main class="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 p-6 overflow-hidden">
@@ -1101,9 +873,9 @@
                 </div>
             </main>`;
         }
-        const LearnView = ({ learnState }) => {
+        const LearnView = ({ learnState }) => { /* ... (No changes needed in this view) ... */
             if (!learnState.cards || learnState.cards.length === 0) {
-                 return `
+                return `
                     <header class="bg-white dark:bg-slate-800 shadow-lg p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
                         <div class="flex items-center gap-3">
                             <button id="back-to-deck-btn" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">${I('arrow-left')}</button>
@@ -1154,35 +926,23 @@
                 </div>
             </main>`;
         };
-        const QuizView = ({ quizState }) => {
+        const QuizView = ({ quizState }) => { /* ... (No changes needed in this view) ... */ 
             const card = quizState.cards[quizState.currentIndex];
             const currentDeck = state.data.decks.find(d => d.id === card.deckId);
             const sourceLangCode = mapLangToCode(currentDeck?.sourceLang);
-
             const QuestionArea = () => {
                 if(quizState.type === QUIZ_TYPE.LISTENING) {
-                    if (!quizState.isAnswered) {
-                        setTimeout(() => document.getElementById('tts-btn')?.click(), 200);
-                    }
-                    return `
-                        <p class="text-slate-500 text-lg">들리는 단어의 뜻을 입력하세요.</p>
-                        <button id="tts-btn" data-tts-text="${card.word}" data-tts-lang="${sourceLangCode}" class="my-8 p-4 bg-blue-500 text-white rounded-full hover:bg-blue-600">${I('volume-2', 'w-12 h-12')}</button>
-                    `;
+                    if (!quizState.isAnswered) setTimeout(() => document.getElementById('tts-btn')?.click(), 200);
+                    return `<p class="text-slate-500 text-lg">들리는 단어의 뜻을 입력하세요.</p><button id="tts-btn" data-tts-text="${card.word}" data-tts-lang="${sourceLangCode}" class="my-8 p-4 bg-blue-500 text-white rounded-full hover:bg-blue-600">${I('volume-2', 'w-12 h-12')}</button>`;
                 }
                 if (quizState.type === QUIZ_TYPE.MEANING) {
-                    return `<p class="text-slate-500 text-lg">다음 단어의 뜻은?</p>
-                            <div class="flex items-center justify-center gap-4 my-8">
-                                <h2 class="text-6xl font-extrabold text-blue-500">${card.word}</h2>
-                                <button id="tts-btn" data-tts-text="${card.word}" data-tts-lang="${sourceLangCode}" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">${I('volume-2')}</button>
-                            </div>
-                    `;
+                    return `<p class="text-slate-500 text-lg">다음 단어의 뜻은?</p><div class="flex items-center justify-center gap-4 my-8"><h2 class="text-6xl font-extrabold text-blue-500">${card.word}</h2><button id="tts-btn" data-tts-text="${card.word}" data-tts-lang="${sourceLangCode}" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">${I('volume-2')}</button></div>`;
                 }
                 if (quizState.type === QUIZ_TYPE.CLOZE) {
                     return `<p class="text-slate-500 text-lg">빈칸에 알맞은 단어는?</p><h2 class="text-3xl font-bold my-6 text-center leading-relaxed">${renderClozeSentence(card.sentence, quizState.isAnswered)}</h2><p class="text-lg text-slate-500 dark:text-slate-400 mt-4">${card.translation}</p>`;
                 }
                 return '';
             };
-
             const timePercentage = (quizState.timeLeft / QUIZ_TIME_LIMIT) * 100;
             const timeColor = timePercentage > 50 ? 'bg-emerald-500' : timePercentage > 25 ? 'bg-yellow-500' : 'bg-red-500';
 
@@ -1207,7 +967,7 @@
                 </form>
             </main>`;
         };
-        const QuizReviewView = ({ quizState, userProfile }) => `
+        const QuizReviewView = ({ quizState }) => `
             <header class="bg-white dark:bg-slate-800 shadow-lg p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
                 <h1 class="text-2xl font-bold">퀴즈 결과 및 리뷰</h1>
             </header>
@@ -1236,8 +996,8 @@
                         </div>
                     </div>
                      <div class="flex justify-center gap-4 mt-8">
-                         <button id="back-to-dashboard-btn" class="bg-slate-500 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">완료</button>
-                         ${quizState.incorrectCards.length > 0 ? `<button id="retry-incorrect-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">틀린 문제 다시 풀기</button>` : ''}
+                          <button id="back-to-dashboard-btn" class="bg-slate-500 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">완료</button>
+                          ${quizState.incorrectCards.length > 0 ? `<button id="retry-incorrect-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">틀린 문제 다시 풀기</button>` : ''}
                     </div>
                 </div>
             </main>`;
@@ -1246,18 +1006,11 @@
             const totalCards = allCards.length;
             const learnedCards = allCards.filter(c => (c.srsLevel || 0) > 0).length;
             const masteredCards = allCards.filter(c => (c.srsLevel || 0) >= 7).length;
-
             const today = new Date();
             const oneYearAgo = new Date();
             oneYearAgo.setFullYear(today.getFullYear() - 1);
-
             const dates = [];
-            let currentDate = oneYearAgo;
-            while (currentDate <= today) {
-                dates.push(new Date(currentDate));
-                currentDate.setDate(currentDate.getDate() + 1);
-            }
-            
+            for (let d = new Date(oneYearAgo); d <= today; d.setDate(d.getDate() + 1)) dates.push(new Date(d));
             const firstDay = dates[0].getDay();
 
             return `
@@ -1266,22 +1019,10 @@
                 <div class="max-w-4xl mx-auto">
                     <h1 class="text-3xl font-bold mb-6">내 정보</h1>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center">
-                            <h3 class="text-sm font-semibold text-slate-500">연속 학습</h3>
-                            <p class="text-3xl font-bold">${userProfile.streak || 0}일</p>
-                        </div>
-                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center">
-                            <h3 class="text-sm font-semibold text-slate-500">총 단어</h3>
-                            <p class="text-3xl font-bold">${totalCards}</p>
-                        </div>
-                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center">
-                            <h3 class="text-sm font-semibold text-slate-500">학습한 단어</h3>
-                            <p class="text-3xl font-bold">${learnedCards}</p>
-                        </div>
-                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center">
-                            <h3 class="text-sm font-semibold text-slate-500">마스터한 단어</h3>
-                            <p class="text-3xl font-bold">${masteredCards}</p>
-                        </div>
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center"><h3 class="text-sm font-semibold text-slate-500">연속 학습</h3><p class="text-3xl font-bold">${userProfile.streak || 0}일</p></div>
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center"><h3 class="text-sm font-semibold text-slate-500">총 단어</h3><p class="text-3xl font-bold">${totalCards}</p></div>
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center"><h3 class="text-sm font-semibold text-slate-500">학습한 단어</h3><p class="text-3xl font-bold">${learnedCards}</p></div>
+                        <div class="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-md text-center"><h3 class="text-sm font-semibold text-slate-500">마스터한 단어</h3><p class="text-3xl font-bold">${masteredCards}</p></div>
                     </div>
                      <div class="bg-white dark:bg-slate-800 rounded-lg shadow-md p-6 mb-8">
                          <h3 class="text-xl font-bold mb-4">학습 활동</h3>
@@ -1341,27 +1082,16 @@
         };
         
         let prevState = null;
-
         function render(appState) {
-            // Simple diffing logic to prevent focus loss on timer update
-            if (
-                prevState &&
-                prevState.currentView === 'quiz' &&
-                appState.currentView === 'quiz' &&
-                prevState.quizState.currentIndex === appState.quizState.currentIndex &&
-                !appState.quizState.isAnswered &&
-                prevState.quizState.timeLeft !== appState.quizState.timeLeft
-            ) {
+            // Simple diffing to prevent focus loss during quiz timer updates
+            if (prevState && prevState.currentView === 'quiz' && appState.currentView === 'quiz' && prevState.quizState.currentIndex === appState.quizState.currentIndex && !appState.quizState.isAnswered && prevState.quizState.timeLeft !== appState.quizState.timeLeft) {
                 const timerText = document.getElementById('quiz-timer-text');
-
                 if (timerText) {
                     timerText.textContent = `${appState.quizState.timeLeft}s`;
-                    
                     prevState = JSON.parse(JSON.stringify(appState));
                     return; 
                 }
             }
-
             document.getElementById('app').innerHTML = App(appState);
             lucide.createIcons();
             prevState = JSON.parse(JSON.stringify(appState));
@@ -1375,16 +1105,13 @@
             if (!target) return;
             const id = target.id;
             const classList = target.classList;
+            
+            if(target.tagName === 'BUTTON' && target.closest('.deck-item')) event.stopPropagation();
 
-            if(target.tagName === 'BUTTON' && target.closest('.deck-item')) { event.stopPropagation(); }
-
-            if (id === 'home-btn' || id === 'back-to-dashboard-btn') return api.loadInitialData().then(() => state.setState({ currentView: 'dashboard' }));
+            // Navigation
+            if (id === 'home-btn' || id === 'back-to-dashboard-btn') return api.loadInitialData().then(() => state.setState({ currentView: 'dashboard', searchQuery: '' }));
             if (id === 'back-to-deck-btn') return state.setState({ currentView: 'deckDetail', isAddingWords: false });
-            if (id === 'back-to-learn-panel-btn') return state.setState({ isAddingWords: false });
-            if (id === 'start-smart-review-btn') return api.startSmartReviewSession();
-            if (id === 'resume-quiz-btn') return api.resumeQuizSession();
             if (id === 'profile-btn') return state.setState({ currentView: 'profile' });
-
             if (classList.contains('deck-item')) {
                 const deckId = parseInt(target.dataset.deckId);
                 state.setState({ currentView: 'deckDetail', currentDeckId: deckId, cards: [], searchQuery: '' });
@@ -1392,240 +1119,68 @@
                 return;
             }
 
-            if (id === 'exit-quiz-btn') {
-                return showModal(`
-                    <h3 class="text-lg font-bold mb-4">퀴즈 중단</h3>
-                    <p>퀴즈를 중단하시겠습니까? 진행 상황은 자동으로 저장됩니다.</p>
-                    <div class="flex justify-end gap-2 mt-6">
-                        <button id="modal-cancel" class="bg-slate-300 dark:bg-slate-600 py-2 px-4 rounded">계속하기</button>
-                        <button id="modal-confirm-exit-quiz" class="bg-red-500 text-white py-2 px-4 rounded">나가기</button>
-                    </div>`);
-            }
-            if (id === 'modal-confirm-exit-quiz') {
-                stopQuestionTimer();
-                api.saveQuizSession();
-                closeModal();
-            }
-            
-            const langOptions = (selected) => LANGUAGES.map(l => `<option value="${l}" ${l === selected ? 'selected' : ''}>${l}</option>`).join('');
-
-            const CategoryModalContent = (title, category = {}) => `
-                <h3 class="text-lg font-bold mb-4">${title}</h3>
-                <div class="space-y-4">
-                    <div>
-                        <label for="category-name-input">카테고리 이름</label>
-                        <input id="category-name-input" value="${category.name || ''}" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1" placeholder="카테고리 이름">
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label for="source-lang-select">학습할 언어 (Source)</label>
-                            <select id="source-lang-select" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1">${langOptions(category.sourceLang || 'English')}</select>
-                        </div>
-                        <div>
-                            <label for="target-lang-select">의미 언어 (Target)</label>
-                            <select id="target-lang-select" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1">${langOptions(category.targetLang || 'Korean')}</select>
-                        </div>
-                    </div>
-                </div>
-                <div class="flex justify-end gap-2 mt-6">
-                    <button id="modal-cancel" class="bg-slate-400 text-white py-2 px-4 rounded">취소</button>
-                    <button id="${category.id ? 'modal-confirm-edit-category' : 'modal-confirm-add-category'}" data-id="${category.id}" class="bg-blue-500 text-white py-2 px-4 rounded">저장</button>
-                </div>
-            `;
+            // Dashboard Actions
+            if (id === 'start-smart-review-btn') return api.startSmartReviewSession();
+            if (id === 'resume-quiz-btn') return api.resumeQuizSession();
             if (id === 'add-category-btn') return showModal(CategoryModalContent('새 카테고리'));
-            if (classList.contains('edit-category-btn')) return showModal(CategoryModalContent('카테고리 수정', { id: target.dataset.id, name: target.dataset.name, sourceLang: target.dataset.sl, targetLang: target.dataset.tl }));
 
+            // Deck Detail Actions
+            if (id === 'deck-export-btn') return showModal(ExportModalContent(target.dataset.deckId));
+            if (id === 'deck-import-btn') return showModal(ImportModalContent(target.dataset.deckId));
+            if (id === 'modal-export-json-btn') { api.exportDeck(parseInt(target.dataset.deckId), 'json'); closeModal(); }
+            if (id === 'modal-export-csv-btn') { api.exportDeck(parseInt(target.dataset.deckId), 'csv'); closeModal(); }
+            if (id === 'modal-confirm-import') {
+                const fileInput = document.getElementById('import-file-input');
+                const file = fileInput?.files?.[0];
+                if (!file) return showToast('가져올 파일을 선택하세요.', 'warning');
+                const format = document.querySelector('input[name="import-format"]:checked').value;
+                const reader = new FileReader();
+                reader.onload = (e) => api.importCards(parseInt(target.dataset.deckId), e.target.result, format);
+                reader.onerror = () => showToast('파일을 읽는 중 오류가 발생했습니다.', 'error');
+                reader.readAsText(file);
+            }
+
+            // General Modals
+            if (id === 'modal-cancel') return closeModal();
             if (id === 'settings-btn') return showModal(SettingsModalContent());
-            
-            const DeleteConfirmModalContent = (type, id, name) => `
-                <h3 class="text-lg font-bold mb-4">${type} 삭제</h3>
-                <p>정말로 '${name}' ${type}을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p>
-                <p class="text-sm my-4">삭제를 확인하려면 아래에 <span class="font-bold text-red-500">${name}</span> 을(를) 입력하세요.</p>
-                <input id="delete-confirm-input" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 border dark:border-slate-600">
-                <div class="flex justify-end gap-2 mt-4">
-                    <button id="modal-cancel">취소</button>
-                    <button id="modal-confirm-delete" data-type="${type}" data-id="${id}" data-name="${name}" class="bg-red-500 text-white py-2 px-4 rounded opacity-50 cursor-not-allowed" disabled>삭제</button>
-                </div>
-            `;
+
+            // ... (Rest of the click handlers remain the same)
+            if (id === 'exit-quiz-btn') return showModal(`<h3 class="text-lg font-bold mb-4">퀴즈 중단</h3><p>퀴즈를 중단하시겠습니까? 진행 상황은 자동으로 저장됩니다.</p><div class="flex justify-end gap-2 mt-6"><button id="modal-cancel" class="bg-slate-300 dark:bg-slate-600 py-2 px-4 rounded">계속하기</button><button id="modal-confirm-exit-quiz" class="bg-red-500 text-white py-2 px-4 rounded">나가기</button></div>`);
+            if (id === 'modal-confirm-exit-quiz') { stopQuestionTimer(); api.saveQuizSession(); closeModal(); }
+            const langOptions = (selected) => LANGUAGES.map(l => `<option value="${l}" ${l === selected ? 'selected' : ''}>${l}</option>`).join('');
+            const CategoryModalContent = (title, category = {}) => `<h3 class="text-lg font-bold mb-4">${title}</h3><div class="space-y-4"><div><label for="category-name-input">카테고리 이름</label><input id="category-name-input" value="${category.name || ''}" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1" placeholder="카테고리 이름"></div><div class="grid grid-cols-2 gap-4"><div><label for="source-lang-select">학습할 언어 (Source)</label><select id="source-lang-select" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1">${langOptions(category.sourceLang || 'English')}</select></div><div><label for="target-lang-select">의미 언어 (Target)</label><select id="target-lang-select" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600 border mt-1">${langOptions(category.targetLang || 'Korean')}</select></div></div></div><div class="flex justify-end gap-2 mt-6"><button id="modal-cancel" class="bg-slate-400 text-white py-2 px-4 rounded">취소</button><button id="${category.id ? 'modal-confirm-edit-category' : 'modal-confirm-add-category'}" data-id="${category.id}" class="bg-blue-500 text-white py-2 px-4 rounded">저장</button></div>`;
+            if (classList.contains('edit-category-btn')) return showModal(CategoryModalContent('카테고리 수정', { id: target.dataset.id, name: target.dataset.name, sourceLang: target.dataset.sl, targetLang: target.dataset.tl }));
+            const DeleteConfirmModalContent = (type, id, name) => `<h3 class="text-lg font-bold mb-4">${type} 삭제</h3><p>정말로 '${name}' ${type}을(를) 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.</p><p class="text-sm my-4">삭제를 확인하려면 아래에 <span class="font-bold text-red-500">${name}</span> 을(를) 입력하세요.</p><input id="delete-confirm-input" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 border dark:border-slate-600"><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel">취소</button><button id="modal-confirm-delete" data-type="${type}" data-id="${id}" data-name="${name}" class="bg-red-500 text-white py-2 px-4 rounded opacity-50 cursor-not-allowed" disabled>삭제</button></div>`;
             if (classList.contains('delete-category-btn')) return showModal(DeleteConfirmModalContent('카테고리', target.dataset.id, target.dataset.name));
             if (classList.contains('delete-deck-btn')) return showModal(DeleteConfirmModalContent('단어장', target.dataset.id, target.dataset.name));
-
-            if (id === 'modal-confirm-delete') {
-                const { type, id: itemId } = target.dataset;
-                if (type === '카테고리') api.deleteCategory(parseInt(itemId));
-                if (type === '단어장') api.deleteDeck(parseInt(itemId));
-                closeModal();
-            }
-
+            if (id === 'modal-confirm-delete') { const { type, id: itemId } = target.dataset; if (type === '카테고리') api.deleteCategory(parseInt(itemId)); if (type === '단어장') api.deleteDeck(parseInt(itemId)); closeModal(); }
             if (classList.contains('add-deck-btn')) return showModal(`<h3 class="text-lg font-bold mb-4">새 단어장</h3><input id="modal-input" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600" placeholder="단어장 이름"><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel">취소</button><button id="modal-confirm-add-deck" data-category-id="${target.dataset.categoryId}" class="bg-blue-500 text-white py-2 px-4 rounded">생성</button></div>`);
             if (classList.contains('edit-deck-btn')) return showModal(`<h3 class="text-lg font-bold mb-4">단어장 수정</h3><input id="modal-input" value="${target.dataset.name}" class="w-full p-2 rounded"><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel">취소</button><button id="modal-confirm-edit-deck" data-id="${target.dataset.id}" class="bg-blue-500 text-white py-2 px-4 rounded">수정</button></div>`);
-            
-            if (classList.contains('edit-card-btn')) {
-                const cardId = parseInt(target.dataset.id);
-                const card = state.data.cards.find(c => c.id === cardId);
-                return showModal(`
-                    <h3 class="text-lg font-bold mb-4">카드 수정</h3>
-                    <div class="space-y-3">
-                        <div><label class="text-sm">단어</label><input id="edit-card-word" value="${card.word}" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700"></div>
-                        <div><label class="text-sm">예문</label><textarea id="edit-card-sentence" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700">${card.sentence}</textarea></div>
-                        <div><label class="text-sm">번역</label><textarea id="edit-card-translation" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700">${card.translation}</textarea></div>
-                    </div>
-                     <div class="flex justify-end gap-2 mt-4">
-                         <button id="modal-cancel">취소</button>
-                         <button id="modal-confirm-edit-card" data-id="${cardId}" class="bg-blue-500 text-white py-2 px-4 rounded">수정</button>
-                     </div>
-                `);
-            }
-            if (id === 'modal-confirm-edit-card') {
-                const cardId = parseInt(target.dataset.id);
-                const word = document.getElementById('edit-card-word').value;
-                const sentence = document.getElementById('edit-card-sentence').value;
-                const translation = document.getElementById('edit-card-translation').value;
-                api.updateCard(cardId, word, sentence, translation);
-                closeModal();
-            }
-
-            if (classList.contains('delete-card-btn')) {
-                const cardId = parseInt(target.dataset.id);
-                return showModal(`<p>이 카드를 삭제하시겠습니까?</p><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel">취소</button><button id="modal-confirm-delete-card" data-id="${cardId}" class="bg-red-500 text-white py-2 px-4 rounded">삭제</button></div>`);
-            }
-            
-            if (id === 'modal-cancel') return closeModal();
-            if (id === 'modal-confirm-save-settings') { 
-                const key = document.getElementById('api-key-input').value;
-                const template = document.getElementById('prompt-template-input').value;
-                const count = document.getElementById('quiz-question-count-input').value;
-                const theme = state.data.themeColor;
-                api.saveSettings(key, template, count, theme); 
-                closeModal(); 
-            }
-            
-            if (id === 'modal-confirm-add-category' || id === 'modal-confirm-edit-category') {
-                const name = document.getElementById('category-name-input').value;
-                const sourceLang = document.getElementById('source-lang-select').value;
-                const targetLang = document.getElementById('target-lang-select').value;
-                if (id === 'modal-confirm-add-category') {
-                    api.addCategory(name, sourceLang, targetLang);
-                } else {
-                    api.updateCategory(parseInt(target.dataset.id), name, sourceLang, targetLang);
-                }
-                closeModal();
-            }
-            
+            if (classList.contains('edit-card-btn')) { const cardId = parseInt(target.dataset.id); const card = state.data.cards.find(c => c.id === cardId); return showModal(`<h3 class="text-lg font-bold mb-4">카드 수정</h3><div class="space-y-3"><div><label class="text-sm">단어</label><input id="edit-card-word" value="${card.word}" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700"></div><div><label class="text-sm">예문</label><textarea id="edit-card-sentence" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700">${card.sentence}</textarea></div><div><label class="text-sm">번역</label><textarea id="edit-card-translation" class="w-full p-2 mt-1 rounded bg-slate-100 dark:bg-slate-700">${card.translation}</textarea></div></div><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel">취소</button><button id="modal-confirm-edit-card" data-id="${cardId}" class="bg-blue-500 text-white py-2 px-4 rounded">수정</button></div>`);}
+            if (id === 'modal-confirm-edit-card') { const cardId = parseInt(target.dataset.id); const word = document.getElementById('edit-card-word').value; const sentence = document.getElementById('edit-card-sentence').value; const translation = document.getElementById('edit-card-translation').value; api.updateCard(cardId, word, sentence, translation); closeModal();}
+            if (classList.contains('delete-card-btn')) { const cardId = parseInt(target.dataset.id); return showModal(`<p>이 카드를 삭제하시겠습니까?</p><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel">취소</button><button id="modal-confirm-delete-card" data-id="${cardId}" class="bg-red-500 text-white py-2 px-4 rounded">삭제</button></div>`); }
+            if (id === 'modal-confirm-save-settings') { const key = document.getElementById('api-key-input').value; const template = document.getElementById('prompt-template-input').value; const count = document.getElementById('quiz-question-count-input').value; const theme = state.data.themeColor; api.saveSettings(key, template, count, theme); closeModal(); }
+            if (id === 'modal-confirm-add-category' || id === 'modal-confirm-edit-category') { const name = document.getElementById('category-name-input').value; const sourceLang = document.getElementById('source-lang-select').value; const targetLang = document.getElementById('target-lang-select').value; if (id === 'modal-confirm-add-category') api.addCategory(name, sourceLang, targetLang); else api.updateCategory(parseInt(target.dataset.id), name, sourceLang, targetLang); closeModal(); }
             if (id === 'modal-confirm-add-deck') { api.addDeck(parseInt(target.dataset.categoryId), document.getElementById('modal-input').value); closeModal(); }
             if (id === 'modal-confirm-edit-deck') { api.updateDeck(parseInt(target.dataset.id), document.getElementById('modal-input').value); closeModal(); }
-
             if (id === 'modal-confirm-delete-card') { api.deleteCard(parseInt(target.dataset.id)); closeModal(); }
-
-            if (classList.contains('theme-color-btn')) {
-                const color = target.dataset.color;
-                state.setState({ themeColor: color });
-                applyTheme(color);
-            }
-             if (id === 'generate-ai-btn') { api.addCardsFromAI(state.data.currentDeckId, document.getElementById('word-input-area').value); document.getElementById('word-input-area').value = ''; }
-            if (id === 'manual-generate-btn') {
-                const words = document.getElementById('word-input-area').value.split('\n').map(w=>w.trim()).filter(Boolean);
-                const currentDeck = state.data.decks.find(d => d.id === state.data.currentDeckId);
-                const promptText = Services.buildXMLPrompt(words.length > 0 ? words : ['sample word'], currentDeck.sourceLang, currentDeck.targetLang);
-                return showModal(`
-                    <h3 class="text-lg font-bold mb-4">수동 생성 가이드</h3>
-                    <p class="text-sm mb-2">1. 아래 프롬프트를 복사하여 ChatGPT 등 외부 AI 서비스에 붙여넣으세요.</p>
-                    <textarea id="prompt-output" readonly class="w-full h-32 p-2 text-xs bg-slate-100 dark:bg-slate-700 rounded">${promptText}</textarea>
-                    <button id="copy-prompt-btn" class="w-full mt-2 bg-blue-500 text-white py-2 rounded flex items-center justify-center gap-2">${I('copy')} 프롬프트 복사</button>
-                    <p class="text-sm mt-4 mb-2">2. AI가 생성한 <span class="font-bold text-red-500">&lt;json_response&gt;</span> 태그 안의 <span class="font-bold text-red-500">[ ... ]</span> JSON 배열만 복사하여 아래에 붙여넣고 '적용' 버튼을 누르세요.</p>
-                    <textarea id="manual-input-area" class="w-full h-24 p-2 border rounded bg-slate-100 dark:bg-slate-700" placeholder="[ { ... } ] 형식의 JSON 결과를 여기에 붙여넣으세요..."></textarea>
-                    <div class="flex justify-end gap-2 mt-4">
-                        <button id="modal-cancel" class="bg-slate-500 text-white py-2 px-4 rounded">닫기</button>
-                        <button id="modal-confirm-manual-add" class="bg-emerald-500 text-white py-2 px-4 rounded">적용</button>
-                    </div>`);
-            }
-            if (id === 'copy-prompt-btn') {
-                document.getElementById('prompt-output').select();
-                document.execCommand('copy');
-                showToast('프롬프트가 복사되었습니다.', 'success');
-            }
-            if (id === 'modal-confirm-manual-add') {
-                const jsonText = document.getElementById('manual-input-area').value;
-                if(jsonText) {
-                    api.addCardsFromText(state.data.currentDeckId, jsonText).then(success => {
-                        if (success) closeModal();
-                    });
-                } else { showToast('JSON 결과를 입력하세요.', 'warning'); }
-            }
+            if (classList.contains('theme-color-btn')) { const color = target.dataset.color; state.setState({ themeColor: color }); applyTheme(color); }
+            if (id === 'generate-ai-btn') { api.addCardsFromAI(state.data.currentDeckId, document.getElementById('word-input-area').value); document.getElementById('word-input-area').value = ''; }
+            if (id === 'manual-generate-btn') { const words = document.getElementById('word-input-area').value.split('\n').map(w=>w.trim()).filter(Boolean); const currentDeck = state.data.decks.find(d => d.id === state.data.currentDeckId); const promptText = Services.buildXMLPrompt(words.length > 0 ? words : ['sample word'], currentDeck.sourceLang, currentDeck.targetLang); return showModal(`<h3 class="text-lg font-bold mb-4">수동 생성 가이드</h3><p class="text-sm mb-2">1. 아래 프롬프트를 복사하여 ChatGPT 등 외부 AI 서비스에 붙여넣으세요.</p><textarea id="prompt-output" readonly class="w-full h-32 p-2 text-xs bg-slate-100 dark:bg-slate-700 rounded">${promptText}</textarea><button id="copy-prompt-btn" class="w-full mt-2 bg-blue-500 text-white py-2 rounded flex items-center justify-center gap-2">${I('copy')} 프롬프트 복사</button><p class="text-sm mt-4 mb-2">2. AI가 생성한 <span class="font-bold text-red-500">&lt;json_response&gt;</span> 태그 안의 <span class="font-bold text-red-500">[ ... ]</span> JSON 배열만 복사하여 아래에 붙여넣고 '적용' 버튼을 누르세요.</p><textarea id="manual-input-area" class="w-full h-24 p-2 border rounded bg-slate-100 dark:bg-slate-700" placeholder="[ { ... } ] 형식의 JSON 결과를 여기에 붙여넣으세요..."></textarea><div class="flex justify-end gap-2 mt-4"><button id="modal-cancel" class="bg-slate-500 text-white py-2 px-4 rounded">닫기</button><button id="modal-confirm-manual-add" class="bg-emerald-500 text-white py-2 px-4 rounded">적용</button></div>`); }
+            if (id === 'copy-prompt-btn') { document.getElementById('prompt-output').select(); document.execCommand('copy'); showToast('프롬프트가 복사되었습니다.', 'success'); }
+            if (id === 'modal-confirm-manual-add') { const jsonText = document.getElementById('manual-input-area').value; if(jsonText) api.addCardsFromText(state.data.currentDeckId, jsonText).then(success => { if (success) closeModal(); }); else showToast('JSON 결과를 입력하세요.', 'warning'); }
             if (id === 'toggle-add-words-btn') return state.setState({ isAddingWords: true });
             if (id === 'start-learning-btn') return api.startLearnSession(state.data.cards);
             if (id === 'start-quiz-meaning-btn') return api.startQuizSession(state.data.cards, QUIZ_TYPE.MEANING);
             if (id === 'start-quiz-cloze-btn') return api.startQuizSession(state.data.cards, QUIZ_TYPE.CLOZE);
             if (id === 'start-quiz-listening-btn') return api.startQuizSession(state.data.cards, QUIZ_TYPE.LISTENING);
-            if (id === 'retry-incorrect-btn') {
-                const { quizState } = state.data;
-                api.startQuizSession(quizState.incorrectCards, quizState.type);
-            }
-            
+            if (id === 'retry-incorrect-btn') { const { quizState } = state.data; api.startQuizSession(quizState.incorrectCards, quizState.type); }
             if (id === 'flashcard') document.getElementById('flashcard').classList.toggle('flipped');
-            if (id === 'prev-card-btn') {
-                 document.getElementById('flashcard').classList.remove('flipped');
-                 setTimeout(() => state.setState({ learnState: { ...state.data.learnState, currentIndex: Math.max(0, state.data.learnState.currentIndex - 1) } }), 200);
-            }
-            if (id === 'next-card-btn') {
-                document.getElementById('flashcard').classList.remove('flipped');
-                setTimeout(() => state.setState({ learnState: { ...state.data.learnState, currentIndex: Math.min(state.data.learnState.cards.length - 1, state.data.learnState.currentIndex + 1) } }), 200);
-            }
-            if (id === 'tts-btn') {
-                const button = event.target.closest('#tts-btn');
-                if (!button) return;
-
-                const textToSpeak = button.dataset.ttsText;
-                const langCode = button.dataset.ttsLang;
-                
-                TTSService.speak(textToSpeak, langCode);
-            }
-            
-            if (classList.contains('know-this-card-btn')) {
-                const cardId = parseInt(target.dataset.id);
-                api.markCardAsKnown(cardId).then(card => {
-                    if (card) {
-                        showToast(`'${card.word}'을(를) 아는 단어로 표시했습니다.`, 'success');
-                        api.loadDeckDetailData(card.deckId);
-                    }
-                });
-            }
-
-            if (id === 'learn-know-this-card-btn') {
-                const cardId = parseInt(target.dataset.id);
-                api.markCardAsKnown(cardId).then(card => {
-                    if (card) {
-                        showToast(`'${card.word}'을(를) 아는 단어로 표시했습니다.`, 'success');
-                        
-                        // Remove the card from the current learn session and advance.
-                        const { learnState } = state.data;
-                        const newCards = learnState.cards.filter(c => c.id !== cardId);
-
-                        // Unflip the card for the next one
-                        const flashcard = document.getElementById('flashcard');
-                        if (flashcard) flashcard.classList.remove('flipped');
-
-                        setTimeout(() => {
-                           if (newCards.length === 0) {
-                                // If it was the last card, go back to the deck detail view.
-                                api.loadDeckDetailData(card.deckId).then(() => {
-                                    state.setState({ currentView: 'deckDetail' });
-                                });
-                            } else {
-                                // If we removed the last card in the list, clamp index to the new last card.
-                                const newIndex = Math.min(learnState.currentIndex, newCards.length - 1);
-                                state.setState({
-                                    learnState: {
-                                        ...learnState,
-                                        cards: newCards,
-                                        currentIndex: newIndex
-                                    }
-                                });
-                            }
-                        }, 200); // Delay to allow flip animation to reset
-                    }
-                });
-            }
+            if (id === 'prev-card-btn') { document.getElementById('flashcard').classList.remove('flipped'); setTimeout(() => state.setState({ learnState: { ...state.data.learnState, currentIndex: Math.max(0, state.data.learnState.currentIndex - 1) } }), 200); }
+            if (id === 'next-card-btn') { document.getElementById('flashcard').classList.remove('flipped'); setTimeout(() => state.setState({ learnState: { ...state.data.learnState, currentIndex: Math.min(state.data.learnState.cards.length - 1, state.data.learnState.currentIndex + 1) } }), 200); }
+            if (id === 'tts-btn') { const button = event.target.closest('#tts-btn'); if (!button) return; const textToSpeak = button.dataset.ttsText; const langCode = button.dataset.ttsLang; TTSService.speak(textToSpeak, langCode); }
+            if (classList.contains('know-this-card-btn')) { const cardId = parseInt(target.dataset.id); api.markCardAsKnown(cardId).then(card => { if (card) { showToast(`'${card.word}'을(를) 아는 단어로 표시했습니다.`, 'success'); api.loadDeckDetailData(card.deckId); } }); }
+            if (id === 'learn-know-this-card-btn') { const cardId = parseInt(target.dataset.id); api.markCardAsKnown(cardId).then(card => { if (card) { showToast(`'${card.word}'을(를) 아는 단어로 표시했습니다.`, 'success'); const { learnState } = state.data; const newCards = learnState.cards.filter(c => c.id !== cardId); const flashcard = document.getElementById('flashcard'); if (flashcard) flashcard.classList.remove('flipped'); setTimeout(() => { if (newCards.length === 0) { api.loadDeckDetailData(card.deckId).then(() => { state.setState({ currentView: 'deckDetail' }); }); } else { const newIndex = Math.min(learnState.currentIndex, newCards.length - 1); state.setState({ learnState: { ...learnState, cards: newCards, currentIndex: newIndex } }); } }, 200); } }); }
         }
         
         async function handleGlobalSubmit(event) {
@@ -1637,10 +1192,7 @@
             let userAnswer = '', isCorrect;
             
             const inputElement = document.getElementById('answer-input') || document.getElementById('cloze-answer-input');
-            if(inputElement) {
-                userAnswer = inputElement.value.trim();
-            }
-
+            if(inputElement) userAnswer = inputElement.value.trim();
             if (quizState.type === QUIZ_TYPE.MEANING || quizState.type === QUIZ_TYPE.LISTENING) {
                 const correctAnswer = extractQTagContent(currentCard.translation);
                 isCorrect = userAnswer.length > 0 && correctAnswer.toLowerCase().includes(userAnswer.toLowerCase());
@@ -1648,33 +1200,24 @@
                 const correctAnswer = extractQTagContent(currentCard.sentence);
                 isCorrect = userAnswer.toLowerCase() === correctAnswer.toLowerCase();
             }
-            
             processAnswer(isCorrect, userAnswer);
         }
 
         function handleGlobalInput(event) {
             const target = event.target;
             if (target.id === 'delete-confirm-input') {
-                const modalContent = target.closest('#modal-content');
-                const confirmButton = modalContent.querySelector('#modal-confirm-delete');
+                const confirmButton = document.querySelector('#modal-confirm-delete');
                 const expectedName = confirmButton.dataset.name;
-                if (target.value === expectedName) {
-                    confirmButton.disabled = false;
-                    confirmButton.classList.remove('opacity-50', 'cursor-not-allowed');
-                } else {
-                    confirmButton.disabled = true;
-                    confirmButton.classList.add('opacity-50', 'cursor-not-allowed');
-                }
+                const isMatch = target.value === expectedName;
+                confirmButton.disabled = !isMatch;
+                confirmButton.classList.toggle('opacity-50', !isMatch);
+                confirmButton.classList.toggle('cursor-not-allowed', !isMatch);
             }
             if (target.id === 'search-input') {
                 state.setState({ searchQuery: target.value });
             }
         }
 
-        /**
-         * Handles all 'change' events across the app using event delegation.
-         * @param {Event} event - The change event object.
-         */
         function handleGlobalChange(event) {
             const target = event.target;
             if (target.id === 'sort-criteria-select') {
@@ -1689,24 +1232,18 @@
                 event.preventDefault();
                 document.getElementById('search-input')?.focus();
             }
-
             if (currentView === 'learn') {
                 if (event.key === 'ArrowLeft') document.getElementById('prev-card-btn')?.click();
                 if (event.key === 'ArrowRight') document.getElementById('next-card-btn')?.click();
-                if (event.key === ' ') {
-                    event.preventDefault();
-                    document.getElementById('flashcard')?.click();
-                }
+                if (event.key === ' ') { event.preventDefault(); document.getElementById('flashcard')?.click(); }
             }
         }
         
         const applyTheme = (color) => {
             const root = document.documentElement;
             const colors = {
-                blue: { accent: '#3b82f6', hover: '#2563eb' },
-                green: { accent: '#10b981', hover: '#059669' },
-                purple: { accent: '#8b5cf6', hover: '#7c3aed' },
-                red: { accent: '#ef4444', hover: '#dc2626' },
+                blue: { accent: '#3b82f6', hover: '#2563eb' }, green: { accent: '#10b981', hover: '#059669' },
+                purple: { accent: '#8b5cf6', hover: '#7c3aed' }, red: { accent: '#ef4444', hover: '#dc2626' },
             };
             root.style.setProperty('--primary-accent', colors[color].accent);
             root.style.setProperty('--primary-accent-hover', colors[color].hover);
@@ -1724,17 +1261,15 @@
             document.getElementById('app').addEventListener('click', handleGlobalClicks);
             document.getElementById('app').addEventListener('submit', handleGlobalSubmit);
             document.getElementById('app').addEventListener('input', handleGlobalInput);
-            document.getElementById('app').addEventListener('change', handleGlobalChange); // Add new event listener
+            document.getElementById('app').addEventListener('change', handleGlobalChange);
             document.addEventListener('keydown', handleGlobalKeydown);
             
-            const applyColorScheme = (isDark) => document.documentElement.classList.toggle('dark', isDark);
             const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-            applyColorScheme(mediaQuery.matches);
-            mediaQuery.addEventListener('change', e => applyColorScheme(e.matches));
+            const applyColorScheme = (e) => document.documentElement.classList.toggle('dark', e.matches);
+            applyColorScheme(mediaQuery);
+            mediaQuery.addEventListener('change', applyColorScheme);
         }
         main();
     </script>
 </body>
 </html>
-
-
