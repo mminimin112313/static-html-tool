@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Text Learner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        :root {
+            --background-light: #f8fafc; /* slate-50 */
+            --background-dark: #0f172a;  /* slate-900 */
+            --text-light-primary: #0f172a; /* slate-900 */
+            --text-dark-primary: #f8fafc; /* slate-50 */
+            --border-light: #e2e8f0; /* slate-200 */
+            --border-dark: #334155; /* slate-700 */
+            --primary-accent: #3b82f6; /* blue-500 */
+        }
+        html.dark { color-scheme: dark; }
+        body {
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            background-color: var(--background-light);
+            color: var(--text-light-primary);
+        }
+        .dark body {
+            background-color: var(--background-dark);
+            color: var(--text-dark-primary);
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--border-light); }
+        .dark ::-webkit-scrollbar-track { background: var(--border-dark); }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes spinner { to { transform: rotate(360deg); } }
+        .fade-in { animation: fadeIn 0.5s ease-in-out forwards; }
+        .spinner { animation: spinner 0.6s linear infinite; }
+        
+        .drop-zone-active {
+            outline: 2px dashed var(--primary-accent);
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+
+        .markdown-content h1, .markdown-content h2, .markdown-content h3 { font-weight: bold; margin-top: 1.2em; margin-bottom: 0.6em; }
+        .markdown-content h1 { font-size: 1.8rem; border-bottom: 1px solid var(--border-light); padding-bottom: 0.3em; }
+        .dark .markdown-content h1 { border-bottom-color: var(--border-dark); }
+        .markdown-content h2 { font-size: 1.5rem; }
+        .markdown-content h3 { font-size: 1.2rem; }
+        .markdown-content p { margin-bottom: 1em; line-height: 1.6; }
+        .markdown-content ul, .markdown-content ol { margin-left: 1.5em; margin-bottom: 1em; }
+        .markdown-content li { margin-bottom: 0.5em; }
+        .markdown-content blockquote { border-left: 4px solid var(--primary-accent); padding-left: 1em; margin: 1em 0; color: #64748b; }
+        .dark .markdown-content blockquote { color: #94a3b8; }
+        .markdown-content code { background-color: #f1f5f9; padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; }
+        .dark .markdown-content code { background-color: #1e293b; }
+        .markdown-content pre { background-color: #f1f5f9; padding: 1em; border-radius: 8px; overflow-x: auto; }
+        .dark .markdown-content pre { background-color: #1e293b; }
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-50">
+    <div id="app" class="h-screen w-screen flex flex-col"></div>
+
+    <script type="module">
+        // =================================================================================
+        // 1. CONFIGURATION & CONSTANTS
+        // =================================================================================
+        const CONFIG = {
+            DB_NAME: 'AI_Text_Learner_DB_v2',
+            DB_VERSION: 1,
+            DB_STORES: { 
+                CHAPTERS: 'chapters', 
+                MATERIALS: 'materials', 
+                QUESTIONS: 'questions', 
+                SETTINGS: 'settings', 
+                USER_PROFILE: 'userProfile', 
+                QUIZ_SESSIONS: 'quizSessions' 
+            },
+            EXPORT_TYPE_ID: 'AI_TEXT_LEARNER_CHAPTER_EXPORT',
+            XP_PER_CORRECT: 10,
+            LEVEL_THRESHOLDS: [0, 100, 250, 500, 1000, 2000, 4000, 8000, 16000, 32000],
+            QUIZ_TYPE: { MULTIPLE_CHOICE: 'multiple_choice', SHORT_ANSWER: 'short_answer', SUBJECTIVE: 'subjective', CASE_BASED: 'case_based' },
+            DEFAULT_QUIZ_QUESTION_COUNT: 10,
+            DEFAULT_TASK_DESCRIPTION: `You are an expert educator. Your task is to create a comprehensive and in-depth learning quiz based on the provided text. The quiz must thoroughly test the user's understanding of all key concepts, facts, and nuances within the text.`,
+            DEFAULT_OUTPUT_FORMAT_INSTRUCTION: `Respond ONLY with a valid JSON array of question objects inside a <json_response> tag. Do not include any other text or explanations outside this tag.`,
+            DEFAULT_PROMPT_TEMPLATE: `<?xml version="1.0" encoding="UTF-8"?>
+<request>
+  <task>{{taskDescription}}</task>
+  <instructions>
+    1.  Generate exactly {{questionCount}} questions.
+    2.  Create a mix of question types: 'multiple_choice', 'short_answer', 'subjective', and 'case_based'.
+        -   For 'multiple_choice', provide 4 distinct options, with one clearly correct answer.
+        -   For 'short_answer', the answer should be a concise phrase or term.
+        -   For 'subjective', the question should require a descriptive, explanatory answer.
+        -   For 'case_based', present a specific scenario or case and ask for an analysis, solution, or application of concepts based on it.
+    3.  For EACH question, you MUST provide:
+        -   "questionText": The question itself.
+        -   "type": The type of question ('multiple_choice', 'short_answer', 'subjective', 'case_based').
+        -   "options": An array of 4 strings, ONLY for 'multiple_choice' questions. Null for others.
+        -   "answer": The correct answer. For 'multiple_choice', this is the exact text of the correct option. For 'subjective' and 'case_based' questions, provide a detailed model answer.
+        -   "explanation": A clear and detailed explanation of why the answer is correct, referencing the source text if possible.
+  </instructions>
+  <sourceText>
+    {{sourceText}}
+  </sourceText>
+  <outputFormat>{{outputFormatInstruction}}</outputFormat>
+</request>`
+        };
+
+        // =================================================================================
+        // 2. DATABASE MODULE (IndexedDB)
+        // =================================================================================
+        const DB = (() => {
+            let dbInstance = null;
+            const init = () => new Promise((resolve, reject) => {
+                if (dbInstance) return resolve(dbInstance);
+                const request = indexedDB.open(CONFIG.DB_NAME, CONFIG.DB_VERSION);
+                request.onupgradeneeded = e => {
+                    const db = e.target.result;
+                    Object.values(CONFIG.DB_STORES).forEach(name => {
+                        if (!db.objectStoreNames.contains(name)) {
+                            const store = db.createObjectStore(name, { keyPath: 'id', autoIncrement: true });
+                            if (name === CONFIG.DB_STORES.QUESTIONS) store.createIndex('materialId', 'materialId');
+                            if (name === CONFIG.DB_STORES.MATERIALS) store.createIndex('chapterId', 'chapterId');
+                        }
+                    });
+                };
+                request.onsuccess = e => { dbInstance = e.target.result; resolve(dbInstance); };
+                request.onerror = e => reject(`Database error: ${e.target.error}`);
+            });
+            const getStore = (name, mode = 'readonly') => dbInstance.transaction(name, mode).objectStore(name);
+            const promisify = request => new Promise((resolve, reject) => {
+                request.onsuccess = e => resolve(e.target.result);
+                request.onerror = e => reject(e.target.error);
+            });
+            return {
+                init,
+                add: (name, data) => promisify(getStore(name, 'readwrite').add(data)),
+                get: (name, key) => promisify(getStore(name).get(key)),
+                getAll: (name) => promisify(getStore(name).getAll()),
+                getAllByIndex: (name, index, query) => promisify(getStore(name).index(index).getAll(query)),
+                update: (name, data) => promisify(getStore(name, 'readwrite').put(data)),
+                delete: (name, key) => promisify(getStore(name, 'readwrite').delete(key)),
+                clearStore: (name) => promisify(getStore(name, 'readwrite').clear()),
+            };
+        })();
+
+        // =================================================================================
+        // 3. STATE MANAGER
+        // =================================================================================
+        const State = (() => {
+            const _data = {
+                isLoading: true,
+                currentView: 'dashboard', // dashboard, materialDetail, quiz, quizReview
+                currentMaterialId: null,
+                chapters: [],
+                materials: [],
+                questions: [],
+                userProfile: { id: 'main', level: 1, xp: 0 },
+                apiKey: null,
+                toast: {}, // { message, type, visible }
+                modal: {}, // { content, visible }
+                promptTemplate: CONFIG.DEFAULT_PROMPT_TEMPLATE,
+                taskDescription: CONFIG.DEFAULT_TASK_DESCRIPTION,
+                outputFormatInstruction: CONFIG.DEFAULT_OUTPUT_FORMAT_INSTRUCTION,
+                quizQuestionCount: CONFIG.DEFAULT_QUIZ_QUESTION_COUNT,
+                savedQuizSession: null,
+                searchQuery: '',
+                chapterSortCriteria: 'createdAt-desc',
+                generatingMaterialIds: [], // Tracks materials currently being processed by AI
+                quizState: {
+                    active: false,
+                    questions: [],
+                    currentIndex: 0,
+                    score: 0,
+                    isAnswered: false,
+                    quizHistory: [],
+                },
+            };
+            const listeners = new Set();
+            return {
+                getState: () => ({..._data}),
+                setState(newState) {
+                    Object.assign(_data, newState);
+                    listeners.forEach(listener => listener(_data));
+                },
+                subscribe(listener) {
+                    listeners.add(listener);
+                    return () => listeners.delete(listener);
+                },
+            };
+        })();
+
+        // =================================================================================
+        // 4. SERVICES (Helpers & Utilities)
+        // =================================================================================
+        const Services = {
+            buildPrompt(sourceText) {
+                const { 
+                    promptTemplate, 
+                    taskDescription, 
+                    outputFormatInstruction, 
+                    quizQuestionCount 
+                } = State.getState();
+
+                return promptTemplate
+                    .replace('{{taskDescription}}', taskDescription)
+                    .replace('{{outputFormatInstruction}}', outputFormatInstruction)
+                    .replace('{{questionCount}}', quizQuestionCount)
+                    .replace('{{sourceText}}', sourceText);
+            }
+        };
+
+        // =================================================================================
+        // 5. API & BUSINESS LOGIC
+        // =================================================================================
+        const API = {
+            async loadInitialData() {
+                State.setState({ isLoading: true });
+                try {
+                    const [chapters, materials, settings, profile, savedSession] = await Promise.all([
+                        DB.getAll(CONFIG.DB_STORES.CHAPTERS),
+                        DB.getAll(CONFIG.DB_STORES.MATERIALS),
+                        DB.get(CONFIG.DB_STORES.SETTINGS, 'appSettings'),
+                        DB.get(CONFIG.DB_STORES.USER_PROFILE, 'main'),
+                        DB.get(CONFIG.DB_STORES.QUIZ_SESSIONS, 'current')
+                    ]);
+                    
+                    State.setState({
+                        chapters: chapters || [],
+                        materials: materials || [],
+                        apiKey: settings?.apiKey || null,
+                        promptTemplate: settings?.promptTemplate || CONFIG.DEFAULT_PROMPT_TEMPLATE,
+                        taskDescription: settings?.taskDescription || CONFIG.DEFAULT_TASK_DESCRIPTION,
+                        outputFormatInstruction: settings?.outputFormatInstruction || CONFIG.DEFAULT_OUTPUT_FORMAT_INSTRUCTION,
+                        quizQuestionCount: settings?.quizQuestionCount || CONFIG.DEFAULT_QUIZ_QUESTION_COUNT,
+                        userProfile: profile || { id: 'main', level: 1, xp: 0 },
+                        savedQuizSession: savedSession || null,
+                    });
+                     if (chapters.length === 0 && !localStorage.getItem('onboardingShown')) {
+                       UI.showModal(UI.Modals.Onboarding());
+                       localStorage.setItem('onboardingShown', 'true');
+                     }
+                } catch (e) { console.error('Failed to load data:', e); UI.showToast('데이터 로딩 실패.', 'error'); }
+                finally { State.setState({ isLoading: false }); }
+            },
+            async saveSettings(settingsData) {
+                const { apiKey, promptTemplate, taskDescription, outputFormatInstruction, quizQuestionCount } = settingsData;
+                const count = parseInt(quizQuestionCount, 10) || CONFIG.DEFAULT_QUIZ_QUESTION_COUNT;
+                const newSettings = { 
+                    id: 'appSettings', 
+                    apiKey, 
+                    promptTemplate,
+                    taskDescription,
+                    outputFormatInstruction,
+                    quizQuestionCount: count
+                };
+                await DB.update(CONFIG.DB_STORES.SETTINGS, newSettings);
+                State.setState(newSettings); // This will update only the changed settings
+                UI.showToast('설정이 저장되었습니다.', 'success');
+                UI.closeModal();
+            },
+            async updateUserProfile(xpGained) {
+                if (xpGained <= 0) return;
+                const profile = { ...State.getState().userProfile };
+                profile.xp += xpGained;
+                let newLevel = profile.level;
+                while (CONFIG.LEVEL_THRESHOLDS[newLevel] && profile.xp >= CONFIG.LEVEL_THRESHOLDS[newLevel]) {
+                    newLevel++;
+                }
+                if (newLevel > profile.level) {
+                  UI.showToast(`레벨 업! Lv.${newLevel} 달성!`, 'success');
+                }
+                profile.level = newLevel;
+                await DB.update(CONFIG.DB_STORES.USER_PROFILE, profile);
+                State.setState({ userProfile: profile });
+            },
+            async addChapter(name) {
+                if (!name || !name.trim()) return UI.showToast('챕터 이름을 입력하세요.', 'warning');
+                await DB.add(CONFIG.DB_STORES.CHAPTERS, { name: name.trim(), createdAt: new Date() });
+                await this.loadInitialData();
+                UI.closeModal();
+            },
+            async deleteChapter(id) {
+                const materialsToDelete = await DB.getAllByIndex(CONFIG.DB_STORES.MATERIALS, 'chapterId', id);
+                for (const material of materialsToDelete) {
+                    await this.deleteMaterial(material.id, true);
+                }
+                await DB.delete(CONFIG.DB_STORES.CHAPTERS, id);
+                await this.loadInitialData();
+                UI.closeModal();
+            },
+            async addMaterial(chapterId, name, content) {
+                if (!name?.trim()) return UI.showToast('자료 이름을 입력하세요.', 'warning');
+                if (!content?.trim()) return UI.showToast('학습할 내용을 입력하세요.', 'warning');
+                
+                const newMaterial = { chapterId, name, content, createdAt: new Date() };
+                const newId = await DB.add(CONFIG.DB_STORES.MATERIALS, newMaterial);
+                const newMaterialWithId = { ...newMaterial, id: newId };
+
+                State.setState({
+                    materials: [...State.getState().materials, newMaterialWithId],
+                    currentView: 'materialDetail',
+                    currentMaterialId: newId,
+                    questions: [],
+                    isLoading: false
+                });
+
+                UI.closeModal();
+            },
+            async updateMaterial(id, name, content) {
+                if (!name?.trim()) return UI.showToast('자료 이름을 입력하세요.', 'warning');
+                if (!content?.trim()) return UI.showToast('학습할 내용을 입력하세요.', 'warning');
+                
+                const material = await DB.get(CONFIG.DB_STORES.MATERIALS, id);
+                if (!material) return UI.showToast('수정할 자료를 찾을 수 없습니다.', 'error');
+
+                const updatedMaterial = { ...material, name: name.trim(), content: content.trim() };
+                await DB.update(CONFIG.DB_STORES.MATERIALS, updatedMaterial);
+                
+                const materials = [...State.getState().materials];
+                const index = materials.findIndex(m => m.id === id);
+                if (index !== -1) materials[index] = updatedMaterial;
+
+                State.setState({ materials });
+                UI.showToast('자료가 성공적으로 수정되었습니다.', 'success');
+                UI.closeModal();
+            },
+            async deleteMaterial(id, fromChapterDelete = false) {
+                await DB.delete(CONFIG.DB_STORES.MATERIALS, id);
+                const questions = await DB.getAllByIndex(CONFIG.DB_STORES.QUESTIONS, 'materialId', id);
+                await Promise.all(questions.map(q => DB.delete(CONFIG.DB_STORES.QUESTIONS, q.id)));
+                
+                if (!fromChapterDelete) {
+                    await this.loadInitialData();
+                    State.setState({ currentView: 'dashboard' });
+                }
+                UI.closeModal();
+            },
+            async loadMaterialDetailData(materialId) {
+                State.setState({ isLoading: true, currentMaterialId: materialId });
+                const [material, questions] = await Promise.all([
+                    DB.get(CONFIG.DB_STORES.MATERIALS, materialId),
+                    DB.getAllByIndex(CONFIG.DB_STORES.QUESTIONS, 'materialId', materialId)
+                ]);
+                State.setState({ 
+                    questions: questions.sort((a,b) => a.createdAt - b.createdAt),
+                    isLoading: false,
+                });
+            },
+            async addQuestionsFromJSON(materialId, jsonText) {
+                try {
+                    const parsed = JSON.parse(jsonText);
+                    if (!Array.isArray(parsed)) throw new Error("JSON is not an array.");
+                    
+                    const validQuestions = parsed.filter(q => q.questionText && q.type && q.answer && q.explanation);
+                    if (validQuestions.length === 0) throw new Error("No valid questions found in JSON.");
+                    
+                    await Promise.all(validQuestions.map(q => DB.add(CONFIG.DB_STORES.QUESTIONS, { materialId, ...q, createdAt: new Date() })));
+                    
+                    // Show success toast and refresh data only if the user is on the current page
+                    if (State.getState().currentMaterialId === materialId) {
+                        UI.showToast(`${validQuestions.length}개의 문제가 성공적으로 추가되었습니다.`, 'success');
+                        await this.loadMaterialDetailData(materialId);
+                    } else {
+                        const material = State.getState().materials.find(m => m.id === materialId);
+                        UI.showToast(`'${material?.name || ''}' 자료에 ${validQuestions.length}개의 문제가 추가되었습니다.`, 'success');
+                    }
+
+                    UI.closeModal();
+                } catch (e) {
+                    console.error("Manual add Error:", e);
+                    UI.showToast('유효하지 않은 JSON 형식입니다.', 'error');
+                }
+            },
+            async generateQuestionsFromAI(materialId, text) {
+                const { apiKey, generatingMaterialIds } = State.getState();
+                if (!apiKey) return UI.showModal(UI.Modals.Settings(true));
+
+                if (generatingMaterialIds.includes(materialId)) {
+                    return UI.showToast('이미 해당 자료에 대한 문제를 생성 중입니다.', 'info');
+                }
+                
+                State.setState({ generatingMaterialIds: [...generatingMaterialIds, materialId] });
+                const material = State.getState().materials.find(m => m.id === materialId);
+
+                try {
+                    const prompt = Services.buildPrompt(text);
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`, { 
+                        method: 'POST', 
+                        headers: { 'Content-Type': 'application/json' }, 
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) 
+                    });
+                    if (!res.ok) throw new Error(`API Error ${res.status}: ${res.statusText}`);
+                    const result = await res.json();
+                    const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if(!responseText) throw new Error("Empty response from AI.");
+                    const jsonMatch = responseText.match(/<json_response>([\s\S]*?)<\/json_response>/);
+                    if (!jsonMatch?.[1]) throw new Error("JSON not found in AI output.");
+                    
+                    await this.addQuestionsFromJSON(materialId, jsonMatch[1].trim());
+                } catch (e) {
+                    console.error("AI Error:", e);
+                    UI.showToast(`'${material?.name || '알 수 없는 자료'}' 문제 생성 실패: ${e.message}`, 'error');
+                } finally {
+                    State.setState({ 
+                        generatingMaterialIds: State.getState().generatingMaterialIds.filter(id => id !== materialId)
+                    });
+                }
+            },
+            async deleteQuestion(questionId) {
+                await DB.delete(CONFIG.DB_STORES.QUESTIONS, questionId);
+                const { currentMaterialId } = State.getState();
+                await this.loadMaterialDetailData(currentMaterialId);
+                UI.showToast('문제가 삭제되었습니다.', 'success');
+            },
+            async deleteAllQuestions(materialId) {
+                const questions = await DB.getAllByIndex(CONFIG.DB_STORES.QUESTIONS, 'materialId', materialId);
+                await Promise.all(questions.map(q => DB.delete(CONFIG.DB_STORES.QUESTIONS, q.id)));
+                await this.loadMaterialDetailData(materialId);
+                UI.closeModal();
+                UI.showToast('모든 문제가 삭제되었습니다.', 'success');
+            },
+            startQuiz(questions) {
+                if (!questions || questions.length < 1) return UI.showToast('퀴즈를 진행할 문제가 없습니다.', 'warning');
+                const shuffled = [...questions].sort(() => Math.random() - 0.5);
+                State.setState({
+                    currentView: 'quiz',
+                    quizState: {
+                        active: true,
+                        questions: shuffled,
+                        currentIndex: 0,
+                        score: 0,
+                        isAnswered: false,
+                        quizHistory: [],
+                    }
+                });
+            },
+            processAnswer(isCorrect, userAnswer) {
+                const { quizState } = State.getState();
+                const currentQuestion = quizState.questions[quizState.currentIndex];
+                const newHistory = [...quizState.quizHistory, { question: currentQuestion, userAnswer, isCorrect }];
+                
+                State.setState({ quizState: { ...quizState, isAnswered: true, quizHistory: newHistory }});
+
+                if (isCorrect) {
+                  State.setState({ quizState: { ...State.getState().quizState, score: quizState.score + 1 } });
+                }
+            },
+            async endQuiz() {
+                const { score } = State.getState().quizState;
+                await this.updateUserProfile(score * CONFIG.XP_PER_CORRECT);
+                await DB.delete(CONFIG.DB_STORES.QUIZ_SESSIONS, 'current').catch(()=>{});
+                State.setState({ currentView: 'quizReview', savedQuizSession: null });
+            },
+            async saveQuizSession() {
+                const { quizState } = State.getState();
+                await DB.update(CONFIG.DB_STORES.QUIZ_SESSIONS, { id: 'current', quizState });
+                UI.showToast('퀴즈 진행 상황이 저장되었습니다.', 'success');
+                await this.loadInitialData();
+                State.setState({ currentView: 'dashboard'});
+                UI.closeModal();
+            },
+            async resumeQuizSession() {
+                const session = await DB.get(CONFIG.DB_STORES.QUIZ_SESSIONS, 'current');
+                if (session) {
+                    State.setState({ currentView: 'quiz', quizState: session.quizState });
+                } else {
+                    UI.showToast('저장된 퀴즈가 없습니다.', 'info');
+                }
+            },
+            async exportChapter(chapterId) {
+                try {
+                    const chapter = await DB.get(CONFIG.DB_STORES.CHAPTERS, chapterId);
+                    const materials = await DB.getAllByIndex(CONFIG.DB_STORES.MATERIALS, 'chapterId', chapterId);
+                    
+                    const materialsWithQuestions = await Promise.all(materials.map(async material => {
+                        const questions = await DB.getAllByIndex(CONFIG.DB_STORES.QUESTIONS, 'materialId', material.id);
+                        const { id, chapterId, ...materialData } = material;
+                        const questionsData = questions.map(({ id, materialId, ...q }) => q);
+                        return { ...materialData, questions: questionsData };
+                    }));
+
+                    const exportData = {
+                        type: CONFIG.EXPORT_TYPE_ID,
+                        version: 1,
+                        exportedAt: new Date().toISOString(),
+                        chapter: { name: chapter.name },
+                        materials: materialsWithQuestions
+                    };
+
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${chapter.name}-export.json`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    UI.showToast(`'${chapter.name}' 챕터를 내보냈습니다.`, 'success');
+                } catch (e) {
+                    console.error("Export failed:", e);
+                    UI.showToast('데이터 내보내기에 실패했습니다.', 'error');
+                }
+            },
+            async importChapter(file) {
+                if (!file || !file.type.includes('json')) {
+                    return UI.showToast('유효한 JSON 파일을 선택하세요.', 'warning');
+                }
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        if (data.type !== CONFIG.EXPORT_TYPE_ID) {
+                            throw new Error('올바른 형식의 파일이 아닙니다.');
+                        }
+                        
+                        State.setState({ isLoading: true });
+                        UI.showToast('데이터 가져오는 중...', 'info');
+
+                        const newChapterId = await DB.add(CONFIG.DB_STORES.CHAPTERS, {
+                            name: data.chapter.name,
+                            createdAt: new Date()
+                        });
+
+                        for (const material of data.materials) {
+                            const { questions, ...materialData } = material;
+                            const newMaterialId = await DB.add(CONFIG.DB_STORES.MATERIALS, {
+                                ...materialData,
+                                chapterId: newChapterId,
+                                createdAt: new Date()
+                            });
+                            if (questions && questions.length > 0) {
+                                for (const question of questions) {
+                                    await DB.add(CONFIG.DB_STORES.QUESTIONS, {
+                                        ...question,
+                                        materialId: newMaterialId,
+                                        createdAt: new Date()
+                                    });
+                                }
+                            }
+                        }
+                        await this.loadInitialData();
+                        UI.closeModal();
+                        UI.showToast(`'${data.chapter.name}' 챕터를 성공적으로 가져왔습니다.`, 'success');
+                    } catch (err) {
+                        console.error("Import failed:", err);
+                        UI.showToast(`가져오기 실패: ${err.message}`, 'error');
+                        State.setState({ isLoading: false });
+                    }
+                };
+                reader.readAsText(file);
+            }
+        };
+
+        // =================================================================================
+        // 6. UI COMPONENTS & HELPERS
+        // =================================================================================
+        const UI = {
+            I: (name, classes = "w-4 h-4") => `<i data-lucide="${name}" class="${classes}"></i>`,
+            showToast: (message, type = 'info', duration = 3000) => { State.setState({ toast: { message, type, visible: true, id: Date.now() } }); },
+            showModal: (content) => { State.setState({ modal: { visible: true, content } }); },
+            closeModal: () => { State.setState({ modal: { visible: false, content: '' } }); },
+            Components: {
+                ToastContainer: ({ toast }) => {
+                    if (!toast.visible) return '';
+                    const colors = {info:'bg-blue-500', success:'bg-emerald-500', warning:'bg-yellow-500', error:'bg-red-500'};
+                    return `<div id="toast-${toast.id}" class="fixed bottom-5 right-5 z-[100] ${colors[toast.type]} text-white py-2 px-4 rounded-lg shadow-lg fade-in" role="alert">${toast.message}</div>`;
+                },
+                Modal: ({ modal }) => modal.visible ? `<div id="modal-backdrop" class="fixed inset-0 bg-black/60 flex items-center justify-center z-50 fade-in"><div id="modal-content" class="bg-white dark:bg-slate-800 rounded-lg shadow-xl p-6 w-full max-w-2xl m-4 overflow-y-auto max-h-[90vh]">${modal.content}</div></div>` : '',
+                MainHeader: ({ profile }) => {
+                    const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[profile.level] || (profile.xp + 100);
+                    const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[profile.level - 1] || 0;
+                    const progress = Math.min(100, ((profile.xp - currentLevelXP) / (nextLevelXP - currentLevelXP)) * 100);
+                    return `
+                    <header class="bg-white dark:bg-slate-800 shadow-sm p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700 sticky top-0 z-10">
+                        <div class="flex items-center gap-3 cursor-pointer" id="home-btn">
+                            <div class="bg-blue-100 dark:bg-blue-900/50 p-2 rounded-lg">${UI.I('brain-circuit', 'w-8 h-8 text-blue-500')}</div>
+                            <h1 class="text-2xl font-bold">AI Text Learner</h1>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <div class="text-sm text-right">
+                                <span class="font-bold text-lg">Lv. ${profile.level}</span>
+                                <div class="w-32 bg-slate-200 dark:bg-slate-700 rounded-full h-2.5 mt-1" title="${profile.xp} / ${nextLevelXP} XP">
+                                    <div class="bg-blue-500 h-2.5 rounded-full transition-all duration-500" style="width: ${progress}%"></div>
+                                </div>
+                            </div>
+                            <button id="settings-btn" class="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-colors" title="설정">${UI.I('settings')}</button>
+                        </div>
+                    </header>`;
+                },
+            },
+            Modals: {
+                Settings: (fromError = false) => {
+                    const state = State.getState();
+                    return `
+                    <h3 class="text-xl font-bold mb-6">설정</h3>
+                    ${fromError ? `<p class="text-red-400 text-sm mb-4">AI 기능을 사용하려면 Google AI Studio에서 발급받은 API 키가 필요합니다.</p>` : ''}
+                    <form id="settings-form" class="space-y-4">
+                        <div>
+                            <label for="api-key-input" class="block text-sm font-medium mb-1">Google AI API Key</label>
+                            <input name="apiKey" id="api-key-input" type="password" value="${state.apiKey || ''}" class="w-full border p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600" placeholder="API 키를 여기에 붙여넣으세요">
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-xs text-blue-500 hover:underline">여기서 API 키를 발급받으세요.</a>
+                        </div>
+                        <div>
+                            <label for="quiz-question-count-input" class="block text-sm font-medium mb-1">AI 생성 문제 수</label>
+                            <input name="quizQuestionCount" id="quiz-question-count-input" type="number" min="1" max="50" value="${state.quizQuestionCount}" class="w-full border p-2 rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600">
+                        </div>
+                         <div>
+                            <label for="task-description-input" class="block text-sm font-medium mb-1">프롬프트 - 과업 설명 (Task Description)</label>
+                            <textarea name="taskDescription" id="task-description-input" class="w-full h-24 p-2 text-sm font-mono bg-slate-100 dark:bg-slate-900 rounded border dark:border-slate-600">${state.taskDescription}</textarea>
+                        </div>
+                        <div>
+                            <label for="output-format-input" class="block text-sm font-medium mb-1">프롬프트 - 출력 형식 (Output Format)</label>
+                            <textarea name="outputFormatInstruction" id="output-format-input" class="w-full h-24 p-2 text-sm font-mono bg-slate-100 dark:bg-slate-900 rounded border dark:border-slate-600">${state.outputFormatInstruction}</textarea>
+                        </div>
+                        <div>
+                            <label for="prompt-template-input" class="block text-sm font-medium mb-1">프롬프트 - 전체 템플릿 (고급)</label>
+                            <textarea name="promptTemplate" id="prompt-template-input" class="w-full h-48 p-2 text-xs font-mono bg-slate-100 dark:bg-slate-900 rounded border dark:border-slate-600">${state.promptTemplate}</textarea>
+                            <p class="text-xs text-slate-500 mt-1">사용 가능 변수: <code class="bg-slate-200 dark:bg-slate-700 rounded px-1">{{sourceText}}</code>, <code class="bg-slate-200 dark:bg-slate-700 rounded px-1">{{questionCount}}</code>, <code class="bg-slate-200 dark:bg-slate-700 rounded px-1">{{taskDescription}}</code>, <code class="bg-slate-200 dark:bg-slate-700 rounded px-1">{{outputFormatInstruction}}</code></p>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4">
+                            <button type="button" class="btn-cancel bg-slate-300 dark:bg-slate-600 hover:bg-slate-400 font-bold py-2 px-4 rounded">취소</button>
+                            <button type="submit" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">저장</button>
+                        </div>
+                    </form>`;
+                },
+                Onboarding: () => `
+                    <h3 class="text-xl font-bold mb-4 flex items-center gap-2">${UI.I('party-popper', 'w-6 h-6 text-yellow-400')} AI Text Learner에 오신 것을 환영합니다!</h3>
+                    <p class="mb-4 text-slate-600 dark:text-slate-300">학습할 텍스트 자료를 입력하면 AI가 자동으로 학습 문제를 만들어주는 스마트 학습 도구입니다.</p>
+                    <ol class="list-decimal list-inside space-y-2 mb-4">
+                        <li><span class="font-bold">'새 챕터 추가'</span>로 학습 주제를 만드세요.</li>
+                        <li>생성된 챕터에 텍스트 파일(.txt, .md)을 <span class="font-bold">드래그 앤 드롭</span>하여 자료를 추가하세요.</li>
+                        <li>우측 상단 <span class="font-bold">설정(${UI.I('settings', 'inline w-4 h-4')})</span>에서 API 키를 입력하여 AI 문제 생성 기능을 활성화하세요. (선택 사항)</li>
+                    </ol>
+                    <div class="flex justify-end mt-4"><button class="btn-cancel bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">시작하기</button></div>`,
+                AddChapter: () => `
+                    <h3 class="text-lg font-bold mb-4">새 챕터 만들기</h3>
+                    <form id="add-chapter-form">
+                        <input name="chapterName" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 border dark:border-slate-600" placeholder="챕터 이름 (예: 중간고사 범위)" required>
+                        <div class="flex justify-end gap-2 mt-4">
+                            <button type="submit" class="bg-blue-500 text-white py-2 px-4 rounded">생성</button>
+                        </div>
+                    </form>
+                    <div class="relative my-6">
+                      <div class="absolute inset-0 flex items-center"><span class="w-full border-t border-slate-300 dark:border-slate-600"></span></div>
+                      <div class="relative flex justify-center text-xs uppercase"><span class="bg-white dark:bg-slate-800 px-2 text-slate-500">또는</span></div>
+                    </div>
+                    <h3 class="text-lg font-bold mb-4">파일에서 챕터 가져오기</h3>
+                    <div id="import-drop-zone" class="text-center text-sm text-slate-500 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg">
+                        <input type="file" id="import-file-input" class="hidden" accept=".json,application/json">
+                        <label for="import-file-input" class="cursor-pointer block p-8">
+                            ${UI.I('file-up', 'w-10 h-10 mx-auto mb-2 text-slate-400')}
+                            <p>.json 파일을 드래그 앤 드롭하거나 <br> 클릭하여 선택하세요.</p>
+                        </label>
+                    </div>
+                     <div class="flex justify-end mt-6">
+                        <button type="button" class="btn-cancel">닫기</button>
+                    </div>
+                    `,
+                AddMaterial: (chapterId) => `
+                    <h3 class="text-lg font-bold mb-4">새 학습 자료 추가</h3>
+                    <form id="add-material-form" data-chapter-id="${chapterId}">
+                        <div class="space-y-4">
+                            <input name="materialName" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 border dark:border-slate-600" placeholder="자료 이름 (예: 1장 요약)" required>
+                            <textarea name="materialContent" class="w-full h-64 p-2 rounded bg-slate-100 dark:bg-slate-700 border dark:border-slate-600" placeholder="여기에 학습할 내용을 붙여넣으세요. (마크다운 형식 지원)" required></textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 mt-4">
+                            <button type="button" class="btn-cancel">취소</button>
+                            <button type="submit" class="bg-blue-500 text-white py-2 px-4 rounded">저장</button>
+                        </div>
+                    </form>`,
+                EditMaterial: (material) => `
+                    <h3 class="text-lg font-bold mb-4">학습 자료 수정</h3>
+                    <form id="edit-material-form" data-material-id="${material.id}">
+                        <div class="space-y-4">
+                            <input name="materialName" class="w-full p-2 rounded bg-slate-100 dark:bg-slate-700 border dark:border-slate-600" placeholder="자료 이름" value="${material.name}" required>
+                            <textarea name="materialContent" class="w-full h-64 p-2 rounded bg-slate-100 dark:bg-slate-700 border dark:border-slate-600" placeholder="학습 내용" required>${material.content}</textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 mt-4">
+                            <button type="button" class="btn-cancel">취소</button>
+                            <button type="submit" class="bg-blue-500 text-white py-2 px-4 rounded">수정 완료</button>
+                        </div>
+                    </form>`,
+                Confirm: (message, confirmText = '확인', onConfirm) => ({
+                  content: `<p>${message}</p>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button class="btn-cancel">취소</button>
+                        <button id="modal-confirm-action" class="bg-red-500 text-white py-2 px-4 rounded">${confirmText}</button>
+                    </div>`,
+                  onConfirm
+                }),
+            }
+        };
+
+        // =================================================================================
+        // 7. VIEWS (Component Pattern)
+        // =================================================================================
+        const Views = {
+            Dashboard: (state) => ({
+                render() {
+                    const { chapters, materials, userProfile, savedQuizSession, searchQuery, chapterSortCriteria } = state;
+                    const lowerQuery = searchQuery.toLowerCase();
+                    const sortedChapters = [...chapters].sort((a, b) => {
+                        const [key, order] = chapterSortCriteria.split('-');
+                        const valA = key === 'name' ? a[key].toLowerCase() : a[key];
+                        const valB = key === 'name' ? b[key].toLowerCase() : b[key];
+                        if (valA < valB) return order === 'asc' ? -1 : 1;
+                        if (valA > valB) return order === 'asc' ? 1 : -1;
+                        return 0;
+                    });
+                    const filteredChapters = searchQuery ? sortedChapters.filter(c => 
+                        c.name.toLowerCase().includes(lowerQuery) || 
+                        materials.some(m => m.chapterId === c.id && m.name.toLowerCase().includes(lowerQuery))
+                    ) : sortedChapters;
+
+                    return `
+                    ${UI.Components.MainHeader({ profile: userProfile })}
+                    <main class="flex-1 p-6 overflow-y-auto">
+                        <div class="max-w-4xl mx-auto">
+                            <div class="flex justify-between items-center mb-6 flex-wrap gap-4">
+                                <h2 class="text-3xl font-bold">내 학습 챕터</h2>
+                                <div class="flex items-center gap-4">
+                                    ${savedQuizSession ? `<button id="resume-quiz-btn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${UI.I('play-circle')} 퀴즈 이어하기</button>` : ''}
+                                    <button id="add-chapter-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${UI.I('plus-circle')} 새 챕터 추가</button>
+                                </div>
+                            </div>
+
+                            <div class="mb-6 bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm flex items-center gap-4">
+                                <div class="relative flex-grow">
+                                    <input id="dashboard-search-input" type="text" placeholder="챕터 또는 자료 검색..." value="${searchQuery}" class="w-full pl-10 pr-4 py-2 rounded-full bg-slate-100 dark:bg-slate-700 border border-transparent focus:bg-white focus:border-blue-500 dark:focus:bg-slate-800 transition">
+                                    <div class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">${UI.I('search', 'w-5 h-5')}</div>
+                                </div>
+                                <select id="chapter-sort-select" class="text-sm rounded-md border-slate-300 dark:bg-slate-700 dark:border-slate-600 focus:ring-blue-500 focus:border-blue-500">
+                                    <option value="createdAt-desc" ${chapterSortCriteria === 'createdAt-desc' && 'selected'}>최신순</option>
+                                    <option value="createdAt-asc" ${chapterSortCriteria === 'createdAt-asc' && 'selected'}>오래된순</option>
+                                    <option value="name-asc" ${chapterSortCriteria === 'name-asc' && 'selected'}>이름순 (오름차순)</option>
+                                    <option value="name-desc" ${chapterSortCriteria === 'name-desc' && 'selected'}>이름순 (내림차순)</option>
+                                </select>
+                            </div>
+
+                            <div id="chapters-container" class="space-y-4">
+                                ${filteredChapters.length > 0 ? filteredChapters.map(chapter => `
+                                    <details class="bg-white dark:bg-slate-800 rounded-lg shadow-sm group" open>
+                                        <summary class="p-4 flex justify-between items-center cursor-pointer list-none">
+                                            <div class="flex items-center gap-3">
+                                                <div class="transition-transform group-open:rotate-90">${UI.I('chevron-right', 'w-5 h-5')}</div>
+                                                <h3 class="text-xl font-bold">${chapter.name}</h3>
+                                            </div>
+                                            <div class="flex items-center gap-2">
+                                                <button class="btn-add-material p-2 text-slate-500 hover:text-blue-500" data-chapter-id="${chapter.id}" title="자료 수동 추가">${UI.I('plus', 'w-5 h-5')}</button>
+                                                <button class="btn-export-chapter p-2 text-slate-500 hover:text-green-500" data-id="${chapter.id}" title="챕터 내보내기">${UI.I('download', 'w-5 h-5')}</button>
+                                                <button class="btn-delete-chapter p-2 text-slate-500 hover:text-red-500" data-id="${chapter.id}" data-name="${chapter.name}" title="챕터 삭제">${UI.I('trash-2', 'w-5 h-5')}</button>
+                                            </div>
+                                        </summary>
+                                        <div class="p-4 border-t border-slate-200 dark:border-slate-700">
+                                            <ul class="space-y-2">
+                                                ${materials.filter(m => m.chapterId === chapter.id && m.name.toLowerCase().includes(lowerQuery)).map(m => `
+                                                    <li class="p-3 flex justify-between items-center group/item rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50">
+                                                        <div class="material-item-link cursor-pointer flex-1" data-material-id="${m.id}">
+                                                            <p class="font-semibold text-md text-blue-600 dark:text-blue-400">${m.name}</p>
+                                                        </div>
+                                                        <div class="opacity-0 group-hover/item:opacity-100 transition-opacity flex items-center">
+                                                            <button class="btn-edit-material p-2 text-slate-500 hover:text-blue-500" data-id="${m.id}" title="자료 수정">${UI.I('file-pen-line', 'w-4 h-4')}</button>
+                                                            <button class="btn-delete-material p-2 text-slate-500 hover:text-red-500" data-id="${m.id}" data-name="${m.name}" title="자료 삭제">${UI.I('trash-2', 'w-4 h-4')}</button>
+                                                        </div>
+                                                    </li>
+                                                `).join('')}
+                                            </ul>
+                                            <div class="material-drop-zone mt-4 text-center text-sm text-slate-400 border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg" data-chapter-id="${chapter.id}">
+                                                <input type="file" id="material-file-input-${chapter.id}" class="hidden" multiple accept=".txt,.md,text/plain,text/markdown">
+                                                <label for="material-file-input-${chapter.id}" class="cursor-pointer block p-6">
+                                                    ${UI.I('upload-cloud', 'w-8 h-8 mx-auto mb-2 text-slate-400')}
+                                                    <p>학습할 텍스트 파일(.txt, .md)을 드래그 앤 드롭하거나<br>클릭하여 선택하세요.</p>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </details>
+                                `).join('') : `
+                                    <div class="p-8 text-center text-slate-500 bg-white dark:bg-slate-800 rounded-lg shadow-sm">
+                                        <p>${searchQuery ? '검색 결과가 없습니다.' : '아직 생성된 챕터가 없습니다.'}</p>
+                                        ${!searchQuery ? `<p class="mt-2 text-sm">'새 챕터 추가'를 눌러 시작해보세요.</p>` : ''}
+                                    </div>
+                                `}
+                            </div>
+                        </div>
+                    </main>`;
+                },
+                attachEventListeners(container) {
+                    container.querySelector('#dashboard-search-input')?.addEventListener('input', e => State.setState({ searchQuery: e.target.value }));
+                    container.querySelector('#chapter-sort-select')?.addEventListener('change', e => State.setState({ chapterSortCriteria: e.target.value }));
+                    
+                    const processMaterialFiles = (files, chapterId) => {
+                        for (const file of files) {
+                           if (!file || (!file.type.includes('text') && !file.name.endsWith('.md'))) {
+                                UI.showToast('.txt 또는 .md 파일만 업로드할 수 있습니다.', 'warning');
+                                continue;
+                            }
+                            const reader = new FileReader();
+                            reader.onload = (event) => {
+                                const name = file.name.replace(/\.(txt|md)$/i, '');
+                                API.addMaterial(chapterId, name, event.target.result);
+                            };
+                            reader.readAsText(file);
+                        }
+                    };
+
+                    container.addEventListener('click', e => {
+                        const target = e.target.closest('button, .material-item-link');
+                        if (!target) return;
+
+                        if (target.id === 'add-chapter-btn') UI.showModal(UI.Modals.AddChapter());
+                        if (target.id === 'resume-quiz-btn') API.resumeQuizSession();
+                        
+                        const chapterId = target.dataset.chapterId;
+                        if (target.matches('.btn-add-material')) UI.showModal(UI.Modals.AddMaterial(chapterId));
+
+                        const dataId = parseInt(target.dataset.id);
+                        if (target.matches('.btn-export-chapter')) API.exportChapter(dataId);
+                        
+                        if (target.matches('.btn-edit-material')) {
+                            const materialToEdit = State.getState().materials.find(m => m.id === dataId);
+                            if(materialToEdit) UI.showModal(UI.Modals.EditMaterial(materialToEdit));
+                        }
+
+                        const dataName = target.dataset.name;
+                        if (target.matches('.btn-delete-chapter')) {
+                           const { content, onConfirm } = UI.Modals.Confirm(`'${dataName}' 챕터를 삭제하시겠습니까? 관련된 모든 자료가 삭제됩니다.`, '삭제', () => API.deleteChapter(dataId));
+                           UI.showModal(content);
+                           document.getElementById('modal-confirm-action').onclick = onConfirm;
+                        }
+                        if (target.matches('.btn-delete-material')) {
+                            const { content, onConfirm } = UI.Modals.Confirm(`'${dataName}' 자료를 삭제하시겠습니까?`, '삭제', () => API.deleteMaterial(dataId));
+                            UI.showModal(content);
+                           document.getElementById('modal-confirm-action').onclick = onConfirm;
+                        }
+
+                        const materialId = target.dataset.materialId;
+                        if (materialId) {
+                            API.loadMaterialDetailData(parseInt(materialId)).then(() => State.setState({ currentView: 'materialDetail' }));
+                        }
+                    });
+                    
+                    // Material Drag and Drop & Click Upload
+                    container.querySelectorAll('.material-drop-zone').forEach(zone => {
+                        const chapterId = parseInt(zone.dataset.chapterId);
+                        const input = zone.querySelector('input[type="file"]');
+
+                        zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drop-zone-active'); });
+                        zone.addEventListener('dragleave', e => zone.classList.remove('drop-zone-active'));
+                        zone.addEventListener('drop', e => {
+                            e.preventDefault();
+                            zone.classList.remove('drop-zone-active');
+                            if(e.dataTransfer.files) processMaterialFiles(e.dataTransfer.files, chapterId);
+                        });
+                        input.addEventListener('change', e => processMaterialFiles(e.target.files, chapterId));
+                    });
+                }
+            }),
+            MaterialDetail: (state) => ({
+                render() {
+                    const material = state.materials.find(m => m.id === state.currentMaterialId);
+                    if (!material) return `
+                        <div class="flex flex-col h-full">
+                            ${UI.Components.MainHeader({ profile: state.userProfile })}
+                            <main class="flex-1 flex items-center justify-center"><p>학습 자료를 찾을 수 없습니다.</p></main>
+                        </div>`;
+                    
+                    const isGenerating = state.generatingMaterialIds.includes(material.id);
+
+                    return `
+                    <div class="flex flex-col h-full">
+                        <header class="bg-white dark:bg-slate-800 shadow-sm p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
+                            <div class="flex items-center gap-3">
+                                <button id="back-to-dashboard-btn" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors">${UI.I('arrow-left')}</button>
+                                <h1 class="text-2xl font-bold">${material.name}</h1>
+                            </div>
+                            <div class="flex items-center gap-2 flex-wrap justify-end">
+                                ${state.questions.length > 0 ? `<button id="start-quiz-btn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${UI.I('swords')} 퀴즈 시작</button>` : ''}
+                                <button id="generate-questions-manual-btn" class="bg-slate-500 hover:bg-slate-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${UI.I('edit-3')} 수동 생성</button>
+                                <button id="generate-questions-ai-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg flex items-center justify-center gap-2 transition-all w-36" ${isGenerating ? 'disabled' : ''}>
+                                    ${isGenerating 
+                                        ? `<div class="w-5 h-5 border-2 border-white border-t-transparent rounded-full spinner"></div><span>생성 중...</span>`
+                                        : `${UI.I('wand-sparkles')} AI로 생성`
+                                    }
+                                </button>
+                            </div>
+                        </header>
+                        <main class="flex-1 grid grid-cols-1 md:grid-cols-2 gap-px overflow-hidden bg-slate-200 dark:bg-slate-700">
+                            <div class="bg-white dark:bg-slate-800 flex flex-col p-6 overflow-y-auto">
+                                <h2 class="text-xl font-bold mb-4 border-b pb-2 dark:border-slate-600">원본 자료</h2>
+                                <div class="markdown-content flex-1">${marked.parse(material.content || '')}</div>
+                            </div>
+                            <div class="bg-white dark:bg-slate-800 flex flex-col p-6 overflow-y-auto">
+                                <div class="flex justify-between items-center mb-4 border-b pb-2 dark:border-slate-600">
+                                    <h2 class="text-xl font-bold">생성된 문제 (${state.questions.length}개)</h2>
+                                    ${state.questions.length > 0 ? `<button class="delete-all-questions-btn p-2 text-slate-500 hover:text-red-500" title="모든 문제 삭제">${UI.I('trash-2', 'w-5 h-5')}</button>` : ''}
+                                </div>
+                                ${state.questions.length === 0 ? `<div class="flex-1 flex items-center justify-center text-slate-500 text-center p-4"><p>생성된 문제가 없습니다.<br>'AI로 생성' 또는 '수동 생성' 버튼을 눌러 문제를 추가하세요.</p></div>` : `
+                                <div class="space-y-4">
+                                    ${state.questions.map((q, i) => `
+                                        <div class="border dark:border-slate-700 rounded-lg p-3 text-sm group/q">
+                                            <div class="flex justify-between items-start gap-2">
+                                                <div class="flex-1">
+                                                    <p class="font-semibold">${i+1}. ${q.questionText}</p>
+                                                    <p class="text-emerald-600 dark:text-emerald-400 mt-1"><span class="font-bold">정답:</span> ${q.answer}</p>
+                                                </div>
+                                                <button class="delete-question-btn p-1 text-slate-400 hover:text-red-500 opacity-0 group-hover/q:opacity-100 transition-opacity" data-id="${q.id}" title="문제 삭제">
+                                                    ${UI.I('trash-2', 'w-4 h-4')}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>`}
+                            </div>
+                        </main>
+                    </div>`;
+                },
+                attachEventListeners(container) {
+                    const material = state.materials.find(m => m.id === state.currentMaterialId);
+                    if (!material) return;
+                    
+                    container.addEventListener('click', e => {
+                       const target = e.target.closest('button');
+                       if(!target) return;
+                       
+                       const id = target.id;
+                       if (id === 'start-quiz-btn') API.startQuiz(state.questions);
+                       if (id === 'generate-questions-ai-btn') API.generateQuestionsFromAI(material.id, material.content);
+                       
+                       if (target.matches('.delete-question-btn')) {
+                           const questionId = parseInt(target.dataset.id);
+                           API.deleteQuestion(questionId);
+                       }
+                       
+                       if (target.matches('.delete-all-questions-btn')) {
+                           const { content, onConfirm } = UI.Modals.Confirm('정말로 모든 문제를 삭제하시겠습니까?', '삭제', () => API.deleteAllQuestions(material.id));
+                           UI.showModal(content);
+                           document.getElementById('modal-confirm-action').onclick = onConfirm;
+                       }
+
+                       if (id === 'generate-questions-manual-btn') {
+                            const promptText = Services.buildPrompt(material.content);
+                            const escapedPrompt = promptText.replace(/"/g, '&quot;');
+                            UI.showModal(`
+                                <h3 class="text-lg font-bold mb-4">수동 문제 생성</h3>
+                                <div class="space-y-3">
+                                  <p class="text-sm">1. 아래 버튼을 눌러 AI 프롬프트를 복사하고, Gemini 페이지로 이동하세요.</p>
+                                  <button id="copy-prompt-btn" data-prompt="${escapedPrompt}" class="w-full flex items-center justify-center gap-2 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition-all">
+                                      ${UI.I('copy')} 프롬프트 복사 & Gemini로 이동
+                                  </button>
+                                </div>
+                                <form id="manual-add-form" class="mt-4">
+                                  <p class="text-sm mt-6 mb-2">2. AI가 생성한 &lt;json_response&gt; 안의 JSON 배열을 아래에 붙여넣고 '적용'을 누르세요.</p>
+                                  <textarea name="jsonText" class="w-full h-24 p-2 border rounded bg-slate-100 dark:bg-slate-700" placeholder="[ { ... } ] 형식의 JSON 결과를 여기에 붙여넣으세요..." required></textarea>
+                                  <div class="flex justify-end gap-2 mt-4">
+                                      <button type="button" class="btn-cancel">닫기</button>
+                                      <button type="submit" class="bg-emerald-500 text-white py-2 px-4 rounded">적용</button>
+                                  </div>
+                                </form>`);
+                       }
+                    });
+                }
+            }),
+            Quiz: ({ quizState }) => ({
+                render() {
+                    const q = quizState.questions[quizState.currentIndex];
+                    const isAnswered = quizState.isAnswered;
+                    
+                    const renderAnswerComponent = () => {
+                        switch(q.type) {
+                            case CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE:
+                                return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">
+                                    ${q.options.map(opt => {
+                                        let classes = 'border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700';
+                                        if (isAnswered) {
+                                            const userAnswer = quizState.quizHistory[quizState.currentIndex]?.userAnswer;
+                                            if (opt === q.answer) classes = 'bg-emerald-200 dark:bg-emerald-900 border-emerald-400';
+                                            else if (opt === userAnswer) classes = 'bg-red-200 dark:bg-red-900 border-red-400';
+                                        }
+                                        return `<button data-answer="${opt}" class="mult-choice-btn w-full text-left p-4 border rounded-lg transition-colors ${classes}" ${isAnswered ? 'disabled' : ''}>${opt}</button>`
+                                    }).join('')}
+                                </div>`;
+                            case CONFIG.QUIZ_TYPE.SHORT_ANSWER:
+                                return `
+                                    <form id="quiz-form" class="w-full max-w-md">
+                                        <input id="answer-input" type="text" class="w-full text-center text-xl border-b-2 p-2 bg-transparent border-slate-400 focus:outline-none focus:border-blue-500 transition-colors" autocomplete="off" ${isAnswered ? 'disabled' : 'autofocus'}>
+                                        <button type="submit" class="mt-8 bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-3 px-12 rounded-lg text-lg transition-colors shadow hover:shadow-md" ${isAnswered ? 'disabled' : ''}>제출</button>
+                                    </form>`;
+                            case CONFIG.QUIZ_TYPE.CASE_BASED:
+                            case CONFIG.QUIZ_TYPE.SUBJECTIVE:
+                                return `
+                                    <div class="w-full max-w-lg space-y-4">
+                                       <textarea id="subjective-answer-input" rows="5" class="w-full p-2 border rounded bg-slate-100 dark:bg-slate-700 dark:border-slate-600" placeholder="자유롭게 답변을 작성해보세요..." ${isAnswered ? 'disabled' : ''}></textarea>
+                                       <div class="mt-4 text-center">
+                                           <p class="font-semibold mb-2">스스로 채점해주세요.</p>
+                                           <div class="flex justify-center gap-4">
+                                               <button data-correct="true" class="self-grade-btn bg-emerald-500 hover:bg-emerald-600 text-white font-bold py-2 px-6 rounded-lg" ${isAnswered ? 'disabled' : ''}>맞았음</button>
+                                               <button data-correct="false" class="self-grade-btn bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-6 rounded-lg" ${isAnswered ? 'disabled' : ''}>틀렸음</button>
+                                           </div>
+                                       </div>
+                                    </div>`;
+                            default: return '';
+                        }
+                    };
+                    const renderFeedback = () => {
+                      if (!isAnswered) return `<div class="min-h-[148px]"></div>`;
+                      const { isCorrect } = quizState.quizHistory[quizState.currentIndex];
+                      const feedbackClass = isCorrect ? 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300' : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300';
+                      const icon = isCorrect ? UI.I('check-circle', 'w-5 h-5') : UI.I('x-circle', 'w-5 h-5');
+                      const isLastQuestion = quizState.currentIndex + 1 >= quizState.questions.length;
+                      const nextButtonText = isLastQuestion ? '결과 보기' : '다음 문제';
+                      const nextButtonIcon = isLastQuestion ? 'flag' : 'arrow-right-circle';
+
+                      return `<div class="p-4 rounded-lg fade-in ${feedbackClass}">
+                          <p class="font-bold flex items-center gap-2">${icon} ${isCorrect ? '정답입니다!' : '오답입니다.'}</p>
+                          ${!isCorrect ? `<p class="text-sm mt-2"><span class="font-semibold">정답:</span> ${q.answer}</p>` : ''}
+                          <p class="text-sm mt-2"><span class="font-semibold">해설:</span> ${q.explanation}</p>
+                           <div class="mt-4 flex justify-end">
+                              <button id="next-question-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">
+                                  ${nextButtonText} ${UI.I(nextButtonIcon, 'w-5 h-5')}
+                              </button>
+                          </div>
+                      </div>`;
+                    }
+
+                    const questionTypeMap = {
+                        [CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE]: '객관식',
+                        [CONFIG.QUIZ_TYPE.SHORT_ANSWER]: '단답형',
+                        [CONFIG.QUIZ_TYPE.SUBJECTIVE]: '서술형',
+                        [CONFIG.QUIZ_TYPE.CASE_BASED]: '사례형'
+                    };
+
+                    return `
+                        <header class="bg-white dark:bg-slate-800 shadow-sm p-4 sticky top-0 z-10">
+                            <div class="flex items-center justify-between gap-4">
+                                <button id="exit-quiz-btn" class="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700">${UI.I('x')}</button>
+                                <div class="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-4 overflow-hidden">
+                                    <div class="bg-blue-500 h-4 rounded-full transition-all duration-300" style="width: ${((quizState.currentIndex + 1) / quizState.questions.length) * 100}%"></div>
+                                </div>
+                                <div class="font-bold text-lg w-24 text-right">${quizState.currentIndex + 1} / ${quizState.questions.length}</div>
+                            </div>
+                        </header>
+                        <main class="flex-1 flex flex-col items-center justify-center p-6 text-center">
+                            <div class="w-full max-w-3xl">
+                                <p class="text-slate-500 text-sm mb-2">${questionTypeMap[q.type] || '문제'}</p>
+                                <h2 class="text-2xl md:text-3xl font-bold leading-tight">${q.questionText}</h2>
+                            </div>
+                            <div class="mt-12 w-full flex justify-center">${renderAnswerComponent()}</div>
+                            <div class="mt-8 w-full max-w-3xl">${renderFeedback()}</div>
+                        </main>`;
+                },
+                attachEventListeners(container) {
+                    const { quizState } = State.getState();
+                    const q = quizState.questions[quizState.currentIndex];
+                    container.addEventListener('click', e => {
+                        const target = e.target.closest('button');
+                        if (!target) return;
+
+                        if (target.id === 'next-question-btn') {
+                            if (quizState.currentIndex + 1 < quizState.questions.length) {
+                                State.setState({ 
+                                    quizState: { 
+                                        ...quizState, 
+                                        currentIndex: quizState.currentIndex + 1, 
+                                        isAnswered: false 
+                                    } 
+                                });
+                            } else {
+                                API.endQuiz();
+                            }
+                            return;
+                        }
+                        
+                        if (quizState.isAnswered) return;
+                        
+                        if (target.id === 'exit-quiz-btn') {
+                            const { content, onConfirm } = UI.Modals.Confirm('퀴즈를 중단하시겠습니까? 진행 상황은 자동으로 저장됩니다.', '나가기', () => API.saveQuizSession());
+                            UI.showModal(content);
+                            document.getElementById('modal-confirm-action').onclick = onConfirm;
+                        }
+                        if (target.matches('.mult-choice-btn')) {
+                            const userAnswer = target.dataset.answer;
+                            API.processAnswer(userAnswer === q.answer, userAnswer);
+                        }
+                        if (target.matches('.self-grade-btn')) {
+                            const userAnswer = container.querySelector('#subjective-answer-input')?.value || '(답변 없음)';
+                            API.processAnswer(target.dataset.correct === 'true', userAnswer);
+                        }
+                    });
+                    container.querySelector('#quiz-form')?.addEventListener('submit', e => {
+                        e.preventDefault();
+                        if (quizState.isAnswered) return;
+                        const userAnswer = container.querySelector('#answer-input').value.trim();
+                        API.processAnswer(userAnswer.toLowerCase() === q.answer.toLowerCase(), userAnswer);
+                    });
+                }
+            }),
+            QuizReview: ({ quizState, userProfile }) => ({
+                render() {
+                  const score = quizState.quizHistory.filter(h => h.isCorrect).length;
+                  return `
+                    <header class="bg-white dark:bg-slate-800 shadow-sm p-4 flex justify-between items-center border-b border-slate-200 dark:border-slate-700">
+                        <h1 class="text-2xl font-bold">퀴즈 결과 및 리뷰</h1>
+                        <div></div>
+                    </header>
+                    <main class="flex-1 p-6 overflow-y-auto">
+                        <div class="max-w-4xl mx-auto">
+                            <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6 mb-6 text-center">
+                                <h2 class="text-2xl font-bold">최종 점수</h2>
+                                <p class="text-6xl font-extrabold my-4">${score} / ${quizState.questions.length}</p>
+                                <p class="text-yellow-400 font-semibold text-xl flex items-center justify-center gap-2">${UI.I('award', 'inline-block w-6 h-6')} +${score * CONFIG.XP_PER_CORRECT} XP</p>
+                            </div>
+                            <div class="bg-white dark:bg-slate-800 rounded-lg shadow-sm p-6">
+                                <h3 class="text-xl font-bold mb-4">상세 리뷰</h3>
+                                <div class="space-y-3">
+                                ${quizState.quizHistory.map(item => `
+                                    <div class="p-3 rounded-lg ${item.isCorrect ? 'bg-emerald-50 dark:bg-emerald-900/50' : 'bg-red-50 dark:bg-red-900/50'}">
+                                        <div class="flex items-start gap-3">
+                                            ${item.isCorrect ? UI.I('check-circle', 'w-5 h-5 text-emerald-500 shrink-0 mt-1') : UI.I('x-circle', 'w-5 h-5 text-red-500 shrink-0 mt-1')}
+                                            <p class="font-bold text-md">${item.question.questionText}</p>
+                                        </div>
+                                        <div class="pl-8 mt-1 text-sm space-y-1">
+                                            <p><span class="font-semibold">제출한 답:</span> ${item.userAnswer || '<i class="text-slate-500">미입력</i>'}</p>
+                                            ${!item.isCorrect ? `<p><span class="font-semibold">정답:</span> ${item.question.answer}</p>` : ''}
+                                        </div>
+                                    </div>
+                                `).join('')}
+                                </div>
+                            </div>
+                            <div class="flex justify-center gap-4 mt-8">
+                                <button id="back-to-dashboard-btn" class="bg-slate-500 hover:bg-slate-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">완료</button>
+                                ${quizState.quizHistory.some(h => !h.isCorrect) ? `<button id="retry-incorrect-btn" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition-colors">틀린 문제 다시 풀기</button>` : ''}
+                            </div>
+                        </div>
+                    </main>`;
+                },
+                attachEventListeners(container) {
+                    container.addEventListener('click', e => {
+                        const target = e.target.closest('button');
+                        if (!target) return;
+                        if (target.id === 'retry-incorrect-btn') {
+                            const incorrectQuestions = quizState.quizHistory.filter(h => !h.isCorrect).map(h => h.question);
+                            API.startQuiz(incorrectQuestions);
+                        }
+                    });
+                }
+            }),
+        };
+
+        // =================================================================================
+        // 8. APP & ROUTER
+        // =================================================================================
+        const App = {
+            render(state) {
+                const { isLoading, currentView, toast, modal } = state;
+                const appContainer = document.getElementById('app');
+                appContainer.innerHTML = ''; // Clear previous content and listeners
+
+                // Render loading spinner
+                if (isLoading && !modal.visible) {
+                    appContainer.innerHTML = `<div class="h-full w-full flex items-center justify-center text-slate-500">
+                        <div class="w-8 h-8 border-4 border-slate-300 border-t-blue-500 rounded-full spinner"></div>
+                        <span class="ml-3 text-lg">로딩 중...</span>
+                    </div>`;
+                    return;
+                }
+
+                // Determine which view to render
+                let viewComponent;
+                switch(currentView) {
+                    case 'dashboard':      viewComponent = Views.Dashboard(state); break;
+                    case 'materialDetail': viewComponent = Views.MaterialDetail(state); break;
+                    case 'quiz':           viewComponent = Views.Quiz(state); break;
+                    case 'quizReview':     viewComponent = Views.QuizReview(state); break;
+                    default:               appContainer.innerHTML = `<p>Error: View not found</p>`; return;
+                }
+                
+                // Render main view and attach its listeners
+                const viewContainer = document.createElement('div');
+                viewContainer.className = 'flex flex-col h-full';
+                viewContainer.innerHTML = viewComponent.render();
+                appContainer.appendChild(viewContainer);
+                viewComponent.attachEventListeners(viewContainer);
+
+                // Render modals and toasts over the main view
+                const portalContainer = document.createElement('div');
+                portalContainer.id = "portals";
+                portalContainer.innerHTML = UI.Components.ToastContainer(state) + UI.Components.Modal(state);
+                appContainer.appendChild(portalContainer);
+
+                // Initialize icons
+                lucide.createIcons();
+                
+                // Handle toast visibility timeout
+                if (toast.visible) {
+                    setTimeout(() => {
+                        const toastEl = document.getElementById(`toast-${toast.id}`);
+                        if (toastEl) toastEl.remove();
+                    }, 3000);
+                }
+            },
+            attachGlobalEventListeners() {
+                // Event delegation for globally available elements (header, modals)
+                document.getElementById('app').addEventListener('click', e => {
+                    const target = e.target.closest('button, #home-btn');
+                    if (!target) return;
+
+                    if (target.id === 'copy-prompt-btn' && !target.disabled) {
+                        const promptText = target.dataset.prompt;
+                        navigator.clipboard.writeText(promptText).then(() => {
+                            target.innerHTML = `${UI.I('check')} 복사 완료!`;
+                            target.disabled = true;
+                            target.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+                            target.classList.add('bg-emerald-500');
+                            
+                            setTimeout(() => {
+                                target.innerHTML = `${UI.I('copy')} 프롬프트 복사 & Gemini로 이동`;
+                                target.disabled = false;
+                                target.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                                target.classList.remove('bg-emerald-500');
+                            }, 2000);
+                            
+                            window.open('https://aistudio.google.com/app', '_blank');
+                        }).catch(err => {
+                            console.error('Failed to copy prompt: ', err);
+                            UI.showToast('클립보드 복사에 실패했습니다.', 'error');
+                        });
+                        return;
+                    }
+                    
+                    if (target.id === 'home-btn' || target.id === 'back-to-dashboard-btn') {
+                         API.loadInitialData().then(() => State.setState({ currentView: 'dashboard', searchQuery: '' }));
+                    } else if (target.id === 'settings-btn') {
+                        UI.showModal(UI.Modals.Settings());
+                    } else if (target.matches('.btn-cancel')) {
+                        UI.closeModal();
+                    }
+                });
+
+                document.getElementById('app').addEventListener('submit', e => {
+                   e.preventDefault();
+                   const form = e.target;
+                   if (form.id === 'settings-form') {
+                       const data = Object.fromEntries(new FormData(form).entries());
+                       API.saveSettings(data);
+                   } else if (form.id === 'add-chapter-form') {
+                       API.addChapter(new FormData(form).get('chapterName'));
+                   } else if (form.id === 'add-material-form') {
+                       const data = new FormData(form);
+                       API.addMaterial(parseInt(form.dataset.chapterId), data.get('materialName'), data.get('materialContent'));
+                   } else if (form.id === 'edit-material-form') {
+                       const data = new FormData(form);
+                       API.updateMaterial(parseInt(form.dataset.materialId), data.get('materialName'), data.get('materialContent'));
+                   } else if (form.id === 'manual-add-form') {
+                       const jsonText = new FormData(form).get('jsonText');
+                       API.addQuestionsFromJSON(State.getState().currentMaterialId, jsonText);
+                   }
+                });
+
+                // Chapter Import Listeners
+                document.getElementById('app').addEventListener('change', e => {
+                    if (e.target.id === 'import-file-input' && e.target.files.length > 0) {
+                        API.importChapter(e.target.files[0]);
+                    }
+                });
+                
+                document.getElementById('app').addEventListener('dragover', e => {
+                    const dropZone = e.target.closest('#import-drop-zone');
+                    if (dropZone) {
+                        e.preventDefault();
+                        dropZone.classList.add('drop-zone-active');
+                    }
+                });
+
+                document.getElementById('app').addEventListener('dragleave', e => {
+                     const dropZone = e.target.closest('#import-drop-zone');
+                     if(dropZone) dropZone.classList.remove('drop-zone-active');
+                });
+
+                document.getElementById('app').addEventListener('drop', e => {
+                    const dropZone = e.target.closest('#import-drop-zone');
+                    if (dropZone) {
+                        e.preventDefault();
+                        dropZone.classList.remove('drop-zone-active');
+                        if (e.dataTransfer.files.length > 0) {
+                            API.importChapter(e.dataTransfer.files[0]);
+                        }
+                    }
+                });
+            }
+        };
+
+        // =================================================================================
+        // 9. INITIALIZATION
+        // =================================================================================
+        async function main() {
+            try {
+                // Subscribe to state changes to re-render the app
+                State.subscribe(App.render);
+                App.attachGlobalEventListeners();
+
+                // Initialize Database
+                await DB.init();
+                
+                // Load initial data and trigger first render
+                await API.loadInitialData();
+
+                // Set color scheme based on user preference
+                const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+                const applyColorScheme = isDark => document.documentElement.classList.toggle('dark', isDark);
+                applyColorScheme(mediaQuery.matches);
+                mediaQuery.addEventListener('change', e => applyColorScheme(e.matches));
+
+            } catch(error) {
+                console.error("Application failed to initialize:", error);
+                document.getElementById('app').innerHTML = `<div class="p-4 text-red-500">애플리케이션 초기화 실패. 콘솔을 확인해주세요.</div>`;
+            }
+        }
+
+        // Start the application
+        main();
+    </script>
+</body>
+</html>
+
