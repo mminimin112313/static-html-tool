@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>통합 학습 및 저작 시스템 v2.8.1</title>
+    <title>통합 학습 및 저작 시스템 v2.9.0</title>
     
     <!-- Core Dependencies via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -81,14 +81,14 @@
 
     <script type="module">
         // ===================================================================================
-        // V2.8.1 기능 명세서 기반 단일 파일 애플리케이션 구현
+        // V2.9.0 기능 명세서 기반 단일 파일 애플리케이션 구현
         // 작성자: Polymathic Strategist
         // 최종 수정: 2025년 9월 9일
         //
         // 핵심 개선 사항:
-        // 1. [FIX] AI 글쓰기 프롬프트 생성 시 전체 목차 및 최신 메모가 반영되지 않던 문제 수정.
-        // 2. [FEATURE] '목차 JSON'으로 프로젝트 생성 기능 추가 (v2.8.0)
-        // 3. [FIX] 퀴즈 완료 후 무한 로딩 문제 해결 (v2.7.1)
+        // 1. [FEATURE] AI 글쓰기 프롬프트 시스템 대폭 강화: '자료' 필드 추가 및
+        //    상세 컨텍스트(파트 목차, 참고자료 등)를 반영하는 새로운 프롬프트 템플릿 적용.
+        // 2. [FIX] 목차 JSON 파싱 시 상위 노드의 'description' 정보가 누락되던 문제 수정.
         // ===================================================================================
 
         const CONFIG = {
@@ -109,41 +109,127 @@
             },
             DEFAULT_PROJECT_SETTINGS: {
                 writingGenre: "전문 분석 보고서",
-                writingAudience: "해당 분야의 의사결정자",
-                writingStyle: "객관적이고 명료하며, 데이터에 기반한 논리적인 문체",
+                writingAudience: "해당 분야를 배우기 갈망하는 사람",
+                writingAgeGroup: "성인",
+                writingStyle: "천천히 천천히 심혈을 기울여 작성한, 최대한의 정보를 학술적 정확성과 함께 담아낸 객관적이고 명료하며, 논리적인 문체",
+                writingReferences: "핵심 참고자료 (세계관, 인물, 용어 등)를 여기에 입력하세요.",
                 writingPrompt: `<?xml version="1.0" encoding="UTF-8"?>
-<prompt>
-    <persona>
-        <role>당신은 {{writingGenre}} 장르의 베테랑 작가이자, {{writingAudience}}를 완벽하게 이해하는 전문가입니다.</role>
-        <style>{{writingStyle}}</style>
-    </persona>
-    <context>
-        <project_overview title="{{bookTitle}}">
-            <full_table_of_contents>
-                {{fullToc}}
-            </full_table_of_contents>
-        </project_overview>
-    </context>
-    <task>
-        <chapter_to_write title="{{chapterTitle}}">
-            <description>{{chapterDescription}}</description>
-        </chapter_to_write>
-        <instructions>
-            - 이 챕터에 대한 완성도 높은 원고 초안을 Markdown 형식으로 작성하시오.
-            - 서문이나 요약 없이, 즉시 본문에 삽입할 수 있는 내용만 작성하시오.
-            - 원고 내용에 적절한 소제목을 포함하고, 최상위 소제목은 '##'으로 시작하시오.
-        </instructions>
-    </task>
-    <constraints>
-        <must_avoid>
-            - 작가(AI)가 독자에게 직접 말을 거는 듯한 메타적 서술
-            - 프롬프트 내용의 요약 또는 반복
-        </must_avoid>
-        <self_correction>
-            최종 결과물을 제출하기 전, 모든 지시사항을 100% 준수했는지 스스로 검증하고 완벽한 원고만 출력하라.
-        </self_correction>
+<metaPrompt>
+  <purpose>
+    주어진 모든 맥락 정보를 종합적으로 분석하여, 특정 장(Chapter)에 해당하는 전문가 수준의 원고 초안을 천천히 심혈을 기울여서 차근차근 생성하는 것. 최대한 길고 자세하며 목적을 달성하여야만 한다. 캔버스 사용 금지.
+  </purpose>
+  <promptDesignFramework>
+    <objectiveDefinition id="1" title="목표 정의: 과업의 제1원칙">
+      <finalDeliverable id="1.1" description="프롬프트를 통해 얻고자 하는 최종 결과물">
+        '{{chapterTitle}}' 장에 대한 완성도 높은 원고 초안을, 체계적인 목차가 있는 글을 최대한 길게 생성하는 것. 이 원고는 별도의 서문이나 요약 없이, 즉시 본문에 삽입할 수 있는 마크다운(Markdown) 형식이어야 한다.
+      </finalDeliverable>
+      <coreTask id="1.2" description="LLM이 수행해야 할 핵심적인 동사">
+        제시된 모든 맥락과 제약 조건을 엄격히 준수하여, '{{chapterTitle}}' 장의 원고를 **집필하라**.
+      </coreTask>
+      <successCriteria id="1.3" description="결과물이 '성공'이라고 판단할 객관적인 기준">
+        1.  생성된 원고가 '{{chapterDescription}}'에 명시된 목표와 내용을 충실히 반영하고 있는가?
+        2.  원고가 전체 목차('{{fullToc}}')의 흐름 속에서 현재 장의 역할을 정확히 수행하고 있는가?
+        3.  프로젝트 설정('{{projectGenre}}', '{{projectAudience}}', '{{projectStyleExample}}')에 부합하는 문체와 어조를 일관되게 유지하는가?
+        4.  'references'에 제공된 설정(인물, 배경, 용어 등)을 정확하게 활용하였는가?
+        5.  결과물이 서문, 요약, 반복 등 불필요한 내용 없이 오직 원고 본문만으로 구성되었는가?
+        6.  생성된 원고가 최대한의 토큰을 사용하였는가.
+      </successCriteria>
+    </objectiveDefinition>
+    <personaAssignment id="2" title="역할 부여: 최적의 인지 모델 설계">
+      <expertPersona id="2.1" description="과업을 가장 잘 수행할 전문가의 상세한 묘사">
+        당신은 '{{projectGenre}}' 장르의 베테랑 작가이자, 해당 분야의 깊이 있는 지식을 갖춘 전문가이다. 당신의 임무는 단순한 텍스트 생성이 아니라, 작품 전체의 유기적인 흐름과 깊이를 더하는 한 부분을 완성하는 것이다. 당신은 프로젝트의 총괄 편집자로서, 모든 세부 설정과 이야기의 큰 그림을 완벽하게 이해하고 있다.
+      </expertPersona>
+      <audience id="2.2" description="결과물을 소비할 대상과 그들의 지식 수준">
+        이 글의 핵심 독자는 '{{projectAudience}}'이며, 대상 연령층은 '{{projectAgeGroup}}'이다. 이들의 지적 수준과 감성을 고려하여 집필해야 한다.
+      </audience>
+      <toneAndStyle id="2.3" description="결과물의 어조와 스타일">
+        글의 전체적인 톤앤매너와 문체는 다음 예시를 따른다: '{{projectStyleExample}}'. 이를 바탕으로 일관성 있는 작풍을 유지하라.
+      </toneAndStyle>
+    </personaAssignment>
+    <contextAndFormat id="3" title="맥락 제공 및 형식 지정">
+      <essentialContext id="3.1" description="과업 수행에 필요한 모든 배경 정보, 데이터, 이전 대화 내용">
+        <![CDATA[
+### 프로젝트 전체 개요
+- **책 전체 제목**: {{bookTitle}}
+- **장르 및 대상**: {{projectGenre}}, {{projectAgeGroup}} {{projectAudience}}
+- **핵심 참고자료 (세계관, 인물, 용어 등)**:
+{{references}}
+
+### 집필할 장(Chapter)의 위치와 목표
+- **현재 파트(Part)**: {{partTitle}} ({{partDescription}})
+- **집필 대상 장(Chapter)**: **{{chapterTitle}}**
+- **이번 장의 핵심 목표**: {{chapterDescription}}
+
+### 전체 목차 구조 (현재 위치 표시: ▶)
+{{fullToc}}
+
+### 현재 파트의 목차 구조 (현재 위치 표시: ▶)
+{{partToc}}
+        ]]>
+      </essentialContext>
+      <outputFormat id="3.2" description="결과물이 출력되어야 할 정확한 형식 또는 템플릿">
+        <![CDATA[
+## 최종 출력물 형식 (매우 중요)
+- **오직 원고 본문만 출력한다.**
+- **원고 내용에 적절한 소제목 목차를 포함하고, 목차의 최상위 제목은 '##'으로 시작해야 한다.**
+- Markdown 문법을 사용하여 문단을 나누고, 필요시 강조 등을 표현한다.
+- "결과물:", "원고:", "다음은 요청하신 원고입니다." 와 같은 서두를 절대로 사용하지 마라.
+- 프롬프트의 내용을 요약하거나 되풀이하지 마라.
+        ]]>
+      </outputFormat>
+    </contextAndFormat>
+    <reasoningDesign id="4" title="추론 과정 설계: 생각의 경로 구축">
+      <reasoningFramework id="4.1" description="과업 복잡성에 따른 추론 방식 선택">
+        <option type="DirectResponse" description="단순 정보 요청 시 사용">
+          <task>위의 모든 정보를 바탕으로, {{chapterTitle}} 장의 원고를 즉시 집필하라.</task>
+        </option>
+      </reasoningFramework>
+    </reasoningDesign>
+    <constraints id="5" title="제약 조건 설정: 탐색 공간 제어">
+      <mustInclude id="5.1" description="결과물에 반드시 포함되어야 할 키워드, 개념, 데이터 포인트">
+        - 원고 내용은 '{{chapterDescription}}'의 목표를 직접적으로 달성해야 한다.
+        - 'references'의 설정과 충돌이 없어야 한다.
+      </mustInclude>
+      <mustAvoid id="5.2" description="반드시 피해야 할 주제, 표현, 단어, 편향, 가정">
+        - 집필 과업에 대한 자기 평가나 소감, 요약, 변명, 추가 설명을 포함하지 마라.
+        - 작가(AI)가 독자에게 직접 말을 거는 듯한 '메타적 서술'을 피하라. (예: "이제부터 ~에 대해 알아보겠습니다.")
+        - 전체 이야기의 결말을 암시하거나 단정 짓는 서술을 피하라. 현재 장의 역할에만 집중하라.
+      </mustAvoid>
+      <selfCorrectionCommand id="5.3" description="생성될 프롬프트 마지막에 포함될 최종 검증 명령">
+        <![CDATA[
+모든 지시사항을 완수한 후, 최종 답변을 제출하기 전에 잠시 멈추고 스스로 '레드팀'의 역할을 수행하라. 내가 제시한 모든 요구사항(역할, 형식, 내용, 제약 조건 등)이 100% 충족되었는지, 논리적 비약이나 설정 충돌은 없는지, 더 나은 대안은 없는지 최소 세 번 이상 교차 검증하고, 그 결과를 반영하여 최종적으로 완벽하고 군더더기 없는 원고 초안만 출력하라.
+        ]]>
+      </selfCorrectionCommand>
+<supplementaryDirectives title="Author's Internal Checklist">
+    <directive id="A" title="독자의 그림자: 끊임없는 질문에 답하기">
+      <description>
+        글을 쓰는 내내, 당신의 어깨너머로 회의적이지만 지적인 독자가 함께 읽고 있다고 상상하라. 그 독자는 매 문단이 끝날 때마다 다음과 같이 질문할 것이다: "그래서 이게 왜 중요한데(So What)?", "이 주장의 근거는 무엇이지?", "더 쉬운 설명은 없나?" 당신의 글은 이러한 독자의 잠재적 질문을 미리 예측하고, 그에 대한 답을 본문 안에 자연스럽게 녹여내야 한다. 독자의 의문이 싹트기 전에 해소시켜라.
+      </description>
+    </directive>
+    <directive id="B" title="정보적 투자수익률(ROI) 원칙: 독자의 노력을 보상하기">
+      <description>
+        독자가 한 문장을 읽는 데 사용하는 인지적 노력은 '투자'다. 당신은 그 투자에 대해 최대한의 '수익(지적 깨달음, 감정적 동요, 실용적 가치)'으로 보상할 의무가 있다. 모든 문장이 정보적 가치를 지니는지, 불필요한 미사여구나 군더더기는 없는지 끊임없이 점검하라. 문장이 길어진다면, 그 길이만큼의 가치를 담고 있는지 증명해야 한다.
+      </description>
+    </directive>
+    <directive id="C" title="논리적 연결의 미학: 문단과 문단을 엮는 힘">
+      <description>
+        문단을 독립된 정보의 섬으로 취급하지 마라. 뛰어난 글은 각 문단이 서로 맞물려 돌아가는 정교한 기계와 같다. 한 문단의 마지막 문장은 다음 문단의 첫 문장을 자연스럽게 호출하는 '갈고리' 역할을 해야 한다. 논리의 흐름이 끊기지 않고, 독자가 물 흐르듯 다음 내용으로 넘어갈 수 있도록 문단 사이의 논리적 인장력을 최대화하라.
+      </description>
+    </directive>
+    <directive id="D" title="구성의 교향곡: 요소들의 조화로운 배치">
+      <description>
+        하나의 장(Chapter)은 단일한 음색의 연주가 아닌, 다양한 악기가 조화를 이루는 교향곡이어야 한다. '이론 제시', '사례 분석', '서사적 묘사', '데이터 인용', '성찰적 질문' 등 다양한 구성 요소를 단조롭지 않게 배치하라. 예를 들어, 무거운 이론을 제시했다면 곧바로 흥미로운 일화를 통해 독자의 이해를 돕고 환기시키는 지혜가 필요하다.
+      </description>
+    </directive>
+    <directive id="E" title="지적 정직성의 프레임: 경계와 복잡성의 인정">
+      <description>
+        당신의 주장이 적용되는 범위와 한계를 명확히 하라. 모든 것을 설명할 수 있는 것처럼 과장하거나, 복잡한 문제를 단순하게 양분하지 마라. 특히 비문학 분야에서는 반대 의견이나 대안적 해석을 공정하게 소개하고, 왜 당신의 관점이 더 설득력 있는지 논증하라. 이러한 지적 정직성은 글의 신뢰도를 극적으로 높인다. 소설의 경우, 이는 세상을 선과 악으로만 나누지 않는 입체적인 세계관 구축으로 이어진다.
+      </description>
+    </directive>
+  </supplementaryDirectives>
     </constraints>
-</prompt>`,
+  </promptDesignFramework>
+</metaPrompt>`,
                 translationPrompt: `<?xml version="1.0" encoding="UTF-8"?>
 <prompt>
     <task>
@@ -207,7 +293,7 @@
             getNodeByPath: (toc, path) => { if (path === null || path === undefined) return null; const parts = path.split('.').map(Number); let node = toc; for (const part of parts) { if (node && node.children && node.children[part]) { node = node.children[part]; } else { return null; } } return node; },
             generateTocText: (node, level = 0, currentPath = '', activePath = '') => {
                 let text = '';
-                if (node.children) {
+                if (node && node.children) {
                     node.children.forEach((child, index) => {
                         const path = currentPath ? `${currentPath}.${index}` : `${index}`;
                         const isChapter = !child.children || child.children.length === 0;
@@ -247,7 +333,7 @@
             renderLearnPanel: () => `<div class="flex flex-col items-center justify-center h-full min-h-[60vh]">${View.renderQuizHome()}</div>`,
             renderQuizView() { const { quizState } = state; if (!quizState || !quizState.questions[quizState.currentIndex]) return this.renderSpinner('퀴즈 로딩 중...'); const q = quizState.questions[quizState.currentIndex]; const isAnswered = quizState.answers[quizState.currentIndex] !== undefined; const renderAnswerComponent = () => { switch (q.type) { case CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE: const userAnswerIndex = quizState.answers[quizState.currentIndex]?.selectedIndex; return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">${q.options.map((opt, index) => { let classes = 'border-slate-300 hover:border-indigo-500 hover:bg-indigo-50'; if (isAnswered) { if (index === q.answerIndex) classes = 'bg-emerald-100 border-emerald-500 text-emerald-800'; else if (index === userAnswerIndex) classes = 'bg-red-100 border-red-500 text-red-800'; } return `<button data-action="submit-answer" data-index="${index}" class="btn-interactive w-full text-left p-4 border rounded-lg transition-colors ${classes}" ${isAnswered ? 'disabled' : ''}>${opt}</button>` }).join('')}</div>`; default: return `<form data-action="submit-text-answer" class="w-full max-w-md text-center"><textarea id="answer-input" rows="4" class="w-full text-lg border-2 p-2 bg-transparent border-slate-300 rounded-md focus:outline-none focus:border-indigo-500 transition-colors" placeholder="답안을 입력하세요..." ${isAnswered ? 'disabled' : 'autofocus'}></textarea><button type="submit" class="btn-interactive mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-12 rounded-lg text-lg transition-colors shadow hover:shadow-md" ${isAnswered ? 'disabled' : ''}>제출하고 정답 확인</button></form>`; } }; const renderFeedback = () => { if (!isAnswered) return `<div class="min-h-[148px]"></div>`; const { isCorrect } = quizState.answers[quizState.currentIndex]; const feedbackClass = isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'; const icon = isCorrect ? `<i data-lucide="check-circle" class="w-5 h-5"></i>` : `<i data-lucide="x-circle" class="w-5 h-5"></i>`; const isLastQuestion = quizState.currentIndex + 1 >= quizState.questions.length; const nextButtonText = isLastQuestion ? '결과 보기' : '다음 문제'; const nextButtonIcon = isLastQuestion ? 'flag' : 'arrow-right-circle'; let correctDisplay = ''; if (!isCorrect) correctDisplay = q.type === 'multiple_choice' ? q.options[q.answerIndex] : q.answer; return `<div class="p-4 rounded-lg mt-8 w-full max-w-3xl ${feedbackClass}"><p class="font-bold flex items-center gap-2">${icon} ${isCorrect ? '정답입니다!' : '오답입니다.'}</p>${!isCorrect ? `<p class="text-sm mt-2"><span class="font-semibold">모범 답안:</span> ${correctDisplay}</p>` : ''}<p class="text-sm mt-2"><span class="font-semibold">해설:</span> ${q.explanation}</p><div class="mt-4 flex justify-end"><button data-action="next-question" class="btn-interactive bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${nextButtonText} <i data-lucide="${nextButtonIcon}" class="w-5 h-5"></i></button></div></div>`; }; const questionTypeMap = { [CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE]: '객관식', [CONFIG.QUIZ_TYPE.SHORT_ANSWER]: '단답형', [CONFIG.QUIZ_TYPE.SUBJECTIVE]: '서술형', [CONFIG.QUIZ_TYPE.CASE_BASED]: '사례형' }; return `<div class="fixed inset-0 bg-slate-50 flex flex-col"><header class="bg-white shadow-sm p-4 sticky top-0 z-10"><div class="flex items-center justify-between gap-4 max-w-5xl mx-auto"><div class="font-bold text-lg w-24">${quizState.currentIndex + 1} / ${quizState.questions.length}</div><div class="w-full bg-slate-200 rounded-full h-4 overflow-hidden"><div class="bg-indigo-500 h-4 rounded-full transition-all duration-300" style="width: ${((quizState.currentIndex) / quizState.questions.length) * 100}%"></div></div><button data-action="exit-quiz" class="p-2 rounded-full hover:bg-slate-200" title="퀴즈 나가기"><i data-lucide="x"></i></button></div></header><main class="flex-1 flex flex-col items-center justify-center p-6 text-center overflow-y-auto"><div class="w-full max-w-3xl"><p class="text-slate-500 text-sm mb-2">${questionTypeMap[q.type] || '문제'}</p><h2 class="text-2xl md:text-3xl font-bold leading-tight">${q.questionText}</h2></div><div class="mt-12 w-full flex justify-center">${renderAnswerComponent()}</div>${renderFeedback()}</main></div>`; },
             renderSpinner: (message) => `<div class="flex items-center justify-center min-h-screen"><div class="text-center"><svg class="mx-auto h-12 w-12 text-slate-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h2 class="mt-4 text-lg font-medium text-slate-900">${message}</h2></div></div>`,
-            renderHeader: () => { const { level, xp } = state.userProfile; const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[level - 1] || 0; const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[level] || xp; const xpForLevel = nextLevelXP - currentLevelXP; const currentXPInLevel = xp - currentLevelXP; const progress = xpForLevel > 0 ? Math.round((currentXPInLevel / xpForLevel) * 100) : 100; return `<header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-30"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex justify-between items-center h-16"><div class="flex items-center space-x-2"><i data-lucide="layers-3" class="text-indigo-600 h-8 w-8"></i><h1 class="text-xl font-bold text-slate-800">통합 학습 & 저작 시스템 <span class="text-sm font-medium text-indigo-500">v2.8.1</span></h1></div><div class="flex items-center space-x-4"><div class="font-semibold text-sm text-slate-600">LV. <span class="text-indigo-600 font-bold text-base">${level}</span></div><div class="w-40"><div class="bg-slate-200 rounded-full h-2.5" title="${currentXPInLevel.toLocaleString()} / ${xpForLevel.toLocaleString()} XP"><div class="xp-bar-inner h-2.5 rounded-full" style="width: ${progress}%"></div></div></div></div></div></div></header>`; },
+            renderHeader: () => { const { level, xp } = state.userProfile; const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[level - 1] || 0; const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[level] || xp; const xpForLevel = nextLevelXP - currentLevelXP; const currentXPInLevel = xp - currentLevelXP; const progress = xpForLevel > 0 ? Math.round((currentXPInLevel / xpForLevel) * 100) : 100; return `<header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-30"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex justify-between items-center h-16"><div class="flex items-center space-x-2"><i data-lucide="layers-3" class="text-indigo-600 h-8 w-8"></i><h1 class="text-xl font-bold text-slate-800">통합 학습 & 저작 시스템 <span class="text-sm font-medium text-indigo-500">v2.9.0</span></h1></div><div class="flex items-center space-x-4"><div class="font-semibold text-sm text-slate-600">LV. <span class="text-indigo-600 font-bold text-base">${level}</span></div><div class="w-40"><div class="bg-slate-200 rounded-full h-2.5" title="${currentXPInLevel.toLocaleString()} / ${xpForLevel.toLocaleString()} XP"><div class="xp-bar-inner h-2.5 rounded-full" style="width: ${progress}%"></div></div></div></div></div></div></header>`; },
             renderDashboard: () => { const projectCards = state.projects.map(p => `<div class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col btn-interactive"><div class="p-6 flex-grow"><div class="tracking-wide text-sm text-indigo-500 font-semibold">${Utils.formatDate(p.createdAt)}</div><h3 class="block mt-1 text-lg leading-tight font-bold text-black">${p.name}</h3><p class="mt-2 text-slate-500">${Utils.getChapterPath(p.toc).length}개의 챕터</p></div><div class="p-4 bg-slate-50 border-t flex justify-between items-center"><button data-action="open-project" data-id="${p.id}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 btn-interactive"><i data-lucide="arrow-right-circle" class="w-4 h-4 mr-2"></i>작업 시작</button><div class="flex space-x-2"><button data-action="export-project" data-id="${p.id}" title="프로젝트 내보내기" class="p-2 text-slate-500 hover:bg-slate-200 hover:text-indigo-600 rounded-full transition-colors"><i data-lucide="download" class="w-5 h-5"></i></button><button data-action="delete-project-confirm" data-id="${p.id}" title="프로젝트 삭제" class="p-2 text-slate-500 hover:bg-red-100 hover:text-red-600 rounded-full transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button></div></div></div>`).join(''); return `<div><div class="flex justify-between items-center mb-6"><h2 class="text-3xl font-bold text-slate-900">프로젝트 대시보드</h2><button data-action="new-project" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i>새 프로젝트 생성</button></div>${state.projects.length > 0 ? `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${projectCards}</div>` : `<div class="text-center py-16 border-2 border-dashed rounded-lg"><i data-lucide="folder-plus" class="mx-auto h-12 w-12 text-slate-400"></i><h3 class="mt-2 text-sm font-medium text-slate-900">프로젝트가 없습니다</h3><p class="mt-1 text-sm text-slate-500">새 프로젝트를 생성하여 작업을 시작하세요.</p><div class="mt-6"><button data-action="new-project" type="button" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="plus" class="-ml-1 mr-2 h-5 w-5"></i>새 프로젝트 생성</button></div></div>`}</div>`;},
             renderWorkspace: () => { if (!state.activeProject) return View.renderSpinner("프로젝트 로딩 중..."); return `<div><header class="mb-6 flex items-center justify-between"><button data-action="back-to-dashboard" class="flex items-center text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"><i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i> 대시보드로 돌아가기</button><h2 class="text-2xl font-bold text-slate-800">${state.activeProject.name}</h2><button data-action="open-settings" class="flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 btn-interactive"><i data-lucide="settings" class="w-4 h-4 mr-2"></i> 프로젝트 설정</button></header><div class="flex -mx-4"><aside class="w-1/4 px-4"><div class="bg-white rounded-lg shadow-sm p-4 h-full"><h3 class="font-bold text-lg mb-4">목차 (TOC)</h3><div class="overflow-y-auto" style="max-height: 70vh;">${View.renderToc(state.activeProject.toc)}</div></div></aside><main class="w-3/4 px-4"><div class="bg-white rounded-lg shadow-sm"><div class="border-b border-slate-200"><nav class="-mb-px flex space-x-8 px-6" aria-label="Tabs">${View.renderModeTab('view', 'eye', '보기 모드')}${View.renderModeTab('write', 'pen-square', 'AI 글쓰기')}${View.renderModeTab('learn', 'graduation-cap', '학습 모드')}${View.renderModeTab('translate', 'languages', '번역 모드')}</nav></div><div class="p-6 min-h-[70vh]">${View.renderWorkspacePanel()}</div></div></main></div></div>`;},
             renderModeTab: (mode, icon, label) => { const isActive = state.workspaceMode === mode; return `<button data-action="switch-mode" data-mode="${mode}" class="${isActive ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm"><i data-lucide="${icon}" class="${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-slate-500'} -ml-0.5 mr-2 h-5 w-5"></i><span>${label}</span></button>`;},
@@ -258,7 +344,23 @@
             renderTranslatePanel: () => { const content = state.activeChapterContent; const sourceText = content.originalContent || (content.manuscript ? marked.parse(content.manuscript) : '<p>번역할 원문이 없습니다.</p>'); return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div><h3 class="text-lg font-semibold mb-2 text-slate-800">원문</h3><div class="prose prose-custom h-[60vh] overflow-y-auto p-4 border rounded-md">${sourceText}</div></div><div><h3 class="text-lg font-semibold mb-2 text-slate-800">번역문</h3><textarea id="translation" data-field="translation" class="w-full h-[60vh] p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.translation || ''}</textarea></div></div><div class="mt-4 text-right"><button data-action="copy-translation-prompt" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">번역 프롬프트 복사</button></div>`;},
             renderModal: () => { if (!state.modal.isOpen) return ''; let contentHtml = ''; switch(state.modal.type) { case 'newProject': contentHtml = View.renderNewProjectModal(); break; case 'settings': contentHtml = View.renderSettingsModal(); break; case 'confirm': contentHtml = View.renderConfirmModal(); break; case 'apiKey': contentHtml = View.renderApiKeyModal(); break; case 'manageQuiz': contentHtml = View.renderManageQuizModal(); break; } return `<div class="modal-overlay modal-scale-in" data-action="close-modal-overlay"></div><div class="modal-container w-full max-w-2xl modal-scale-in"><div class="bg-white rounded-lg shadow-xl">${contentHtml}</div></div>`; },
             renderNewProjectModal: () => { const activeTab = state.modal.data.activeTab || 'zip'; const tabButton = (id, label) => `<button type="button" data-action="switch-modal-tab" data-tab="${id}" class="px-3 py-2 text-sm font-medium rounded-md ${activeTab === id ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}">${label}</button>`; const fileInputTemplate = (id, accept, labelId, description) => `<p class="text-sm text-slate-600 mb-2">${description}</p><label for="${id}" class="cursor-pointer"><div data-dropzone-for="${id}" class="drop-zone w-full p-8 rounded-lg text-center bg-slate-50 hover:bg-slate-100"><div class="flex flex-col items-center justify-center space-y-2 pointer-events-none"><i data-lucide="upload-cloud" class="w-12 h-12 text-slate-400"></i><p class="text-slate-700 font-medium">파일을 드래그하거나 <span class="text-indigo-600">클릭하여 선택</span>하세요</p><p id="${labelId}" class="text-sm text-slate-500 truncate max-w-full" title="선택된 파일 없음">선택된 파일 없음</p></div><input type="file" id="${id}" accept="${accept}" class="hidden" data-target-label="${labelId}"/></div></label>`; const tabContent = () => { switch(activeTab) { case 'zip': return fileInputTemplate('zip-upload', '.zip', 'zip-file-label', 'HTML 또는 TXT 파일들이 포함된 ZIP 파일을 업로드하세요.'); case 'jsonFile': return fileInputTemplate('json-upload', '.json', 'json-file-label', '이전에 내보냈던 프로젝트(.json) 파일을 가져옵니다.'); case 'jsonText': return `<p class="text-sm text-slate-600 mb-2">프로젝트 내보내기(.json) 파일의 텍스트를 붙여넣으세요.</p><textarea id="json-text-input" placeholder='{"type": "ILS_PROJECT_EXPORT_V2", ...}' class="w-full h-40 p-2 border rounded-md font-mono text-sm"></textarea>`; case 'tocJson': return `<p class="text-sm text-slate-600 mb-2">책의 목차 구조를 나타내는 JSON 텍스트를 붙여넣으세요.</p><textarea id="toc-json-input" placeholder='{"title": "책 제목", "children": [...] }' class="w-full h-40 p-2 border rounded-md font-mono text-sm"></textarea>`; } }; return `<form data-action="submit-new-project"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">새 프로젝트 생성</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="border-b border-gray-200"><div class="p-1 mb-4 inline-flex space-x-1 bg-slate-100 rounded-lg">${tabButton('zip', 'ZIP')}${tabButton('tocJson', '목차 JSON')}${tabButton('jsonFile', '파일(.json)')}${tabButton('jsonText', '텍스트(.json)')}</div></div><div class="mt-4">${tabContent()}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">취소</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">생성</button></div></form>`;},
-            renderSettingsModal: () => { const settings = state.activeProject.settings; const fields = [ { id: 'writingGenre', label: '글쓰기 - 장르', value: settings.writingGenre, type: 'text' }, { id: 'writingAudience', label: '글쓰기 - 목표 독자', value: settings.writingAudience, type: 'text' }, { id: 'writingStyle', label: '글쓰기 - 스타일', value: settings.writingStyle, type: 'textarea' }, { id: 'quizQuestionCount', label: '퀴즈 - 생성 개수', value: settings.quizQuestionCount, type: 'number' }, { id: 'quizTaskDescription', label: '퀴즈 프롬프트 - 과업 설명 (Task)', value: settings.quizTaskDescription, type: 'textarea' }, { id: 'quizOutputFormatInstruction', label: '퀴즈 프롬프트 - 출력 형식 (Output)', value: settings.quizOutputFormatInstruction, type: 'textarea' }, { id: 'quizPromptTemplate', label: '퀴즈 프롬프트 - 전체 템플릿', value: settings.quizPromptTemplate, type: 'textarea' }, ]; const fieldsHtml = fields.map(f => `<div class="mb-4"><label for="setting-${f.id}" class="block text-sm font-medium text-slate-700">${f.label}</label>${f.type === 'textarea' ? `<textarea id="setting-${f.id}" data-setting-key="${f.id}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 h-32 font-mono text-xs">${f.value}</textarea>` : `<input type="${f.type}" id="setting-${f.id}" data-setting-key="${f.id}" value="${f.value}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">`}</div>`).join(''); return `<form data-action="save-settings"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">프로젝트 설정: ${state.activeProject.name}</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[60vh] overflow-y-auto pr-2">${fieldsHtml}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">취소</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">저장</button></div></form>`;},
+            renderSettingsModal: () => {
+                const settings = state.activeProject.settings;
+                const fields = [
+                    { id: 'writingGenre', label: '글쓰기 - 장르', value: settings.writingGenre, type: 'text' },
+                    { id: 'writingAudience', label: '글쓰기 - 목표 독자', value: settings.writingAudience, type: 'text' },
+                    { id: 'writingAgeGroup', label: '글쓰기 - 대상 연령층', value: settings.writingAgeGroup, type: 'text' },
+                    { id: 'writingStyle', label: '글쓰기 - 스타일', value: settings.writingStyle, type: 'textarea' },
+                    { id: 'writingReferences', label: '글쓰기 - 자료', value: settings.writingReferences, type: 'textarea' },
+                    { id: 'writingPrompt', label: '글쓰기 프롬프트 - 전체 템플릿', value: settings.writingPrompt, type: 'textarea' },
+                    { id: 'quizQuestionCount', label: '퀴즈 - 생성 개수', value: settings.quizQuestionCount, type: 'number' },
+                    { id: 'quizTaskDescription', label: '퀴즈 프롬프트 - 과업 설명 (Task)', value: settings.quizTaskDescription, type: 'textarea' },
+                    { id: 'quizOutputFormatInstruction', label: '퀴즈 프롬프트 - 출력 형식 (Output)', value: settings.quizOutputFormatInstruction, type: 'textarea' },
+                    { id: 'quizPromptTemplate', label: '퀴즈 프롬프트 - 전체 템플릿', value: settings.quizPromptTemplate, type: 'textarea' },
+                ];
+                const fieldsHtml = fields.map(f => `<div class="mb-4"><label for="setting-${f.id}" class="block text-sm font-medium text-slate-700">${f.label}</label>${f.type === 'textarea' ? `<textarea id="setting-${f.id}" data-setting-key="${f.id}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 h-32 font-mono text-xs">${f.value}</textarea>` : `<input type="${f.type}" id="setting-${f.id}" data-setting-key="${f.id}" value="${f.value}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">`}</div>`).join('');
+                return `<form data-action="save-settings"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">프로젝트 설정: ${state.activeProject.name}</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[60vh] overflow-y-auto pr-2">${fieldsHtml}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">취소</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">저장</button></div></form>`;
+            },
             renderConfirmModal: () => { const { title, message, confirmText } = state.modal.data; return `<div class="p-6"><div class="sm:flex sm:items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10"><i data-lucide="alert-triangle" class="h-6 w-6 text-red-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">${title}</h3><div class="mt-2"><p class="text-sm text-gray-500">${message}</p></div></div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">취소</button><button type="button" data-action="confirm-action" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700">${confirmText}</button></div>`;},
             renderApiKeyModal: () => { return `<form data-action="submit-api-key"><div class="p-6"><div class="flex items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 sm:mx-0 sm:h-10 sm:w-10"><i data-lucide="key-round" class="h-6 w-6 text-indigo-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">Google AI API 키 입력</h3><div class="mt-2"><p class="text-sm text-gray-500">퀴즈 생성을 위해 Google AI Studio에서 발급받은 API 키를 입력해주세요.</p><input type="password" id="api-key-input" class="mt-2 block w-full rounded-md border-slate-300" placeholder="API 키를 여기에 붙여넣으세요"></div></div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive">취소</button><button type="submit" class="btn-interactive">확인</button></div></form>`;},
             renderManageQuizModal: () => { const questions = state.activeChapterContent.questions || []; const questionsHtml = questions.map((q, index) => `<div class="p-3 my-2 border rounded-md bg-slate-50 flex justify-between items-center group"><p class="text-sm text-slate-800 truncate pr-4">${index + 1}. ${q.questionText}</p><button type="button" data-action="delete-quiz-question" data-index="${index}" class="p-1 text-slate-500 hover:text-red-600 rounded-full hover:bg-red-100 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div>`).join(''); return `<div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">퀴즈 관리</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[30vh] overflow-y-auto border rounded-lg p-2 bg-white mb-4">${questions.length > 0 ? questionsHtml : '<p class="text-sm text-slate-500 text-center py-4">생성된 문제가 없습니다.</p>'}</div><h4 class="text-lg font-semibold text-slate-800 border-t pt-4 mb-3">AI 프롬프트를 사용하여 문제 추가</h4><p class="text-sm text-slate-600 mb-2">1. 아래 버튼으로 프롬프트를 복사하여 AI 도구(예: Google AI Studio)에 붙여넣고 결과를 생성하세요.</p><button data-action="copy-quiz-prompt" class="btn-interactive inline-flex items-center justify-center w-full px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="clipboard-copy" class="w-4 h-4 mr-2"></i>AI 생성 프롬프트 복사</button><form data-action="add-questions-from-json" class="mt-4"><label for="quiz-json-paste" class="text-sm text-slate-600 mb-2 block">2. AI가 생성한 JSON 배열을 아래에 붙여넣고 '추가' 버튼을 누르세요.</label><textarea id="quiz-json-paste" name="jsonContent" class="w-full h-24 p-2 border rounded-md font-mono text-xs" placeholder="[ { ... } ]" required></textarea><div class="bg-slate-50 -mx-6 -mb-6 px-6 py-4 mt-6 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">닫기</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700">JSON에서 문제 추가</button></div></form></div>`;},
@@ -364,14 +466,6 @@
             submitNewProject: async (form) => { const activeTab = state.modal.data.activeTab || 'zip'; state.isLoading = true; Controller.closeModal(); View.render(); try { let projectData, contentsData; if (activeTab === 'zip') { const fileInput = form.querySelector('#zip-upload'); if (!fileInput.files[0]) throw new Error("ZIP 파일을 선택해주세요."); ({ project: projectData, contents: contentsData } = await Controller.processZipFile(fileInput.files[0])); } else if (activeTab === 'jsonFile') { const fileInput = form.querySelector('#json-upload'); if (!fileInput.files[0]) throw new Error("JSON 파일을 선택해주세요."); const jsonText = await fileInput.files[0].text(); ({ project: projectData, contents: contentsData } = Controller.processJsonData(JSON.parse(jsonText))); } else if (activeTab === 'jsonText') { const jsonTextInput = form.querySelector('#json-text-input'); if (!jsonTextInput.value) throw new Error("JSON 텍스트를 입력해주세요."); ({ project: projectData, contents: contentsData } = Controller.processJsonData(JSON.parse(jsonTextInput.value))); } else if (activeTab === 'tocJson') { const tocJsonInput = form.querySelector('#toc-json-input'); if (!tocJsonInput.value) throw new Error("목차 JSON 텍스트를 입력해주세요."); ({ project: projectData, contents: contentsData } = Controller.processTocJson(JSON.parse(tocJsonInput.value))); } else { throw new Error("알 수 없는 생성 방식입니다."); } await DB.put(CONFIG.STORES.PROJECTS, projectData); await Promise.all(contentsData.map(c => DB.put(CONFIG.STORES.CONTENTS, c))); state.projects.unshift(projectData); state.projects.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)); Controller.showToast(`'${projectData.name}' 프로젝트가 생성되었습니다.`, 'success'); } catch (error) { console.error("Project creation failed:", error); Controller.showToast(`프로젝트 생성 실패: ${error.message}`, 'error'); } finally { state.isLoading = false; View.render(); } },
             processZipFile: async (file) => { const turndownService = new TurndownService(); const zip = await JSZip.loadAsync(file); const allEntries = []; zip.forEach((relPath, entry) => { const normPath = relPath.replace(/\/$/, '').replace(/\\/g, '/'); if (normPath && !normPath.startsWith('__MACOSX') && (entry.dir || /\.(html?|txt)$/i.test(normPath))) allEntries.push({ path: normPath, isDir: entry.dir, entry }); }); allEntries.sort((a, b) => Utils.naturalSort(a.path, b.path)); const projectToc = { title: Utils.formatTitle(file.name), children: [] }; const pathMap = new Map(); for (const { path, isDir } of allEntries) { let currentNode = projectToc; let currentPath = ''; path.split('/').forEach((part, i, arr) => { currentPath = currentPath ? `${currentPath}/${part}` : part; let childNode = pathMap.get(currentPath); if (!childNode) { const isLeaf = (i === arr.length - 1) && !isDir; childNode = { title: Utils.formatTitle(part), children: isLeaf ? undefined : [], originalPath: isLeaf ? path : undefined }; currentNode.children.push(childNode); pathMap.set(currentPath, childNode); } currentNode = childNode; }); } const projectId = Utils.generateId('proj'); const project = { id: projectId, name: projectToc.title, createdAt: new Date().toISOString(), toc: projectToc, settings: { ...CONFIG.DEFAULT_PROJECT_SETTINGS } }; const contents = (await Promise.all(Utils.getChapterPath(projectToc).map(async ({ path, node }) => { if (!node.originalPath) return null; const fileEntry = allEntries.find(f => f.path === node.originalPath)?.entry; if (!fileEntry) return null; let manuscript = ''; if (/\.html?$/i.test(fileEntry.name)) { const rawHtml = await fileEntry.async('string'); const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i); manuscript = turndownService.turndown(DOMPurify.sanitize(bodyMatch ? bodyMatch[1] : '')); } else { manuscript = await fileEntry.async('string'); } return { id: `${projectId}_${path}`, manuscript, notes: '', translation: '', questions: [], status: manuscript.trim() ? 'manuscript-done' : 'empty' }; }))).filter(Boolean); return { project, contents }; },
             processJsonData: (data) => { if (data.type !== CONFIG.EXPORT_TYPE_ID) throw new Error("유효하지 않은 프로젝트 파일 형식입니다."); const newId = Utils.generateId('proj'); const newProject = { ...data.project, id: newId, createdAt: new Date().toISOString() }; const newContents = data.contents.map(c => ({ ...c, id: `${newId}_${c.path}`, path: undefined })); return { project: newProject, contents: newContents }; },
-            
-            /**
-             * Processes a hierarchical Table of Contents JSON object to create project data.
-             * This function is specifically designed to handle a JSON structure with `title`, `description`, and `children` properties.
-             * @param {object} tocData The raw JSON data representing the table of contents. Must have 'title' and 'children' properties.
-             * @returns {{project: object, contents: object[]}} The processed project and contents data, ready to be stored in the database.
-             * @throws {Error} If the input JSON data is malformed.
-             */
             processTocJson: (tocData) => {
                 if (!tocData.title || !Array.isArray(tocData.children)) {
                     throw new Error("유효하지 않은 목차 JSON 형식입니다. 최상위 객체에 'title'과 'children' 속성이 필요합니다.");
@@ -381,35 +475,32 @@
                 const newContents = [];
                 const finalToc = { title: tocData.title, children: [] };
 
-                /**
-                 * Recursively traverses the input TOC structure, builds the application-compatible TOC,
-                 * and generates content stubs for each leaf node (chapter).
-                 * @param {object[]} inputNodes - The array of nodes from the source JSON to process.
-                 * @param {object} outputParentNode - The parent node in the `finalToc` structure where new nodes will be appended.
-                 * @param {string} [pathPrefix=''] - The dot-separated path for the current level of recursion.
-                 */
                 const buildFinalTocAndContents = (inputNodes, outputParentNode, pathPrefix = '') => {
                     inputNodes.forEach((inputNode, index) => {
                         const currentPath = pathPrefix ? `${pathPrefix}.${index}` : `${index}`;
-                        const newOutputNode = { title: inputNode.title };
+                        const isLeaf = !inputNode.children || inputNode.children.length === 0;
+
+                        const newOutputNode = {
+                            title: inputNode.title,
+                            description: inputNode.description || ''
+                        };
+
+                        if (!isLeaf) {
+                            newOutputNode.children = [];
+                        }
                         outputParentNode.children.push(newOutputNode);
 
-                        // If the node has children, recurse deeper.
-                        if (inputNode.children && inputNode.children.length > 0) {
-                            newOutputNode.children = [];
+                        if (!isLeaf) {
                             buildFinalTocAndContents(inputNode.children, newOutputNode, currentPath);
                         } else {
-                            // If it's a leaf node (no children or empty children array), it's a chapter.
-                            // Create a corresponding content object for it.
                             newContents.push({
                                 id: `${projectId}_${currentPath}`,
                                 manuscript: '',
-                                notes: inputNode.description || '', // Use the description from JSON as initial notes.
+                                notes: inputNode.description || '',
                                 translation: '',
                                 questions: [],
                                 status: 'empty'
                             });
-                            // Leaf nodes in the app's TOC structure must not have a 'children' property.
                         }
                     });
                 };
@@ -428,7 +519,7 @@
             },
 
             handleFileSelection: (input) => { const label = document.getElementById(input.dataset.targetLabel); if (label) { const fileName = input.files[0] ? input.files[0].name : '선택된 파일 없음'; label.textContent = fileName; label.title = fileName; } },
-            saveSettings: async (form) => { const newSettings = { ...state.activeProject.settings }; form.querySelectorAll('[data-setting-key]').forEach(input => { const key = input.dataset.settingKey; const value = input.type === 'number' ? parseInt(input.value, 10) : input.value; if (value || (input.type === 'number' && !isNaN(value))) newSettings[key] = value; }); state.activeProject.settings = newSettings; await DB.put(CONFIG.STORES.PROJECTS, state.activeProject); Controller.showToast('설정이 저장되었습니다.', 'success'); Controller.closeModal(); },
+            saveSettings: async (form) => { const newSettings = { ...state.activeProject.settings }; form.querySelectorAll('[data-setting-key]').forEach(input => { const key = input.dataset.settingKey; const value = input.type === 'number' ? parseInt(input.value, 10) : input.value; if (value !== undefined || (input.type === 'number' && !isNaN(value))) newSettings[key] = value; }); state.activeProject.settings = newSettings; await DB.put(CONFIG.STORES.PROJECTS, state.activeProject); Controller.showToast('설정이 저장되었습니다.', 'success'); Controller.closeModal(); View.render();},
             copyToClipboard: (text) => { const textArea = document.createElement("textarea"); textArea.value = text; textArea.style.position = "fixed"; textArea.style.top = "-9999px"; document.body.appendChild(textArea); textArea.focus(); textArea.select(); try { if (document.execCommand('copy')) Controller.showToast('클립보드에 복사되었습니다.', 'success'); else throw new Error(); } catch (err) { Controller.showToast('클립보드 복사에 실패했습니다.', 'error'); } document.body.removeChild(textArea); },
             copyPromptForCurrentChapter: () => {
                 if (!state.activeProject || !state.activeChapterPath || !state.activeChapterContent) {
@@ -437,25 +528,35 @@
                 }
                 const { settings, toc } = state.activeProject;
                 const chapterNode = Utils.getNodeByPath(toc, state.activeChapterPath);
-                if (!chapterNode) return; // Should not happen
+                if (!chapterNode) return;
 
-                // 계층 구조를 포함한 전체 목차 텍스트를 생성합니다.
-                const tocText = Utils.generateTocText(toc, 0, '', state.activeChapterPath);
+                const pathParts = state.activeChapterPath.split('.').map(Number);
+                const partIndex = pathParts[0];
+                const partNode = toc.children?.[partIndex];
+                
+                const partTitle = partNode?.title || '알 수 없는 파트';
+                const partDescription = partNode?.description || ''; 
+                const partRelativePath = pathParts.slice(1).join('.');
+                const fullTocText = Utils.generateTocText(toc, 0, '', state.activeChapterPath);
+                const partTocText = partNode ? Utils.generateTocText(partNode, 0, '', partRelativePath) : '';
 
-                // 현재 활성화된 챕터의 최신 '메모' 내용을 가져옵니다.
-                // 메모가 없으면 프로젝트 생성 시의 초기 설명을 사용합니다.
                 const chapterDescription = state.activeChapterContent.notes || chapterNode.description || '챕터에 대한 설명이나 메모가 없습니다.';
 
                 let prompt = settings.writingPrompt || CONFIG.DEFAULT_PROJECT_SETTINGS.writingPrompt;
                 
                 prompt = prompt
                     .replace(/{{bookTitle}}/g, toc.title || '제목 없음')
-                    .replace(/{{fullToc}}/g, tocText)
+                    .replace(/{{projectGenre}}/g, settings.writingGenre || '')
+                    .replace(/{{projectAgeGroup}}/g, settings.writingAgeGroup || '')
+                    .replace(/{{projectAudience}}/g, settings.writingAudience || '')
+                    .replace(/{{references}}/g, settings.writingReferences || '제공된 자료 없음')
+                    .replace(/{{partTitle}}/g, partTitle)
+                    .replace(/{{partDescription}}/g, partDescription)
                     .replace(/{{chapterTitle}}/g, chapterNode.title || '')
-                    .replace(/{{chapterDescription}}/g, chapterDescription) // 동적인 메모 내용으로 교체
-                    .replace(/{{writingGenre}}/g, settings.writingGenre)
-                    .replace(/{{writingAudience}}/g, settings.writingAudience)
-                    .replace(/{{writingStyle}}/g, settings.writingStyle);
+                    .replace(/{{chapterDescription}}/g, chapterDescription)
+                    .replace(/{{fullToc}}/g, fullTocText)
+                    .replace(/{{partToc}}/g, partTocText)
+                    .replace(/{{projectStyleExample}}/g, settings.writingStyle || '');
                 
                 Controller.copyToClipboard(prompt);
             },
