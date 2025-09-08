@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>통합 학습 및 저작 시스템 v2.7.1</title>
+    
+    <!-- Core Dependencies via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/morphdom@2.7.0/dist/morphdom-umd.min.js"></script>
+
+    <style>
+        /* Base Font & Theme */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Transitions for UI smoothness */
+        .transition-all { transition: all 0.3s ease-in-out; }
+        .transition-color { transition: color 0.2s, background-color 0.2s, border-color 0.2s; }
+        
+        .btn-interactive {
+            transition: transform 0.1s ease, box-shadow 0.2s ease;
+        }
+        .btn-interactive:hover {
+            transform: translateY(-2px);
+        }
+        .btn-interactive:active {
+            transform: translateY(0px) scale(0.98);
+        }
+
+        .modal-scale-in { animation: modalScaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes modalScaleIn {
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.96); }
+            to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+
+        /* Active TOC Item */
+        .toc-item.active { background-color: #eef2ff; color: #4f46e5; font-weight: 600; }
+        .toc-item.active::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background-color: #4f46e5; border-top-right-radius: 4px; border-bottom-right-radius: 4px; }
+        .toc-item { position: relative; }
+        
+        /* Custom UI Components */
+        .xp-bar-inner {
+            background: linear-gradient(90deg, #4f46e5, #818cf8);
+            transition: width 0.5s ease-out;
+        }
+        .drop-zone { border: 2px dashed #d1d5db; transition: all 0.2s ease-in-out; }
+        .drop-zone.drag-over { background-color: #eef2ff; border-color: #6366f1; }
+        
+        .prose-custom { max-width: none; }
+        .prose-custom h1, .prose-custom h2, .prose-custom h3 { color: #1e293b; font-weight: 700; }
+        .prose-custom p { line-height: 1.75; }
+        .prose-custom code { background-color: #eef2ff; color: #4338ca; padding: 0.2em 0.4em; border-radius: 0.25rem; font-size: 85%; }
+        .prose-custom blockquote { border-left-color: #a5b4fc; }
+
+        .modal-overlay { position: fixed; inset: 0; background-color: rgba(15, 23, 42, 0.6); backdrop-filter: blur(4px); z-index: 40; }
+        .modal-container { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 50; }
+        
+        @keyframes spinner { to { transform: rotate(360deg); } }
+        .spinner { animation: spinner 0.6s linear infinite; }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div id="app-container">
+        <!-- App content will be rendered here by JavaScript -->
+    </div>
+    <div id="modal-root"></div>
+    <div id="toast-root"></div>
+
+    <script type="module">
+        // ===================================================================================
+        // V2.7.1 기능 명세서 기반 단일 파일 애플리케이션 구현
+        // 작성자: Polymathic Strategist
+        // 최종 수정: 2025년 9월 8일
+        //
+        // 핵심 개선 사항:
+        // 1. [FIX] 퀴즈 완료 후 무한 로딩 문제 해결: 퀴즈 종료 시 `MapsTo` 함수 대신
+        //    현재 프로젝트 상태를 유지하며 뷰만 전환하도록 로직을 수정하여 문제 해결.
+        // ===================================================================================
+
+        const CONFIG = {
+            DB_NAME: 'ILS_V2_DB',
+            DB_VERSION: 1,
+            STORES: {
+                PROJECTS: 'projects',
+                CONTENTS: 'contents',
+                USER_PROFILE: 'userProfile'
+            },
+            EXPORT_TYPE_ID: 'ILS_PROJECT_EXPORT_V2',
+            LEVEL_THRESHOLDS: [0, 1000, 2500, 5000, 10000, 20000, 40000, 80000, 160000, 320000],
+            QUIZ_TYPE: {
+                MULTIPLE_CHOICE: 'multiple_choice',
+                SHORT_ANSWER: 'short_answer',
+                SUBJECTIVE: 'subjective',
+                CASE_BASED: 'case_based'
+            },
+            DEFAULT_PROJECT_SETTINGS: {
+                writingGenre: "전문 분석 보고서",
+                writingAudience: "해당 분야의 의사결정자",
+                writingStyle: "객관적이고 명료하며, 데이터에 기반한 논리적인 문체",
+                writingPrompt: `<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+    <persona>
+        <role>당신은 {{writingGenre}} 장르의 베테랑 작가이자, {{writingAudience}}를 완벽하게 이해하는 전문가입니다.</role>
+        <style>{{writingStyle}}</style>
+    </persona>
+    <context>
+        <project_overview title="{{bookTitle}}">
+            <full_table_of_contents>
+                {{fullToc}}
+            </full_table_of_contents>
+        </project_overview>
+    </context>
+    <task>
+        <chapter_to_write title="{{chapterTitle}}">
+            <description>{{chapterDescription}}</description>
+        </chapter_to_write>
+        <instructions>
+            - 이 챕터에 대한 완성도 높은 원고 초안을 Markdown 형식으로 작성하시오.
+            - 서문이나 요약 없이, 즉시 본문에 삽입할 수 있는 내용만 작성하시오.
+            - 원고 내용에 적절한 소제목을 포함하고, 최상위 소제목은 '##'으로 시작하시오.
+        </instructions>
+    </task>
+    <constraints>
+        <must_avoid>
+            - 작가(AI)가 독자에게 직접 말을 거는 듯한 메타적 서술
+            - 프롬프트 내용의 요약 또는 반복
+        </must_avoid>
+        <self_correction>
+            최종 결과물을 제출하기 전, 모든 지시사항을 100% 준수했는지 스스로 검증하고 완벽한 원고만 출력하라.
+        </self_correction>
+    </constraints>
+</prompt>`,
+                translationPrompt: `<?xml version="1.0" encoding="UTF-8"?>
+<prompt>
+    <task>
+        <instruction>Translate the following text into Korean. Maintain the original tone and meaning accurately.</instruction>
+        <source_text language="auto">{{text}}</source_text>
+    </task>
+    <constraints>
+        <output_format>Provide only the translated Korean text, without any additional explanations or introductory phrases.</output_format>
+    </constraints>
+</prompt>`,
+                quizQuestionCount: 5,
+                quizTaskDescription: `You are an expert educator. Your task is to create a comprehensive and in-depth learning quiz based on the provided text. The quiz must thoroughly test the user's understanding of all key concepts, facts, and nuances within the text.`,
+                quizOutputFormatInstruction: `Respond ONLY with a valid JSON array of question objects inside a <json_response> tag. Do not include any other text or explanations outside this tag.`,
+                quizPromptTemplate: `<?xml version="1.0" encoding="UTF-8"?>
+<request>
+  <task>{{taskDescription}}</task>
+  <instructions>
+    1.  Generate exactly {{questionCount}} questions.
+    2.  Create a mix of question types: 'multiple_choice', 'short_answer', 'subjective', and 'case_based'.
+    3.  For EACH question, you MUST provide:
+        -   "questionText": The question itself.
+        -   "type": The type of question ('multiple_choice', 'short_answer', 'subjective', 'case_based').
+        -   "options": An array of 4 strings, ONLY for 'multiple_choice' questions. Null for others.
+        -   "answer": The correct answer. For 'multiple_choice', this is the exact text of the correct option. For 'subjective' and 'case_based' questions, provide a detailed model answer. For 'short_answer', provide a concise correct term.
+        -   "explanation": A clear and detailed explanation of why the answer is correct, referencing the source text if possible.
+  </instructions>
+  <interaction_language>
+    The problem set should be in Korean.
+  </interaction_language>
+  <sourceText>
+    {{text}}
+  </sourceText>
+  <outputFormat>{{outputFormatInstruction}}</outputFormat>
+</request>`,
+            }
+        };
+
+        const state = {
+            currentView: 'dashboard',
+            projects: [],
+            userProfile: { id: 'main', level: 1, xp: 0 },
+            activeProjectId: null,
+            activeProject: null,
+            activeChapterPath: null,
+            activeChapterContent: null,
+            activeContentsMap: new Map(),
+            workspaceMode: 'view',
+            isLoading: true,
+            modal: { isOpen: false, type: '', data: {} },
+            toasts: [],
+            quizState: null,
+        };
+
+        const Utils = {
+            generateId: (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            formatDate: (isoString) => new Date(isoString).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' }),
+            debounce: (func, delay) => { let timeout; return (...args) => { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; },
+            naturalSort: (a, b) => { const re = /(\d+)/g; const ax = String(a).split(re); const bx = String(b).split(re); for (let i = 0; i < Math.min(ax.length, bx.length); i++) { const aPart = ax[i]; const bPart = bx[i]; if (i % 2 === 1) { const aNum = parseInt(aPart, 10); const bNum = parseInt(bPart, 10); if (aNum !== bNum) return aNum - bNum; } else { if (aPart !== bPart) return aPart.localeCompare(bPart); } } return ax.length - bx.length; },
+            formatTitle: (name) => name.replace(/\.(zip|html?|txt)$/i, '').replace(/^Chapter_(\d+)_/, 'Chapter $1: ').replace(/_/g, ' '),
+            getChapterPath: (tocNode, path = []) => { if (!tocNode || !tocNode.children) return []; const paths = []; tocNode.children.forEach((child, index) => { const currentPath = [...path, index]; if (child.children && child.children.length > 0) { paths.push(...Utils.getChapterPath(child, currentPath)); } else if (!child.children) { paths.push({ path: currentPath.join('.'), node: child }); } }); return paths; },
+            getNodeByPath: (toc, path) => { if (path === null || path === undefined) return null; const parts = path.split('.').map(Number); let node = toc; for (const part of parts) { if (node && node.children && node.children[part]) { node = node.children[part]; } else { return null; } } return node; },
+            generateTocText: (node, level = 0, currentPath = '', activePath = '') => { let text = ''; if (node.children) { node.children.forEach((child, index) => { const path = currentPath ? `${currentPath}.${index}` : `${index}`; const isChapter = !child.children || child.children.length === 0; if (!isChapter) return; const isActive = path === activePath; const prefix = '  '.repeat(level) + (isActive ? '▶ ' : '- '); text += `${prefix}${child.title}\n`; if (child.children) { text += Utils.generateTocText(child, level + 1, path, activePath); } }); } return text; },
+        };
+
+        const DB = {
+            db: null,
+            init() { return new Promise((resolve, reject) => { const request = indexedDB.open(CONFIG.DB_NAME, CONFIG.DB_VERSION); request.onerror = (e) => reject("IndexedDB error: " + e.target.error); request.onsuccess = (e) => { this.db = e.target.result; resolve(this.db); }; request.onupgradeneeded = (e) => { const db = e.target.result; Object.values(CONFIG.STORES).forEach(name => { if (!db.objectStoreNames.contains(name)) db.createObjectStore(name, { keyPath: 'id' }); }); }; }); },
+            async get(storeName, key) { return new Promise((resolve, reject) => { const req = this.db.transaction(storeName).objectStore(storeName).get(key); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); },
+            async getAll(storeName) { return new Promise((resolve, reject) => { const req = this.db.transaction(storeName).objectStore(storeName).getAll(); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); },
+            async put(storeName, data) { return new Promise((resolve, reject) => { const req = this.db.transaction(storeName, 'readwrite').objectStore(storeName).put(data); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); },
+            async delete(storeName, key) { return new Promise((resolve, reject) => { const req = this.db.transaction(storeName, 'readwrite').objectStore(storeName).delete(key); req.onsuccess = () => resolve(true); req.onerror = () => reject(req.error); }); },
+            async getProjectContents(projectId) { return new Promise((resolve, reject) => { const range = IDBKeyRange.bound(`${projectId}_`, `${projectId}_\uffff`); const req = this.db.transaction(CONFIG.STORES.CONTENTS).objectStore(CONFIG.STORES.CONTENTS).getAll(range); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); },
+            async deleteProjectAndContents(projectId) { const contents = await this.getProjectContents(projectId); await Promise.all(contents.map(c => this.delete(CONFIG.STORES.CONTENTS, c.id))); await this.delete(CONFIG.STORES.PROJECTS, projectId); }
+        };
+
+        const View = {
+            appContainerEl: document.getElementById('app-container'),
+            modalEl: document.getElementById('modal-root'),
+            toastEl: document.getElementById('toast-root'),
+            render() { const appHtml = this.renderAppLayout(); morphdom(this.appContainerEl, `<div>${appHtml}</div>`, { childrenOnly: true }); this.modalEl.innerHTML = this.renderModal(); this.toastEl.innerHTML = this.renderToasts(); lucide.createIcons(); },
+            renderAppLayout() { if (state.isLoading) return this.renderSpinner("시스템 로딩 중..."); switch (state.currentView) { case 'quiz': return this.renderQuizView(); default: return `<div id="app" class="min-h-screen bg-slate-50 flex flex-col">${this.renderHeader()}<main class="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${state.currentView === 'dashboard' ? this.renderDashboard() : this.renderWorkspace()}</main>${this.renderFooter()}</div>`; } },
+            renderToc(toc, level = 0, pathPrefix = '') { if (!toc?.children?.length) return level === 0 ? `<p class="text-sm text-slate-500">목차가 비어있습니다.</p>` : ''; const items = toc.children.map((item, index) => { const currentPath = pathPrefix ? `${pathPrefix}.${index}` : `${index}`; const isChapter = !item.children; const isActive = state.activeChapterPath === currentPath; let statusIndicator = ''; if (isChapter) { const content = state.activeContentsMap.get(`${state.activeProjectId}_${currentPath}`); if (content?.status && content.status !== 'empty') { const color = { 'prompt-copied': 'bg-red-500', 'manuscript-done': 'bg-orange-400', 'quiz-done': 'bg-green-500' }[content.status]; if (color) statusIndicator = `<span class="w-2 h-2 rounded-full ${color} mr-2 flex-shrink-0"></span>`; } } const linkClass = isChapter ? `toc-item flex items-center p-2 rounded-md text-sm text-slate-700 hover:bg-slate-100 ${isActive ? 'active' : ''}` : `p-2 block text-sm font-semibold text-slate-800`; return `<li class="my-1"><a href="#" ${isChapter ? `data-action="select-chapter" data-path="${currentPath}"` : ''} class="${linkClass}" style="padding-left: ${1 + level * 1.5}rem;">${statusIndicator}<span class="truncate">${item.title}</span></a>${item.children?.length ? this.renderToc(item, level + 1, currentPath) : ''}</li>`; }).join(''); return `<ul>${items}</ul>`; },
+            renderLearnPanel: () => `<div class="flex flex-col items-center justify-center h-full min-h-[60vh]">${View.renderQuizHome()}</div>`,
+            renderQuizView() { const { quizState } = state; if (!quizState || !quizState.questions[quizState.currentIndex]) return this.renderSpinner('퀴즈 로딩 중...'); const q = quizState.questions[quizState.currentIndex]; const isAnswered = quizState.answers[quizState.currentIndex] !== undefined; const renderAnswerComponent = () => { switch (q.type) { case CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE: const userAnswerIndex = quizState.answers[quizState.currentIndex]?.selectedIndex; return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">${q.options.map((opt, index) => { let classes = 'border-slate-300 hover:border-indigo-500 hover:bg-indigo-50'; if (isAnswered) { if (index === q.answerIndex) classes = 'bg-emerald-100 border-emerald-500 text-emerald-800'; else if (index === userAnswerIndex) classes = 'bg-red-100 border-red-500 text-red-800'; } return `<button data-action="submit-answer" data-index="${index}" class="btn-interactive w-full text-left p-4 border rounded-lg transition-colors ${classes}" ${isAnswered ? 'disabled' : ''}>${opt}</button>` }).join('')}</div>`; default: return `<form data-action="submit-text-answer" class="w-full max-w-md text-center"><textarea id="answer-input" rows="4" class="w-full text-lg border-2 p-2 bg-transparent border-slate-300 rounded-md focus:outline-none focus:border-indigo-500 transition-colors" placeholder="답안을 입력하세요..." ${isAnswered ? 'disabled' : 'autofocus'}></textarea><button type="submit" class="btn-interactive mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-12 rounded-lg text-lg transition-colors shadow hover:shadow-md" ${isAnswered ? 'disabled' : ''}>제출하고 정답 확인</button></form>`; } }; const renderFeedback = () => { if (!isAnswered) return `<div class="min-h-[148px]"></div>`; const { isCorrect } = quizState.answers[quizState.currentIndex]; const feedbackClass = isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'; const icon = isCorrect ? `<i data-lucide="check-circle" class="w-5 h-5"></i>` : `<i data-lucide="x-circle" class="w-5 h-5"></i>`; const isLastQuestion = quizState.currentIndex + 1 >= quizState.questions.length; const nextButtonText = isLastQuestion ? '결과 보기' : '다음 문제'; const nextButtonIcon = isLastQuestion ? 'flag' : 'arrow-right-circle'; let correctDisplay = ''; if (!isCorrect) correctDisplay = q.type === 'multiple_choice' ? q.options[q.answerIndex] : q.answer; return `<div class="p-4 rounded-lg mt-8 w-full max-w-3xl ${feedbackClass}"><p class="font-bold flex items-center gap-2">${icon} ${isCorrect ? '정답입니다!' : '오답입니다.'}</p>${!isCorrect ? `<p class="text-sm mt-2"><span class="font-semibold">모범 답안:</span> ${correctDisplay}</p>` : ''}<p class="text-sm mt-2"><span class="font-semibold">해설:</span> ${q.explanation}</p><div class="mt-4 flex justify-end"><button data-action="next-question" class="btn-interactive bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${nextButtonText} <i data-lucide="${nextButtonIcon}" class="w-5 h-5"></i></button></div></div>`; }; const questionTypeMap = { [CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE]: '객관식', [CONFIG.QUIZ_TYPE.SHORT_ANSWER]: '단답형', [CONFIG.QUIZ_TYPE.SUBJECTIVE]: '서술형', [CONFIG.QUIZ_TYPE.CASE_BASED]: '사례형' }; return `<div class="fixed inset-0 bg-slate-50 flex flex-col"><header class="bg-white shadow-sm p-4 sticky top-0 z-10"><div class="flex items-center justify-between gap-4 max-w-5xl mx-auto"><div class="font-bold text-lg w-24">${quizState.currentIndex + 1} / ${quizState.questions.length}</div><div class="w-full bg-slate-200 rounded-full h-4 overflow-hidden"><div class="bg-indigo-500 h-4 rounded-full transition-all duration-300" style="width: ${((quizState.currentIndex) / quizState.questions.length) * 100}%"></div></div><button data-action="exit-quiz" class="p-2 rounded-full hover:bg-slate-200" title="퀴즈 나가기"><i data-lucide="x"></i></button></div></header><main class="flex-1 flex flex-col items-center justify-center p-6 text-center overflow-y-auto"><div class="w-full max-w-3xl"><p class="text-slate-500 text-sm mb-2">${questionTypeMap[q.type] || '문제'}</p><h2 class="text-2xl md:text-3xl font-bold leading-tight">${q.questionText}</h2></div><div class="mt-12 w-full flex justify-center">${renderAnswerComponent()}</div>${renderFeedback()}</main></div>`; },
+            renderSpinner: (message) => `<div class="flex items-center justify-center min-h-screen"><div class="text-center"><svg class="mx-auto h-12 w-12 text-slate-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h2 class="mt-4 text-lg font-medium text-slate-900">${message}</h2></div></div>`,
+            renderHeader: () => { const { level, xp } = state.userProfile; const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[level - 1] || 0; const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[level] || xp; const xpForLevel = nextLevelXP - currentLevelXP; const currentXPInLevel = xp - currentLevelXP; const progress = xpForLevel > 0 ? Math.round((currentXPInLevel / xpForLevel) * 100) : 100; return `<header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-30"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex justify-between items-center h-16"><div class="flex items-center space-x-2"><i data-lucide="layers-3" class="text-indigo-600 h-8 w-8"></i><h1 class="text-xl font-bold text-slate-800">통합 학습 & 저작 시스템 <span class="text-sm font-medium text-indigo-500">v2.7.1</span></h1></div><div class="flex items-center space-x-4"><div class="font-semibold text-sm text-slate-600">LV. <span class="text-indigo-600 font-bold text-base">${level}</span></div><div class="w-40"><div class="bg-slate-200 rounded-full h-2.5" title="${currentXPInLevel.toLocaleString()} / ${xpForLevel.toLocaleString()} XP"><div class="xp-bar-inner h-2.5 rounded-full" style="width: ${progress}%"></div></div></div></div></div></div></header>`; },
+            renderDashboard: () => { const projectCards = state.projects.map(p => `<div class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col btn-interactive"><div class="p-6 flex-grow"><div class="tracking-wide text-sm text-indigo-500 font-semibold">${Utils.formatDate(p.createdAt)}</div><h3 class="block mt-1 text-lg leading-tight font-bold text-black">${p.name}</h3><p class="mt-2 text-slate-500">${Utils.getChapterPath(p.toc).length}개의 챕터</p></div><div class="p-4 bg-slate-50 border-t flex justify-between items-center"><button data-action="open-project" data-id="${p.id}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 btn-interactive"><i data-lucide="arrow-right-circle" class="w-4 h-4 mr-2"></i>작업 시작</button><div class="flex space-x-2"><button data-action="export-project" data-id="${p.id}" title="프로젝트 내보내기" class="p-2 text-slate-500 hover:bg-slate-200 hover:text-indigo-600 rounded-full transition-colors"><i data-lucide="download" class="w-5 h-5"></i></button><button data-action="delete-project-confirm" data-id="${p.id}" title="프로젝트 삭제" class="p-2 text-slate-500 hover:bg-red-100 hover:text-red-600 rounded-full transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button></div></div></div>`).join(''); return `<div><div class="flex justify-between items-center mb-6"><h2 class="text-3xl font-bold text-slate-900">프로젝트 대시보드</h2><button data-action="new-project" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i>새 프로젝트 생성</button></div>${state.projects.length > 0 ? `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${projectCards}</div>` : `<div class="text-center py-16 border-2 border-dashed rounded-lg"><i data-lucide="folder-plus" class="mx-auto h-12 w-12 text-slate-400"></i><h3 class="mt-2 text-sm font-medium text-slate-900">프로젝트가 없습니다</h3><p class="mt-1 text-sm text-slate-500">새 프로젝트를 생성하여 작업을 시작하세요.</p><div class="mt-6"><button data-action="new-project" type="button" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="plus" class="-ml-1 mr-2 h-5 w-5"></i>새 프로젝트 생성</button></div></div>`}</div>`;},
+            renderWorkspace: () => { if (!state.activeProject) return View.renderSpinner("프로젝트 로딩 중..."); return `<div><header class="mb-6 flex items-center justify-between"><button data-action="back-to-dashboard" class="flex items-center text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"><i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i> 대시보드로 돌아가기</button><h2 class="text-2xl font-bold text-slate-800">${state.activeProject.name}</h2><button data-action="open-settings" class="flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 btn-interactive"><i data-lucide="settings" class="w-4 h-4 mr-2"></i> 프로젝트 설정</button></header><div class="flex -mx-4"><aside class="w-1/4 px-4"><div class="bg-white rounded-lg shadow-sm p-4 h-full"><h3 class="font-bold text-lg mb-4">목차 (TOC)</h3><div class="overflow-y-auto" style="max-height: 70vh;">${View.renderToc(state.activeProject.toc)}</div></div></aside><main class="w-3/4 px-4"><div class="bg-white rounded-lg shadow-sm"><div class="border-b border-slate-200"><nav class="-mb-px flex space-x-8 px-6" aria-label="Tabs">${View.renderModeTab('view', 'eye', '보기 모드')}${View.renderModeTab('write', 'pen-square', 'AI 글쓰기')}${View.renderModeTab('learn', 'graduation-cap', '학습 모드')}${View.renderModeTab('translate', 'languages', '번역 모드')}</nav></div><div class="p-6 min-h-[70vh]">${View.renderWorkspacePanel()}</div></div></main></div></div>`;},
+            renderModeTab: (mode, icon, label) => { const isActive = state.workspaceMode === mode; return `<button data-action="switch-mode" data-mode="${mode}" class="${isActive ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm"><i data-lucide="${icon}" class="${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-slate-500'} -ml-0.5 mr-2 h-5 w-5"></i><span>${label}</span></button>`;},
+            renderWorkspacePanel: () => { if (!state.activeChapterPath) { return `<div class="flex flex-col items-center justify-center h-full min-h-[60vh]"><i data-lucide="file-text" class="h-16 w-16 text-slate-300"></i><h3 class="mt-4 text-xl font-semibold text-slate-800">챕터를 선택하세요</h3><p class="mt-1 text-slate-500">좌측 목차에서 작업할 챕터를 선택해주세요.</p></div>`; } if (!state.activeChapterContent) { return View.renderSpinner("챕터 내용 로딩 중..."); } switch (state.workspaceMode) { case 'view': return View.renderViewPanel(); case 'write': return View.renderWritePanel(); case 'learn': return View.renderLearnPanel(); case 'translate': return View.renderTranslatePanel(); default: return `<div>알 수 없는 모드입니다.</div>`; } },
+            renderViewPanel: () => { const content = state.activeChapterContent; const viewText = content.manuscript ? marked.parse(content.manuscript) : `<div class="text-center text-slate-500 py-16"><p>표시할 원고 내용이 없습니다.</p></div>`; return `<div><h3 class="text-xl font-semibold mb-4 text-slate-800 border-b pb-2">원고 보기</h3><div class="prose prose-custom max-w-full h-[60vh] overflow-y-auto p-2">${viewText}</div></div>`;},
+            renderWritePanel: () => { const content = state.activeChapterContent; return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div><label for="manuscript" class="block text-sm font-medium text-slate-700 mb-2">원고 (Markdown)</label><textarea id="manuscript" data-field="manuscript" class="w-full h-[60vh] p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.manuscript || ''}</textarea></div><div><label for="notes" class="block text-sm font-medium text-slate-700 mb-2">메모</label><textarea id="notes" data-field="notes" class="w-full h-[60vh] p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.notes || ''}</textarea></div></div><div class="mt-4 text-right"><button data-action="copy-writing-prompt" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">AI 글쓰기 프롬프트 복사</button></div>`;},
+            renderQuizHome: () => { const hasQuestions = state.activeChapterContent && state.activeChapterContent.questions && state.activeChapterContent.questions.length > 0; return `<div class="flex flex-col items-center justify-center h-full text-center"><i data-lucide="lightbulb" class="h-12 w-12 text-slate-400"></i><h4 class="mt-4 text-lg font-semibold text-slate-700">지식을 테스트해보세요</h4><p class="mt-1 text-sm text-slate-500">학습한 내용을 기반으로 퀴즈를 풀어보세요.</p><div class="mt-6 flex flex-col space-y-3 w-full max-w-xs"><button data-action="start-quiz" class="btn-interactive w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400" ${!hasQuestions ? 'disabled' : ''}>퀴즈 시작 (${hasQuestions ? state.activeChapterContent.questions.length : 0}문제)</button><button data-action="manage-quiz" class="btn-interactive w-full inline-flex justify-center items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50">퀴즈 관리</button><button data-action="generate-quiz" class="btn-interactive w-full inline-flex justify-center items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50"><i data-lucide="sparkles" class="w-5 h-5 mr-2"></i>AI로 문제 추가</button></div>${!hasQuestions ? '<p class="mt-2 text-xs text-slate-400">퀴즈를 진행하려면 문제를 먼저 추가해주세요.</p>' : ''}</div>`;},
+            renderTranslatePanel: () => { const content = state.activeChapterContent; const sourceText = content.originalContent || (content.manuscript ? marked.parse(content.manuscript) : '<p>번역할 원문이 없습니다.</p>'); return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div><h3 class="text-lg font-semibold mb-2 text-slate-800">원문</h3><div class="prose prose-custom h-[60vh] overflow-y-auto p-4 border rounded-md">${sourceText}</div></div><div><h3 class="text-lg font-semibold mb-2 text-slate-800">번역문</h3><textarea id="translation" data-field="translation" class="w-full h-[60vh] p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.translation || ''}</textarea></div></div><div class="mt-4 text-right"><button data-action="copy-translation-prompt" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">번역 프롬프트 복사</button></div>`;},
+            renderModal: () => { if (!state.modal.isOpen) return ''; let contentHtml = ''; switch(state.modal.type) { case 'newProject': contentHtml = View.renderNewProjectModal(); break; case 'settings': contentHtml = View.renderSettingsModal(); break; case 'confirm': contentHtml = View.renderConfirmModal(); break; case 'apiKey': contentHtml = View.renderApiKeyModal(); break; case 'manageQuiz': contentHtml = View.renderManageQuizModal(); break; } return `<div class="modal-overlay modal-scale-in" data-action="close-modal-overlay"></div><div class="modal-container w-full max-w-2xl modal-scale-in"><div class="bg-white rounded-lg shadow-xl">${contentHtml}</div></div>`; },
+            renderNewProjectModal: () => { const activeTab = state.modal.data.activeTab || 'zip'; const tabButton = (id, label) => `<button type="button" data-action="switch-modal-tab" data-tab="${id}" class="px-4 py-2 text-sm font-medium rounded-md ${activeTab === id ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}">${label}</button>`; const fileInputTemplate = (id, accept, labelId, description) => `<p class="text-sm text-slate-600 mb-2">${description}</p><label for="${id}" class="cursor-pointer"><div data-dropzone-for="${id}" class="drop-zone w-full p-8 rounded-lg text-center bg-slate-50 hover:bg-slate-100"><div class="flex flex-col items-center justify-center space-y-2 pointer-events-none"><i data-lucide="upload-cloud" class="w-12 h-12 text-slate-400"></i><p class="text-slate-700 font-medium">파일을 드래그하거나 <span class="text-indigo-600">클릭하여 선택</span>하세요</p><p id="${labelId}" class="text-sm text-slate-500 truncate max-w-full" title="선택된 파일 없음">선택된 파일 없음</p></div><input type="file" id="${id}" accept="${accept}" class="hidden" data-target-label="${labelId}"/></div></label>`; const tabContent = () => { switch(activeTab) { case 'zip': return fileInputTemplate('zip-upload', '.zip', 'zip-file-label', 'HTML 또는 TXT 파일들이 포함된 ZIP 파일을 업로드하세요.'); case 'jsonFile': return fileInputTemplate('json-upload', '.json', 'json-file-label', '이전에 내보냈던 프로젝트(.json) 파일을 가져옵니다.'); case 'jsonText': return `<p class="text-sm text-slate-600 mb-4">프로젝트 JSON 텍스트를 붙여넣어 생성합니다.</p><textarea id="json-text-input" placeholder='{"type": "ILS_PROJECT_EXPORT_V2", ...}' class="w-full h-40 p-2 border rounded-md"></textarea>`; } }; return `<form data-action="submit-new-project"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">새 프로젝트 생성</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="border-b border-gray-200"><div class="p-1 mb-4 inline-flex space-x-1 bg-slate-100 rounded-lg">${tabButton('zip', 'ZIP 가져오기')}${tabButton('jsonFile', 'JSON 파일')}${tabButton('jsonText', 'JSON 텍스트')}</div></div><div class="mt-4">${tabContent()}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">취소</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">생성</button></div></form>`;},
+            renderSettingsModal: () => { const settings = state.activeProject.settings; const fields = [ { id: 'writingGenre', label: '글쓰기 - 장르', value: settings.writingGenre, type: 'text' }, { id: 'writingAudience', label: '글쓰기 - 목표 독자', value: settings.writingAudience, type: 'text' }, { id: 'writingStyle', label: '글쓰기 - 스타일', value: settings.writingStyle, type: 'textarea' }, { id: 'quizQuestionCount', label: '퀴즈 - 생성 개수', value: settings.quizQuestionCount, type: 'number' }, { id: 'quizTaskDescription', label: '퀴즈 프롬프트 - 과업 설명 (Task)', value: settings.quizTaskDescription, type: 'textarea' }, { id: 'quizOutputFormatInstruction', label: '퀴즈 프롬프트 - 출력 형식 (Output)', value: settings.quizOutputFormatInstruction, type: 'textarea' }, { id: 'quizPromptTemplate', label: '퀴즈 프롬프트 - 전체 템플릿', value: settings.quizPromptTemplate, type: 'textarea' }, ]; const fieldsHtml = fields.map(f => `<div class="mb-4"><label for="setting-${f.id}" class="block text-sm font-medium text-slate-700">${f.label}</label>${f.type === 'textarea' ? `<textarea id="setting-${f.id}" data-setting-key="${f.id}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 h-32 font-mono text-xs">${f.value}</textarea>` : `<input type="${f.type}" id="setting-${f.id}" data-setting-key="${f.id}" value="${f.value}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">`}</div>`).join(''); return `<form data-action="save-settings"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">프로젝트 설정: ${state.activeProject.name}</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[60vh] overflow-y-auto pr-2">${fieldsHtml}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">취소</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">저장</button></div></form>`;},
+            renderConfirmModal: () => { const { title, message, confirmText } = state.modal.data; return `<div class="p-6"><div class="sm:flex sm:items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10"><i data-lucide="alert-triangle" class="h-6 w-6 text-red-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">${title}</h3><div class="mt-2"><p class="text-sm text-gray-500">${message}</p></div></div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">취소</button><button type="button" data-action="confirm-action" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-red-600 hover:bg-red-700">${confirmText}</button></div>`;},
+            renderApiKeyModal: () => { return `<form data-action="submit-api-key"><div class="p-6"><div class="flex items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 sm:mx-0 sm:h-10 sm:w-10"><i data-lucide="key-round" class="h-6 w-6 text-indigo-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">Google AI API 키 입력</h3><div class="mt-2"><p class="text-sm text-gray-500">퀴즈 생성을 위해 Google AI Studio에서 발급받은 API 키를 입력해주세요.</p><input type="password" id="api-key-input" class="mt-2 block w-full rounded-md border-slate-300" placeholder="API 키를 여기에 붙여넣으세요"></div></div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive">취소</button><button type="submit" class="btn-interactive">확인</button></div></form>`;},
+            renderManageQuizModal: () => { const questions = state.activeChapterContent.questions || []; const questionsHtml = questions.map((q, index) => `<div class="p-3 my-2 border rounded-md bg-slate-50 flex justify-between items-center group"><p class="text-sm text-slate-800 truncate pr-4">${index + 1}. ${q.questionText}</p><button type="button" data-action="delete-quiz-question" data-index="${index}" class="p-1 text-slate-500 hover:text-red-600 rounded-full hover:bg-red-100 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div>`).join(''); return `<div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">퀴즈 관리</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[30vh] overflow-y-auto border rounded-lg p-2 bg-white mb-4">${questions.length > 0 ? questionsHtml : '<p class="text-sm text-slate-500 text-center py-4">생성된 문제가 없습니다.</p>'}</div><h4 class="text-lg font-semibold text-slate-800 border-t pt-4 mb-3">AI 프롬프트를 사용하여 문제 추가</h4><p class="text-sm text-slate-600 mb-2">1. 아래 버튼으로 프롬프트를 복사하여 AI 도구(예: Google AI Studio)에 붙여넣고 결과를 생성하세요.</p><button data-action="copy-quiz-prompt" class="btn-interactive inline-flex items-center justify-center w-full px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="clipboard-copy" class="w-4 h-4 mr-2"></i>AI 생성 프롬프트 복사</button><form data-action="add-questions-from-json" class="mt-4"><label for="quiz-json-paste" class="text-sm text-slate-600 mb-2 block">2. AI가 생성한 JSON 배열을 아래에 붙여넣고 '추가' 버튼을 누르세요.</label><textarea id="quiz-json-paste" name="jsonContent" class="w-full h-24 p-2 border rounded-md font-mono text-xs" placeholder="[ { ... } ]" required></textarea><div class="bg-slate-50 -mx-6 -mb-6 px-6 py-4 mt-6 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">닫기</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700">JSON에서 문제 추가</button></div></form></div>`;},
+            renderToasts: () => { return `<div class="fixed bottom-4 right-4 space-y-3 z-50">${state.toasts.map(toast => `<div id="toast-${toast.id}" class="max-w-sm w-full bg-white shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden"><div class="p-4"><div class="flex items-start"><div class="flex-shrink-0">${toast.type === 'success' ? '<i data-lucide="check-circle" class="h-6 w-6 text-green-400"></i>' : ''}${toast.type === 'error' ? '<i data-lucide="alert-circle" class="h-6 w-6 text-red-400"></i>' : ''}${toast.type === 'info' ? '<i data-lucide="info" class="h-6 w-6 text-blue-400"></i>' : ''}</div><div class="ml-3 w-0 flex-1 pt-0.5"><p class="text-sm font-medium text-gray-900">${toast.message}</p></div><div class="ml-4 flex-shrink-0 flex"><button data-action="dismiss-toast" data-id="${toast.id}" class="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500"><i data-lucide="x" class="h-5 w-5"></i></button></div></div></div></div>`).join('')}</div>`;},
+            renderFooter: () => { return `<footer class="bg-white"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 border-t text-center text-xs text-slate-500">&copy; ${new Date().getFullYear()} Polymathic Strategist. All Rights Reserved.</div></footer>`;}
+        };
+
+        const Controller = {
+            async init() {
+                try {
+                    this.bindGlobalEventListeners();
+                    await DB.init();
+                    const [projects, userProfile] = await Promise.all([
+                        DB.getAll(CONFIG.STORES.PROJECTS),
+                        DB.get(CONFIG.STORES.USER_PROFILE, 'main')
+                    ]);
+                    state.projects = projects.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+                    state.userProfile = userProfile || { id: 'main', level: 1, xp: 0 };
+                    if (!userProfile) await DB.put(CONFIG.STORES.USER_PROFILE, state.userProfile);
+                } catch (error) {
+                    console.error("Initialization failed:", error);
+                } finally {
+                    state.isLoading = false;
+                    View.render();
+                }
+            },
+            
+            bindGlobalEventListeners() {
+                document.body.addEventListener('click', e => { const trigger = e.target.closest('[data-action]'); if (!trigger || trigger.matches('form[data-action]')) return; const action = trigger.dataset.action; const handler = this.ACTION_HANDLERS[action]; if (handler) { e.preventDefault(); handler(trigger, e); } });
+                document.body.addEventListener('submit', e => { const form = e.target.closest('form[data-action]'); if (!form) return; e.preventDefault(); const action = form.dataset.action; const handler = this.ACTION_HANDLERS[action]; if (handler) { handler(form, e); } });
+                document.body.addEventListener('input', Utils.debounce(async e => { if (e.target.matches('#manuscript, #notes, #translation')) { await Controller.handleContentChange(e); View.render(); } }, 1000));
+                document.body.addEventListener('change', e => { if (e.target.matches('input[type="file"]')) { this.handleFileSelection(e.target); } });
+                const preventDefaults = e => { e.preventDefault(); e.stopPropagation(); };
+                ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => document.body.addEventListener(eventName, preventDefaults));
+                document.body.addEventListener('dragenter', e => { const dropZone = e.target.closest('[data-dropzone-for]'); if(dropZone) dropZone.classList.add('drag-over'); });
+                document.body.addEventListener('dragleave', e => { const dropZone = e.target.closest('[data-dropzone-for]'); if(dropZone && !dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
+                document.body.addEventListener('drop', e => { const dropZone = e.target.closest('[data-dropzone-for]'); if(!dropZone) return; dropZone.classList.remove('drag-over'); const inputId = dropZone.dataset.dropzoneFor; const input = document.getElementById(inputId); if (input && e.dataTransfer.files.length > 0) { input.files = e.dataTransfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); } });
+            },
+
+            navigateTo: (view) => { state.currentView = view; state.activeProjectId = null; state.activeProject = null; state.activeChapterPath = null; state.activeChapterContent = null; state.quizState = null; state.activeContentsMap.clear(); View.render(); },
+            switchMode: (mode) => { state.workspaceMode = mode; state.quizState = null; View.render(); },
+            
+            async openProject(id) {
+                state.isLoading = true;
+                View.render();
+                try {
+                    const project = await DB.get(CONFIG.STORES.PROJECTS, id);
+                    if (project) {
+                        const contents = await DB.getProjectContents(id);
+                        state.activeContentsMap = new Map(contents.map(c => [c.id, c]));
+                        state.activeProjectId = id;
+                        state.activeProject = project;
+                        state.currentView = 'workspace';
+                        state.workspaceMode = 'view';
+                        state.activeChapterPath = null;
+                        state.activeChapterContent = null;
+                    } else { throw new Error("Project not found"); }
+                } catch (error) {
+                    console.error("Failed to open project:", error); this.navigateTo('dashboard');
+                } finally {
+                    state.isLoading = false;
+                    View.render();
+                }
+            },
+            
+            async selectChapter(path) {
+                if (state.activeChapterPath === path) return;
+                state.activeChapterPath = path;
+                state.quizState = null;
+                const contentId = `${state.activeProjectId}_${path}`;
+                let content = state.activeContentsMap.get(contentId);
+                if(!content) {
+                    content = { id: contentId, manuscript: '', notes: '', translation: '', questions: [], status: 'empty' };
+                    await DB.put(CONFIG.STORES.CONTENTS, content);
+                    state.activeContentsMap.set(contentId, content);
+                }
+                state.activeChapterContent = content;
+                View.render();
+            },
+
+            async handleContentChange(event) {
+                const field = event.target.dataset.field;
+                const value = event.target.value;
+                if (state.activeChapterContent && field) {
+                    const content = state.activeChapterContent;
+                    content[field] = value;
+                    if (field === 'manuscript') {
+                        if (value.trim() !== '' && (content.status === 'empty' || content.status === 'prompt-copied')) {
+                            content.status = 'manuscript-done';
+                        } else if (value.trim() === '' && content.status === 'manuscript-done') {
+                            content.status = 'prompt-copied'; 
+                        }
+                    }
+                    await DB.put(CONFIG.STORES.CONTENTS, content);
+                }
+            },
+            
+            confirmDeleteProject: (id) => { const project = state.projects.find(p => p.id === id); if (!project) return; Controller.openModal('confirm', { title: '프로젝트 삭제 확인', message: `'${project.name}' 프로젝트와 모든 관련 데이터를 영구적으로 삭제하시겠습니까?`, confirmText: '삭제', onConfirm: async () => { await DB.deleteProjectAndContents(id); state.projects = state.projects.filter(p => p.id !== id); Controller.showToast(`'${project.name}' 프로젝트가 삭제되었습니다.`, 'success'); View.render(); } }); },
+            exportProject: async (id) => { try { const project = await DB.get(CONFIG.STORES.PROJECTS, id); const contents = await DB.getProjectContents(id); const exportData = { type: CONFIG.EXPORT_TYPE_ID, exportedAt: new Date().toISOString(), project: project, contents: contents.map(c => ({ path: c.id.replace(`${id}_`, ''), ...c, id: undefined })) }; const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${project.name.replace(/ /g, '_')}_export.json`; a.click(); URL.revokeObjectURL(a.href); Controller.showToast('프로젝트가 성공적으로 내보내졌습니다.', 'success'); } catch (error) { console.error("Export failed:", error); Controller.showToast('프로젝트 내보내기에 실패했습니다.', 'error'); } },
+            openModal: (type, data = {}) => { state.modal = { isOpen: true, type, data }; View.render(); },
+            closeModal: () => { state.modal = { isOpen: false, type: '', data: {} }; View.render(); },
+            switchModalTab: (tab) => { state.modal.data.activeTab = tab; View.render(); },
+            submitNewProject: async (form) => { const activeTab = state.modal.data.activeTab || 'zip'; state.isLoading = true; Controller.closeModal(); View.render(); try { let projectData, contentsData; if (activeTab === 'zip') { const fileInput = form.querySelector('#zip-upload'); if (!fileInput.files[0]) throw new Error("ZIP 파일을 선택해주세요."); ({ project: projectData, contents: contentsData } = await Controller.processZipFile(fileInput.files[0])); } else if (activeTab === 'jsonFile') { const fileInput = form.querySelector('#json-upload'); if (!fileInput.files[0]) throw new Error("JSON 파일을 선택해주세요."); const jsonText = await fileInput.files[0].text(); ({ project: projectData, contents: contentsData } = Controller.processJsonData(JSON.parse(jsonText))); } else { const jsonTextInput = form.querySelector('#json-text-input'); if (!jsonTextInput.value) throw new Error("JSON 텍스트를 입력해주세요."); ({ project: projectData, contents: contentsData } = Controller.processJsonData(JSON.parse(jsonTextInput.value))); } await DB.put(CONFIG.STORES.PROJECTS, projectData); await Promise.all(contentsData.map(c => DB.put(CONFIG.STORES.CONTENTS, c))); state.projects.unshift(projectData); state.projects.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)); Controller.showToast(`'${projectData.name}' 프로젝트가 생성되었습니다.`, 'success'); } catch (error) { console.error("Project creation failed:", error); Controller.showToast(`프로젝트 생성 실패: ${error.message}`, 'error'); } finally { state.isLoading = false; View.render(); } },
+            processZipFile: async (file) => { const turndownService = new TurndownService(); const zip = await JSZip.loadAsync(file); const allEntries = []; zip.forEach((relPath, entry) => { const normPath = relPath.replace(/\/$/, '').replace(/\\/g, '/'); if (normPath && !normPath.startsWith('__MACOSX') && (entry.dir || /\.(html?|txt)$/i.test(normPath))) allEntries.push({ path: normPath, isDir: entry.dir, entry }); }); allEntries.sort((a, b) => Utils.naturalSort(a.path, b.path)); const projectToc = { title: Utils.formatTitle(file.name), children: [] }; const pathMap = new Map(); for (const { path, isDir } of allEntries) { let currentNode = projectToc; let currentPath = ''; path.split('/').forEach((part, i, arr) => { currentPath = currentPath ? `${currentPath}/${part}` : part; let childNode = pathMap.get(currentPath); if (!childNode) { const isLeaf = (i === arr.length - 1) && !isDir; childNode = { title: Utils.formatTitle(part), children: isLeaf ? undefined : [], originalPath: isLeaf ? path : undefined }; currentNode.children.push(childNode); pathMap.set(currentPath, childNode); } currentNode = childNode; }); } const projectId = Utils.generateId('proj'); const project = { id: projectId, name: projectToc.title, createdAt: new Date().toISOString(), toc: projectToc, settings: { ...CONFIG.DEFAULT_PROJECT_SETTINGS } }; const contents = (await Promise.all(Utils.getChapterPath(projectToc).map(async ({ path, node }) => { if (!node.originalPath) return null; const fileEntry = allEntries.find(f => f.path === node.originalPath)?.entry; if (!fileEntry) return null; let manuscript = ''; if (/\.html?$/i.test(fileEntry.name)) { const rawHtml = await fileEntry.async('string'); const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i); manuscript = turndownService.turndown(DOMPurify.sanitize(bodyMatch ? bodyMatch[1] : '')); } else { manuscript = await fileEntry.async('string'); } return { id: `${projectId}_${path}`, manuscript, notes: '', translation: '', questions: [], status: manuscript.trim() ? 'manuscript-done' : 'empty' }; }))).filter(Boolean); return { project, contents }; },
+            processJsonData: (data) => { if (data.type !== CONFIG.EXPORT_TYPE_ID) throw new Error("유효하지 않은 프로젝트 파일 형식입니다."); const newId = Utils.generateId('proj'); const newProject = { ...data.project, id: newId, createdAt: new Date().toISOString() }; const newContents = data.contents.map(c => ({ ...c, id: `${newId}_${c.path}`, path: undefined })); return { project: newProject, contents: newContents }; },
+            handleFileSelection: (input) => { const label = document.getElementById(input.dataset.targetLabel); if (label) { const fileName = input.files[0] ? input.files[0].name : '선택된 파일 없음'; label.textContent = fileName; label.title = fileName; } },
+            saveSettings: async (form) => { const newSettings = { ...state.activeProject.settings }; form.querySelectorAll('[data-setting-key]').forEach(input => { const key = input.dataset.settingKey; const value = input.type === 'number' ? parseInt(input.value, 10) : input.value; if (value || (input.type === 'number' && !isNaN(value))) newSettings[key] = value; }); state.activeProject.settings = newSettings; await DB.put(CONFIG.STORES.PROJECTS, state.activeProject); Controller.showToast('설정이 저장되었습니다.', 'success'); Controller.closeModal(); },
+            copyToClipboard: (text) => { const textArea = document.createElement("textarea"); textArea.value = text; textArea.style.position = "fixed"; textArea.style.top = "-9999px"; document.body.appendChild(textArea); textArea.focus(); textArea.select(); try { if (document.execCommand('copy')) Controller.showToast('클립보드에 복사되었습니다.', 'success'); else throw new Error(); } catch (err) { Controller.showToast('클립보드 복사에 실패했습니다.', 'error'); } document.body.removeChild(textArea); },
+            copyPromptForCurrentChapter: () => { if (!state.activeProject || !state.activeChapterPath) return; const { settings, toc } = state.activeProject; const chapterNode = Utils.getNodeByPath(toc, state.activeChapterPath); if (!chapterNode) return; const tocText = Utils.generateTocText(toc, 0, '', state.activeChapterPath); let prompt = settings.writingPrompt || CONFIG.DEFAULT_PROJECT_SETTINGS.writingPrompt; prompt = prompt.replace(/{{bookTitle}}/g, toc.title || 'Untitled').replace(/{{fullToc}}/g, tocText).replace(/{{chapterTitle}}/g, chapterNode.title || '').replace(/{{chapterDescription}}/g, chapterNode.description || 'Not provided.').replace(/{{writingGenre}}/g, settings.writingGenre).replace(/{{writingAudience}}/g, settings.writingAudience).replace(/{{writingStyle}}/g, settings.writingStyle); Controller.copyToClipboard(prompt); },
+            copyTranslationPrompt: () => { if (!state.activeChapterContent) return; const turndownService = new TurndownService(); const sourceHtml = state.activeChapterContent.manuscript ? marked.parse(state.activeChapterContent.manuscript) : (state.activeChapterContent.originalContent || ''); const sourceText = turndownService.turndown(sourceHtml); if (!sourceText) { Controller.showToast('번역할 내용이 없습니다.', 'error'); return; } let prompt = state.activeProject.settings.translationPrompt || CONFIG.DEFAULT_PROJECT_SETTINGS.translationPrompt; prompt = prompt.replace('{{text}}', sourceText); Controller.copyToClipboard(prompt); },
+            buildQuizPrompt: () => { if (!state.activeChapterContent) return null; const turndownService = new TurndownService(); const sourceHtml = state.activeChapterContent.manuscript ? marked.parse(state.activeChapterContent.manuscript) : (state.activeChapterContent.originalContent || ''); const sourceText = turndownService.turndown(sourceHtml); if (!sourceText) return null; const settings = state.activeProject.settings; const template = settings.quizPromptTemplate || CONFIG.DEFAULT_PROJECT_SETTINGS.quizPromptTemplate; return template.replace('{{taskDescription}}', settings.quizTaskDescription || CONFIG.DEFAULT_PROJECT_SETTINGS.quizTaskDescription).replace('{{outputFormatInstruction}}', settings.quizOutputFormatInstruction || CONFIG.DEFAULT_PROJECT_SETTINGS.quizOutputFormatInstruction).replace('{{questionCount}}', settings.quizQuestionCount || CONFIG.DEFAULT_PROJECT_SETTINGS.quizQuestionCount).replace('{{text}}', sourceText.substring(0, 15000)); },
+            generateQuiz: async () => { let apiKey = localStorage.getItem('googleApiKey'); if(!apiKey) return Controller.openModal('apiKey'); const prompt = Controller.buildQuizPrompt(); if (!prompt) { Controller.showToast('퀴즈를 생성할 학습 내용이 없습니다.', 'error'); return; } Controller.showToast('AI가 문제를 생성하고 있습니다...', 'info'); const spinnerEl = document.querySelector('[data-action="generate-quiz"]'); if(spinnerEl) spinnerEl.innerHTML = `<div class="w-5 h-5 border-2 border-slate-500 border-t-transparent rounded-full spinner"></div>`; try { const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }); if (!response.ok) throw new Error(`API 요청 실패: ${response.statusText}`); const result = await response.json(); const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text; if(!responseText) throw new Error("AI로부터 빈 응답을 받았습니다."); const jsonMatch = responseText.match(/<json_response>([\s\S]*?)<\/json_response>/); const jsonText = jsonMatch ? jsonMatch[1].trim() : responseText.match(/\[[\s\S]*\]/)?.[0] || responseText.trim(); const questions = JSON.parse(jsonText); const content = state.activeChapterContent; content.questions = [...(content.questions || []), ...questions]; content.status = 'quiz-done'; await DB.put(CONFIG.STORES.CONTENTS, content); Controller.showToast(`${questions.length}개의 문제가 추가되었습니다.`, 'success'); View.render(); } catch (error) { console.error("Quiz generation failed:", error); Controller.showToast(`문제 생성 실패: ${error.message}`, 'error'); } finally { if(spinnerEl) spinnerEl.innerHTML = `<i data-lucide="sparkles" class="w-5 h-5 mr-2"></i>AI로 문제 추가`; lucide.createIcons(); } },
+            submitApiKey: (form) => { const key = form.querySelector('#api-key-input').value; if (key) { localStorage.setItem('googleApiKey', key); Controller.closeModal(); } else { Controller.showToast('API 키를 입력해주세요.', 'error'); } },
+            startQuiz: () => { const questions = state.activeChapterContent.questions; if (!questions || questions.length === 0) { Controller.showToast('퀴즈를 진행할 문제가 없습니다.', 'warning'); return; } const shuffledQuestions = [...questions].sort(() => Math.random() - 0.5); state.quizState = { questions: shuffledQuestions, currentIndex: 0, answers: [], isFinished: false }; state.currentView = 'quiz'; View.render(); },
+            exitQuiz: () => { Controller.openModal('confirm', { title: '퀴즈 나가기', message: '퀴즈를 중단하고 작업실로 돌아가시겠습니까?', confirmText: '나가기', onConfirm: () => { state.quizState = null; state.currentView = 'workspace'; View.render(); } }); },
+            submitAnswer: (selectedIndex) => { if (state.quizState.answers[state.quizState.currentIndex]) return; const q = state.quizState.questions[state.quizState.currentIndex]; const isCorrect = selectedIndex === q.answerIndex; state.quizState.answers[state.quizState.currentIndex] = { selectedIndex, isCorrect }; View.render(); },
+            submitTextAnswer: (form) => { if (state.quizState.answers[state.quizState.currentIndex]) return; const userAnswer = new FormData(form).get('answer-input') || ''; const q = state.quizState.questions[state.quizState.currentIndex]; const isCorrect = userAnswer.toLowerCase() === q.answer.toLowerCase(); state.quizState.answers[state.quizState.currentIndex] = { userAnswer, isCorrect }; View.render(); },
+            nextQuestion: () => { if(state.quizState.currentIndex < state.quizState.questions.length - 1) { state.quizState.currentIndex++; } else { state.quizState.isFinished = true; Controller.finishQuiz(); } View.render(); },
+            finishQuiz: async () => { const correctAnswers = state.quizState.answers.filter(a => a.isCorrect).length; const xpGained = correctAnswers * 100; const newXp = state.userProfile.xp + xpGained; let newLevel = state.userProfile.level; while (CONFIG.LEVEL_THRESHOLDS[newLevel] !== undefined && newXp >= CONFIG.LEVEL_THRESHOLDS[newLevel]) newLevel++; if (newLevel > state.userProfile.level) Controller.showToast(`레벨 업! LV.${newLevel} 달성!`, 'success'); state.userProfile.xp = newXp; state.userProfile.level = newLevel; await DB.put(CONFIG.STORES.USER_PROFILE, state.userProfile); state.quizState = null; state.currentView = 'workspace'; Controller.showToast(`퀴즈 완료! +${xpGained} XP`, 'success'); View.render(); },
+            deleteManualQuizQuestion: async (index) => { state.activeChapterContent.questions.splice(index, 1); await DB.put(CONFIG.STORES.CONTENTS, state.activeChapterContent); Controller.showToast('문제가 삭제되었습니다.', 'success'); View.render(); },
+            showToast: (message, type = 'info', duration = 3000) => { const id = Utils.generateId('toast'); state.toasts.push({ id, message, type }); View.render(); setTimeout(() => Controller.dismissToast(id), duration); },
+            dismissToast: (id) => { const toastEl = document.getElementById(`toast-${id}`); if(toastEl) { toastEl.style.opacity = 0; setTimeout(() => { state.toasts = state.toasts.filter(t => t.id !== id); View.render(); }, 500); } else { state.toasts = state.toasts.filter(t => t.id !== id); View.render(); } },
+            handleConfirmAction: () => { const onConfirm = state.modal.data.onConfirm; if(typeof onConfirm === 'function') onConfirm(); Controller.closeModal(); },
+            
+            ACTION_HANDLERS: {
+                'new-project': () => Controller.openModal('newProject', {activeTab: 'zip'}),
+                'open-project': (el) => Controller.openProject(el.dataset.id),
+                'export-project': (el) => Controller.exportProject(el.dataset.id),
+                'delete-project-confirm': (el) => Controller.confirmDeleteProject(el.dataset.id),
+                'back-to-dashboard': () => Controller.navigateTo('dashboard'),
+                'open-settings': () => Controller.openModal('settings'),
+                'dismiss-toast': (el) => Controller.dismissToast(el.dataset.id),
+                'switch-mode': (el) => Controller.switchMode(el.dataset.mode),
+                'select-chapter': (el) => Controller.selectChapter(el.dataset.path),
+                'copy-writing-prompt': async () => { Controller.copyPromptForCurrentChapter(); const content = state.activeChapterContent; if (content && content.status === 'empty') { content.status = 'prompt-copied'; await DB.put(CONFIG.STORES.CONTENTS, content); View.render(); } },
+                'copy-translation-prompt': () => Controller.copyTranslationPrompt(),
+                'generate-quiz': () => Controller.generateQuiz(),
+                'manage-quiz': () => Controller.openModal('manageQuiz', {}),
+                'start-quiz': () => Controller.startQuiz(),
+                'exit-quiz': () => Controller.exitQuiz(),
+                'submit-answer': (el) => Controller.submitAnswer(parseInt(el.dataset.index, 10)),
+                'submit-text-answer': (form) => Controller.submitTextAnswer(form),
+                'next-question': () => Controller.nextQuestion(),
+                'finish-quiz': () => Controller.finishQuiz(),
+                'close-modal': () => Controller.closeModal(),
+                'close-modal-overlay': (el, e) => { if(e.target === el) Controller.closeModal(); },
+                'switch-modal-tab': (el) => Controller.switchModalTab(el.dataset.tab),
+                'confirm-action': () => Controller.handleConfirmAction(),
+                'submit-new-project': (form) => Controller.submitNewProject(form),
+                'save-settings': (form) => Controller.saveSettings(form),
+                'submit-api-key': (form) => Controller.submitApiKey(form),
+                'copy-quiz-prompt': () => { const prompt = Controller.buildQuizPrompt(); if(prompt) Controller.copyToClipboard(prompt); else Controller.showToast('퀴즈를 생성할 학습 내용이 없습니다.', 'error'); },
+                'add-questions-from-json': async (form) => { const jsonContent = new FormData(form).get('jsonContent'); if (!jsonContent) { Controller.showToast('JSON 내용을 입력해주세요.', 'error'); return; } try { const text = jsonContent.trim(); const startIndex = text.indexOf('['); const endIndex = text.lastIndexOf(']'); if (startIndex === -1 || endIndex === -1) throw new Error('유효한 JSON 배열을 찾을 수 없습니다.'); const jsonString = text.substring(startIndex, endIndex + 1); const questions = JSON.parse(jsonString); const content = state.activeChapterContent; content.questions = [...(content.questions || []), ...questions]; content.status = 'quiz-done'; await DB.put(CONFIG.STORES.CONTENTS, content); Controller.showToast(`${questions.length}개의 문제가 추가되었습니다.`, 'success'); View.render(); } catch (e) { Controller.showToast(`유효하지 않은 JSON입니다: ${e.message}`, 'error'); } },
+                'delete-quiz-question': (el) => Controller.deleteManualQuizQuestion(parseInt(el.dataset.index, 10)),
+            }
+        };
+
+        Controller.init();
+    </script>
+</body>
+</html>
