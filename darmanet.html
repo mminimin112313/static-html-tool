@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DharmaNet - 불교 경전 지식 네트워크</title>
+    <!-- vis-network.js 라이브러리 (CDN) -->
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --primary-text: #e0e0e0;
+            --secondary-text: #b0b0b0;
+            --border-color: #3a3a3a;
+            --highlight-bg: #2c2c2c;
+            --accent-color: #4a90e2;
+            --accent-color-dark: #3a7bc8;
+            --danger-color: #e24a4a;
+
+            --node-scripture: #5DADE2;
+            --node-category: #58D68D;
+            --node-tag: #F5B041;
+            --node-person: #EC7063;
+            --node-concept: #AF7AC5;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--primary-text);
+            font-family: 'Inter', 'Noto Sans KR', sans-serif;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .main-container {
+            display: flex;
+            flex-grow: 1;
+            height: calc(100% - 70px);
+            position: relative;
+        }
+
+        header {
+            padding: 0 25px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            background-color: #212121;
+            height: 70px;
+            box-sizing: border-box;
+        }
+
+        header h1 {
+            font-size: 1.5em;
+            margin: 0;
+            color: var(--primary-text);
+            font-weight: 700;
+        }
+        
+        header h1 .subtitle {
+            font-size: 0.6em;
+            color: var(--secondary-text);
+            font-weight: 400;
+            margin-left: 8px;
+        }
+
+        .header-center {
+            display: flex;
+            align-items: center;
+            flex-grow: 1;
+            justify-content: center;
+        }
+
+        .header-right {
+             display: flex;
+            align-items: center;
+        }
+
+        #view-controls {
+            display: flex;
+            background-color: var(--highlight-bg);
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .view-btn {
+            padding: 8px 16px;
+            border: none;
+            background-color: transparent;
+            color: var(--secondary-text);
+            cursor: pointer;
+            border-radius: 6px;
+            font-size: 0.9em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .view-btn.active {
+            background-color: var(--bg-color);
+            color: var(--primary-text);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        #search-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+            margin-right: 15px;
+        }
+
+        #search-icon {
+            position: absolute;
+            left: 15px;
+            color: var(--secondary-text);
+        }
+        
+        #search-box {
+            width: 300px;
+            padding: 10px 15px 10px 40px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background-color: var(--highlight-bg);
+            color: var(--primary-text);
+            font-size: 1em;
+            transition: all 0.3s ease;
+        }
+
+        #search-box:focus {
+            outline: none;
+            border-color: var(--accent-color);
+            box-shadow: 0 0 10px rgba(74, 144, 226, 0.3);
+        }
+        
+        #network {
+            width: 100%;
+            height: 100%;
+            background-color: var(--bg-color);
+        }
+
+        #database-view {
+            width: 100%;
+            height: 100%;
+            box-sizing: border-box;
+            padding: 20px;
+            overflow-y: auto;
+            display: none;
+        }
+
+        #db-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9em;
+        }
+
+        #db-table th, #db-table td {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border-color);
+            text-align: left;
+            vertical-align: top;
+        }
+
+        #db-table thead th {
+            background-color: var(--highlight-bg);
+            color: var(--primary-text);
+            position: sticky;
+            top: -20px;
+        }
+        
+        #db-table tbody tr {
+            transition: background-color 0.2s;
+        }
+
+        #db-table tbody tr:nth-child(even) {
+            background-color: #202020;
+        }
+
+        #db-table tbody tr:hover {
+            background-color: #383838;
+            cursor: pointer;
+        }
+
+        #db-table .desc-cell {
+            max-width: 400px;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-size: 0.95em;
+            color: var(--secondary-text);
+        }
+        
+        #info-panel {
+            width: 380px;
+            flex-shrink: 0;
+            background-color: #212121;
+            border-left: 1px solid var(--border-color);
+            padding: 25px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            transition: transform 0.4s ease-in-out;
+            transform: translateX(100%);
+            position: fixed;
+            right: 0;
+            top: 70px;
+            height: calc(100% - 70px);
+            z-index: 100;
+        }
+
+        #info-panel.visible {
+            transform: translateX(0);
+        }
+
+        #info-panel h2 {
+            margin-top: 0;
+            font-size: 1.4em;
+            color: var(--primary-text);
+            border-bottom: 2px solid var(--accent-color);
+            padding-bottom: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        #info-panel h2 .node-type-icon {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+        
+        #info-panel h3 {
+            color: var(--secondary-text);
+            font-size: 0.9em;
+            margin-top: 5px;
+            margin-bottom: 20px;
+            font-weight: 400;
+        }
+
+        #info-panel p {
+            line-height: 1.7;
+            color: var(--secondary-text);
+            font-size: 0.95em;
+        }
+
+        #info-panel .section-title {
+            font-weight: 500;
+            color: var(--primary-text);
+            margin-top: 25px;
+            margin-bottom: 10px;
+            font-size: 1em;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 8px;
+        }
+        
+        #info-panel ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        
+        #info-panel ul li {
+            padding: 8px 12px;
+            background-color: var(--highlight-bg);
+            border-radius: 6px;
+            margin-bottom: 6px;
+            font-size: 0.9em;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            display: flex;
+            align-items: center;
+        }
+        
+        #info-panel ul li:hover {
+            background-color: #383838;
+        }
+        
+        #info-panel ul li .node-type-icon {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 10px;
+            flex-shrink: 0;
+        }
+
+        #close-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: none;
+            border: none;
+            color: var(--secondary-text);
+            font-size: 1.5em;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        #close-panel:hover {
+            color: var(--primary-text);
+        }
+        
+        /* 설정 버튼 및 모달 */
+        #settings-btn {
+            background: none;
+            border: none;
+            color: var(--secondary-text);
+            cursor: pointer;
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        #settings-btn:hover {
+            background-color: var(--highlight-bg);
+            color: var(--primary-text);
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            z-index: 1000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #settings-modal {
+            background-color: #282828;
+            padding: 25px 30px;
+            border-radius: 12px;
+            width: 600px;
+            max-width: 90%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 1px solid var(--border-color);
+        }
+        #settings-modal h2 { margin-top: 0; }
+        #json-input {
+            width: 100%;
+            height: 300px;
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            color: var(--primary-text);
+            border-radius: 8px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 0.9em;
+            resize: vertical;
+            margin-top: 15px;
+            box-sizing: border-box;
+        }
+        .modal-actions { margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px; }
+        .modal-btn { padding: 10px 20px; border-radius: 8px; border: none; font-weight: 500; cursor: pointer; transition: background-color 0.2s; }
+        #save-json-btn { background-color: var(--accent-color); color: white; }
+        #save-json-btn:hover { background-color: var(--accent-color-dark); }
+        #cancel-json-btn { background-color: var(--highlight-bg); color: var(--primary-text); }
+        #cancel-json-btn:hover { background-color: #444; }
+        
+        /* 로딩 스피너 */
+        #loader {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            z-index: 1;
+            width: 60px;
+            height: 60px;
+            margin: -30px 0 0 -30px;
+            border: 8px solid var(--highlight-bg);
+            border-radius: 50%;
+            border-top: 8px solid var(--accent-color);
+            -webkit-animation: spin 1s linear infinite;
+            animation: spin 1s linear infinite;
+            display: none; /* 초기에는 숨김 */
+        }
+
+        @-webkit-keyframes spin {
+          0% { -webkit-transform: rotate(0deg); }
+          100% { -webkit-transform: rotate(360deg); }
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            header { flex-direction: column; padding: 10px; height: auto; }
+            header h1 { margin-bottom: 10px; }
+            .header-center { order: 3; width: 100%; }
+            .header-right { order: 2; margin-bottom: 10px; }
+            .main-container { height: calc(100% - 130px); }
+            #info-panel { width: 90%; top: 0; height: 100%; }
+            #search-box { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>DharmaNet<span class="subtitle">불교 경전 지식 네트워크</span></h1>
+        <div class="header-center">
+             <div id="view-controls">
+                <button id="graph-view-btn" class="view-btn active">그래프 뷰</button>
+                <button id="db-view-btn" class="view-btn">데이터베이스 뷰</button>
+            </div>
+        </div>
+        <div class="header-right">
+            <div id="search-container">
+                 <svg id="search-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-search" viewBox="0 0 16 16">
+                    <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5S 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+                </svg>
+                <input type="text" id="search-box" placeholder="경전, 인물, 교리 검색...">
+            </div>
+             <button id="settings-btn" title="설정">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.902 3.433 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c-1.79-.527-1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319zM8 10.93a2.929 2.929 0 1 1 0-5.858 2.929 2.929 0 0 1 0 5.858z"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        <div id="loader"></div>
+        <div id="network"></div>
+        <div id="database-view"></div>
+        <div id="info-panel">
+            <button id="close-panel">&times;</button>
+            <div id="info-content"></div>
+        </div>
+    </div>
+    
+    <div class="modal-overlay" id="settings-overlay">
+        <div id="settings-modal">
+            <h2>데이터 설정</h2>
+            <p>아래 텍스트 영역에 JSON 데이터를 붙여넣고 저장하세요. 데이터는 브라우저에 저장되어 다음에 방문할 때도 유지됩니다.</p>
+            <textarea id="json-input"></textarea>
+            <div class="modal-actions">
+                <button id="cancel-json-btn" class="modal-btn">취소</button>
+                <button id="save-json-btn" class="modal-btn">저장</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // --- 전역 변수 및 상수 ---
+        const DB_NAME = 'DharmaNetDB';
+        const STORE_NAME = 'jsonDataStore';
+        const defaultJsonData = [
+            { "id": "K0044", "title_ko": "일자출생출세공덕경", "title_hanja": "一字出生功德經", "category_l1": "경장", "category_l2": "밀교부", "tags": ["#형식-다라니", "#형식-진언"], "desc": "말법 시대에 중생을 구제하는 큰 힘을 가진 다라니, 특히 한 글자로 된 핵심 주문(一字心呪)의 공덕과 위력을 설하는 밀교 경전이다." },
+            { "id": "K1057", "title_ko": "대당내전록", "title_hanja": "大唐內典錄", "category_l1": "사휘부", "category_l2": "목록", "tags": ["#형식-목록", "#인물-도선"], "desc": "당나라 도선(道宣)이 편찬한 경전 목록. 불교 경전을 내전(內典)이라 칭하며, 당시까지 번역된 경전들을 체계적으로 정리하고 판본의 유무 등을 기록했다." },
+            { "id": "K1071", "title_ko": "대당대자은사삼장법사전", "title_hanja": "大唐大慈恩寺三藏法師傳", "category_l1": "사휘부", "category_l2": "전기·역사", "tags": ["#인물-현장", "#형식-전기"], "desc": "당나라 현장(玄奘) 법사의 전기. 제자인 혜립(慧立)과 언종(彥悰)이 저술했으며, 현장의 출생부터 인도 구법 여행, 귀국 후 역경 활동까지의 위대한 생애를 상세히 기록하고 있다." },
+            { "id": "K1399", "title_ko": "대당보대을사세속정원석교록", "title_hanja": "大唐保大乙巳歲續貞元釋敎錄", "category_l1": "사휘부", "category_l2": "목록", "tags": ["#형식-목록"], "desc": "『정원신정석교목록(貞元新定釋敎目錄)』을 보대(保大) 을사년(945년)에 증보한 속편(續) 성격의 경전 목록이다." },
+            { "id": "K1072", "title_ko": "대당서역구법고승전", "title_hanja": "大唐西域求法高僧傳", "category_l1": "사휘부", "category_l2": "전기·역사", "tags": ["#형식-전기", "#인물-의정"], "desc": "당나라 때 서역(인도 등)으로 가서 법을 구했던 고승들의 전기. 의정(義淨)이 저술했으며, 현장뿐만 아니라 혜초를 포함한 60여 명의 구법승들의 행적을 기록한 중요한 사료다." },
+            { "id": "K1065", "title_ko": "대당서역기", "title_hanja": "大唐西域記", "category_l1": "사휘부", "category_l2": "전기·역사", "tags": ["#인물-현장"], "desc": "현장(玄奘)이 17년간의 인도 구법 여행에서 보고 들은 것을 당 태종의 칙명에 따라 기록한 책. 138개국의 지리, 풍속, 산물, 종교, 설화 등을 상세히 담고 있어 고대 중앙아시아와 인도 연구의 독보적인 자료로 평가받는다." },
+            { "id": "K1398", "title_ko": "대당정원속개원석교록", "title_hanja": "大唐貞元續開元釋敎錄", "category_l1": "사휘부", "category_l2": "목록", "tags": ["#형식-목록"], "desc": "당나라 정원(貞元) 연간에 원조(圓照)가 편찬한 경전 목록. 지승의 『개원석교록』 이후 새로 번역되거나 입수된 경전들을 추가하여 편찬한 속편(續)이다." },
+            { "id": "K1275", "title_ko": "대락금강불공진실삼마야경", "title_hanja": "大樂金剛不空眞實三摩耶經", "category_l1": "경장", "category_l2": "밀교부", "tags": ["#교리-반야", "#종파-밀교", "#인물-불공"], "desc": "『반야이취경』의 이명(異名). 반야의 지혜가 곧 대락(大樂)의 경지임을 설하며, 금강살타의 헛되지 않은(不空) 진실한 서약(三摩耶)을 통해 즉신성불에 이르는 길을 제시하는 밀교의 핵심 경전이다." },
+            { "id": "K1333", "title_ko": "대락금강불공진실삼매야경반야바라밀다이취석", "title_hanja": "大樂金剛不空眞實三昧耶經般若波羅蜜多理趣釋", "category_l1": "논장", "category_l2": "석경론", "tags": ["#교리-반야", "#종파-밀교", "#인물-불공", "#형식-주석서"], "desc": "밀교의 고승 불공(不空, Amoghavajra)이 『반야이취경』(#K1275)의 심오한 이치(理趣)를 주석(釋)한 논서. 밀교의 관점에서 반야 사상을 해석한 중요한 문헌이다." }
+        ];
+
+        let network = null;
+        let nodes = new vis.DataSet();
+        let edges = new vis.DataSet();
+        let nodeMap = new Map();
+        
+        // --- IndexedDB 유틸리티 함수 ---
+        function openDB() {
+            return new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, 1);
+                request.onerror = () => reject("IndexedDB 오류");
+                request.onsuccess = () => resolve(request.result);
+                request.onupgradeneeded = event => {
+                    const db = event.target.result;
+                    db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+                };
+            });
+        }
+
+        function saveDataToDB(data) {
+            return openDB().then(db => {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(STORE_NAME, 'readwrite');
+                    const store = transaction.objectStore(STORE_NAME);
+                    store.put({ id: 'customData', value: data });
+                    transaction.oncomplete = () => resolve();
+                    transaction.onerror = () => reject("데이터 저장 실패");
+                });
+            });
+        }
+
+        function loadDataFromDB() {
+            return openDB().then(db => {
+                return new Promise((resolve, reject) => {
+                    const transaction = db.transaction(STORE_NAME, 'readonly');
+                    const store = transaction.objectStore(STORE_NAME);
+                    const request = store.get('customData');
+                    request.onsuccess = () => resolve(request.result ? request.result.value : null);
+                    request.onerror = () => reject("데이터 불러오기 실패");
+                });
+            });
+        }
+
+        // --- 핵심 초기화 및 렌더링 함수 ---
+        function initialize(jsonData) {
+            document.getElementById('loader').style.display = 'block';
+
+            // 기존 데이터 초기화
+            nodes.clear();
+            edges.clear();
+            nodeMap.clear();
+
+            // 데이터 파싱 및 그래프 구조 생성
+            jsonData.forEach(item => {
+                addNode(item.id, item.title_ko, 'scripture', item);
+                const cat1_id = `cat1_${item.category_l1}`;
+                addNode(cat1_id, item.category_l1, 'category', { title_ko: item.category_l1 });
+                edges.add({ from: item.id, to: cat1_id });
+                const cat2_id = `cat2_${item.category_l2}`;
+                addNode(cat2_id, item.category_l2, 'category', { title_ko: item.category_l2 });
+                edges.add({ from: item.id, to: cat2_id });
+                if (!nodeMap.has(`edge_${cat2_id}_${cat1_id}`)) {
+                    edges.add({ from: cat2_id, to: cat1_id, dashes: true });
+                    nodeMap.set(`edge_${cat2_id}_${cat1_id}`, true);
+                }
+                item.tags.forEach(tag => {
+                    const tagParts = tag.substring(1).split('-');
+                    let tagType = 'tag', tagLabel = tagParts.join('-');
+                    if (tagParts.length > 1) {
+                        tagLabel = tagParts.slice(1).join('-');
+                        if (tagParts[0] === '인물') tagType = 'person';
+                        else if (['교리', '종파', '형식'].includes(tagParts[0])) tagType = 'concept';
+                    }
+                    const tag_id = `tag_${tagLabel}`;
+                    addNode(tag_id, tagLabel, tagType, { title_ko: tagLabel });
+                    edges.add({ from: item.id, to: tag_id });
+                });
+                const references = item.desc.match(/#K\d{4}/g);
+                if(references){
+                    references.forEach(refIdStr => {
+                        const refId = refIdStr.substring(1);
+                        if (jsonData.some(d => d.id === refId)) {
+                             edges.add({ from: item.id, to: refId, arrows: 'to', color: { color: '#FFD700' }, label: '참조' });
+                        }
+                    })
+                }
+            });
+
+            // 네트워크 시각화 생성 또는 업데이트
+            const container = document.getElementById('network');
+            const data = { nodes, edges };
+            const options = {
+                nodes: { 
+                    shape: 'dot', 
+                    size: 15, 
+                    font: { size: 12, color: '#ffffff' }, 
+                    borderWidth: 1.5 
+                },
+                edges: { 
+                    width: 0.5, 
+                    color: { color: '#848484', highlight: '#c0c0c0', opacity: 0.5 }, 
+                    smooth: { type: 'continuous' } 
+                },
+                physics: { 
+                    solver: 'barnesHut', 
+                    barnesHut: { 
+                        gravitationalConstant: -40000, 
+                        centralGravity: 0.1, 
+                        springLength: 300, 
+                        springConstant: 0.01, 
+                        damping: 0.2, 
+                        avoidOverlap: 0.5 
+                    }, 
+                    stabilization: { iterations: 300 }
+                },
+                interaction: { 
+                    hover: true, 
+                    tooltipDelay: 200, 
+                    navigationButtons: true, 
+                    keyboard: true 
+                },
+                groups: {
+                    scripture: { color: { background: 'var(--node-scripture)', border: '#cce7f5' }, borderWidth: 2, size: 20 },
+                    category: { color: { background: 'var(--node-category)', border: '#d0f0dd' }, size: 12 },
+                    tag: { color: { background: 'var(--node-tag)', border: '#fce8cd' }, shape: 'square', size: 10 },
+                    person: { color: { background: 'var(--node-person)', border: '#f9d8d5' }, shape: 'diamond', size: 14 },
+                    concept: { color: { background: 'var(--node-concept)', border: '#e8dcf2' }, shape: 'triangle', size: 12 }
+                }
+            };
+
+            if (!network) {
+                network = new vis.Network(container, data, options);
+                setupNetworkListeners();
+            } else {
+                network.setOptions(options);
+                network.setData(data);
+            }
+
+            network.once("stabilizationIterationsDone", () => {
+                network.setOptions({ physics: false });
+                document.getElementById('loader').style.display = 'none';
+            });
+
+            renderDatabaseView(jsonData);
+        }
+
+        function addNode(id, label, group, data) {
+            if (!nodeMap.has(id)) {
+                nodeMap.set(id, { ...data, type: group });
+                nodes.add({ id: id, label: label, group: group, title: group });
+            }
+        }
+        
+        function renderDatabaseView(jsonData) {
+            const dbViewContainer = document.getElementById('database-view');
+            let tableHTML = `<table id="db-table"><thead><tr>
+                <th>ID</th><th>제목</th><th>대분류</th><th>소분류</th><th>태그</th><th>설명</th>
+                </tr></thead><tbody>`;
+            jsonData.forEach(item => {
+                tableHTML += `<tr data-id="${item.id}">
+                    <td>${item.id}</td>
+                    <td>${item.title_ko}<br><span style="color:var(--secondary-text); font-size:0.9em;">${item.title_hanja}</span></td>
+                    <td>${item.category_l1}</td>
+                    <td>${item.category_l2}</td>
+                    <td>${item.tags.join(', ')}</td>
+                    <td class="desc-cell">${item.desc}</td>
+                </tr>`;
+            });
+            tableHTML += '</tbody></table>';
+            dbViewContainer.innerHTML = tableHTML;
+        }
+
+        // --- UI 이벤트 핸들러 ---
+        const infoPanel = document.getElementById('info-panel');
+        const infoContent = document.getElementById('info-content');
+
+        function setupNetworkListeners() {
+            network.on('click', params => {
+                if (params.nodes.length > 0) focusOnNode(params.nodes[0]);
+                else {
+                    infoPanel.classList.remove('visible');
+                    network.unselectAll();
+                }
+            });
+        }
+
+        function focusOnNode(nodeId) {
+            const nodeData = nodeMap.get(nodeId);
+            if (!nodeData) return;
+            
+            let html = `<h2><span class="node-type-icon" style="background-color: var(--node-${nodeData.type});"></span>${nodeData.title_ko}</h2>`;
+            if (nodeData.title_hanja) html += `<h3>${nodeData.title_hanja}</h3>`;
+            if (nodeData.desc) html += `<p>${nodeData.desc.replace(/#K\d{4}/g, match => `<strong>${match}</strong>`)}</p>`;
+            
+            const connectedNodes = network.getConnectedNodes(nodeId);
+            if (connectedNodes.length > 0) {
+                html += `<div class="section-title">연결된 항목</div><ul>`;
+                connectedNodes.forEach(connId => {
+                    const connNodeData = nodeMap.get(connId);
+                    if(connNodeData) {
+                        html += `<li onclick="focusOnNode('${connId}')"><span class="node-type-icon" style="background-color: var(--node-${connNodeData.type});"></span>${connNodeData.title_ko}</li>`;
+                    }
+                });
+                html += `</ul>`;
+            }
+            infoContent.innerHTML = html;
+            infoPanel.classList.add('visible');
+
+            network.focus(nodeId, { scale: 1.2, animation: { duration: 800, easingFunction: 'easeInOutQuad' } });
+            network.selectNodes([nodeId]);
+        }
+
+        document.getElementById('close-panel').addEventListener('click', () => {
+             infoPanel.classList.remove('visible');
+             network.unselectAll();
+        });
+
+        document.getElementById('search-box').addEventListener('input', e => {
+            const searchTerm = e.target.value.toLowerCase();
+            const allNodeIds = nodes.getIds();
+            const nodesToUpdate = [];
+
+            if (searchTerm.length === 0) {
+                allNodeIds.forEach(id => nodesToUpdate.push({id: id, color: undefined, font: { color: '#ffffff' }}));
+                document.querySelectorAll('#db-table tbody tr').forEach(row => row.style.display = '');
+            } else {
+                 const matchedNodeIds = nodes.get({
+                    filter: node => node.label.toLowerCase().includes(searchTerm)
+                }).map(node => node.id);
+
+                allNodeIds.forEach(id => {
+                    if (matchedNodeIds.includes(id)) {
+                        nodesToUpdate.push({id: id, color: undefined, font: { color: '#ffffff', size: 14 }});
+                    } else {
+                        const originalNode = nodes.get(id);
+                        const fadedColor = { 
+                            background: originalNode.color ? originalNode.color.background + '33' : '#404040', 
+                            border: originalNode.color ? originalNode.color.border + '33' : '#505050',
+                            highlight: {
+                                background: originalNode.color ? originalNode.color.background + '33' : '#404040',
+                                border: originalNode.color ? originalNode.color.border + '33' : '#505050'
+                            }
+                        };
+                        nodesToUpdate.push({id: id, color: fadedColor, font: { color: '#707070' }});
+                    }
+                });
+
+                if (matchedNodeIds.length > 0) network.focus(matchedNodeIds[0], { scale: 1.5, animation: true });
+            }
+            
+            nodes.update(nodesToUpdate);
+            document.querySelectorAll('#db-table tbody tr').forEach(row => {
+                row.style.display = row.textContent.toLowerCase().includes(searchTerm) ? '' : 'none';
+            });
+        });
+
+        // 뷰 전환
+        const networkContainer = document.getElementById('network');
+        const dbViewContainer = document.getElementById('database-view');
+        document.getElementById('graph-view-btn').addEventListener('click', e => {
+            networkContainer.style.display = 'block';
+            dbViewContainer.style.display = 'none';
+            e.target.classList.add('active');
+            document.getElementById('db-view-btn').classList.remove('active');
+        });
+        document.getElementById('db-view-btn').addEventListener('click', e => {
+            networkContainer.style.display = 'none';
+            dbViewContainer.style.display = 'block';
+            e.target.classList.add('active');
+            document.getElementById('graph-view-btn').classList.remove('active');
+            infoPanel.classList.remove('visible');
+        });
+        dbViewContainer.addEventListener('click', e => {
+            const row = e.target.closest('tr');
+            if (row && row.dataset.id) {
+                document.getElementById('graph-view-btn').click();
+                setTimeout(() => focusOnNode(row.dataset.id), 100);
+            }
+        });
+
+        // 설정 모달
+        const settingsOverlay = document.getElementById('settings-overlay');
+        const jsonInput = document.getElementById('json-input');
+        document.getElementById('settings-btn').addEventListener('click', async () => {
+            const currentData = await loadDataFromDB() || defaultJsonData;
+            jsonInput.value = JSON.stringify(currentData, null, 2);
+            settingsOverlay.style.display = 'flex';
+        });
+        document.getElementById('cancel-json-btn').addEventListener('click', () => settingsOverlay.style.display = 'none');
+        document.getElementById('save-json-btn').addEventListener('click', () => {
+            try {
+                const newData = JSON.parse(jsonInput.value);
+                if (!Array.isArray(newData)) throw new Error("데이터는 배열 형태여야 합니다.");
+                saveDataToDB(newData)
+                    .then(() => {
+                        initialize(newData);
+                        settingsOverlay.style.display = 'none';
+                        alert("데이터가 성공적으로 저장 및 적용되었습니다.");
+                    })
+                    .catch(err => alert("데이터 저장 중 오류 발생: " + err));
+            } catch (error) {
+                alert("JSON 형식이 올바르지 않습니다: " + error.message);
+            }
+        });
+        settingsOverlay.addEventListener('click', e => {
+            if (e.target === settingsOverlay) settingsOverlay.style.display = 'none';
+        });
+
+        // --- 애플리케이션 시작 ---
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const savedData = await loadDataFromDB();
+                initialize(savedData || defaultJsonData);
+            } catch (error) {
+                console.error("초기 데이터 로딩 실패:", error);
+                initialize(defaultJsonData);
+            }
+        });
+    </script>
+</body>
+</html>
+
