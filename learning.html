@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>통합 학습 및 저작 시스템 v2.9.3</title>
+    <title>통합 학습 및 저작 시스템 v2.9.4</title>
     
     <!-- Core Dependencies via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14,7 +14,7 @@
     <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/morphdom@2.7.0/dist/morphdom-umd.min.js"></script>
     
-    <!-- NEW: KaTeX for LaTeX Math Rendering -->
+    <!-- KaTeX for LaTeX Math Rendering -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0KOVEMmg9rtabRF407AuzIeIxHITdIaxIuG1rMmJUSODBCIefqsaj" crossorigin="anonymous">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzYCZR1LsQd" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax5AS+fllit7YqF2ZC0Hlri3o4awd0C-bix" crossorigin="anonymous" onload="document.dispatchEvent(new Event('katex-loaded'))"></script>
@@ -134,16 +134,15 @@
 
     <script type="module">
         // ===================================================================================
-        // V2.9.3 기능 명세서 기반 단일 파일 애플리케이션 구현
+        // V2.9.4 기능 명세서 기반 단일 파일 애플리케이션 구현
         // 작성자: Polymathic Strategist
-        // 최종 수정: 2025년 9월 9일
+        // 최종 수정: 2025년 9월 10일
         //
-        // 핵심 개선 사항 (v2.9.3):
-        // 1. [FEATURE] 상태 지속성: 프로젝트별 마지막 탭, 스크롤 위치를 기억하여 작업 흐름을 유지.
-        // 2. [FEATURE] LaTeX 수식 렌더링: KaTeX 라이브러리를 통합하여 마크다운 내 수식 표현력 강화.
-        // 3. [FEATURE] UX 개선: 초기 탭을 'AI 글쓰기'로 변경하고, 탭 순서를 사용성에 맞게 조정.
-        // 4. [FIX] 한국어 파싱 개선: 마크다운 파서 옵션을 조정하여 한국어 환경에서의 강조(bold) 처리 정확도 향상.
-        // 5. [UI] 불필요한 모달 배경 애니메이션 제거.
+        // 핵심 개선 사항 (v2.9.4):
+        // 1. [FIX] 프로젝트 JSON 가져오기/내보내기 시 데이터 유실 버그 수정.
+        //    - ES6 구조 분해 할당을 사용하여 객체 변환 로직을 명확하고 안정적으로 개선.
+        //    - exportProject: `id` 속성을 제거하고 `path` 속성을 생성하는 로직 수정.
+        //    - processJsonData: `path` 속성을 `id` 속성으로 복원하는 로직 수정.
         // ===================================================================================
 
         const CONFIG = {
@@ -338,7 +337,6 @@
             modal: { isOpen: false, type: '', data: {} },
             toasts: [],
             quizState: null,
-            // NEW: For managing state persistence
             scrollListener: null,
             pendingScrollTop: 0,
             isKaTeXLoaded: false,
@@ -452,7 +450,7 @@
             renderLearnPanel: () => `<div class="flex flex-col items-center justify-center h-full min-h-[60vh]">${View.renderQuizHome()}</div>`,
             renderQuizView() { const { quizState } = state; if (!quizState || !quizState.questions[quizState.currentIndex]) return this.renderSpinner('퀴즈 로딩 중...'); const q = quizState.questions[quizState.currentIndex]; const isAnswered = quizState.answers[quizState.currentIndex] !== undefined; const renderAnswerComponent = () => { switch (q.type) { case CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE: const userAnswerIndex = quizState.answers[quizState.currentIndex]?.selectedIndex; return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">${q.options.map((opt, index) => { let classes = 'border-slate-300 hover:border-indigo-500 hover:bg-indigo-50'; if (isAnswered) { if (index === q.answerIndex) classes = 'bg-emerald-100 border-emerald-500 text-emerald-800'; else if (index === userAnswerIndex) classes = 'bg-red-100 border-red-500 text-red-800'; } return `<button data-action="submit-answer" data-index="${index}" class="btn-interactive w-full text-left p-4 border rounded-lg transition-colors ${classes}" ${isAnswered ? 'disabled' : ''}>${opt}</button>` }).join('')}</div>`; default: return `<form data-action="submit-text-answer" class="w-full max-w-md text-center"><textarea id="answer-input" rows="4" class="w-full text-lg border-2 p-2 bg-transparent border-slate-300 rounded-md focus:outline-none focus:border-indigo-500 transition-colors" placeholder="답안을 입력하세요..." ${isAnswered ? 'disabled' : 'autofocus'}></textarea><button type="submit" class="btn-interactive mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-12 rounded-lg text-lg transition-colors shadow hover:shadow-md" ${isAnswered ? 'disabled' : ''}>제출하고 정답 확인</button></form>`; } }; const renderFeedback = () => { if (!isAnswered) return `<div class="min-h-[148px]"></div>`; const { isCorrect } = quizState.answers[quizState.currentIndex]; const feedbackClass = isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'; const icon = isCorrect ? `<i data-lucide="check-circle" class="w-5 h-5"></i>` : `<i data-lucide="x-circle" class="w-5 h-5"></i>`; const isLastQuestion = quizState.currentIndex + 1 >= quizState.questions.length; const nextButtonText = isLastQuestion ? '결과 보기' : '다음 문제'; const nextButtonIcon = isLastQuestion ? 'flag' : 'arrow-right-circle'; let correctDisplay = ''; if (!isCorrect) correctDisplay = q.type === 'multiple_choice' ? q.options[q.answerIndex] : q.answer; return `<div class="p-4 rounded-lg mt-8 w-full max-w-3xl ${feedbackClass}"><p class="font-bold flex items-center gap-2">${icon} ${isCorrect ? '정답입니다!' : '오답입니다.'}</p>${!isCorrect ? `<p class="text-sm mt-2"><span class="font-semibold">모범 답안:</span> ${correctDisplay}</p>` : ''}<p class="text-sm mt-2"><span class="font-semibold">해설:</span> ${q.explanation}</p><div class="mt-4 flex justify-end"><button data-action="next-question" class="btn-interactive bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${nextButtonText} <i data-lucide="${nextButtonIcon}" class="w-5 h-5"></i></button></div></div>`; }; const questionTypeMap = { [CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE]: '객관식', [CONFIG.QUIZ_TYPE.SHORT_ANSWER]: '단답형', [CONFIG.QUIZ_TYPE.SUBJECTIVE]: '서술형', [CONFIG.QUIZ_TYPE.CASE_BASED]: '사례형' }; return `<div class="fixed inset-0 bg-slate-50 flex flex-col"><header class="bg-white shadow-sm p-4 sticky top-0 z-10"><div class="flex items-center justify-between gap-4 max-w-5xl mx-auto"><div class="font-bold text-lg w-24">${quizState.currentIndex + 1} / ${quizState.questions.length}</div><div class="w-full bg-slate-200 rounded-full h-4 overflow-hidden"><div class="bg-indigo-500 h-4 rounded-full transition-all duration-300" style="width: ${((quizState.currentIndex) / quizState.questions.length) * 100}%"></div></div><button data-action="exit-quiz" class="p-2 rounded-full hover:bg-slate-200" title="퀴즈 나가기"><i data-lucide="x"></i></button></div></header><main class="flex-1 flex flex-col items-center justify-center p-6 text-center overflow-y-auto"><div class="w-full max-w-3xl"><p class="text-slate-500 text-sm mb-2">${questionTypeMap[q.type] || '문제'}</p><h2 class="text-2xl md:text-3xl font-bold leading-tight">${q.questionText}</h2></div><div class="mt-12 w-full flex justify-center">${renderAnswerComponent()}</div>${renderFeedback()}</main></div>`; },
             renderSpinner: (message) => `<div class="flex items-center justify-center min-h-screen"><div class="text-center"><svg class="mx-auto h-12 w-12 text-slate-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h2 class="mt-4 text-lg font-medium text-slate-900">${message}</h2></div></div>`,
-            renderHeader: () => { const { level, xp } = state.userProfile; const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[level - 1] || 0; const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[level] || xp; const xpForLevel = nextLevelXP - currentLevelXP; const currentXPInLevel = xp - currentLevelXP; const progress = xpForLevel > 0 ? Math.round((currentXPInLevel / xpForLevel) * 100) : 100; return `<header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-30"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex flex-col sm:flex-row justify-between items-center h-auto sm:h-16 py-3 sm:py-0"><div class="flex items-center space-x-2"><i data-lucide="layers-3" class="text-indigo-600 h-8 w-8"></i><h1 class="text-xl font-bold text-slate-800">통합 학습 & 저작 시스템 <span class="text-sm font-medium text-indigo-500">v2.9.3</span></h1></div><div class="flex items-center space-x-4 mt-2 sm:mt-0"><div class="font-semibold text-sm text-slate-600">LV. <span class="text-indigo-600 font-bold text-base">${level}</span></div><div class="w-40"><div class="bg-slate-200 rounded-full h-2.5" title="${currentXPInLevel.toLocaleString()} / ${xpForLevel.toLocaleString()} XP"><div class="xp-bar-inner h-2.5 rounded-full" style="width: ${progress}%"></div></div></div></div></div></div></header>`; },
+            renderHeader: () => { const { level, xp } = state.userProfile; const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[level - 1] || 0; const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[level] || xp; const xpForLevel = nextLevelXP - currentLevelXP; const currentXPInLevel = xp - currentLevelXP; const progress = xpForLevel > 0 ? Math.round((currentXPInLevel / xpForLevel) * 100) : 100; return `<header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-30"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex flex-col sm:flex-row justify-between items-center h-auto sm:h-16 py-3 sm:py-0"><div class="flex items-center space-x-2"><i data-lucide="layers-3" class="text-indigo-600 h-8 w-8"></i><h1 class="text-xl font-bold text-slate-800">통합 학습 & 저작 시스템 <span class="text-sm font-medium text-indigo-500">v2.9.4</span></h1></div><div class="flex items-center space-x-4 mt-2 sm:mt-0"><div class="font-semibold text-sm text-slate-600">LV. <span class="text-indigo-600 font-bold text-base">${level}</span></div><div class="w-40"><div class="bg-slate-200 rounded-full h-2.5" title="${currentXPInLevel.toLocaleString()} / ${xpForLevel.toLocaleString()} XP"><div class="xp-bar-inner h-2.5 rounded-full" style="width: ${progress}%"></div></div></div></div></div></div></header>`; },
             renderDashboard: () => { const projectCards = state.projects.map(p => `<div class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col btn-interactive"><div class="p-6 flex-grow"><div class="tracking-wide text-sm text-indigo-500 font-semibold">${Utils.formatDate(p.createdAt)}</div><h3 class="block mt-1 text-lg leading-tight font-bold text-black">${p.name}</h3><p class="mt-2 text-slate-500">${Utils.getChapterPath(p.toc).length}개의 챕터</p></div><div class="p-4 bg-slate-50 border-t flex justify-between items-center"><button data-action="open-project" data-id="${p.id}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 btn-interactive"><i data-lucide="arrow-right-circle" class="w-4 h-4 mr-2"></i>작업 시작</button><div class="flex space-x-2"><button data-action="export-project" data-id="${p.id}" title="프로젝트 내보내기" class="p-2 text-slate-500 hover:bg-slate-200 hover:text-indigo-600 rounded-full transition-colors"><i data-lucide="download" class="w-5 h-5"></i></button><button data-action="delete-project-confirm" data-id="${p.id}" title="프로젝트 삭제" class="p-2 text-slate-500 hover:bg-red-100 hover:text-red-600 rounded-full transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button></div></div></div>`).join(''); return `<div><div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4"><h2 class="text-3xl font-bold text-slate-900">프로젝트 대시보드</h2><button data-action="new-project" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 flex-shrink-0"><i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i>새 프로젝트 생성</button></div>${state.projects.length > 0 ? `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${projectCards}</div>` : `<div class="text-center py-16 border-2 border-dashed rounded-lg"><i data-lucide="folder-plus" class="mx-auto h-12 w-12 text-slate-400"></i><h3 class="mt-2 text-sm font-medium text-slate-900">프로젝트가 없습니다</h3><p class="mt-1 text-sm text-slate-500">새 프로젝트를 생성하여 작업을 시작하세요.</p><div class="mt-6"><button data-action="new-project" type="button" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="plus" class="-ml-1 mr-2 h-5 w-5"></i>새 프로젝트 생성</button></div></div>`}</div>`;},
             renderWorkspace: () => {
                 if (!state.activeProject) return View.renderSpinner("프로젝트 로딩 중...");
@@ -607,21 +605,40 @@
                         state.activeProject = project;
                         state.currentView = 'workspace';
                         state.workspaceMode = savedState?.workspaceMode || 'write'; // Default to 'write'
-                        state.pendingScrollTop = savedState?.scrollTop || 0;
-                        state.activeChapterPath = null;
-                        state.activeChapterContent = null;
-                        state.activeChapterBreadcrumbs = [];
+                        
+                        // Select the last viewed chapter, or the first chapter as a fallback
+                        const flatToc = Utils.getFlatToc(project.toc);
+                        const lastPath = savedState?.activeChapterPath;
+                        const pathToSelect = lastPath && flatToc.some(c => c.path === lastPath) ? lastPath : (flatToc.length > 0 ? flatToc[0].path : null);
+
+                        if(pathToSelect) {
+                           await this.selectChapter(pathToSelect, false); // selectChapter will render
+                           state.pendingScrollTop = savedState?.scrollTop || 0;
+                           // The actual scroll will happen in setupScrollListener after render
+                        } else {
+                           state.activeChapterPath = null;
+                           state.activeChapterContent = null;
+                           state.activeChapterBreadcrumbs = [];
+                        }
+
                     } else { throw new Error("Project not found"); }
                 } catch (error) {
                     console.error("Failed to open project:", error); this.navigateTo('dashboard');
                 } finally {
                     state.isLoading = false;
-                    View.render();
+                    View.render(); // Final render to show the loaded state
+                    if(state.activeChapterPath) {
+                        this.setupScrollListener();
+                    }
                 }
             },
             
-            async selectChapter(path) {
+            async selectChapter(path, shouldRender = true) {
                 if (state.activeChapterPath === path) return;
+                
+                this.saveWorkspaceState(); // Save state of the old chapter before switching
+                Controller.removeScrollListener();
+
                 state.activeChapterPath = path;
                 state.quizState = null;
                 state.activeChapterBreadcrumbs = Utils.getBreadcrumbsByPath(state.activeProject.toc, path);
@@ -634,9 +651,16 @@
                 }
                 state.activeChapterContent = content;
                 if (state.isMobileTocOpen) { state.isMobileTocOpen = false; }
-                View.render();
-                this.applyPostRenderEffects();
-                this.setupScrollListener();
+                
+                // Restore scroll position for the new chapter
+                const savedState = JSON.parse(localStorage.getItem(`ils_v2_workspace_state_${state.activeProjectId}`));
+                state.pendingScrollTop = (savedState && savedState.activeChapterPath === path) ? savedState.scrollTop : 0;
+
+                if(shouldRender){
+                    View.render();
+                    this.applyPostRenderEffects();
+                    this.setupScrollListener();
+                }
             },
 
             async handleContentChange(event) {
@@ -657,13 +681,71 @@
             },
             
             confirmDeleteProject: (id) => { const project = state.projects.find(p => p.id === id); if (!project) return; Controller.openModal('confirm', { title: '프로젝트 삭제 확인', message: `'${project.name}' 프로젝트와 모든 관련 데이터를 영구적으로 삭제하시겠습니까?`, confirmText: '삭제', onConfirm: async () => { await DB.deleteProjectAndContents(id); state.projects = state.projects.filter(p => p.id !== id); Controller.showToast(`'${project.name}' 프로젝트가 삭제되었습니다.`, 'success'); View.render(); } }); },
-            exportProject: async (id) => { try { const project = await DB.get(CONFIG.STORES.PROJECTS, id); const contents = await DB.getProjectContents(id); const exportData = { type: CONFIG.EXPORT_TYPE_ID, exportedAt: new Date().toISOString(), project: project, contents: contents.map(c => ({ path: c.id.replace(`${id}_`, ''), ...c, id: undefined })) }; const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `${project.name.replace(/ /g, '_')}_export.json`; a.click(); URL.revokeObjectURL(a.href); Controller.showToast('프로젝트가 성공적으로 내보내졌습니다.', 'success'); } catch (error) { console.error("Export failed:", error); Controller.showToast('프로젝트 내보내기에 실패했습니다.', 'error'); } },
+            
+            /**
+             * [FIXED] 프로젝트 데이터를 JSON 파일로 내보냅니다.
+             * ES6 구조 분해 할당을 사용하여 content 객체의 `id`를 `path`로 안정적으로 변환합니다.
+             * @param {string} id - 내보낼 프로젝트의 ID.
+             */
+            exportProject: async (id) => {
+                try {
+                    const project = await DB.get(CONFIG.STORES.PROJECTS, id);
+                    const contents = await DB.getProjectContents(id);
+                    const exportData = {
+                        type: CONFIG.EXPORT_TYPE_ID,
+                        exportedAt: new Date().toISOString(),
+                        project: project,
+                        contents: contents.map(c => {
+                            // 1. content 객체(c)에서 id와 나머지 속성(rest)을 분리합니다.
+                            const { id: contentId, ...rest } = c;
+                            // 2. id에서 프로젝트 ID 부분을 제거하여 상대 경로(path)를 생성합니다.
+                            const path = contentId.replace(`${id}_`, '');
+                            // 3. path와 나머지 속성들을 합쳐 새로운 객체를 반환합니다.
+                            // 이를 통해 모든 텍스트 데이터(manuscript, notes 등)가 보존됩니다.
+                            return { path, ...rest };
+                        })
+                    };
+                    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `${project.name.replace(/ /g, '_')}_export.json`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                    Controller.showToast('프로젝트가 성공적으로 내보내졌습니다.', 'success');
+                } catch (error) {
+                    console.error("Export failed:", error);
+                    Controller.showToast('프로젝트 내보내기에 실패했습니다.', 'error');
+                }
+            },
+
             openModal: (type, data = {}) => { state.modal = { isOpen: true, type, data }; View.render(); },
             closeModal: () => { state.modal = { isOpen: false, type: '', data: {} }; View.render(); },
             switchModalTab: (tab) => { state.modal.data.activeTab = tab; View.render(); },
             submitNewProject: async (form) => { const activeTab = state.modal.data.activeTab || 'zip'; state.isLoading = true; Controller.closeModal(); View.render(); try { let projectData, contentsData; if (activeTab === 'zip') { const fileInput = form.querySelector('#zip-upload'); if (!fileInput.files[0]) throw new Error("ZIP 파일을 선택해주세요."); ({ project: projectData, contents: contentsData } = await Controller.processZipFile(fileInput.files[0])); } else if (activeTab === 'jsonFile') { const fileInput = form.querySelector('#json-upload'); if (!fileInput.files[0]) throw new Error("JSON 파일을 선택해주세요."); const jsonText = await fileInput.files[0].text(); ({ project: projectData, contents: contentsData } = Controller.processJsonData(JSON.parse(jsonText))); } else if (activeTab === 'jsonText') { const jsonTextInput = form.querySelector('#json-text-input'); if (!jsonTextInput.value) throw new Error("JSON 텍스트를 입력해주세요."); ({ project: projectData, contents: contentsData } = Controller.processJsonData(JSON.parse(jsonTextInput.value))); } else if (activeTab === 'tocJson') { const tocJsonInput = form.querySelector('#toc-json-input'); if (!tocJsonInput.value) throw new Error("목차 JSON 텍스트를 입력해주세요."); ({ project: projectData, contents: contentsData } = Controller.processTocJson(JSON.parse(tocJsonInput.value))); } else { throw new Error("알 수 없는 생성 방식입니다."); } await DB.put(CONFIG.STORES.PROJECTS, projectData); await Promise.all(contentsData.map(c => DB.put(CONFIG.STORES.CONTENTS, c))); state.projects.unshift(projectData); state.projects.sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt)); Controller.showToast(`'${projectData.name}' 프로젝트가 생성되었습니다.`, 'success'); } catch (error) { console.error("Project creation failed:", error); Controller.showToast(`프로젝트 생성 실패: ${error.message}`, 'error'); } finally { state.isLoading = false; View.render(); } },
             processZipFile: async (file) => { const turndownService = new TurndownService(); const zip = await JSZip.loadAsync(file); const allEntries = []; zip.forEach((relPath, entry) => { const normPath = relPath.replace(/\/$/, '').replace(/\\/g, '/'); if (normPath && !normPath.startsWith('__MACOSX') && (entry.dir || /\.(html?|txt)$/i.test(normPath))) allEntries.push({ path: normPath, isDir: entry.dir, entry }); }); allEntries.sort((a, b) => Utils.naturalSort(a.path, b.path)); const projectToc = { title: Utils.formatTitle(file.name), children: [] }; const pathMap = new Map(); for (const { path, isDir } of allEntries) { let currentNode = projectToc; let currentPath = ''; path.split('/').forEach((part, i, arr) => { currentPath = currentPath ? `${currentPath}/${part}` : part; let childNode = pathMap.get(currentPath); if (!childNode) { const isLeaf = (i === arr.length - 1) && !isDir; childNode = { title: Utils.formatTitle(part), children: isLeaf ? undefined : [], originalPath: isLeaf ? path : undefined }; currentNode.children.push(childNode); pathMap.set(currentPath, childNode); } currentNode = childNode; }); } const projectId = Utils.generateId('proj'); const project = { id: projectId, name: projectToc.title, createdAt: new Date().toISOString(), toc: projectToc, settings: { ...CONFIG.DEFAULT_PROJECT_SETTINGS } }; const contents = (await Promise.all(Utils.getChapterPath(projectToc).map(async ({ path, node }) => { if (!node.originalPath) return null; const fileEntry = allEntries.find(f => f.path === node.originalPath)?.entry; if (!fileEntry) return null; let manuscript = ''; if (/\.html?$/i.test(fileEntry.name)) { const rawHtml = await fileEntry.async('string'); const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i); manuscript = turndownService.turndown(DOMPurify.sanitize(bodyMatch ? bodyMatch[1] : '')); } else { manuscript = await fileEntry.async('string'); } return { id: `${projectId}_${path}`, manuscript, notes: '', translation: '', questions: [], status: manuscript.trim() ? 'manuscript-done' : 'empty' }; }))).filter(Boolean); return { project, contents }; },
-            processJsonData: (data) => { if (data.type !== CONFIG.EXPORT_TYPE_ID) throw new Error("유효하지 않은 프로젝트 파일 형식입니다."); const newId = Utils.generateId('proj'); const newProject = { ...data.project, id: newId, createdAt: new Date().toISOString() }; const newContents = data.contents.map(c => ({ ...c, id: `${newId}_${c.path}`, path: undefined })); return { project: newProject, contents: newContents }; },
+            
+            /**
+             * [FIXED] 가져온 JSON 데이터를 처리하여 새로운 프로젝트와 컨텐츠를 생성합니다.
+             * ES6 구조 분해 할당을 사용하여 content 객체의 `path`를 `id`로 안정적으로 복원합니다.
+             * @param {object} data - 파싱된 JSON 데이터.
+             * @returns {{project: object, contents: object[]}} - DB에 저장할 프로젝트와 컨텐츠 객체.
+             */
+            processJsonData: (data) => {
+                if (data.type !== CONFIG.EXPORT_TYPE_ID) throw new Error("유효하지 않은 프로젝트 파일 형식입니다.");
+                const newId = Utils.generateId('proj');
+                const newProject = { ...data.project, id: newId, createdAt: new Date().toISOString() };
+                const newContents = data.contents.map(c => {
+                    // 1. 가져온 content 객체(c)에서 path와 나머지 속성(rest)을 분리합니다.
+                    const { path, ...rest } = c;
+                    // 2. path와 새로운 프로젝트 ID를 조합하여 DB에서 사용할 고유 ID를 생성합니다.
+                    const id = `${newId}_${path}`;
+                    // 3. 생성된 id와 나머지 속성들을 합쳐 DB에 저장할 최종 객체를 반환합니다.
+                    // 이 과정을 통해 `manuscript`를 포함한 모든 데이터가 정확히 복원됩니다.
+                    return { id, ...rest };
+                });
+                return { project: newProject, contents: newContents };
+            },
+
             processTocJson: (tocData) => {
                 if (!tocData.title || !Array.isArray(tocData.children)) { throw new Error("유효하지 않은 목차 JSON 형식입니다. 최상위 객체에 'title'과 'children' 속성이 필요합니다."); }
                 const projectId = Utils.generateId('proj');
@@ -764,13 +846,13 @@
                 state.currentView = 'workspace';
                 View.render();
             },
-            // NEW: Methods for state persistence and post-render effects
             saveWorkspaceState() {
-                if (!state.activeProjectId) return;
+                if (!state.activeProjectId || !state.activeChapterPath) return;
                 const mainContentEl = document.querySelector('#workspace-main-content');
                 if (!mainContentEl) return;
                 const stateToSave = {
                     workspaceMode: state.workspaceMode,
+                    activeChapterPath: state.activeChapterPath,
                     scrollTop: mainContentEl.scrollTop,
                 };
                 localStorage.setItem(`ils_v2_workspace_state_${state.activeProjectId}`, JSON.stringify(stateToSave));
@@ -778,14 +860,13 @@
             setupScrollListener() {
                 const mainContentEl = document.querySelector('#workspace-main-content');
                 if (!mainContentEl) return;
-                // Apply pending scroll after a short delay to ensure content is rendered
                 setTimeout(() => {
                     if (state.pendingScrollTop) {
                         mainContentEl.scrollTop = state.pendingScrollTop;
                         state.pendingScrollTop = 0;
                     }
                 }, 50);
-                this.removeScrollListener(); // Remove old one first
+                this.removeScrollListener();
                 state.scrollListener = Utils.debounce(() => this.saveWorkspaceState(), 250);
                 mainContentEl.addEventListener('scroll', state.scrollListener);
             },
@@ -854,4 +935,3 @@
     </script>
 </body>
 </html>
-
