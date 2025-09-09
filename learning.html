@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>통합 학습 및 저작 시스템 v2.9.0</title>
+    <title>통합 학습 및 저작 시스템 v2.9.3</title>
     
     <!-- Core Dependencies via CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -13,10 +13,17 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/morphdom@2.7.0/dist/morphdom-umd.min.js"></script>
+    
+    <!-- NEW: KaTeX for LaTeX Math Rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" xintegrity="sha384-n8MVd4RsNIU0KOVEMmg9rtabRF407AuzIeIxHITdIaxIuG1rMmJUSODBCIefqsaj" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" xintegrity="sha384-XjKyOOlGwcjNTAIQHIpgOno0Hl1YQqzYCZR1LsQd" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" xintegrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax5AS+fllit7YqF2ZC0Hlri3o4awd0C-bix" crossorigin="anonymous" onload="document.dispatchEvent(new Event('katex-loaded'))"></script>
+
 
     <style>
         /* Base Font & Theme */
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        html { scroll-behavior: smooth; }
         body { font-family: 'Inter', sans-serif; background-color: #f8fafc; color: #1e293b; }
 
         /* Custom Scrollbar */
@@ -59,7 +66,7 @@
         .drop-zone.drag-over { background-color: #eef2ff; border-color: #6366f1; }
         
         .prose-custom { max-width: none; }
-        .prose-custom h1, .prose-custom h2, .prose-custom h3 { color: #1e293b; font-weight: 700; }
+        .prose-custom h1, .prose-custom h2, .prose-custom h3 { color: #1e293b; font-weight: 700; letter-spacing: -0.02em;}
         .prose-custom p { line-height: 1.75; }
         .prose-custom code { background-color: #eef2ff; color: #4338ca; padding: 0.2em 0.4em; border-radius: 0.25rem; font-size: 85%; }
         .prose-custom blockquote { border-left-color: #a5b4fc; }
@@ -69,6 +76,52 @@
         
         @keyframes spinner { to { transform: rotate(360deg); } }
         .spinner { animation: spinner 0.6s linear infinite; }
+
+        /* Mobile TOC Animation */
+        .mobile-toc-panel {
+            animation: slideInLeft 0.3s cubic-bezier(0, 0, 0.2, 1);
+        }
+        @keyframes slideInLeft {
+            from { transform: translateX(-100%); }
+            to { transform: translateX(0); }
+        }
+        
+        /* Readability enhancements for View Mode */
+        .prose-readable {
+            max-width: 75ch; /* Optimal characters per line */
+            margin-left: auto;
+            margin-right: auto;
+        }
+        .prose-readable p, .prose-readable li {
+            font-size: 1.125rem; /* 18px */
+            line-height: 1.7;
+            letter-spacing: -0.01em;
+        }
+
+        /* Quiz Result Page Styles */
+        .result-card {
+            border: 1px solid #e2e8f0;
+            border-radius: 0.75rem;
+            background-color: white;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 1px 3px 0 rgba(0,0,0,0.1), 0 1px 2px 0 rgba(0,0,0,0.06);
+            transition: all 0.2s ease-in-out;
+        }
+        .result-card.correct-answer-border {
+            border-left: 4px solid #22c55e; /* green-500 */
+        }
+        .result-card.incorrect-answer-border {
+            border-left: 4px solid #ef4444; /* red-500 */
+        }
+        .user-answer-incorrect {
+            background-color: #fee2e2; /* red-100 */
+            border-color: #f87171; /* red-400 */
+        }
+        .correct-answer-label {
+            background-color: #dcfce7; /* green-100 */
+            border-color: #4ade80; /* green-400 */
+        }
     </style>
 </head>
 <body class="antialiased">
@@ -81,14 +134,16 @@
 
     <script type="module">
         // ===================================================================================
-        // V2.9.0 기능 명세서 기반 단일 파일 애플리케이션 구현
+        // V2.9.3 기능 명세서 기반 단일 파일 애플리케이션 구현
         // 작성자: Polymathic Strategist
         // 최종 수정: 2025년 9월 9일
         //
-        // 핵심 개선 사항:
-        // 1. [FEATURE] AI 글쓰기 프롬프트 시스템 대폭 강화: '자료' 필드 추가 및
-        //    상세 컨텍스트(파트 목차, 참고자료 등)를 반영하는 새로운 프롬프트 템플릿 적용.
-        // 2. [FIX] 목차 JSON 파싱 시 상위 노드의 'description' 정보가 누락되던 문제 수정.
+        // 핵심 개선 사항 (v2.9.3):
+        // 1. [FEATURE] 상태 지속성: 프로젝트별 마지막 탭, 스크롤 위치를 기억하여 작업 흐름을 유지.
+        // 2. [FEATURE] LaTeX 수식 렌더링: KaTeX 라이브러리를 통합하여 마크다운 내 수식 표현력 강화.
+        // 3. [FEATURE] UX 개선: 초기 탭을 'AI 글쓰기'로 변경하고, 탭 순서를 사용성에 맞게 조정.
+        // 4. [FIX] 한국어 파싱 개선: 마크다운 파서 옵션을 조정하여 한국어 환경에서의 강조(bold) 처리 정확도 향상.
+        // 5. [UI] 불필요한 모달 배경 애니메이션 제거.
         // ===================================================================================
 
         const CONFIG = {
@@ -274,13 +329,19 @@
             activeProjectId: null,
             activeProject: null,
             activeChapterPath: null,
+            activeChapterBreadcrumbs: [], 
             activeChapterContent: null,
             activeContentsMap: new Map(),
             workspaceMode: 'view',
             isLoading: true,
+            isMobileTocOpen: false, 
             modal: { isOpen: false, type: '', data: {} },
             toasts: [],
             quizState: null,
+            // NEW: For managing state persistence
+            scrollListener: null,
+            pendingScrollTop: 0,
+            isKaTeXLoaded: false,
         };
 
         const Utils = {
@@ -291,6 +352,42 @@
             formatTitle: (name) => name.replace(/\.(zip|json|html?|txt)$/i, '').replace(/^Chapter_(\d+)_/, 'Chapter $1: ').replace(/_/g, ' '),
             getChapterPath: (tocNode, path = []) => { if (!tocNode || !tocNode.children) return []; const paths = []; tocNode.children.forEach((child, index) => { const currentPath = [...path, index]; if (child.children && child.children.length > 0) { paths.push(...Utils.getChapterPath(child, currentPath)); } else if (!child.children) { paths.push({ path: currentPath.join('.'), node: child }); } }); return paths; },
             getNodeByPath: (toc, path) => { if (path === null || path === undefined) return null; const parts = path.split('.').map(Number); let node = toc; for (const part of parts) { if (node && node.children && node.children[part]) { node = node.children[part]; } else { return null; } } return node; },
+            getBreadcrumbsByPath: (toc, path) => {
+                if (!path) return [];
+                const parts = path.split('.').map(Number);
+                const breadcrumbs = [];
+                let currentNode = toc;
+                let currentPath = '';
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    if (currentNode && currentNode.children && currentNode.children[part]) {
+                        currentNode = currentNode.children[part];
+                        currentPath = currentPath ? `${currentPath}.${part}` : `${part}`;
+                        breadcrumbs.push({
+                            title: currentNode.title,
+                            path: currentPath,
+                            isChapter: !currentNode.children || currentNode.children.length === 0,
+                        });
+                    } else {
+                        return []; // Invalid path
+                    }
+                }
+                return breadcrumbs;
+            },
+            getFlatToc: (tocNode, pathPrefix = '') => {
+                if (!tocNode?.children) return [];
+                let flatList = [];
+                tocNode.children.forEach((child, index) => {
+                    const currentPath = pathPrefix ? `${pathPrefix}.${index}` : `${index}`;
+                    const isChapter = !child.children || child.children.length === 0;
+                    if (isChapter) {
+                        flatList.push({ path: currentPath, title: child.title });
+                    } else {
+                        flatList = flatList.concat(Utils.getFlatToc(child, currentPath));
+                    }
+                });
+                return flatList;
+            },
             generateTocText: (node, level = 0, currentPath = '', activePath = '') => {
                 let text = '';
                 if (node && node.children) {
@@ -327,22 +424,66 @@
             appContainerEl: document.getElementById('app-container'),
             modalEl: document.getElementById('modal-root'),
             toastEl: document.getElementById('toast-root'),
-            render() { const appHtml = this.renderAppLayout(); morphdom(this.appContainerEl, `<div>${appHtml}</div>`, { childrenOnly: true }); this.modalEl.innerHTML = this.renderModal(); this.toastEl.innerHTML = this.renderToasts(); lucide.createIcons(); },
-            renderAppLayout() { if (state.isLoading) return this.renderSpinner("시스템 로딩 중..."); switch (state.currentView) { case 'quiz': return this.renderQuizView(); default: return `<div id="app" class="min-h-screen bg-slate-50 flex flex-col">${this.renderHeader()}<main class="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${state.currentView === 'dashboard' ? this.renderDashboard() : this.renderWorkspace()}</main>${this.renderFooter()}</div>`; } },
+            render() { 
+                const appHtml = this.renderAppLayout(); 
+                morphdom(this.appContainerEl, `<div>${appHtml}</div>`, { 
+                    childrenOnly: true,
+                    onNodeAdded: (node) => {
+                        // After morphdom adds a node, re-run lucide icons
+                        if (node.nodeType === 1 && node.hasAttribute('data-lucide')) {
+                           lucide.createIcons({nodes: [node]});
+                        }
+                        return node;
+                    }
+                }); 
+                this.modalEl.innerHTML = this.renderModal(); 
+                this.toastEl.innerHTML = this.renderToasts(); 
+                lucide.createIcons(); 
+            },
+            renderAppLayout() { 
+                if (state.isLoading) return this.renderSpinner("시스템 로딩 중..."); 
+                switch (state.currentView) { 
+                    case 'quiz': return this.renderQuizView(); 
+                    case 'quizResult': return this.renderQuizResultView(); 
+                    default: return `<div id="app" class="min-h-screen bg-slate-50 flex flex-col">${this.renderHeader()}<main class="flex-grow w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${state.currentView === 'dashboard' ? this.renderDashboard() : this.renderWorkspace()}</main>${this.renderFooter()}</div>${this.renderMobileToc()}`; 
+                } 
+            },
             renderToc(toc, level = 0, pathPrefix = '') { if (!toc?.children?.length) return level === 0 ? `<p class="text-sm text-slate-500">목차가 비어있습니다.</p>` : ''; const items = toc.children.map((item, index) => { const currentPath = pathPrefix ? `${pathPrefix}.${index}` : `${index}`; const isChapter = !item.children; const isActive = state.activeChapterPath === currentPath; let statusIndicator = ''; if (isChapter) { const content = state.activeContentsMap.get(`${state.activeProjectId}_${currentPath}`); if (content?.status && content.status !== 'empty') { const color = { 'prompt-copied': 'bg-red-500', 'manuscript-done': 'bg-orange-400', 'quiz-done': 'bg-green-500' }[content.status]; if (color) statusIndicator = `<span class="w-2 h-2 rounded-full ${color} mr-2 flex-shrink-0"></span>`; } } const linkClass = isChapter ? `toc-item flex items-center p-2 rounded-md text-sm text-slate-700 hover:bg-slate-100 ${isActive ? 'active' : ''}` : `p-2 block text-sm font-semibold text-slate-800`; return `<li class="my-1"><a href="#" ${isChapter ? `data-action="select-chapter" data-path="${currentPath}"` : ''} class="${linkClass}" style="padding-left: ${1 + level * 1.5}rem;">${statusIndicator}<span class="truncate">${item.title}</span></a>${item.children?.length ? this.renderToc(item, level + 1, currentPath) : ''}</li>`; }).join(''); return `<ul>${items}</ul>`; },
             renderLearnPanel: () => `<div class="flex flex-col items-center justify-center h-full min-h-[60vh]">${View.renderQuizHome()}</div>`,
             renderQuizView() { const { quizState } = state; if (!quizState || !quizState.questions[quizState.currentIndex]) return this.renderSpinner('퀴즈 로딩 중...'); const q = quizState.questions[quizState.currentIndex]; const isAnswered = quizState.answers[quizState.currentIndex] !== undefined; const renderAnswerComponent = () => { switch (q.type) { case CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE: const userAnswerIndex = quizState.answers[quizState.currentIndex]?.selectedIndex; return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">${q.options.map((opt, index) => { let classes = 'border-slate-300 hover:border-indigo-500 hover:bg-indigo-50'; if (isAnswered) { if (index === q.answerIndex) classes = 'bg-emerald-100 border-emerald-500 text-emerald-800'; else if (index === userAnswerIndex) classes = 'bg-red-100 border-red-500 text-red-800'; } return `<button data-action="submit-answer" data-index="${index}" class="btn-interactive w-full text-left p-4 border rounded-lg transition-colors ${classes}" ${isAnswered ? 'disabled' : ''}>${opt}</button>` }).join('')}</div>`; default: return `<form data-action="submit-text-answer" class="w-full max-w-md text-center"><textarea id="answer-input" rows="4" class="w-full text-lg border-2 p-2 bg-transparent border-slate-300 rounded-md focus:outline-none focus:border-indigo-500 transition-colors" placeholder="답안을 입력하세요..." ${isAnswered ? 'disabled' : 'autofocus'}></textarea><button type="submit" class="btn-interactive mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-12 rounded-lg text-lg transition-colors shadow hover:shadow-md" ${isAnswered ? 'disabled' : ''}>제출하고 정답 확인</button></form>`; } }; const renderFeedback = () => { if (!isAnswered) return `<div class="min-h-[148px]"></div>`; const { isCorrect } = quizState.answers[quizState.currentIndex]; const feedbackClass = isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'; const icon = isCorrect ? `<i data-lucide="check-circle" class="w-5 h-5"></i>` : `<i data-lucide="x-circle" class="w-5 h-5"></i>`; const isLastQuestion = quizState.currentIndex + 1 >= quizState.questions.length; const nextButtonText = isLastQuestion ? '결과 보기' : '다음 문제'; const nextButtonIcon = isLastQuestion ? 'flag' : 'arrow-right-circle'; let correctDisplay = ''; if (!isCorrect) correctDisplay = q.type === 'multiple_choice' ? q.options[q.answerIndex] : q.answer; return `<div class="p-4 rounded-lg mt-8 w-full max-w-3xl ${feedbackClass}"><p class="font-bold flex items-center gap-2">${icon} ${isCorrect ? '정답입니다!' : '오답입니다.'}</p>${!isCorrect ? `<p class="text-sm mt-2"><span class="font-semibold">모범 답안:</span> ${correctDisplay}</p>` : ''}<p class="text-sm mt-2"><span class="font-semibold">해설:</span> ${q.explanation}</p><div class="mt-4 flex justify-end"><button data-action="next-question" class="btn-interactive bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${nextButtonText} <i data-lucide="${nextButtonIcon}" class="w-5 h-5"></i></button></div></div>`; }; const questionTypeMap = { [CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE]: '객관식', [CONFIG.QUIZ_TYPE.SHORT_ANSWER]: '단답형', [CONFIG.QUIZ_TYPE.SUBJECTIVE]: '서술형', [CONFIG.QUIZ_TYPE.CASE_BASED]: '사례형' }; return `<div class="fixed inset-0 bg-slate-50 flex flex-col"><header class="bg-white shadow-sm p-4 sticky top-0 z-10"><div class="flex items-center justify-between gap-4 max-w-5xl mx-auto"><div class="font-bold text-lg w-24">${quizState.currentIndex + 1} / ${quizState.questions.length}</div><div class="w-full bg-slate-200 rounded-full h-4 overflow-hidden"><div class="bg-indigo-500 h-4 rounded-full transition-all duration-300" style="width: ${((quizState.currentIndex) / quizState.questions.length) * 100}%"></div></div><button data-action="exit-quiz" class="p-2 rounded-full hover:bg-slate-200" title="퀴즈 나가기"><i data-lucide="x"></i></button></div></header><main class="flex-1 flex flex-col items-center justify-center p-6 text-center overflow-y-auto"><div class="w-full max-w-3xl"><p class="text-slate-500 text-sm mb-2">${questionTypeMap[q.type] || '문제'}</p><h2 class="text-2xl md:text-3xl font-bold leading-tight">${q.questionText}</h2></div><div class="mt-12 w-full flex justify-center">${renderAnswerComponent()}</div>${renderFeedback()}</main></div>`; },
             renderSpinner: (message) => `<div class="flex items-center justify-center min-h-screen"><div class="text-center"><svg class="mx-auto h-12 w-12 text-slate-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h2 class="mt-4 text-lg font-medium text-slate-900">${message}</h2></div></div>`,
-            renderHeader: () => { const { level, xp } = state.userProfile; const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[level - 1] || 0; const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[level] || xp; const xpForLevel = nextLevelXP - currentLevelXP; const currentXPInLevel = xp - currentLevelXP; const progress = xpForLevel > 0 ? Math.round((currentXPInLevel / xpForLevel) * 100) : 100; return `<header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-30"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex justify-between items-center h-16"><div class="flex items-center space-x-2"><i data-lucide="layers-3" class="text-indigo-600 h-8 w-8"></i><h1 class="text-xl font-bold text-slate-800">통합 학습 & 저작 시스템 <span class="text-sm font-medium text-indigo-500">v2.9.0</span></h1></div><div class="flex items-center space-x-4"><div class="font-semibold text-sm text-slate-600">LV. <span class="text-indigo-600 font-bold text-base">${level}</span></div><div class="w-40"><div class="bg-slate-200 rounded-full h-2.5" title="${currentXPInLevel.toLocaleString()} / ${xpForLevel.toLocaleString()} XP"><div class="xp-bar-inner h-2.5 rounded-full" style="width: ${progress}%"></div></div></div></div></div></div></header>`; },
-            renderDashboard: () => { const projectCards = state.projects.map(p => `<div class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col btn-interactive"><div class="p-6 flex-grow"><div class="tracking-wide text-sm text-indigo-500 font-semibold">${Utils.formatDate(p.createdAt)}</div><h3 class="block mt-1 text-lg leading-tight font-bold text-black">${p.name}</h3><p class="mt-2 text-slate-500">${Utils.getChapterPath(p.toc).length}개의 챕터</p></div><div class="p-4 bg-slate-50 border-t flex justify-between items-center"><button data-action="open-project" data-id="${p.id}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 btn-interactive"><i data-lucide="arrow-right-circle" class="w-4 h-4 mr-2"></i>작업 시작</button><div class="flex space-x-2"><button data-action="export-project" data-id="${p.id}" title="프로젝트 내보내기" class="p-2 text-slate-500 hover:bg-slate-200 hover:text-indigo-600 rounded-full transition-colors"><i data-lucide="download" class="w-5 h-5"></i></button><button data-action="delete-project-confirm" data-id="${p.id}" title="프로젝트 삭제" class="p-2 text-slate-500 hover:bg-red-100 hover:text-red-600 rounded-full transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button></div></div></div>`).join(''); return `<div><div class="flex justify-between items-center mb-6"><h2 class="text-3xl font-bold text-slate-900">프로젝트 대시보드</h2><button data-action="new-project" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i>새 프로젝트 생성</button></div>${state.projects.length > 0 ? `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${projectCards}</div>` : `<div class="text-center py-16 border-2 border-dashed rounded-lg"><i data-lucide="folder-plus" class="mx-auto h-12 w-12 text-slate-400"></i><h3 class="mt-2 text-sm font-medium text-slate-900">프로젝트가 없습니다</h3><p class="mt-1 text-sm text-slate-500">새 프로젝트를 생성하여 작업을 시작하세요.</p><div class="mt-6"><button data-action="new-project" type="button" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="plus" class="-ml-1 mr-2 h-5 w-5"></i>새 프로젝트 생성</button></div></div>`}</div>`;},
-            renderWorkspace: () => { if (!state.activeProject) return View.renderSpinner("프로젝트 로딩 중..."); return `<div><header class="mb-6 flex items-center justify-between"><button data-action="back-to-dashboard" class="flex items-center text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"><i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i> 대시보드로 돌아가기</button><h2 class="text-2xl font-bold text-slate-800">${state.activeProject.name}</h2><button data-action="open-settings" class="flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 btn-interactive"><i data-lucide="settings" class="w-4 h-4 mr-2"></i> 프로젝트 설정</button></header><div class="flex -mx-4"><aside class="w-1/4 px-4"><div class="bg-white rounded-lg shadow-sm p-4 h-full"><h3 class="font-bold text-lg mb-4">목차 (TOC)</h3><div class="overflow-y-auto" style="max-height: 70vh;">${View.renderToc(state.activeProject.toc)}</div></div></aside><main class="w-3/4 px-4"><div class="bg-white rounded-lg shadow-sm"><div class="border-b border-slate-200"><nav class="-mb-px flex space-x-8 px-6" aria-label="Tabs">${View.renderModeTab('view', 'eye', '보기 모드')}${View.renderModeTab('write', 'pen-square', 'AI 글쓰기')}${View.renderModeTab('learn', 'graduation-cap', '학습 모드')}${View.renderModeTab('translate', 'languages', '번역 모드')}</nav></div><div class="p-6 min-h-[70vh]">${View.renderWorkspacePanel()}</div></div></main></div></div>`;},
-            renderModeTab: (mode, icon, label) => { const isActive = state.workspaceMode === mode; return `<button data-action="switch-mode" data-mode="${mode}" class="${isActive ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm"><i data-lucide="${icon}" class="${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-slate-500'} -ml-0.5 mr-2 h-5 w-5"></i><span>${label}</span></button>`;},
-            renderWorkspacePanel: () => { if (!state.activeChapterPath) { return `<div class="flex flex-col items-center justify-center h-full min-h-[60vh]"><i data-lucide="file-text" class="h-16 w-16 text-slate-300"></i><h3 class="mt-4 text-xl font-semibold text-slate-800">챕터를 선택하세요</h3><p class="mt-1 text-slate-500">좌측 목차에서 작업할 챕터를 선택해주세요.</p></div>`; } if (!state.activeChapterContent) { return View.renderSpinner("챕터 내용 로딩 중..."); } switch (state.workspaceMode) { case 'view': return View.renderViewPanel(); case 'write': return View.renderWritePanel(); case 'learn': return View.renderLearnPanel(); case 'translate': return View.renderTranslatePanel(); default: return `<div>알 수 없는 모드입니다.</div>`; } },
-            renderViewPanel: () => { const content = state.activeChapterContent; const viewText = content.manuscript ? marked.parse(content.manuscript) : `<div class="text-center text-slate-500 py-16"><p>표시할 원고 내용이 없습니다.</p></div>`; return `<div><h3 class="text-xl font-semibold mb-4 text-slate-800 border-b pb-2">원고 보기</h3><div class="prose prose-custom max-w-full h-[60vh] overflow-y-auto p-2">${viewText}</div></div>`;},
+            renderHeader: () => { const { level, xp } = state.userProfile; const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[level - 1] || 0; const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[level] || xp; const xpForLevel = nextLevelXP - currentLevelXP; const currentXPInLevel = xp - currentLevelXP; const progress = xpForLevel > 0 ? Math.round((currentXPInLevel / xpForLevel) * 100) : 100; return `<header class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-30"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"><div class="flex flex-col sm:flex-row justify-between items-center h-auto sm:h-16 py-3 sm:py-0"><div class="flex items-center space-x-2"><i data-lucide="layers-3" class="text-indigo-600 h-8 w-8"></i><h1 class="text-xl font-bold text-slate-800">통합 학습 & 저작 시스템 <span class="text-sm font-medium text-indigo-500">v2.9.3</span></h1></div><div class="flex items-center space-x-4 mt-2 sm:mt-0"><div class="font-semibold text-sm text-slate-600">LV. <span class="text-indigo-600 font-bold text-base">${level}</span></div><div class="w-40"><div class="bg-slate-200 rounded-full h-2.5" title="${currentXPInLevel.toLocaleString()} / ${xpForLevel.toLocaleString()} XP"><div class="xp-bar-inner h-2.5 rounded-full" style="width: ${progress}%"></div></div></div></div></div></div></header>`; },
+            renderDashboard: () => { const projectCards = state.projects.map(p => `<div class="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-300 flex flex-col btn-interactive"><div class="p-6 flex-grow"><div class="tracking-wide text-sm text-indigo-500 font-semibold">${Utils.formatDate(p.createdAt)}</div><h3 class="block mt-1 text-lg leading-tight font-bold text-black">${p.name}</h3><p class="mt-2 text-slate-500">${Utils.getChapterPath(p.toc).length}개의 챕터</p></div><div class="p-4 bg-slate-50 border-t flex justify-between items-center"><button data-action="open-project" data-id="${p.id}" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 btn-interactive"><i data-lucide="arrow-right-circle" class="w-4 h-4 mr-2"></i>작업 시작</button><div class="flex space-x-2"><button data-action="export-project" data-id="${p.id}" title="프로젝트 내보내기" class="p-2 text-slate-500 hover:bg-slate-200 hover:text-indigo-600 rounded-full transition-colors"><i data-lucide="download" class="w-5 h-5"></i></button><button data-action="delete-project-confirm" data-id="${p.id}" title="프로젝트 삭제" class="p-2 text-slate-500 hover:bg-red-100 hover:text-red-600 rounded-full transition-colors"><i data-lucide="trash-2" class="w-5 h-5"></i></button></div></div></div>`).join(''); return `<div><div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4"><h2 class="text-3xl font-bold text-slate-900">프로젝트 대시보드</h2><button data-action="new-project" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 flex-shrink-0"><i data-lucide="plus-circle" class="w-5 h-5 mr-2"></i>새 프로젝트 생성</button></div>${state.projects.length > 0 ? `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${projectCards}</div>` : `<div class="text-center py-16 border-2 border-dashed rounded-lg"><i data-lucide="folder-plus" class="mx-auto h-12 w-12 text-slate-400"></i><h3 class="mt-2 text-sm font-medium text-slate-900">프로젝트가 없습니다</h3><p class="mt-1 text-sm text-slate-500">새 프로젝트를 생성하여 작업을 시작하세요.</p><div class="mt-6"><button data-action="new-project" type="button" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="plus" class="-ml-1 mr-2 h-5 w-5"></i>새 프로젝트 생성</button></div></div>`}</div>`;},
+            renderWorkspace: () => {
+                if (!state.activeProject) return View.renderSpinner("프로젝트 로딩 중...");
+                const flatToc = Utils.getFlatToc(state.activeProject.toc);
+                const currentIndex = flatToc.findIndex(c => c.path === state.activeChapterPath);
+                const hasPrev = currentIndex > 0;
+                const hasNext = currentIndex !== -1 && currentIndex < flatToc.length - 1;
+                const navButton = (action, icon, disabled) => `<button data-action="${action}" class="p-2 rounded-md hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed" ${disabled ? 'disabled' : ''}><i data-lucide="${icon}" class="w-5 h-5 text-slate-600"></i></button>`;
+                return `<div><header class="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"><div class="flex items-center gap-4"><button data-action="toggle-mobile-toc" class="lg:hidden p-2 rounded-md hover:bg-slate-100"><i data-lucide="menu" class="w-6 h-6 text-slate-600"></i></button><button data-action="back-to-dashboard" class="hidden sm:flex items-center text-sm font-medium text-slate-600 hover:text-indigo-600 transition-colors"><i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i> 대시보드</button></div><h2 class="text-xl sm:text-2xl font-bold text-slate-800 text-center sm:text-left truncate">${state.activeProject.name}</h2><button data-action="open-settings" class="flex items-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50 btn-interactive flex-shrink-0"><i data-lucide="settings" class="w-4 h-4 mr-2"></i> <span class="hidden sm:inline">프로젝트 설정</span></button></header><div class="flex items-center gap-2 mb-4">${navButton('prev-chapter', 'chevron-left', !hasPrev)}<div class="flex-grow">${View.renderBreadcrumbs()}</div>${navButton('next-chapter', 'chevron-right', !hasNext)}</div><div class="flex flex-col lg:flex-row -mx-4"><aside class="w-full lg:w-1/4 px-4 mb-6 lg:mb-0 hidden lg:block"><div class="bg-white rounded-lg shadow-sm p-4 h-full"><h3 class="font-bold text-lg mb-4">목차 (TOC)</h3><div class="overflow-y-auto" style="max-height: 70vh;">${View.renderToc(state.activeProject.toc)}</div></div></aside><main class="w-full lg:w-3/4 px-4"><div class="bg-white rounded-lg shadow-sm"><div class="border-b border-slate-200"><nav class="-mb-px flex space-x-2 sm:space-x-8 px-4 sm:px-6 overflow-x-auto" aria-label="Tabs">${View.renderModeTab('write', 'pen-square', 'AI 글쓰기')}${View.renderModeTab('view', 'eye', '보기')}${View.renderModeTab('learn', 'graduation-cap', '학습')}${View.renderModeTab('translate', 'languages', '번역')}</nav></div><div id="workspace-main-content" class="p-4 sm:p-6 min-h-[70vh] overflow-y-auto">${View.renderWorkspacePanel()}</div></div></main></div></div>`;
+            },
+            renderBreadcrumbs() {
+                if (!state.activeChapterBreadcrumbs || state.activeChapterBreadcrumbs.length === 0) { return '<div class="bg-slate-100 rounded-lg p-2.5 h-[44px] flex items-center"><span class="text-sm text-slate-500">챕터를 선택하세요.</span></div>'; }
+                const items = state.activeChapterBreadcrumbs.map((crumb, index) => {
+                    const isLast = index === state.activeChapterBreadcrumbs.length - 1;
+                    const textColor = isLast ? 'text-slate-700 font-semibold' : 'text-slate-500 hover:text-indigo-600';
+                    const linkContent = `<a href="#" data-action="${crumb.isChapter ? 'select-chapter' : 'noop'}" data-path="${crumb.path}" class="text-sm ${textColor}">${crumb.title}</a>`;
+                    return `<li class="flex items-center">${linkContent}${!isLast ? `<i data-lucide="chevron-right" class="h-4 w-4 text-slate-400 mx-1"></i>` : ''}</li>`;
+                }).join('');
+                return `<nav class="bg-slate-100 rounded-lg p-2.5"><ol class="flex items-center flex-wrap">${items}</ol></nav>`;
+            },
+            renderMobileToc() {
+                if (!state.isMobileTocOpen || !state.activeProject) return '';
+                return `<div class="fixed inset-0 bg-black/50 z-40 transition-opacity" data-action="close-mobile-toc"></div><div class="fixed inset-y-0 left-0 w-4/5 max-w-sm bg-white z-50 mobile-toc-panel overflow-y-auto"><div class="p-4"><div class="flex justify-between items-center mb-4"><h3 class="font-bold text-lg">목차</h3><button data-action="close-mobile-toc" class="p-2 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-6 h-6 text-slate-600"></i></button></div>${View.renderToc(state.activeProject.toc)}</div></div>`;
+            },
+            renderModeTab: (mode, icon, label) => { const isActive = state.workspaceMode === mode; return `<button data-action="switch-mode" data-mode="${mode}" class="${isActive ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm flex-shrink-0"><i data-lucide="${icon}" class="${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-slate-500'} -ml-0.5 mr-2 h-5 w-5"></i><span>${label}</span></button>`;},
+            renderWorkspacePanel: () => { if (!state.activeChapterPath) { return `<div class="flex flex-col items-center justify-center h-full min-h-[60vh] text-center p-4"><i data-lucide="file-text" class="h-16 w-16 text-slate-300"></i><h3 class="mt-4 text-xl font-semibold text-slate-800">챕터를 선택하세요</h3><p class="mt-1 text-slate-500">좌측 목차(데스크톱) 또는 메뉴 버튼(모바일)에서 작업할 챕터를 선택해주세요.</p></div>`; } if (!state.activeChapterContent) { return View.renderSpinner("챕터 내용 로딩 중..."); } switch (state.workspaceMode) { case 'view': return View.renderViewPanel(); case 'write': return View.renderWritePanel(); case 'learn': return View.renderLearnPanel(); case 'translate': return View.renderTranslatePanel(); default: return `<div>알 수 없는 모드입니다.</div>`; } },
+            renderViewPanel: () => { const content = state.activeChapterContent; const viewText = content.manuscript ? marked.parse(content.manuscript) : `<div class="text-center text-slate-500 py-16"><p>표시할 원고 내용이 없습니다.</p></div>`; return `<div><h3 class="text-xl font-semibold mb-4 text-slate-800 border-b pb-2">원고 보기</h3><div class="prose prose-custom prose-readable max-w-full">${viewText}</div></div>`;},
             renderWritePanel: () => { const content = state.activeChapterContent; return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div><label for="manuscript" class="block text-sm font-medium text-slate-700 mb-2">원고 (Markdown)</label><textarea id="manuscript" data-field="manuscript" class="w-full h-[60vh] p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.manuscript || ''}</textarea></div><div><label for="notes" class="block text-sm font-medium text-slate-700 mb-2">메모</label><textarea id="notes" data-field="notes" class="w-full h-[60vh] p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.notes || ''}</textarea></div></div><div class="mt-4 text-right"><button data-action="copy-writing-prompt" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">AI 글쓰기 프롬프트 복사</button></div>`;},
             renderQuizHome: () => { const hasQuestions = state.activeChapterContent && state.activeChapterContent.questions && state.activeChapterContent.questions.length > 0; return `<div class="flex flex-col items-center justify-center h-full text-center"><i data-lucide="lightbulb" class="h-12 w-12 text-slate-400"></i><h4 class="mt-4 text-lg font-semibold text-slate-700">지식을 테스트해보세요</h4><p class="mt-1 text-sm text-slate-500">학습한 내용을 기반으로 퀴즈를 풀어보세요.</p><div class="mt-6 flex flex-col space-y-3 w-full max-w-xs"><button data-action="start-quiz" class="btn-interactive w-full inline-flex justify-center items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400" ${!hasQuestions ? 'disabled' : ''}>퀴즈 시작 (${hasQuestions ? state.activeChapterContent.questions.length : 0}문제)</button><button data-action="manage-quiz" class="btn-interactive w-full inline-flex justify-center items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50">퀴즈 관리</button><button data-action="generate-quiz" class="btn-interactive w-full inline-flex justify-center items-center px-4 py-2 border border-slate-300 text-sm font-medium rounded-md text-slate-700 bg-white hover:bg-slate-50"><i data-lucide="sparkles" class="w-5 h-5 mr-2"></i>AI로 문제 추가</button></div>${!hasQuestions ? '<p class="mt-2 text-xs text-slate-400">퀴즈를 진행하려면 문제를 먼저 추가해주세요.</p>' : ''}</div>`;},
             renderTranslatePanel: () => { const content = state.activeChapterContent; const sourceText = content.originalContent || (content.manuscript ? marked.parse(content.manuscript) : '<p>번역할 원문이 없습니다.</p>'); return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div><h3 class="text-lg font-semibold mb-2 text-slate-800">원문</h3><div class="prose prose-custom h-[60vh] overflow-y-auto p-4 border rounded-md">${sourceText}</div></div><div><h3 class="text-lg font-semibold mb-2 text-slate-800">번역문</h3><textarea id="translation" data-field="translation" class="w-full h-[60vh] p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.translation || ''}</textarea></div></div><div class="mt-4 text-right"><button data-action="copy-translation-prompt" class="btn-interactive inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">번역 프롬프트 복사</button></div>`;},
-            renderModal: () => { if (!state.modal.isOpen) return ''; let contentHtml = ''; switch(state.modal.type) { case 'newProject': contentHtml = View.renderNewProjectModal(); break; case 'settings': contentHtml = View.renderSettingsModal(); break; case 'confirm': contentHtml = View.renderConfirmModal(); break; case 'apiKey': contentHtml = View.renderApiKeyModal(); break; case 'manageQuiz': contentHtml = View.renderManageQuizModal(); break; } return `<div class="modal-overlay modal-scale-in" data-action="close-modal-overlay"></div><div class="modal-container w-full max-w-2xl modal-scale-in"><div class="bg-white rounded-lg shadow-xl">${contentHtml}</div></div>`; },
+            renderModal: () => { if (!state.modal.isOpen) return ''; let contentHtml = ''; switch(state.modal.type) { case 'newProject': contentHtml = View.renderNewProjectModal(); break; case 'settings': contentHtml = View.renderSettingsModal(); break; case 'confirm': contentHtml = View.renderConfirmModal(); break; case 'apiKey': contentHtml = View.renderApiKeyModal(); break; case 'manageQuiz': contentHtml = View.renderManageQuizModal(); break; } return `<div class="modal-overlay" data-action="close-modal-overlay"></div><div class="modal-container w-full max-w-2xl modal-scale-in"><div class="bg-white rounded-lg shadow-xl">${contentHtml}</div></div>`; },
             renderNewProjectModal: () => { const activeTab = state.modal.data.activeTab || 'zip'; const tabButton = (id, label) => `<button type="button" data-action="switch-modal-tab" data-tab="${id}" class="px-3 py-2 text-sm font-medium rounded-md ${activeTab === id ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}">${label}</button>`; const fileInputTemplate = (id, accept, labelId, description) => `<p class="text-sm text-slate-600 mb-2">${description}</p><label for="${id}" class="cursor-pointer"><div data-dropzone-for="${id}" class="drop-zone w-full p-8 rounded-lg text-center bg-slate-50 hover:bg-slate-100"><div class="flex flex-col items-center justify-center space-y-2 pointer-events-none"><i data-lucide="upload-cloud" class="w-12 h-12 text-slate-400"></i><p class="text-slate-700 font-medium">파일을 드래그하거나 <span class="text-indigo-600">클릭하여 선택</span>하세요</p><p id="${labelId}" class="text-sm text-slate-500 truncate max-w-full" title="선택된 파일 없음">선택된 파일 없음</p></div><input type="file" id="${id}" accept="${accept}" class="hidden" data-target-label="${labelId}"/></div></label>`; const tabContent = () => { switch(activeTab) { case 'zip': return fileInputTemplate('zip-upload', '.zip', 'zip-file-label', 'HTML 또는 TXT 파일들이 포함된 ZIP 파일을 업로드하세요.'); case 'jsonFile': return fileInputTemplate('json-upload', '.json', 'json-file-label', '이전에 내보냈던 프로젝트(.json) 파일을 가져옵니다.'); case 'jsonText': return `<p class="text-sm text-slate-600 mb-2">프로젝트 내보내기(.json) 파일의 텍스트를 붙여넣으세요.</p><textarea id="json-text-input" placeholder='{"type": "ILS_PROJECT_EXPORT_V2", ...}' class="w-full h-40 p-2 border rounded-md font-mono text-sm"></textarea>`; case 'tocJson': return `<p class="text-sm text-slate-600 mb-2">책의 목차 구조를 나타내는 JSON 텍스트를 붙여넣으세요.</p><textarea id="toc-json-input" placeholder='{"title": "책 제목", "children": [...] }' class="w-full h-40 p-2 border rounded-md font-mono text-sm"></textarea>`; } }; return `<form data-action="submit-new-project"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">새 프로젝트 생성</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="border-b border-gray-200"><div class="p-1 mb-4 inline-flex space-x-1 bg-slate-100 rounded-lg">${tabButton('zip', 'ZIP')}${tabButton('tocJson', '목차 JSON')}${tabButton('jsonFile', '파일(.json)')}${tabButton('jsonText', '텍스트(.json)')}</div></div><div class="mt-4">${tabContent()}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">취소</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">생성</button></div></form>`;},
             renderSettingsModal: () => {
                 const settings = state.activeProject.settings;
@@ -365,12 +506,53 @@
             renderApiKeyModal: () => { return `<form data-action="submit-api-key"><div class="p-6"><div class="flex items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 sm:mx-0 sm:h-10 sm:w-10"><i data-lucide="key-round" class="h-6 w-6 text-indigo-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">Google AI API 키 입력</h3><div class="mt-2"><p class="text-sm text-gray-500">퀴즈 생성을 위해 Google AI Studio에서 발급받은 API 키를 입력해주세요.</p><input type="password" id="api-key-input" class="mt-2 block w-full rounded-md border-slate-300" placeholder="API 키를 여기에 붙여넣으세요"></div></div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive">취소</button><button type="submit" class="btn-interactive">확인</button></div></form>`;},
             renderManageQuizModal: () => { const questions = state.activeChapterContent.questions || []; const questionsHtml = questions.map((q, index) => `<div class="p-3 my-2 border rounded-md bg-slate-50 flex justify-between items-center group"><p class="text-sm text-slate-800 truncate pr-4">${index + 1}. ${q.questionText}</p><button type="button" data-action="delete-quiz-question" data-index="${index}" class="p-1 text-slate-500 hover:text-red-600 rounded-full hover:bg-red-100 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div>`).join(''); return `<div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">퀴즈 관리</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[30vh] overflow-y-auto border rounded-lg p-2 bg-white mb-4">${questions.length > 0 ? questionsHtml : '<p class="text-sm text-slate-500 text-center py-4">생성된 문제가 없습니다.</p>'}</div><h4 class="text-lg font-semibold text-slate-800 border-t pt-4 mb-3">AI 프롬프트를 사용하여 문제 추가</h4><p class="text-sm text-slate-600 mb-2">1. 아래 버튼으로 프롬프트를 복사하여 AI 도구(예: Google AI Studio)에 붙여넣고 결과를 생성하세요.</p><button data-action="copy-quiz-prompt" class="btn-interactive inline-flex items-center justify-center w-full px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700"><i data-lucide="clipboard-copy" class="w-4 h-4 mr-2"></i>AI 생성 프롬프트 복사</button><form data-action="add-questions-from-json" class="mt-4"><label for="quiz-json-paste" class="text-sm text-slate-600 mb-2 block">2. AI가 생성한 JSON 배열을 아래에 붙여넣고 '추가' 버튼을 누르세요.</label><textarea id="quiz-json-paste" name="jsonContent" class="w-full h-24 p-2 border rounded-md font-mono text-xs" placeholder="[ { ... } ]" required></textarea><div class="bg-slate-50 -mx-6 -mb-6 px-6 py-4 mt-6 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md border border-slate-300 bg-white hover:bg-slate-50">닫기</button><button type="submit" class="btn-interactive px-4 py-2 text-sm font-medium rounded-md shadow-sm text-white bg-emerald-600 hover:bg-emerald-700">JSON에서 문제 추가</button></div></form></div>`;},
             renderToasts: () => { return `<div class="fixed bottom-4 right-4 space-y-3 z-50">${state.toasts.map(toast => `<div id="toast-${toast.id}" class="max-w-sm w-full bg-white shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden"><div class="p-4"><div class="flex items-start"><div class="flex-shrink-0">${toast.type === 'success' ? '<i data-lucide="check-circle" class="h-6 w-6 text-green-400"></i>' : ''}${toast.type === 'error' ? '<i data-lucide="alert-circle" class="h-6 w-6 text-red-400"></i>' : ''}${toast.type === 'info' ? '<i data-lucide="info" class="h-6 w-6 text-blue-400"></i>' : ''}</div><div class="ml-3 w-0 flex-1 pt-0.5"><p class="text-sm font-medium text-gray-900">${toast.message}</p></div><div class="ml-4 flex-shrink-0 flex"><button data-action="dismiss-toast" data-id="${toast.id}" class="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500"><i data-lucide="x" class="h-5 w-5"></i></button></div></div></div></div>`).join('')}</div>`;},
-            renderFooter: () => { return `<footer class="bg-white"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 border-t text-center text-xs text-slate-500">&copy; ${new Date().getFullYear()} Polymathic Strategist. All Rights Reserved.</div></footer>`;}
+            renderFooter: () => { return `<footer class="bg-white mt-auto"><div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 border-t text-center text-xs text-slate-500">&copy; ${new Date().getFullYear()} Polymathic Strategist. All Rights Reserved.</div></footer>`;},
+            renderQuizResultView() {
+                const { questions, answers } = state.quizState;
+                const totalQuestions = questions.length;
+                const correctCount = answers.filter(a => a.isCorrect).length;
+                const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+                const summaryHtml = `<div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 text-center mb-8"><h2 class="text-3xl font-bold text-slate-800">퀴즈 결과</h2><p class="text-slate-600 mt-2">학습 내용을 성공적으로 검토했습니다!</p><div class="mt-6"><span class="text-5xl font-bold text-indigo-600">${score}</span><span class="text-xl font-medium text-slate-500">점</span></div><p class="mt-2 font-medium text-slate-700">총 ${totalQuestions}문항 중 ${correctCount}문항 정답</p><div class="mt-8"><button data-action="back-to-workspace" class="btn-interactive w-full sm:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">작업실로 돌아가기</button></div></div>`;
+                const questionCardsHtml = questions.map((q, index) => {
+                    const userAnswerData = answers[index];
+                    const isCorrect = userAnswerData.isCorrect;
+                    const cardClass = isCorrect ? 'correct-answer-border' : 'incorrect-answer-border';
+                    let answerFeedbackHtml = '';
+                    if (q.type === CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE) {
+                        answerFeedbackHtml = q.options.map((option, optIndex) => {
+                            const isUserAnswer = optIndex === userAnswerData.selectedIndex;
+                            const isCorrectAnswer = optIndex === q.answerIndex;
+                            let classes = 'border-slate-200 bg-slate-50';
+                            let icon = '';
+                            if (isUserAnswer && !isCorrect) {
+                                classes = 'user-answer-incorrect border-red-300 bg-red-50 text-red-800';
+                                icon = `<i data-lucide="x-circle" class="w-5 h-5 text-red-500 mr-2 flex-shrink-0"></i>`;
+                            }
+                            if (isCorrectAnswer) {
+                                classes = 'correct-answer-label border-green-300 bg-green-50 text-green-800 font-semibold';
+                                icon = `<i data-lucide="check-circle" class="w-5 h-5 text-green-500 mr-2 flex-shrink-0"></i>`;
+                            }
+                            return `<div class="flex items-center p-3 mt-2 border rounded-md ${classes}">${icon}<span>${option}</span></div>`;
+                        }).join('');
+                    } else { // For text-based answers
+                        const userAnswerHtml = `<div class="flex items-start p-3 mt-2 border rounded-md user-answer-incorrect border-red-300 bg-red-50 text-red-800"><i data-lucide="x-circle" class="w-5 h-5 text-red-500 mr-2 mt-1 flex-shrink-0"></i><p>${userAnswerData.userAnswer || '<i>답변 없음</i>'}</p></div>`;
+                        const correctAnswerHtml = `<div class="flex items-start p-3 mt-2 border rounded-md correct-answer-label border-green-300 bg-green-50 text-green-800"><i data-lucide="check-circle" class="w-5 h-5 text-green-500 mr-2 mt-1 flex-shrink-0"></i><p>${q.answer}</p></div>`;
+                        if (isCorrect) { answerFeedbackHtml = correctAnswerHtml; } else { answerFeedbackHtml = `<div><p class="text-sm font-semibold text-slate-600">제출한 답:</p>${userAnswerHtml}<p class="text-sm font-semibold text-slate-600 mt-3">모범 답안:</p>${correctAnswerHtml}</div>`; }
+                    }
+                    return `<div class="result-card ${cardClass}"><p class="font-semibold text-slate-800">${index + 1}. ${q.questionText}</p><div class="mt-4">${answerFeedbackHtml}</div><div class="mt-4 p-3 bg-slate-100 rounded-md text-sm text-slate-700"><p><span class="font-bold">해설:</span> ${q.explanation}</p></div></div>`;
+                }).join('');
+                return `<div class="min-h-screen bg-slate-50 flex flex-col">${this.renderHeader()}<main class="flex-grow w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${summaryHtml}<h3 class="text-2xl font-bold text-slate-800 mb-6 border-b pb-3">문항별 다시보기</h3>${questionCardsHtml}</main>${this.renderFooter()}</div>`;
+            }
         };
 
         const Controller = {
             async init() {
                 try {
+                    // CJK 파싱 및 개행 문자를 고려하여 marked 옵션 설정
+                    marked.setOptions({
+                        gfm: true, // GitHub Flavored Markdown 활성화
+                        breaks: true, // Enter 키 한 번에 <br> 태그 생성
+                    });
                     this.bindGlobalEventListeners();
                     await DB.init();
                     const [projects, userProfile] = await Promise.all([
@@ -393,6 +575,7 @@
                 document.body.addEventListener('submit', e => { const form = e.target.closest('form[data-action]'); if (!form) return; e.preventDefault(); const action = form.dataset.action; const handler = this.ACTION_HANDLERS[action]; if (handler) { handler(form, e); } });
                 document.body.addEventListener('input', Utils.debounce(async e => { if (e.target.matches('#manuscript, #notes, #translation')) { await Controller.handleContentChange(e); View.render(); } }, 1000));
                 document.body.addEventListener('change', e => { if (e.target.matches('input[type="file"]')) { this.handleFileSelection(e.target); } });
+                document.addEventListener('katex-loaded', () => { state.isKaTeXLoaded = true; this.applyPostRenderEffects(); });
                 const preventDefaults = e => { e.preventDefault(); e.stopPropagation(); };
                 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => document.body.addEventListener(eventName, preventDefaults));
                 document.body.addEventListener('dragenter', e => { const dropZone = e.target.closest('[data-dropzone-for]'); if(dropZone) dropZone.classList.add('drag-over'); });
@@ -400,23 +583,34 @@
                 document.body.addEventListener('drop', e => { const dropZone = e.target.closest('[data-dropzone-for]'); if(!dropZone) return; dropZone.classList.remove('drag-over'); const inputId = dropZone.dataset.dropzoneFor; const input = document.getElementById(inputId); if (input && e.dataTransfer.files.length > 0) { input.files = e.dataTransfer.files; input.dispatchEvent(new Event('change', { bubbles: true })); } });
             },
 
-            navigateTo: (view) => { state.currentView = view; state.activeProjectId = null; state.activeProject = null; state.activeChapterPath = null; state.activeChapterContent = null; state.quizState = null; state.activeContentsMap.clear(); View.render(); },
-            switchMode: (mode) => { state.workspaceMode = mode; state.quizState = null; View.render(); },
+            navigateTo: (view) => { Controller.removeScrollListener(); state.currentView = view; state.activeProjectId = null; state.activeProject = null; state.activeChapterPath = null; state.activeChapterContent = null; state.activeChapterBreadcrumbs = []; state.quizState = null; state.activeContentsMap.clear(); View.render(); },
+            switchMode: (mode) => { 
+                state.workspaceMode = mode; 
+                state.quizState = null;
+                View.render(); 
+                Controller.applyPostRenderEffects();
+                Controller.saveWorkspaceState(); 
+            },
             
             async openProject(id) {
                 state.isLoading = true;
+                Controller.removeScrollListener();
                 View.render();
                 try {
                     const project = await DB.get(CONFIG.STORES.PROJECTS, id);
                     if (project) {
+                        const savedState = JSON.parse(localStorage.getItem(`ils_v2_workspace_state_${id}`));
+                        
                         const contents = await DB.getProjectContents(id);
                         state.activeContentsMap = new Map(contents.map(c => [c.id, c]));
                         state.activeProjectId = id;
                         state.activeProject = project;
                         state.currentView = 'workspace';
-                        state.workspaceMode = 'view';
+                        state.workspaceMode = savedState?.workspaceMode || 'write'; // Default to 'write'
+                        state.pendingScrollTop = savedState?.scrollTop || 0;
                         state.activeChapterPath = null;
                         state.activeChapterContent = null;
+                        state.activeChapterBreadcrumbs = [];
                     } else { throw new Error("Project not found"); }
                 } catch (error) {
                     console.error("Failed to open project:", error); this.navigateTo('dashboard');
@@ -430,6 +624,7 @@
                 if (state.activeChapterPath === path) return;
                 state.activeChapterPath = path;
                 state.quizState = null;
+                state.activeChapterBreadcrumbs = Utils.getBreadcrumbsByPath(state.activeProject.toc, path);
                 const contentId = `${state.activeProjectId}_${path}`;
                 let content = state.activeContentsMap.get(contentId);
                 if(!content) {
@@ -438,7 +633,10 @@
                     state.activeContentsMap.set(contentId, content);
                 }
                 state.activeChapterContent = content;
+                if (state.isMobileTocOpen) { state.isMobileTocOpen = false; }
                 View.render();
+                this.applyPostRenderEffects();
+                this.setupScrollListener();
             },
 
             async handleContentChange(event) {
@@ -467,114 +665,154 @@
             processZipFile: async (file) => { const turndownService = new TurndownService(); const zip = await JSZip.loadAsync(file); const allEntries = []; zip.forEach((relPath, entry) => { const normPath = relPath.replace(/\/$/, '').replace(/\\/g, '/'); if (normPath && !normPath.startsWith('__MACOSX') && (entry.dir || /\.(html?|txt)$/i.test(normPath))) allEntries.push({ path: normPath, isDir: entry.dir, entry }); }); allEntries.sort((a, b) => Utils.naturalSort(a.path, b.path)); const projectToc = { title: Utils.formatTitle(file.name), children: [] }; const pathMap = new Map(); for (const { path, isDir } of allEntries) { let currentNode = projectToc; let currentPath = ''; path.split('/').forEach((part, i, arr) => { currentPath = currentPath ? `${currentPath}/${part}` : part; let childNode = pathMap.get(currentPath); if (!childNode) { const isLeaf = (i === arr.length - 1) && !isDir; childNode = { title: Utils.formatTitle(part), children: isLeaf ? undefined : [], originalPath: isLeaf ? path : undefined }; currentNode.children.push(childNode); pathMap.set(currentPath, childNode); } currentNode = childNode; }); } const projectId = Utils.generateId('proj'); const project = { id: projectId, name: projectToc.title, createdAt: new Date().toISOString(), toc: projectToc, settings: { ...CONFIG.DEFAULT_PROJECT_SETTINGS } }; const contents = (await Promise.all(Utils.getChapterPath(projectToc).map(async ({ path, node }) => { if (!node.originalPath) return null; const fileEntry = allEntries.find(f => f.path === node.originalPath)?.entry; if (!fileEntry) return null; let manuscript = ''; if (/\.html?$/i.test(fileEntry.name)) { const rawHtml = await fileEntry.async('string'); const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i); manuscript = turndownService.turndown(DOMPurify.sanitize(bodyMatch ? bodyMatch[1] : '')); } else { manuscript = await fileEntry.async('string'); } return { id: `${projectId}_${path}`, manuscript, notes: '', translation: '', questions: [], status: manuscript.trim() ? 'manuscript-done' : 'empty' }; }))).filter(Boolean); return { project, contents }; },
             processJsonData: (data) => { if (data.type !== CONFIG.EXPORT_TYPE_ID) throw new Error("유효하지 않은 프로젝트 파일 형식입니다."); const newId = Utils.generateId('proj'); const newProject = { ...data.project, id: newId, createdAt: new Date().toISOString() }; const newContents = data.contents.map(c => ({ ...c, id: `${newId}_${c.path}`, path: undefined })); return { project: newProject, contents: newContents }; },
             processTocJson: (tocData) => {
-                if (!tocData.title || !Array.isArray(tocData.children)) {
-                    throw new Error("유효하지 않은 목차 JSON 형식입니다. 최상위 객체에 'title'과 'children' 속성이 필요합니다.");
-                }
-
+                if (!tocData.title || !Array.isArray(tocData.children)) { throw new Error("유효하지 않은 목차 JSON 형식입니다. 최상위 객체에 'title'과 'children' 속성이 필요합니다."); }
                 const projectId = Utils.generateId('proj');
                 const newContents = [];
                 const finalToc = { title: tocData.title, children: [] };
-
                 const buildFinalTocAndContents = (inputNodes, outputParentNode, pathPrefix = '') => {
                     inputNodes.forEach((inputNode, index) => {
                         const currentPath = pathPrefix ? `${pathPrefix}.${index}` : `${index}`;
                         const isLeaf = !inputNode.children || inputNode.children.length === 0;
-
-                        const newOutputNode = {
-                            title: inputNode.title,
-                            description: inputNode.description || ''
-                        };
-
-                        if (!isLeaf) {
-                            newOutputNode.children = [];
-                        }
+                        const newOutputNode = { title: inputNode.title, description: inputNode.description || '' };
+                        if (!isLeaf) { newOutputNode.children = []; }
                         outputParentNode.children.push(newOutputNode);
-
-                        if (!isLeaf) {
-                            buildFinalTocAndContents(inputNode.children, newOutputNode, currentPath);
-                        } else {
-                            newContents.push({
-                                id: `${projectId}_${currentPath}`,
-                                manuscript: '',
-                                notes: inputNode.description || '',
-                                translation: '',
-                                questions: [],
-                                status: 'empty'
-                            });
-                        }
+                        if (!isLeaf) { buildFinalTocAndContents(inputNode.children, newOutputNode, currentPath); } else { newContents.push({ id: `${projectId}_${currentPath}`, manuscript: '', notes: inputNode.description || '', translation: '', questions: [], status: 'empty' }); }
                     });
                 };
-
                 buildFinalTocAndContents(tocData.children, finalToc);
-
-                const project = {
-                    id: projectId,
-                    name: finalToc.title,
-                    createdAt: new Date().toISOString(),
-                    toc: finalToc,
-                    settings: { ...CONFIG.DEFAULT_PROJECT_SETTINGS }
-                };
-
+                const project = { id: projectId, name: finalToc.title, createdAt: new Date().toISOString(), toc: finalToc, settings: { ...CONFIG.DEFAULT_PROJECT_SETTINGS } };
                 return { project, contents: newContents };
             },
-
             handleFileSelection: (input) => { const label = document.getElementById(input.dataset.targetLabel); if (label) { const fileName = input.files[0] ? input.files[0].name : '선택된 파일 없음'; label.textContent = fileName; label.title = fileName; } },
             saveSettings: async (form) => { const newSettings = { ...state.activeProject.settings }; form.querySelectorAll('[data-setting-key]').forEach(input => { const key = input.dataset.settingKey; const value = input.type === 'number' ? parseInt(input.value, 10) : input.value; if (value !== undefined || (input.type === 'number' && !isNaN(value))) newSettings[key] = value; }); state.activeProject.settings = newSettings; await DB.put(CONFIG.STORES.PROJECTS, state.activeProject); Controller.showToast('설정이 저장되었습니다.', 'success'); Controller.closeModal(); View.render();},
             copyToClipboard: (text) => { const textArea = document.createElement("textarea"); textArea.value = text; textArea.style.position = "fixed"; textArea.style.top = "-9999px"; document.body.appendChild(textArea); textArea.focus(); textArea.select(); try { if (document.execCommand('copy')) Controller.showToast('클립보드에 복사되었습니다.', 'success'); else throw new Error(); } catch (err) { Controller.showToast('클립보드 복사에 실패했습니다.', 'error'); } document.body.removeChild(textArea); },
             copyPromptForCurrentChapter: () => {
-                if (!state.activeProject || !state.activeChapterPath || !state.activeChapterContent) {
-                    Controller.showToast('프롬프트를 생성할 챕터 정보가 부족합니다.', 'error');
-                    return;
-                }
+                if (!state.activeProject || !state.activeChapterPath || !state.activeChapterContent) { Controller.showToast('프롬프트를 생성할 챕터 정보가 부족합니다.', 'error'); return; }
                 const { settings, toc } = state.activeProject;
                 const chapterNode = Utils.getNodeByPath(toc, state.activeChapterPath);
                 if (!chapterNode) return;
-
                 const pathParts = state.activeChapterPath.split('.').map(Number);
                 const partIndex = pathParts[0];
                 const partNode = toc.children?.[partIndex];
-                
                 const partTitle = partNode?.title || '알 수 없는 파트';
                 const partDescription = partNode?.description || ''; 
                 const partRelativePath = pathParts.slice(1).join('.');
                 const fullTocText = Utils.generateTocText(toc, 0, '', state.activeChapterPath);
                 const partTocText = partNode ? Utils.generateTocText(partNode, 0, '', partRelativePath) : '';
-
                 const chapterDescription = state.activeChapterContent.notes || chapterNode.description || '챕터에 대한 설명이나 메모가 없습니다.';
-
                 let prompt = settings.writingPrompt || CONFIG.DEFAULT_PROJECT_SETTINGS.writingPrompt;
-                
-                prompt = prompt
-                    .replace(/{{bookTitle}}/g, toc.title || '제목 없음')
-                    .replace(/{{projectGenre}}/g, settings.writingGenre || '')
-                    .replace(/{{projectAgeGroup}}/g, settings.writingAgeGroup || '')
-                    .replace(/{{projectAudience}}/g, settings.writingAudience || '')
-                    .replace(/{{references}}/g, settings.writingReferences || '제공된 자료 없음')
-                    .replace(/{{partTitle}}/g, partTitle)
-                    .replace(/{{partDescription}}/g, partDescription)
-                    .replace(/{{chapterTitle}}/g, chapterNode.title || '')
-                    .replace(/{{chapterDescription}}/g, chapterDescription)
-                    .replace(/{{fullToc}}/g, fullTocText)
-                    .replace(/{{partToc}}/g, partTocText)
-                    .replace(/{{projectStyleExample}}/g, settings.writingStyle || '');
-                
+                prompt = prompt.replace(/{{bookTitle}}/g, toc.title || '제목 없음').replace(/{{projectGenre}}/g, settings.writingGenre || '').replace(/{{projectAgeGroup}}/g, settings.writingAgeGroup || '').replace(/{{projectAudience}}/g, settings.writingAudience || '').replace(/{{references}}/g, settings.writingReferences || '제공된 자료 없음').replace(/{{partTitle}}/g, partTitle).replace(/{{partDescription}}/g, partDescription).replace(/{{chapterTitle}}/g, chapterNode.title || '').replace(/{{chapterDescription}}/g, chapterDescription).replace(/{{fullToc}}/g, fullTocText).replace(/{{partToc}}/g, partTocText).replace(/{{projectStyleExample}}/g, settings.writingStyle || '');
                 Controller.copyToClipboard(prompt);
             },
             copyTranslationPrompt: () => { if (!state.activeChapterContent) return; const turndownService = new TurndownService(); const sourceHtml = state.activeChapterContent.manuscript ? marked.parse(state.activeChapterContent.manuscript) : (state.activeChapterContent.originalContent || ''); const sourceText = turndownService.turndown(sourceHtml); if (!sourceText) { Controller.showToast('번역할 내용이 없습니다.', 'error'); return; } let prompt = state.activeProject.settings.translationPrompt || CONFIG.DEFAULT_PROJECT_SETTINGS.translationPrompt; prompt = prompt.replace('{{text}}', sourceText); Controller.copyToClipboard(prompt); },
             buildQuizPrompt: () => { if (!state.activeChapterContent) return null; const turndownService = new TurndownService(); const sourceHtml = state.activeChapterContent.manuscript ? marked.parse(state.activeChapterContent.manuscript) : (state.activeChapterContent.originalContent || ''); const sourceText = turndownService.turndown(sourceHtml); if (!sourceText) return null; const settings = state.activeProject.settings; const template = settings.quizPromptTemplate || CONFIG.DEFAULT_PROJECT_SETTINGS.quizPromptTemplate; return template.replace('{{taskDescription}}', settings.quizTaskDescription || CONFIG.DEFAULT_PROJECT_SETTINGS.quizTaskDescription).replace('{{outputFormatInstruction}}', settings.quizOutputFormatInstruction || CONFIG.DEFAULT_PROJECT_SETTINGS.quizOutputFormatInstruction).replace('{{questionCount}}', settings.quizQuestionCount || CONFIG.DEFAULT_PROJECT_SETTINGS.quizQuestionCount).replace('{{text}}', sourceText.substring(0, 15000)); },
             generateQuiz: async () => { let apiKey = localStorage.getItem('googleApiKey'); if(!apiKey) return Controller.openModal('apiKey'); const prompt = Controller.buildQuizPrompt(); if (!prompt) { Controller.showToast('퀴즈를 생성할 학습 내용이 없습니다.', 'error'); return; } Controller.showToast('AI가 문제를 생성하고 있습니다...', 'info'); const spinnerEl = document.querySelector('[data-action="generate-quiz"]'); if(spinnerEl) spinnerEl.innerHTML = `<div class="w-5 h-5 border-2 border-slate-500 border-t-transparent rounded-full spinner"></div>`; try { const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }); if (!response.ok) throw new Error(`API 요청 실패: ${response.statusText}`); const result = await response.json(); const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text; if(!responseText) throw new Error("AI로부터 빈 응답을 받았습니다."); const jsonMatch = responseText.match(/<json_response>([\s\S]*?)<\/json_response>/); const jsonText = jsonMatch ? jsonMatch[1].trim() : responseText.match(/\[[\s\S]*\]/)?.[0] || responseText.trim(); const questions = JSON.parse(jsonText); const content = state.activeChapterContent; content.questions = [...(content.questions || []), ...questions]; content.status = 'quiz-done'; await DB.put(CONFIG.STORES.CONTENTS, content); Controller.showToast(`${questions.length}개의 문제가 추가되었습니다.`, 'success'); View.render(); } catch (error) { console.error("Quiz generation failed:", error); Controller.showToast(`문제 생성 실패: ${error.message}`, 'error'); } finally { if(spinnerEl) spinnerEl.innerHTML = `<i data-lucide="sparkles" class="w-5 h-5 mr-2"></i>AI로 문제 추가`; lucide.createIcons(); } },
             submitApiKey: (form) => { const key = form.querySelector('#api-key-input').value; if (key) { localStorage.setItem('googleApiKey', key); Controller.closeModal(); } else { Controller.showToast('API 키를 입력해주세요.', 'error'); } },
-            startQuiz: () => { const questions = state.activeChapterContent.questions; if (!questions || questions.length === 0) { Controller.showToast('퀴즈를 진행할 문제가 없습니다.', 'warning'); return; } const shuffledQuestions = [...questions].sort(() => Math.random() - 0.5); state.quizState = { questions: shuffledQuestions, currentIndex: 0, answers: [], isFinished: false }; state.currentView = 'quiz'; View.render(); },
+            startQuiz: () => {
+                const questions = state.activeChapterContent.questions;
+                if (!questions || questions.length === 0) { Controller.showToast('퀴즈를 진행할 문제가 없습니다.', 'warning'); return; }
+                const processedQuestions = JSON.parse(JSON.stringify(questions)).map(q => {
+                    if (q.type === CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE && q.options && typeof q.answer === 'string') {
+                        q.answerIndex = q.options.findIndex(opt => opt === q.answer);
+                        if (q.answerIndex === -1) { console.warn(`Could not find answer index for question: "${q.questionText}"`); }
+                    }
+                    return q;
+                });
+                const shuffledQuestions = [...processedQuestions].sort(() => Math.random() - 0.5);
+                state.quizState = { questions: shuffledQuestions, currentIndex: 0, answers: [], isFinished: false };
+                state.currentView = 'quiz';
+                View.render();
+            },
             exitQuiz: () => { Controller.openModal('confirm', { title: '퀴즈 나가기', message: '퀴즈를 중단하고 작업실로 돌아가시겠습니까?', confirmText: '나가기', onConfirm: () => { state.quizState = null; state.currentView = 'workspace'; View.render(); } }); },
             submitAnswer: (selectedIndex) => { if (state.quizState.answers[state.quizState.currentIndex]) return; const q = state.quizState.questions[state.quizState.currentIndex]; const isCorrect = selectedIndex === q.answerIndex; state.quizState.answers[state.quizState.currentIndex] = { selectedIndex, isCorrect }; View.render(); },
-            submitTextAnswer: (form) => { if (state.quizState.answers[state.quizState.currentIndex]) return; const userAnswer = new FormData(form).get('answer-input') || ''; const q = state.quizState.questions[state.quizState.currentIndex]; const isCorrect = userAnswer.toLowerCase() === q.answer.toLowerCase(); state.quizState.answers[state.quizState.currentIndex] = { userAnswer, isCorrect }; View.render(); },
-            nextQuestion: () => { if(state.quizState.currentIndex < state.quizState.questions.length - 1) { state.quizState.currentIndex++; } else { state.quizState.isFinished = true; Controller.finishQuiz(); } View.render(); },
-            finishQuiz: async () => { const correctAnswers = state.quizState.answers.filter(a => a.isCorrect).length; const xpGained = correctAnswers * 100; const newXp = state.userProfile.xp + xpGained; let newLevel = state.userProfile.level; while (CONFIG.LEVEL_THRESHOLDS[newLevel] !== undefined && newXp >= CONFIG.LEVEL_THRESHOLDS[newLevel]) newLevel++; if (newLevel > state.userProfile.level) Controller.showToast(`레벨 업! LV.${newLevel} 달성!`, 'success'); state.userProfile.xp = newXp; state.userProfile.level = newLevel; await DB.put(CONFIG.STORES.USER_PROFILE, state.userProfile); state.quizState = null; state.currentView = 'workspace'; Controller.showToast(`퀴즈 완료! +${xpGained} XP`, 'success'); View.render(); },
+            submitTextAnswer: (form) => { if (state.quizState.answers[state.quizState.currentIndex]) return; const userAnswer = new FormData(form).get('answer-input') || ''; const q = state.quizState.questions[state.quizState.currentIndex]; const isCorrect = userAnswer.trim().toLowerCase() === q.answer.trim().toLowerCase(); state.quizState.answers[state.quizState.currentIndex] = { userAnswer, isCorrect }; View.render(); },
+            nextQuestion: () => { if(state.quizState.currentIndex < state.quizState.questions.length - 1) { state.quizState.currentIndex++; } else { this.finishQuiz(); } View.render(); },
+            finishQuiz: async () => {
+                const correctAnswers = state.quizState.answers.filter(a => a.isCorrect).length;
+                const xpGained = correctAnswers * 100;
+                if (xpGained > 0) {
+                    const newXp = state.userProfile.xp + xpGained;
+                    let newLevel = state.userProfile.level;
+                    while (CONFIG.LEVEL_THRESHOLDS[newLevel] !== undefined && newXp >= CONFIG.LEVEL_THRESHOLDS[newLevel]) { newLevel++; }
+                    if (newLevel > state.userProfile.level) { Controller.showToast(`레벨 업! LV.${newLevel} 달성!`, 'success'); }
+                    state.userProfile.xp = newXp;
+                    state.userProfile.level = newLevel;
+                    await DB.put(CONFIG.STORES.USER_PROFILE, state.userProfile);
+                }
+                state.quizState.isFinished = true;
+                state.currentView = 'quizResult';
+                Controller.showToast(`퀴즈 완료! +${xpGained} XP`, 'success');
+                View.render();
+            },
             deleteManualQuizQuestion: async (index) => { state.activeChapterContent.questions.splice(index, 1); await DB.put(CONFIG.STORES.CONTENTS, state.activeChapterContent); Controller.showToast('문제가 삭제되었습니다.', 'success'); View.render(); },
             showToast: (message, type = 'info', duration = 3000) => { const id = Utils.generateId('toast'); state.toasts.push({ id, message, type }); View.render(); setTimeout(() => Controller.dismissToast(id), duration); },
             dismissToast: (id) => { const toastEl = document.getElementById(`toast-${id}`); if(toastEl) { toastEl.style.opacity = 0; setTimeout(() => { state.toasts = state.toasts.filter(t => t.id !== id); View.render(); }, 500); } else { state.toasts = state.toasts.filter(t => t.id !== id); View.render(); } },
             handleConfirmAction: () => { const onConfirm = state.modal.data.onConfirm; if(typeof onConfirm === 'function') onConfirm(); Controller.closeModal(); },
-            
+            navigateChapter(direction) {
+                if (!state.activeProject || !state.activeChapterPath) return;
+                const flatToc = Utils.getFlatToc(state.activeProject.toc);
+                const currentIndex = flatToc.findIndex(chapter => chapter.path === state.activeChapterPath);
+                if (currentIndex === -1) return;
+                const nextIndex = currentIndex + direction;
+                if (nextIndex >= 0 && nextIndex < flatToc.length) {
+                    const nextChapterPath = flatToc[nextIndex].path;
+                    this.selectChapter(nextChapterPath);
+                }
+            },
+            navigateToWorkspace() {
+                state.quizState = null;
+                state.currentView = 'workspace';
+                View.render();
+            },
+            // NEW: Methods for state persistence and post-render effects
+            saveWorkspaceState() {
+                if (!state.activeProjectId) return;
+                const mainContentEl = document.querySelector('#workspace-main-content');
+                if (!mainContentEl) return;
+                const stateToSave = {
+                    workspaceMode: state.workspaceMode,
+                    scrollTop: mainContentEl.scrollTop,
+                };
+                localStorage.setItem(`ils_v2_workspace_state_${state.activeProjectId}`, JSON.stringify(stateToSave));
+            },
+            setupScrollListener() {
+                const mainContentEl = document.querySelector('#workspace-main-content');
+                if (!mainContentEl) return;
+                // Apply pending scroll after a short delay to ensure content is rendered
+                setTimeout(() => {
+                    if (state.pendingScrollTop) {
+                        mainContentEl.scrollTop = state.pendingScrollTop;
+                        state.pendingScrollTop = 0;
+                    }
+                }, 50);
+                this.removeScrollListener(); // Remove old one first
+                state.scrollListener = Utils.debounce(() => this.saveWorkspaceState(), 250);
+                mainContentEl.addEventListener('scroll', state.scrollListener);
+            },
+            removeScrollListener() {
+                const mainContentEl = document.querySelector('#workspace-main-content');
+                if (state.scrollListener && mainContentEl) {
+                    mainContentEl.removeEventListener('scroll', state.scrollListener);
+                    state.scrollListener = null;
+                }
+            },
+            applyPostRenderEffects() {
+                if (state.currentView === 'workspace' && state.workspaceMode === 'view' && state.isKaTeXLoaded && window.renderMathInElement) {
+                    const viewPanel = document.querySelector('.prose.prose-readable');
+                    if(viewPanel) {
+                        try {
+                            renderMathInElement(viewPanel, {
+                                delimiters: [
+                                    {left: '$$', right: '$$', display: true},
+                                    {left: '$', right: '$', display: false},
+                                    {left: '\\(', right: '\\)', display: false},
+                                    {left: '\\[', right: '\\]', display: true}
+                                ]
+                            });
+                        } catch(e) { console.error("KaTeX rendering failed:", e); }
+                    }
+                }
+            },
             ACTION_HANDLERS: {
                 'new-project': () => Controller.openModal('newProject', {activeTab: 'zip'}),
                 'open-project': (el) => Controller.openProject(el.dataset.id),
@@ -594,7 +832,6 @@
                 'submit-answer': (el) => Controller.submitAnswer(parseInt(el.dataset.index, 10)),
                 'submit-text-answer': (form) => Controller.submitTextAnswer(form),
                 'next-question': () => Controller.nextQuestion(),
-                'finish-quiz': () => Controller.finishQuiz(),
                 'close-modal': () => Controller.closeModal(),
                 'close-modal-overlay': (el, e) => { if(e.target === el) Controller.closeModal(); },
                 'switch-modal-tab': (el) => Controller.switchModalTab(el.dataset.tab),
@@ -605,6 +842,11 @@
                 'copy-quiz-prompt': () => { const prompt = Controller.buildQuizPrompt(); if(prompt) Controller.copyToClipboard(prompt); else Controller.showToast('퀴즈를 생성할 학습 내용이 없습니다.', 'error'); },
                 'add-questions-from-json': async (form) => { const jsonContent = new FormData(form).get('jsonContent'); if (!jsonContent) { Controller.showToast('JSON 내용을 입력해주세요.', 'error'); return; } try { const text = jsonContent.trim(); const startIndex = text.indexOf('['); const endIndex = text.lastIndexOf(']'); if (startIndex === -1 || endIndex === -1) throw new Error('유효한 JSON 배열을 찾을 수 없습니다.'); const jsonString = text.substring(startIndex, endIndex + 1); const questions = JSON.parse(jsonString); const content = state.activeChapterContent; content.questions = [...(content.questions || []), ...questions]; content.status = 'quiz-done'; await DB.put(CONFIG.STORES.CONTENTS, content); Controller.showToast(`${questions.length}개의 문제가 추가되었습니다.`, 'success'); View.render(); } catch (e) { Controller.showToast(`유효하지 않은 JSON입니다: ${e.message}`, 'error'); } },
                 'delete-quiz-question': (el) => Controller.deleteManualQuizQuestion(parseInt(el.dataset.index, 10)),
+                'toggle-mobile-toc': () => { state.isMobileTocOpen = !state.isMobileTocOpen; View.render(); },
+                'close-mobile-toc': () => { state.isMobileTocOpen = false; View.render(); },
+                'prev-chapter': () => Controller.navigateChapter(-1),
+                'next-chapter': () => Controller.navigateChapter(1),
+                'back-to-workspace': () => Controller.navigateToWorkspace(),
             }
         };
 
