@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>콘텐츠 허브 | v2.0</title>
+    <title>콘텐츠 허브 | v2.1</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -221,8 +221,14 @@
         .diagram-uploader.dragover { border-color: var(--color-primary); }
         .diagram-upload-area { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; background-color: var(--color-background); border-radius: var(--radius-md); color: var(--color-text-secondary); font-size: 14px; text-align: center; cursor: pointer; }
         .diagram-upload-area svg { width: 32px; height: 32px; margin-bottom: var(--space-unit); }
-        .diagram-preview-grid { margin-top: var(--space-unit); display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: var(--space-unit); }
-        .diagram-thumbnail { position: relative; width: 100%; padding-top: 100%; border-radius: var(--radius-md); overflow: hidden; }
+        .diagram-preview-grid {
+            margin-top: var(--space-unit);
+            display: grid;
+            /* [MODIFIED] Increased minimum thumbnail size from 100px to 180px */
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: var(--space-unit);
+        }
+        .diagram-thumbnail { position: relative; width: 100%; padding-top: 100%; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--color-border); }
         .diagram-thumbnail img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
         .delete-diagram-btn { position: absolute; top: 4px; right: 4px; background-color: rgba(239, 68, 68, 0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity 0.2s; }
         .diagram-thumbnail:hover .delete-diagram-btn { opacity: 1; }
@@ -410,28 +416,28 @@
                         
                         // 데이터 마이그레이션: 기존 topics의 posts 배열을 새로운 posts 저장소로 이동
                         try {
-                           const topicStore = tx.objectStore('topics');
-                           const postStore = tx.objectStore('posts');
-                           const oldTopics = await new Promise((res, rej) => {
-                               const r = topicStore.getAll();
-                               r.onsuccess = () => res(r.result);
-                               r.onerror = () => rej(r.error);
-                           });
+                            const topicStore = tx.objectStore('topics');
+                            const postStore = tx.objectStore('posts');
+                            const oldTopics = await new Promise((res, rej) => {
+                                const r = topicStore.getAll();
+                                r.onsuccess = () => res(r.result);
+                                r.onerror = () => rej(r.error);
+                            });
 
-                           for (const topic of oldTopics) {
-                               if (topic.posts && Array.isArray(topic.posts)) {
-                                   for (const post of topic.posts) {
-                                       post.topicId = topic.id; // 외래 키 추가
-                                       postStore.put(post);
-                                   }
-                                   delete topic.posts; // 기존 topic 객체에서 posts 배열 삭제
-                                   topicStore.put(topic);
-                               }
-                           }
-                           console.log("Database migration to v3 completed.");
+                            for (const topic of oldTopics) {
+                                if (topic.posts && Array.isArray(topic.posts)) {
+                                    for (const post of topic.posts) {
+                                        post.topicId = topic.id; // 외래 키 추가
+                                        postStore.put(post);
+                                    }
+                                    delete topic.posts; // 기존 topic 객체에서 posts 배열 삭제
+                                    topicStore.put(topic);
+                                }
+                            }
+                            console.log("Database migration to v3 completed.");
                         } catch (error) {
-                           console.error("Database migration failed:", error);
-                           tx.abort(); // 마이그레이션 실패 시 트랜잭션 롤백
+                            console.error("Database migration failed:", error);
+                            tx.abort(); // 마이그레이션 실패 시 트랜잭션 롤백
                         }
                     }
                 };
@@ -830,7 +836,7 @@
                 diagrams.forEach((diagramData, index) => {
                     const thumb = document.createElement('div');
                     thumb.className = 'diagram-thumbnail';
-                    thumb.innerHTML = `<img src="${diagramData}" alt="Diagram ${index + 1}"><button class="delete-diagram-btn" data-index="${index}"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>`;
+                    thumb.innerHTML = `<img src="${diagramData.url}" alt="${diagramData.name}"><button class="delete-diagram-btn" data-index="${index}"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>`;
                     thumb.querySelector('.delete-diagram-btn').addEventListener('click', () => deleteDiagram(index));
                     diagramPreviewGrid.appendChild(thumb);
                 });
@@ -850,49 +856,82 @@
             return null;
         };
 
+        // [MODIFIED] Refactored function to sort files and zip entries by name before processing.
         const handleDiagramFiles = async (files) => {
             const post = (state.posts.get(state.activeTopicId) || []).find(p => p.id === state.activePostId);
             if (!post) return;
+        
             const initialDiagramCount = post.diagrams.length;
-            const processingPromises = [];
-            for (const file of files) {
-                if (file.type.startsWith('image/')) {
-                    const promise = new Promise((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = (e) => { post.diagrams.push(e.target.result); resolve(); };
-                        reader.onerror = reject;
-                        reader.readAsDataURL(file);
-                    });
-                    processingPromises.push(promise);
-                } else if (file.name.toLowerCase().endsWith('.zip')) {
-                    const promise = (async () => {
-                        try {
+            let fileProcessingPromises = [];
+
+            try {
+                // 1. Convert FileList to an array and sort by file name.
+                const sortedFiles = Array.from(files).sort((a, b) => a.name.localeCompare(b.name));
+        
+                for (const file of sortedFiles) {
+                    if (file.type.startsWith('image/')) {
+                        // Handle regular image files
+                        const promise = new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = (e) => resolve({ name: file.name, url: e.target.result });
+                            reader.onerror = reject;
+                            reader.readAsDataURL(file);
+                        });
+                        fileProcessingPromises.push(promise);
+                    } else if (file.name.toLowerCase().endsWith('.zip')) {
+                        // Handle ZIP files
+                        const zipPromise = (async () => {
                             const zip = await JSZip.loadAsync(file);
-                            const imagePromises = [];
+                            const zipEntries = [];
                             zip.forEach((_, zipEntry) => {
                                 if (isImageAsset(zipEntry.name) && !zipEntry.dir) {
-                                    imagePromises.push((async () => {
-                                        const base64 = await zipEntry.async('base64');
-                                        const mimeType = getMimeTypeFromFileName(zipEntry.name);
-                                        if (mimeType) post.diagrams.push(`data:${mimeType};base64,${base64}`);
-                                    })());
+                                    zipEntries.push(zipEntry);
                                 }
                             });
-                            await Promise.all(imagePromises);
-                        } catch (e) { showToast('ZIP 처리 오류.', true); }
-                    })();
-                    processingPromises.push(promise);
+        
+                            // 2. Sort entries within the ZIP file by name.
+                            zipEntries.sort((a, b) => a.name.localeCompare(b.name));
+        
+                            // Process sorted entries
+                            const entryPromises = zipEntries.map(async (entry) => {
+                                const base64 = await entry.async('base64');
+                                const mimeType = getMimeTypeFromFileName(entry.name);
+                                if (mimeType) {
+                                    return { name: entry.name, url: `data:${mimeType};base64,${base64}` };
+                                }
+                                return null;
+                            });
+                            
+                            // Await all promises from this zip and filter out any nulls
+                            return (await Promise.all(entryPromises)).filter(Boolean);
+                        })();
+                        fileProcessingPromises.push(zipPromise);
+                    }
                 }
-            }
-            await Promise.all(processingPromises);
-            renderDiagrams(post.diagrams);
-            if (post.diagrams.length > initialDiagramCount) {
-                updateChecklistItem(post, 'c4', true);
-            } else {
-                autoSavePost();
+        
+                // 3. Resolve all promises and add the new diagrams to the post.
+                const results = await Promise.all(fileProcessingPromises);
+                const newDiagrams = results.flat(); // .flat() handles arrays of diagrams from ZIP files.
+                
+                if (!post.diagrams) post.diagrams = [];
+                post.diagrams.push(...newDiagrams);
+                
+                // Sort the entire diagrams array by name after adding new ones
+                post.diagrams.sort((a,b) => a.name.localeCompare(b.name));
+
+                renderDiagrams(post.diagrams);
+                
+                if (post.diagrams.length > initialDiagramCount) {
+                    updateChecklistItem(post, 'c4', true); // This will trigger autoSave
+                } else {
+                    autoSavePost();
+                }
+            } catch (error) {
+                console.error("Error handling diagram files:", error);
+                showToast('파일 처리 중 오류가 발생했습니다.', true);
             }
         };
-
+        
         const deleteDiagram = (index) => {
             const post = (state.posts.get(state.activeTopicId) || []).find(p => p.id === state.activePostId);
             if (post && post.diagrams) {
@@ -1076,4 +1115,3 @@
     </script>
 </body>
 </html>
-
