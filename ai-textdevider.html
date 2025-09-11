@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Content Segmenter - Pro</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        /*
+            DESIGN SYSTEM DEFINITION
+            - Typography: 'Poppins' for English UI elements, 'Noto Sans KR' for Korean content.
+            - Base Font Size: 16px
+            - Color Palette (CSS Variables):
+                --color-primary: #3B82F6 (Blue 500)
+                --color-primary-dark: #2563EB (Blue 600)
+                --color-success: #22C55E (Green 500)
+                --color-success-dark: #16A34A (Green 600)
+                --color-danger: #EF4444 (Red 500)
+                --color-text-primary: #1E293B (Slate 800)
+                --color-text-secondary: #64748B (Slate 500)
+                --color-border: #CBD5E1 (Slate 300)
+                --color-background: #F8FAFC (Slate 50)
+                --color-white: #FFFFFF
+                --color-disabled: #94A3B8 (Slate 400)
+            - Spacing System (8px grid):
+                --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px; --space-2xl: 48px;
+            - Border Radius:
+                --radius-md: 8px; --radius-lg: 12px; --radius-full: 9999px;
+        */
+
+        :root {
+            --color-primary: #3B82F6;
+            --color-primary-dark: #2563EB;
+            --color-success: #22C55E;
+            --color-success-dark: #16A34A;
+            --color-danger: #EF4444;
+            --color-text-primary: #1E293B;
+            --color-text-secondary: #64748B;
+            --color-border: #CBD5E1;
+            --color-background: #F8FAFC;
+            --color-white: #FFFFFF;
+            --color-disabled: #94A3B8;
+
+            --space-xs: 4px; --space-sm: 8px; --space-md: 16px; --space-lg: 24px; --space-xl: 32px; --space-2xl: 48px;
+            --radius-md: 8px; --radius-lg: 12px; --radius-full: 9999px;
+            
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: 'Poppins', 'Noto Sans KR', sans-serif;
+            background-color: var(--color-background);
+            color: var(--color-text-primary);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+        
+        main {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: var(--space-lg);
+        }
+        
+        .app-container {
+            width: 100%;
+            max-width: 680px;
+        }
+
+        .app-header {
+            text-align: center;
+            margin-bottom: var(--space-2xl);
+        }
+
+        .app-header h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            margin: 0 0 var(--space-sm);
+        }
+
+        .app-header p {
+            font-size: 1.125rem;
+            color: var(--color-text-secondary);
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .progress-tracker {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: var(--space-xl);
+            position: relative;
+        }
+        .progress-tracker::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: var(--space-xl);
+            right: var(--space-xl);
+            height: 2px;
+            background-color: var(--color-border);
+            transform: translateY(-50%);
+            z-index: 1;
+        }
+
+        .progress-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: var(--space-sm);
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--color-text-secondary);
+            position: relative;
+            z-index: 2;
+            background-color: var(--color-background);
+            padding: 0 var(--space-sm);
+        }
+        .step-indicator {
+            width: 36px;
+            height: 36px;
+            border-radius: var(--radius-full);
+            border: 2px solid var(--color-border);
+            display: grid;
+            place-items: center;
+            font-weight: 700;
+            background-color: var(--color-white);
+            transition: all 0.3s ease;
+        }
+        .progress-step.active .step-indicator {
+            border-color: var(--color-primary);
+            background-color: var(--color-primary);
+            color: var(--color-white);
+        }
+        .progress-step.active {
+            color: var(--color-text-primary);
+        }
+        .progress-step.completed .step-indicator {
+             border-color: var(--color-success);
+             background-color: var(--color-success);
+             color: var(--color-white);
+        }
+
+        .app-card {
+            background-color: var(--color-white);
+            border-radius: var(--radius-lg);
+            padding: var(--space-xl);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--color-border);
+            transition: opacity 0.5s ease;
+        }
+
+        .step-content {
+            text-align: center;
+        }
+        .step-content h2 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0 0 var(--space-sm);
+        }
+        .step-content p {
+            color: var(--color-text-secondary);
+            margin: 0 0 var(--space-lg);
+        }
+        .step-content:not(.visible) { display: none; }
+
+        .drop-zone {
+            border: 2px dashed var(--color-border);
+            border-radius: var(--radius-md);
+            padding: var(--space-xl);
+            cursor: pointer;
+            transition: background-color 0.2s, border-color 0.2s;
+        }
+        .drop-zone.dragover {
+            background-color: #EFF6FF; /* Blue 50 */
+            border-color: var(--color-primary);
+        }
+        .drop-zone p { margin: 0; }
+        .drop-zone .icon { color: var(--color-disabled); margin-bottom: var(--space-md); }
+        .drop-zone .highlight { color: var(--color-primary); font-weight: 500; }
+        
+        .file-info {
+            background-color: #F0FDF4; /* Green 50 */
+            color: #15803D; /* Green 700 */
+            padding: var(--space-md);
+            border-radius: var(--radius-md);
+            font-weight: 500;
+            margin-top: var(--space-lg);
+        }
+
+        #optionsContainer {
+            margin-top: var(--space-lg);
+            padding: var(--space-md);
+            background-color: #F1F5F9;
+            border-radius: var(--radius-md);
+            text-align: center;
+        }
+        #optionsContainer label {
+            font-weight: 500;
+            color: var(--color-text-secondary);
+            font-size: 0.9rem;
+            display: block;
+            margin-bottom: var(--space-sm);
+        }
+        #chapterCountInput {
+            padding: var(--space-sm);
+            border-radius: var(--radius-md);
+            border: 1px solid var(--color-border);
+            text-align: center;
+            width: 100px;
+        }
+
+        .content-area {
+            font-family: 'Menlo', 'Courier New', monospace;
+            font-size: 0.875rem;
+            background-color: #F1F5F9; /* Slate 100 */
+            color: var(--color-text-primary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            padding: var(--space-md);
+            min-height: 250px;
+            max-height: 40vh;
+            overflow-y: auto;
+            text-align: left;
+            white-space: pre-wrap;
+            word-break: break-all;
+            resize: vertical;
+            line-height: 1.6;
+        }
+        textarea.content-area { width: 100%; }
+
+        .button-group {
+            margin-top: var(--space-lg);
+            display: flex;
+            justify-content: center;
+            gap: var(--space-md);
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: var(--space-sm);
+            padding: 10px var(--space-lg);
+            border-radius: var(--radius-md);
+            font-weight: 500;
+            font-size: 1rem;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            text-decoration: none;
+        }
+        .btn:focus-visible {
+            outline: 2px solid var(--color-primary);
+            outline-offset: 2px;
+        }
+        .btn-primary {
+            background-color: var(--color-primary);
+            color: var(--color-white);
+        }
+        .btn-primary:hover { background-color: var(--color-primary-dark); }
+        .btn-secondary {
+            background-color: var(--color-white);
+            color: var(--color-text-primary);
+            border-color: var(--color-border);
+        }
+        .btn-secondary:hover { background-color: #F1F5F9; }
+        .btn-success {
+            background-color: var(--color-success);
+            color: var(--color-white);
+        }
+        .btn-success:hover { background-color: var(--color-success-dark); }
+        .btn:disabled {
+            background-color: var(--color-disabled);
+            border-color: var(--color-disabled);
+            color: var(--color-white);
+            cursor: not-allowed;
+        }
+
+        .spinner {
+            display: none;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: var(--color-white);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        .btn.processing .spinner { display: block; }
+        .btn.processing .btn-text { display: none; }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .error-message {
+            color: var(--color-danger);
+            font-size: 0.875rem;
+            margin-top: var(--space-md);
+            text-align: left;
+            padding: var(--space-sm) var(--space-md);
+            background-color: #FEF2F2; /* Red 50 */
+            border-radius: var(--radius-md);
+            border: 1px solid var(--color-danger);
+        }
+    </style>
+</head>
+<body>
+
+    <main>
+        <div class="app-container">
+            <header class="app-header">
+                <h1>AI 콘텐츠 분할기</h1>
+                <p>자막 또는 텍스트 파일을 분석하여 주제별 스크립트로 자동 정리하고 다운로드하세요.</p>
+            </header>
+            
+            <section id="progressTracker" class="progress-tracker">
+                <div id="step-node-1" class="progress-step active">
+                    <div class="step-indicator">1</div>
+                    <span>파일 업로드</span>
+                </div>
+                <div id="step-node-2" class="progress-step">
+                    <div class="step-indicator">2</div>
+                    <span>프롬프트 생성</span>
+                </div>
+                <div id="step-node-3" class="progress-step">
+                    <div class="step-indicator">3</div>
+                    <span>결과 처리</span>
+                </div>
+            </section>
+            
+            <article class="app-card">
+                <div id="step-1" class="step-content visible">
+                    <h2>콘텐츠 파일 업로드</h2>
+                    <p>시작하려면 분석할 파일을 선택하거나 끌어다 놓으세요.</p>
+                    <div id="dropZone" class="drop-zone">
+                        <input type="file" id="fileInput" accept=".smi,.vtt,.srt,.txt" hidden>
+                        <svg class="icon mx-auto h-12 w-12" xmlns="http://www.w3.org/2000/svg" width="48" height="48" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+                        <p><span class="highlight">파일을 선택</span>하거나 여기에 드래그하세요.</p>
+                        <p class="text-xs text-slate-500" style="font-size: 0.8rem; color: var(--color-text-secondary); margin-top: var(--space-sm);">지원 형식: SMI, VTT, SRT, TXT</p>
+                    </div>
+                    <div id="fileInfo" class="file-info" style="display: none;"></div>
+                    <div id="optionsContainer" style="display: none;">
+                        <label for="chapterCountInput">원하는 대주제 개수 (비워두면 AI가 자동 결정)</label>
+                        <input type="number" id="chapterCountInput" min="2" max="20" placeholder="예: 5">
+                    </div>
+                </div>
+
+                <div id="step-2" class="step-content">
+                    <h2>AI 프롬프트 생성</h2>
+                    <p>생성된 프롬프트를 복사하여 선호하는 AI 모델에 입력하세요.</p>
+                    <div id="promptArea" class="content-area" readonly></div>
+                    <div class="button-group">
+                        <button id="resetBtn1" class="btn btn-secondary">
+                            <span class="btn-text">처음으로</span>
+                        </button>
+                        <button id="copyPromptBtn" class="btn btn-primary">
+                            <span class="btn-text">프롬프트 복사</span>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="step-3" class="step-content">
+                    <h2>결과 처리 및 다운로드</h2>
+                    <p>AI 모델에서 받은 JSON 응답을 아래에 붙여넣으세요.</p>
+                    <textarea id="jsonInput" class="content-area" placeholder="여기에 AI가 생성한 JSON 응답을 붙여넣습니다..."></textarea>
+                    <div id="jsonError" class="error-message" style="display: none;"></div>
+                    <div id="downloadContainer" class="button-group">
+                         </div>
+                    <div class="button-group">
+                         <button id="resetBtn2" class="btn btn-secondary">
+                            <span class="btn-text">처음으로</span>
+                        </button>
+                        <button id="processBtn" class="btn btn-primary" disabled>
+                            <div class="spinner"></div>
+                            <span class="btn-text">ZIP 파일 생성</span>
+                        </button>
+                    </div>
+                </div>
+            </article>
+        </div>
+    </main>
+
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- STATE MANAGEMENT ---
+        const state = {
+            currentStep: 1,
+            contentEntries: [],
+            fileName: '',
+            fileType: '', // 'subtitle' or 'text'
+            chapterCount: null,
+        };
+        
+        // --- DOM ELEMENTS ---
+        const ui = {
+            progressNodes: [document.getElementById('step-node-1'), document.getElementById('step-node-2'), document.getElementById('step-node-3')],
+            steps: [document.getElementById('step-1'), document.getElementById('step-2'), document.getElementById('step-3')],
+            dropZone: document.getElementById('dropZone'),
+            fileInput: document.getElementById('fileInput'),
+            fileInfo: document.getElementById('fileInfo'),
+            optionsContainer: document.getElementById('optionsContainer'),
+            chapterCountInput: document.getElementById('chapterCountInput'),
+            promptArea: document.getElementById('promptArea'),
+            copyPromptBtn: document.getElementById('copyPromptBtn'),
+            jsonInput: document.getElementById('jsonInput'),
+            jsonError: document.getElementById('jsonError'),
+            processBtn: document.getElementById('processBtn'),
+            downloadContainer: document.getElementById('downloadContainer'),
+            resetBtns: [document.getElementById('resetBtn1'), document.getElementById('resetBtn2')],
+        };
+
+        // --- RENDER FUNCTION ---
+        const render = () => {
+            ui.progressNodes.forEach((node, index) => {
+                node.classList.remove('active', 'completed');
+                if (index + 1 < state.currentStep) node.classList.add('completed');
+                if (index + 1 === state.currentStep) node.classList.add('active');
+            });
+            ui.steps.forEach((step, index) => {
+                step.classList.toggle('visible', index + 1 === state.currentStep);
+            });
+        };
+        
+        const goToStep = (stepNumber) => {
+            state.currentStep = stepNumber;
+            render();
+        };
+
+        // --- EVENT LISTENERS ---
+        ui.dropZone.addEventListener('click', () => ui.fileInput.click());
+        ui.dropZone.addEventListener('dragover', (e) => { e.preventDefault(); ui.dropZone.classList.add('dragover'); });
+        ui.dropZone.addEventListener('dragleave', () => ui.dropZone.classList.remove('dragover'));
+        ui.dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            ui.dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+        });
+        ui.fileInput.addEventListener('change', () => {
+            if (ui.fileInput.files.length > 0) handleFile(ui.fileInput.files[0]);
+        });
+
+        ui.chapterCountInput.addEventListener('input', (e) => {
+            state.chapterCount = e.target.value ? parseInt(e.target.value, 10) : null;
+        });
+        
+        ui.copyPromptBtn.addEventListener('click', () => {
+            navigator.clipboard.writeText(ui.promptArea.textContent).then(() => {
+                const btnText = ui.copyPromptBtn.querySelector('.btn-text');
+                btnText.textContent = '복사 완료!';
+                ui.copyPromptBtn.classList.replace('btn-primary', 'btn-success');
+                setTimeout(() => {
+                    btnText.textContent = '프롬프트 복사';
+                    ui.copyPromptBtn.classList.replace('btn-success', 'btn-primary');
+                }, 2000);
+            });
+            goToStep(3);
+        });
+
+        ui.jsonInput.addEventListener('input', () => {
+            ui.processBtn.disabled = ui.jsonInput.value.trim().length === 0;
+            ui.jsonError.style.display = 'none';
+            ui.downloadContainer.innerHTML = '';
+        });
+
+        ui.processBtn.addEventListener('click', handleProcessing);
+        
+        ui.resetBtns.forEach(btn => btn.addEventListener('click', resetApp));
+
+        // --- CORE LOGIC ---
+
+        function resetApp() {
+            state.contentEntries = [];
+            state.fileName = '';
+            state.fileType = '';
+            state.chapterCount = null;
+            ui.fileInput.value = '';
+            ui.chapterCountInput.value = '';
+            ui.fileInfo.style.display = 'none';
+            ui.optionsContainer.style.display = 'none';
+            ui.jsonInput.value = '';
+            ui.jsonError.style.display = 'none';
+            ui.downloadContainer.innerHTML = '';
+            ui.processBtn.disabled = true;
+            goToStep(1);
+        }
+
+        function handleFile(file) {
+            resetApp(); // Reset previous state before processing a new file
+            state.fileName = file.name;
+            ui.fileInfo.textContent = `✅ ${file.name} 파일이 성공적으로 업로드되었습니다.`;
+            ui.fileInfo.style.display = 'block';
+            ui.fileInfo.style.backgroundColor = '#F0FDF4';
+            ui.fileInfo.style.color = '#15803D';
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const fileContent = e.target.result;
+                const fileExtension = file.name.split('.').pop().toLowerCase();
+                
+                try {
+                    const parser = parsers[fileExtension];
+                    if (!parser) {
+                        throw new Error(`지원하지 않는 파일 형식입니다: .${fileExtension}`);
+                    }
+                    
+                    state.fileType = fileExtension === 'txt' ? 'text' : 'subtitle';
+                    state.contentEntries = parser(fileContent);
+
+                    if (state.contentEntries.length === 0) {
+                        throw new Error("콘텐츠 데이터를 파싱할 수 없습니다. 파일 형식을 확인해주세요.");
+                    }
+                    
+                    ui.optionsContainer.style.display = 'block';
+                    
+                    const formattedContentForAI = state.contentEntries.map(entry => {
+                        const id = state.fileType === 'text' ? `Paragraph ${entry.id}` : msToTimeString(entry.id);
+                        return `[${id}] ${entry.text}`;
+                    }).join('\n\n');
+                    
+                    generatePrompt(formattedContentForAI, state.fileType, state.chapterCount);
+                    // Add a listener to regenerate prompt if chapter count changes
+                    ui.chapterCountInput.oninput = () => {
+                         state.chapterCount = ui.chapterCountInput.value ? parseInt(ui.chapterCountInput.value) : null;
+                         generatePrompt(formattedContentForAI, state.fileType, state.chapterCount);
+                    };
+
+                    setTimeout(() => goToStep(2), 500);
+                } catch (error) {
+                    ui.fileInfo.textContent = `❌ 오류: ${error.message}`;
+                    ui.fileInfo.style.backgroundColor = '#FEF2F2';
+                    ui.fileInfo.style.color = '#B91C1C';
+                    ui.optionsContainer.style.display = 'none';
+                }
+            };
+            const encoding = file.name.endsWith('.smi') ? 'EUC-KR' : 'UTF-8';
+            reader.readAsText(file, encoding);
+        }
+
+        function handleProcessing() {
+            setButtonProcessing(ui.processBtn, true, '처리 중...');
+            ui.downloadContainer.innerHTML = '';
+
+            setTimeout(() => {
+                try {
+                    const chaptersData = JSON.parse(ui.jsonInput.value);
+                    if (!Array.isArray(chaptersData) || !chaptersData.every(c => c.main_chapter_title && Array.isArray(c.sub_chapters))) {
+                         throw new Error("JSON 구조가 올바르지 않습니다. 'main_chapter_title'과 'sub_chapters' 배열을 포함해야 합니다.");
+                    }
+                    ui.jsonError.style.display = 'none';
+                    generateZip(chaptersData);
+                } catch (e) {
+                    ui.jsonError.textContent = `오류: ${e.message}`;
+                    ui.jsonError.style.display = 'block';
+                } finally {
+                    setButtonProcessing(ui.processBtn, false, 'ZIP 파일 생성');
+                }
+            }, 500);
+        }
+        
+        // --- PARSERS & UTILITIES ---
+        function msToTimeString(duration) {
+            const seconds = Math.floor((duration / 1000) % 60).toString().padStart(2, '0');
+            const minutes = Math.floor((duration / (1000 * 60)) % 60).toString().padStart(2, '0');
+            const hours = Math.floor((duration / (1000 * 60 * 60)) % 24).toString().padStart(2, '0');
+            return `${hours}:${minutes}:${seconds}`;
+        }
+
+        function parseTimeToMs(timeStr) {
+            if (!timeStr) return 0;
+            const parts = timeStr.replace(',', '.').split(':');
+            let ms = 0;
+            if (parts.length === 3) {
+                ms += parseInt(parts[0], 10) * 3600 * 1000;
+                ms += parseInt(parts[1], 10) * 60 * 1000;
+                ms += parseFloat(parts[2]) * 1000;
+            }
+            return Math.round(ms);
+        }
+
+        const parsers = {
+            smi: (smiText) => smiText.split('\n').map(line => ({ match: line.match(/<sync start=(\d+)>/i), line })).filter(item => item.match).map(item => ({ id: parseInt(item.match[1], 10), text: item.line.replace(item.match[0], '').replace(/<br>/gi, ' ').replace(/<[^>]*>/g, '').trim() })).filter(item => item.text && item.text.toLowerCase() !== '&nbsp;'),
+            vtt: (vttText) => vttText.split('\n\n').map(block => { const lines = block.split('\n'); if (lines.length > 1 && lines[0].includes('-->')) { const id = parseTimeToMs(lines[0].split('-->')[0].trim()); const text = lines.slice(1).join(' ').replace(/<[^>]*>/g, '').trim(); return text ? { id, text } : null; } return null; }).filter(Boolean),
+            srt: (srtText) => srtText.replace(/\r/g, '').split('\n\n').map(block => { const lines = block.trim().split('\n'); if (lines.length > 1 && lines[1]?.includes('-->')) { const id = parseTimeToMs(lines[1].split('-->')[0].trim()); const text = lines.slice(2).join(' ').replace(/<[^>]*>/g, '').trim(); return text ? { id, text } : null; } return null; }).filter(Boolean),
+            txt: (text) => text.replace(/\r/g, '').split(/\n\s*\n/).filter(p => p.trim() !== '').map((p, i) => ({ id: i + 1, text: p.trim() }))
+        };
+        
+        function generatePrompt(formattedContent, fileType, chapterCount) {
+            let purpose, schemaKey;
+            
+            const countInstruction = chapterCount 
+                ? `Create exactly ${chapterCount} main chapters.`
+                : `Create an appropriate number of main chapters to ensure each resulting text file is a reasonable length (e.g., around 10KB).`;
+
+            if (fileType === 'text') {
+                purpose = `Analyze the provided text, which is broken into numbered paragraphs, and reorganize it into a hierarchical structure.`;
+                schemaKey = `"start_paragraph": 1`;
+            } else {
+                purpose = `Analyze the provided timed subtitles and group them into a hierarchical structure.`;
+                schemaKey = `"start_time": "HH:MM:SS"`;
+            }
+
+            const prompt = `
+<Prime_Directive>
+${purpose}
+</Prime_Directive>
+
+<purpose>
+1. Understand the entire text and identify major themes to form the "main chapters". ${countInstruction}
+2. For each main chapter, group related content into smaller, specific "sub-chapters".
+3. Your output MUST be a valid JSON array of objects following the specified schema. Do not add any explanation outside the JSON.
+</purpose>
+
+<Output_Specification>
+  <Format>JSON Array</Format>
+  <Schema>
+  [
+    {
+      "main_chapter_title": "A descriptive title for the first major section.",
+      ${schemaKey.replace('1', '... (the ID of the first entry in this chapter)')},
+      "sub_chapters": [
+        {
+          "sub_chapter_title": "Title for the first sub-topic.",
+          ${schemaKey.replace('1', '...')}
+        },
+        {
+          "sub_chapter_title": "Title for the second sub-topic.",
+          ${schemaKey.replace('1', '...')}
+        }
+      ]
+    }
+  ]
+  </Schema>
+</Output_Specification>
+
+<data content="formatted_content">
+--- START OF DATA ---
+${formattedContent.substring(0, 30000)}
+--- END OF DATA ---
+</data>`;
+            ui.promptArea.textContent = prompt.trim();
+        }
+        
+        function generateZip(mainChapters) {
+            const zip = new JSZip();
+            let tocContent = `# 콘텐츠 목차\n\n`;
+
+            const allSubChapters = mainChapters.flatMap(mc => mc.sub_chapters);
+
+            mainChapters.forEach((mainChapter, mainIndex) => {
+                let fileContent = '';
+                tocContent += `${mainIndex + 1}. ${mainChapter.main_chapter_title}\n`;
+
+                mainChapter.sub_chapters.forEach((subChapter) => {
+                    fileContent += `## ${subChapter.sub_chapter_title}\n\n`;
+                    tocContent += `    - ${subChapter.sub_chapter_title}\n`;
+                    
+                    const isTextFile = state.fileType === 'text';
+                    const startId = isTextFile ? subChapter.start_paragraph : parseTimeToMs(subChapter.start_time);
+                    
+                    let endId = Infinity;
+                    for (const nextSub of allSubChapters) {
+                        const nextId = isTextFile ? nextSub.start_paragraph : parseTimeToMs(nextSub.start_time);
+                        if (nextId > startId) {
+                            endId = nextId;
+                            break;
+                        }
+                    }
+
+                    const chapterEntries = state.contentEntries
+                        .filter(entry => entry.id >= startId && entry.id < endId)
+                        .map(entry => entry.text)
+                        .join('\n\n');
+                    
+                    fileContent += `${chapterEntries}\n\n`;
+                });
+
+                const sanitizedTitle = mainChapter.main_chapter_title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
+                const fileName = `${String(mainIndex + 1).padStart(2, '0')}_${sanitizedTitle}.txt`;
+                
+                zip.file(fileName, fileContent);
+            });
+            
+            zip.file('00_목차.md', tocContent);
+
+            zip.generateAsync({ type: "blob" }).then((content) => {
+                const safeTitle = (state.fileName || "Content_Analysis").replace(/\.[^/.]+$/, "");
+                const downloadUrl = URL.createObjectURL(content);
+                ui.downloadContainer.innerHTML = `
+                    <a href="${downloadUrl}" download="${safeTitle}_스크립트.zip" class="btn btn-success">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16" style="margin-right: 8px;"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708l3 3z"/></svg>
+                        <span>다운로드 준비 완료!</span>
+                    </a>`;
+            });
+        }
+        
+        function setButtonProcessing(button, isProcessing, text) {
+            button.disabled = isProcessing;
+            button.classList.toggle('processing', isProcessing);
+            button.querySelector('.btn-text').textContent = text;
+        }
+
+        // --- INITIALIZE APP ---
+        render();
+    });
+</script>
+</body>
+</html>
