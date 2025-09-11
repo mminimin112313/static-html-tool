@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Code Editor - Stable Edition</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --color-primary: #6D28D9; /* Violet 700 */
+            --color-primary-dark: #5B21B6; /* Violet 800 */
+            --color-success: #16A34A; /* Green 600 */
+            --color-text-primary: #111827; /* Gray 900 */
+            --color-text-secondary: #4B5563; /* Gray 600 */
+            --color-border: #D1D5DB; /* Gray 300 */
+            --color-background: #F9FAFB; /* Gray 50 */
+            --color-white: #FFFFFF;
+            --font-mono: 'Menlo', 'Courier New', monospace;
+            --space-sm: 8px; --space-md: 16px; --space-lg: 24px;
+            --radius-md: 8px; --radius-lg: 12px;
+            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Poppins', 'Noto Sans KR', sans-serif; background-color: var(--color-background); color: var(--color-text-primary); -webkit-font-smoothing: antialiased; }
+        main { display: flex; flex-direction: column; align-items: center; padding: var(--space-lg); }
+        .app-container { width: 100%; max-width: 800px; }
+        .app-header { text-align: center; margin-bottom: 2rem; }
+        .app-header h1 { font-size: 2.5rem; font-weight: 700; margin: 0 0 0.5rem; color: var(--color-primary);}
+        .app-header p { font-size: 1.125rem; color: var(--color-text-secondary); max-width: 600px; margin: 0 auto; }
+        .app-card { background-color: var(--color-white); border-radius: var(--radius-lg); padding: var(--space-lg); box-shadow: var(--shadow-lg); border: 1px solid var(--color-border); }
+        .step-content:not(.visible) { display: none; }
+        .step-content h2 { font-size: 1.5rem; font-weight: 700; margin: 0 0 var(--space-md); }
+        .form-group { margin-top: var(--space-lg); }
+        .form-group label { display: block; font-weight: 500; margin-bottom: var(--space-sm); color: var(--color-text-primary); }
+        .code-editor-wrapper { position: relative; border: 1px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; height: 350px; }
+        .line-numbers { position: absolute; left: 0; top: 0; height: 100%; width: 50px; padding: var(--space-md); background-color: #F3F4F6; text-align: right; color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 0.9rem; user-select: none; overflow-y: hidden; }
+        .code-input, .code-output, .user-goal-input { width: 100%; border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-md); font-family: var(--font-mono); font-size: 0.9rem; line-height: 1.5; resize: vertical; }
+        .code-input, .code-output { padding-left: 65px; border: none; resize: none; }
+        .user-goal-input { height: 80px; font-family: 'Noto Sans KR', sans-serif; }
+        .prompt-area, #jsonInput { min-height: 200px; width: 100%; font-family: var(--font-mono); font-size: 0.85rem; padding: var(--space-md); border: 1px solid var(--color-border); border-radius: var(--radius-md); resize: vertical; }
+        .button-group { margin-top: var(--space-lg); display: flex; justify-content: flex-end; gap: var(--space-md); }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 10px var(--space-lg); border-radius: var(--radius-md); font-weight: 500; border: 1px solid transparent; cursor: pointer; transition: all 0.2s ease; }
+        .btn-primary { background-color: var(--color-primary); color: var(--color-white); }
+        .btn-primary:hover { background-color: var(--color-primary-dark); }
+        .btn-secondary { background-color: var(--color-white); color: var(--color-text-primary); border-color: var(--color-border); }
+        .btn-secondary:hover { background-color: #F3F4F6; }
+        .btn-success { background-color: var(--color-success); color: var(--color-white); }
+        .error-message { color: #DC2626; font-size: 0.875rem; margin-top: 1rem; padding: 0.75rem; background-color: #FEE2E2; border-radius: var(--radius-md); }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="app-container">
+            <header class="app-header">
+                <h1>AI 코드 에디터</h1>
+                <p>코드를 분석하고 개선하기 위한 지능형 프롬프트를 생성하고, AI의 제안을 코-파일럿처럼 적용하여 생산성을 높이세요.</p>
+            </header>
+            <article class="app-card">
+                <div id="step-1" class="step-content visible">
+                    <h2>1. 코드와 목표 입력</h2>
+                    <div class="form-group">
+                        <label for="userGoalInput">수정 목표 (Code Goal)</label>
+                        <textarea id="userGoalInput" class="user-goal-input" placeholder="예: 이 코드를 Python 스타일 가이드(PEP 8)에 맞게 수정해주세요.&#10;예: 콜백 기반의 비동기 코드를 async/await를 사용하는 현대적인 방식으로 바꿔주세요."></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label for="codeInput">코드 입력 또는 업로드</label>
+                        <div class="code-editor-wrapper">
+                            <div id="lineNumbers" class="line-numbers">1</div>
+                            <textarea id="codeInput" class="code-input" spellcheck="false" placeholder="수정할 코드를 붙여넣으세요..."></textarea>
+                        </div>
+                    </div>
+                    <div class="button-group">
+                        <input type="file" id="fileInput" hidden>
+                        <button id="uploadBtn" class="btn btn-secondary">파일 업로드</button>
+                        <button id="generatePromptBtn" class="btn btn-primary">프롬프트 생성</button>
+                    </div>
+                </div>
+
+                <div id="step-2" class="step-content">
+                    <h2>2. AI 프롬프트 생성</h2>
+                    <p style="font-size:0.9rem; color: var(--color-text-secondary);">아래 프롬프트를 복사하여 선호하는 AI 모델에 전달하고, 반환된 JSON 결과를 다음 단계에 사용하세요.</p>
+                    <textarea id="promptArea" class="prompt-area" readonly></textarea>
+                    <div class="button-group">
+                        <button onclick="goToStep(1)" class="btn btn-secondary">뒤로</button>
+                        <button id="copyPromptBtn" class="btn btn-primary">프롬프트 복사</button>
+                    </div>
+                </div>
+
+                <div id="step-3" class="step-content">
+                    <h2>3. AI 제안(JSON) 적용</h2>
+                    <textarea id="jsonInput" placeholder="AI가 생성한 JSON 응답을 여기에 붙여넣으세요..."></textarea>
+                    <div id="jsonError" class="error-message" style="display: none;"></div>
+                    <div class="button-group">
+                        <button onclick="goToStep(2)" class="btn btn-secondary">뒤로</button>
+                        <button id="applyChangesBtn" class="btn btn-primary">변경사항 적용</button>
+                    </div>
+                </div>
+
+                <div id="step-4" class="step-content">
+                    <h2>4. 수정된 코드 검토</h2>
+                    <div class="code-editor-wrapper">
+                         <div id="lineNumbersResult" class="line-numbers">1</div>
+                         <textarea id="codeOutput" class="code-output" readonly></textarea>
+                    </div>
+                    <div class="button-group">
+                        <button onclick="goToStep(1); resetApp();" class="btn btn-secondary">새로 시작</button>
+                        <button id="copyResultBtn" class="btn btn-success">결과 복사</button>
+                        <button id="downloadResultBtn" class="btn btn-primary">파일 다운로드</button>
+                    </div>
+                </div>
+            </article>
+        </div>
+    </main>
+
+<script>
+    const state = {
+        originalCode: '',
+        originalLines: [],
+        modifiedLines: [],
+        fileName: 'untitled.txt',
+        userGoal: '',
+    };
+
+    const ui = {
+        steps: [document.getElementById('step-1'), document.getElementById('step-2'), document.getElementById('step-3'), document.getElementById('step-4')],
+        codeInput: document.getElementById('codeInput'),
+        userGoalInput: document.getElementById('userGoalInput'),
+        lineNumbers: document.getElementById('lineNumbers'),
+        lineNumbersResult: document.getElementById('lineNumbersResult'),
+        fileInput: document.getElementById('fileInput'),
+        promptArea: document.getElementById('promptArea'),
+        jsonInput: document.getElementById('jsonInput'),
+        jsonError: document.getElementById('jsonError'),
+        codeOutput: document.getElementById('codeOutput'),
+    };
+
+    const goToStep = (stepNumber) => {
+        ui.steps.forEach((step, index) => {
+            step.classList.toggle('visible', index + 1 === stepNumber);
+        });
+    };
+
+    const updateLineNumbers = (textArea, lineNumbersDiv) => {
+        const lines = textArea.value.split('\n');
+        lineNumbersDiv.innerHTML = Array.from({ length: lines.length }, (_, i) => i + 1).join('<br>');
+        lineNumbersDiv.scrollTop = textArea.scrollTop;
+    };
+    
+    const resetApp = () => {
+        state.originalCode = '';
+        state.originalLines = [];
+        state.modifiedLines = [];
+        state.fileName = 'untitled.txt';
+        state.userGoal = '';
+        
+        ui.codeInput.value = '';
+        ui.userGoalInput.value = '';
+        ui.jsonInput.value = '';
+        ui.codeOutput.value = '';
+        updateLineNumbers(ui.codeInput, ui.lineNumbers);
+        updateLineNumbers(ui.codeOutput, ui.lineNumbersResult);
+        goToStep(1);
+    };
+
+    ui.codeInput.addEventListener('input', () => updateLineNumbers(ui.codeInput, ui.lineNumbers));
+    ui.codeInput.addEventListener('scroll', () => ui.lineNumbers.scrollTop = ui.codeInput.scrollTop);
+    
+    document.getElementById('uploadBtn').addEventListener('click', () => ui.fileInput.click());
+    ui.fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            state.fileName = file.name;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                ui.codeInput.value = event.target.result;
+                updateLineNumbers(ui.codeInput, ui.lineNumbers);
+            };
+            reader.readAsText(file);
+        }
+    });
+
+    document.getElementById('generatePromptBtn').addEventListener('click', () => {
+        state.originalCode = ui.codeInput.value;
+        state.userGoal = ui.userGoalInput.value;
+        if (!state.originalCode.trim()) {
+            alert('코드를 입력하세요.');
+            return;
+        }
+        if (!state.userGoal.trim()) {
+            alert('수정 목표를 입력해주세요.');
+            return;
+        }
+        state.originalLines = state.originalCode.split('\n');
+        const numberedCode = state.originalLines.map((line, index) => `${String(index + 1).padStart(4, ' ')}: ${line}`).join('\n');
+        
+        ui.promptArea.value = generateAIPrompt(numberedCode, state.fileName, state.userGoal);
+        goToStep(2);
+    });
+    
+    document.getElementById('copyPromptBtn').addEventListener('click', () => {
+        navigator.clipboard.writeText(ui.promptArea.value).then(() => alert('프롬프트가 복사되었습니다.'));
+        goToStep(3);
+    });
+
+    document.getElementById('applyChangesBtn').addEventListener('click', () => {
+        const jsonText = ui.jsonInput.value;
+        if (!jsonText.trim()) {
+            alert('JSON을 입력하세요.');
+            return;
+        }
+        try {
+            const parsedJson = JSON.parse(jsonText);
+            if (!parsedJson.modifications || !Array.isArray(parsedJson.modifications)) {
+                throw new Error("'modifications' 배열이 JSON에 존재하지 않습니다.");
+            }
+            state.modifiedLines = applyModifications(state.originalLines, parsedJson.modifications);
+            ui.codeOutput.value = state.modifiedLines.join('\n');
+            updateLineNumbers(ui.codeOutput, ui.lineNumbersResult);
+            ui.jsonError.style.display = 'none';
+            goToStep(4);
+        } catch (e) {
+            ui.jsonError.textContent = `JSON 처리 오류: ${e.message}`;
+            ui.jsonError.style.display = 'block';
+        }
+    });
+
+    document.getElementById('copyResultBtn').addEventListener('click', () => {
+        navigator.clipboard.writeText(ui.codeOutput.value).then(() => alert('수정된 코드가 복사되었습니다.'));
+    });
+
+    document.getElementById('downloadResultBtn').addEventListener('click', () => {
+        const blob = new Blob([ui.codeOutput.value], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `modified_${state.fileName}`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+
+    /**
+     * [STABILITY PATCHED] Generates a highly robust AI prompt with explicit instructions
+     * for handling special characters to prevent syntax errors.
+     */
+    function generateAIPrompt(code, fileName, userGoal) {
+        return `<?xml version="1.0" encoding="UTF-8"?>
+<metaPrompt>
+    <purpose>
+        주어진 '<user_objective>'를 달성하기 위해, 코드('<data>')를 분석하고 구체적인 수정 사항을 JSON 형식으로 제안한다.
+    </purpose>
+
+    <persona>
+        당신은 전설적인 'Distinguished Fellow & Chief Architect'입니다. 당신의 지식은 세 가지 핵심 축으로 구성됩니다:
+        1.  **이론적 깊이 (University Professor):** 알고리즘, 자료구조, 계산 복잡도(Big O), GoF 디자인 패턴, SOLID와 같은 소프트웨어 공학 원칙에 대한 학술적 통찰력을 가집니다.
+        2.  **전략적 비전 (Bill Gates):** 코드의 확장성, 플랫폼으로서의 가능성, 하위 호환성, 그리고 1억 명의 사용자를 감당할 수 있는 시스템을 구축하는 비즈니스 및 제품 관점의 통찰력을 가집니다.
+        3.  **실용적 지혜 (20+ Year Veteran):** 수많은 프로덕션 환경에서의 경험을 통해 얻은 방어적 코딩, 테스트 용이성, 로깅 및 모니터링의 중요성, 현실적인 기술 부채 관리 등 실전 지혜를 가집니다.
+        당신의 모든 제안은 반드시 사용자의 목표를 최우선으로 고려해야 합니다.
+    </persona>
+    
+    <user_objective>
+        ${userGoal}
+    </user_objective>
+
+    <guiding_principles>
+        - **Objective-Driven:** 모든 제안은 '<user_objective>' 달성에 직접적으로 기여해야 합니다. 목표와 관련 없는 수정은 지양하십시오.
+        - **Minimal & Sufficient:** 목표 달성을 위한 최소한의, 그러나 충분한 변경만을 제안하십시오. 과도한 리팩토링은 피합니다.
+        - **Clarity & Readability:** 수정된 코드는 이전보다 더 명확하고 이해하기 쉬워야 합니다.
+    </guding_principles>
+
+    <process>
+        <step id="1" title="Take a Break and Then...">
+            먼저, 심호흡을 하고 '<user_objective>'를 마음 깊이 새깁니다. 그 다음, 코드 전체를 훑어보며 사용자의 목표를 달성하기 위한 최적의 전략을 구상합니다.
+        </step>
+        <step id="2" title="Tree of Thoughts Analysis">
+            목표 달성을 위한 여러 가능한 수정 방안을 머릿속으로 탐색합니다. 각 대안의 장단점을 '<guiding_principles>'에 입각하여 평가하고, 가장 효과적인 해결책을 선택합니다.
+        </step>
+        <step id="3" title="Generate JSON Output">
+            최종 결정된 수정 사항들을 아래 'Output_Specification'에 명시된 JSON 형식에 맞춰 정확하게 생성합니다. JSON 외의 어떠한 부가 설명도 절대 포함하지 마십시오.
+        </step>
+    </process>
+
+    <Output_Specification>
+        <Format>JSON Object</Format>
+        <Schema>
+        {
+          "summary": "사용자의 목표 달성을 위해 수행한 변경 사항에 대한 간결한 요약입니다.",
+          "modifications": [
+            {
+              "action": "REPLACE",
+              "start_line": 25,
+              "end_line": 30,
+              "content": " \`\`\`\nconst newOptimizedLine1 = '...';\nconst newOptimizedLine2 = '...';\n\`\`\` "
+            }
+          ]
+        }
+        </Schema>
+        <Constraint>
+            - **[매우 중요]** 'content' 필드에 포함되는 코드 블록 내부에 큰따옴표(\")가 있다면, 반드시 백슬래시를 사용하여 이스케이프 처리해야 합니다(예: 'class=\\\"my-class\\\"'). 이를 지키지 않으면 JSON 전체가 깨져 파싱할 수 없게 됩니다.
+            - 'content' 필드는 반드시 백틱(\`\`\`)으로 감싸진 단일 문자열이어야 합니다.
+            - 'action'은 "REPLACE", "DELETE", "INSERT_AFTER" 중 하나여야 합니다.
+        </Constraint>
+    </Output_Specification>
+
+    <data file_name="${fileName}">
+--- START OF CODE ---
+${code}
+--- END OF CODE ---
+    </data>
+</metaPrompt>`;
+    }
+
+    /**
+     * [STABILITY PATCHED] Applies modifications to code lines using a robust sequential reconstruction algorithm.
+     * This method avoids mutation-during-iteration issues by building a new array from scratch,
+     * ensuring stability even with complex or overlapping changes.
+     * @param {string[]} originalLines - The initial array of code lines.
+     * @param {object[]} modifications - The array of modification objects from the AI.
+     * @returns {string[]} The new array of modified code lines.
+     */
+    function applyModifications(originalLines, modifications) {
+        const modMap = new Map();
+        for (const mod of modifications) {
+            const start = mod.action === 'INSERT_AFTER' ? mod.line : mod.start_line;
+            const end = mod.end_line || start;
+            if (!start || start < 1 || end < start) {
+                console.warn('Skipping invalid modification:', mod);
+                continue;
+            }
+            
+            if (mod.action === 'INSERT_AFTER') {
+                if (!modMap.has(`insert_${start}`)) modMap.set(`insert_${start}`, []);
+                modMap.get(`insert_${start}`).push(mod);
+            } else {
+                 modMap.set(start, mod);
+            }
+        }
+
+        const newLines = [];
+        let i = 1;
+
+        while (i <= originalLines.length) {
+            if (modMap.has(i)) {
+                const mod = modMap.get(i);
+                const getNewContent = (contentStr) => {
+                    if (!contentStr) return [];
+                    return contentStr.replace(/^```|```$/g, '').trim().split('\n');
+                };
+
+                switch (mod.action) {
+                    case 'REPLACE':
+                        newLines.push(...getNewContent(mod.content));
+                        i = mod.end_line + 1;
+                        continue; // Continue to next iteration of while loop
+                    case 'DELETE':
+                        i = mod.end_line + 1;
+                        continue;
+                }
+            }
+            
+            // If no block modification (REPLACE/DELETE) happened, add the current line
+            newLines.push(originalLines[i - 1]);
+            
+            // Check for any INSERT_AFTER modifications for the current line
+            if (modMap.has(`insert_${i}`)) {
+                const inserts = modMap.get(`insert_${i}`);
+                for(const mod of inserts) {
+                    const content = mod.content ? mod.content.replace(/^```|```$/g, '').trim().split('\n') : [];
+                    newLines.push(...content);
+                }
+            }
+            i++;
+        }
+        return newLines;
+    }
+    
+    // Initialize
+    goToStep(1);
+    updateLineNumbers(ui.codeInput, ui.lineNumbers);
+</script>
+</body>
+</html>
