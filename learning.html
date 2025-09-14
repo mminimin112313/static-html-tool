@@ -269,27 +269,34 @@
             renderModeTab: (mode, icon, label) => { const isActive = state.workspaceMode === mode; return `<button data-action="switch-mode" data-mode="${mode}" class="${isActive ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm flex-shrink-0"><i data-lucide="${icon}" class="${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-slate-500'} -ml-0.5 mr-2 h-5 w-5"></i><span>${label}</span></button>`; },
             renderWorkspacePanel() { if (!state.activeChapterPath) { return `<div class="flex flex-col items-center justify-center h-full min-h-[60vh] text-center p-4"><i data-lucide="file-text" class="h-16 w-16 text-slate-300"></i><h3 class="mt-4 text-xl font-semibold text-slate-800">노트를 선택하세요</h3><p class="mt-1 text-slate-500">좌측 목차에서 작업할 노트를 선택해주세요.</p></div>`; } if (!state.activeChapterContent) { return this.renderSpinner("노트 내용 로딩 중..."); } switch (state.workspaceMode) { case 'view': return this.renderViewPanel(); case 'write': return this.renderWritePanel(); case 'learn': return this.renderLearnPanel(); case 'translate': return this.renderTranslatePanel(); case 'custom': return this.renderCustomButtonPanel(); default: return `<div>알 수 없는 모드입니다.</div>`; } },
             renderViewPanel() {
-                const content = state.activeChapterContent;
-                const manuscriptHtml = content.manuscript 
-                    ? `<h3 class="text-xl font-semibold mb-4 text-slate-800 border-b pb-2">원고 보기</h3><div class="prose prose-custom prose-readable max-w-full">${marked.parse(DOMPurify.sanitize(content.manuscript))}</div>`
-                    : `<div class="text-center text-slate-500 py-16"><p>표시할 원고 내용이 없습니다.</p></div>`;
+    const content = state.activeChapterContent;
+    // 💡 허용할 HTML 태그 목록을 변수로 만들어 재사용합니다.
+    const allowedTagsConfig = {
+        ALLOWED_TAGS: ['strong', 'b', 'em', 'i', 'p', 'br', 'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'a', 'img', 'code', 'pre', 'blockquote']
+    };
 
-                let translationHtml = '';
-                if (content.translation && content.translation.trim()) {
-                    const sanitizedTranslation = DOMPurify.sanitize(content.translation);
-                    const paragraphs = sanitizedTranslation.split(/\n+/).filter(p => p.trim() !== '');
-                    const boldedParagraphs = paragraphs.map(p => `<p><b>${p}</b></p>`).join('');
-                    
-                    translationHtml = `
-                        <h3 class="text-xl font-semibold mb-4 mt-8 text-slate-800 border-b pb-2">번역문 보기</h3>
-                        <div class="prose prose-custom prose-readable max-w-full">
-                            ${boldedParagraphs}
-                        </div>
-                    `;
-                }
+    const manuscriptHtml = content.manuscript 
+        ? `<h3 class="text-xl font-semibold mb-4 text-slate-800 border-b pb-2">원고 보기</h3><div class="prose prose-custom prose-readable max-w-full">${marked.parse(DOMPurify.sanitize(content.manuscript, allowedTagsConfig))}</div>`
+        : `<div class="text-center text-slate-500 py-16"><p>표시할 원고 내용이 없습니다.</p></div>`;
 
-                return `<div>${manuscriptHtml}${translationHtml}</div>`;
-            },
+    let translationHtml = '';
+    if (content.translation && content.translation.trim()) {
+        // 💡 번역문 부분에도 같은 설정으로 sanitize를 적용합니다.
+        const sanitizedTranslation = DOMPurify.sanitize(content.translation, allowedTagsConfig);
+        const paragraphs = sanitizedTranslation.split(/\n+/).filter(p => p.trim() !== '');
+        // 💡 수동으로 추가한 <b> 태그가 허용 목록에 있으므로 이제 제거되지 않습니다.
+        const boldedParagraphs = paragraphs.map(p => `<p><b>${p}</b></p>`).join('');
+        
+        translationHtml = `
+            <h3 class="text-xl font-semibold mb-4 mt-8 text-slate-800 border-b pb-2">번역문 보기</h3>
+            <div class="prose prose-custom prose-readable max-w-full">
+                ${boldedParagraphs}
+            </div>
+        `;
+    }
+
+    return `<div>${manuscriptHtml}${translationHtml}</div>`;
+},
             renderWritePanel() {
                 const content = state.activeChapterContent; 
                 const layout = state.workspaceLayout;
