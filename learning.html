@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>통합 학습 및 저작 시스템 v3.11 (기능 강화)</title>
+    <title>통합 학습 및 저작 시스템 v3.15 (UI 개선)</title>
     
     <!-- Core Dependencies -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -77,7 +77,14 @@
         .prose-readable { max-width: 75ch; margin-left: auto; margin-right: auto; }
         .drop-zone { border: 2px dashed #d1d5db; transition: all 0.2s ease-in-out; }
         .drop-zone.drag-over { background-color: #eef2ff; border-color: #6366f1; }
-        .drag-over-indicator { border-top: 2px solid var(--accent-primary); }
+        
+        .toc-drop-indicator-before { border-top: 2px solid var(--accent-primary); }
+        .toc-drop-indicator-after { border-bottom: 2px solid var(--accent-primary); }
+        .toc-drop-indicator-inside { background-color: var(--bg-hover); outline: 2px solid var(--accent-primary); }
+
+        .tooltip { position: relative; display: inline-block; }
+        .tooltip .tooltip-text { visibility: hidden; width: 250px; background-color: #334155; color: #fff; text-align: left; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -125px; opacity: 0; transition: opacity 0.3s; font-size: 0.75rem; line-height: 1.5; }
+        .tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
         
         @media (max-width: 1024px) {
             .sidebar { position: fixed; transform: translateX(-100%); }
@@ -94,8 +101,8 @@
 
     <script type="module">
         // ===================================================================================
-        // 통합 학습 및 저작 시스템 v3.11 (기능 강화)
-        // - v3.11: 목차 드래그앤드롭, 프로젝트 설정 강화(카테고리, 태그 추천), 클립보드 안정성 향상
+        // 통합 학습 및 저작 시스템 v3.15 (UI 개선)
+        // - v3.15: 대시보드 상호작용, 사이드바/TOC 관리, 작업공간 UX, 모달/폼 경험, 퀴즈 결과 필터링 등 다수 개선
         // ===================================================================================
         const CONFIG = {
             DB_NAME: 'ILS_V3_DB', DB_VERSION: 1,
@@ -114,6 +121,10 @@
             currentFilter: { type: 'dashboard', id: null }, currentSortOrder: 'updatedAt_desc',
             isLoading: true, isSidebarOpen: true, isMobileSidebarOpen: false, modal: { isOpen: false, type: '', data: {} },
             toasts: [], isKaTeXLoaded: false, searchResults: null,
+            sidebarCollapseState: { categories: false, tags: false },
+            saveStatus: 'idle', saveTimestamp: null,
+            workspaceLayout: 'split',
+            quizResultFilter: 'all',
         };
         
         let fuse = null;
@@ -161,10 +172,11 @@
                 const {type, id} = state.currentFilter;
                 const categoryListHtml = state.categories.map(c => `<li class="nav-item ${type === 'category' && id === c.id ? 'active' : ''}" data-action="filter" data-filter-type="category" data-id="${c.id}"><a><i class="icon" data-lucide="folder"></i> ${c.name}</a></li>`).join('');
                 const tagListHtml = state.tags.map(t => `<li class="nav-item ${type === 'tag' && id === t.name ? 'active' : ''}" data-action="filter" data-filter-type="tag" data-id="${t.name}"><a><i class="icon" data-lucide="tag"></i> ${t.name} <span class="tag-count">${t.count}</span></a></li>`).join('');
-                return `<div class="sidebar-header"><a href="#" data-action="go-dashboard" class="logo"><i data-lucide="brain-circuit"></i> 학습 & 저작 v3.11</a></div><div class="sidebar-content"><div class="nav-section"><button class="btn" data-action="new-project" style="width: 100%;"><i data-lucide="plus"></i> 새 프로젝트</button></div><nav class="sidebar-nav"><div class="nav-section"><h3 class="nav-section-title">라이브러리</h3><ul class="nav-list" id="library-list"><li class="nav-item ${type === 'dashboard' ? 'active' : ''}" data-action="filter" data-filter-type="dashboard"><a><i class="icon" data-lucide="layout-dashboard"></i> 대시보드</a></li><li class="nav-item ${type === 'all' ? 'active' : ''}" data-action="filter" data-filter-type="all"><a><i class="icon" data-lucide="files"></i> 모든 프로젝트</a></li></ul></div><div class="nav-section"><div class="flex justify-between items-center p-2"><h3 class="nav-section-title mb-0">카테고리</h3><button data-action="new-category" title="새 카테고리" class="text-slate-400 hover:text-slate-600"><i data-lucide="plus-circle" class="w-4 h-4"></i></button></div><ul class="nav-list" id="category-list">${categoryListHtml}</ul></div><div class="nav-section"><h3 class="nav-section-title">태그</h3><ul class="nav-list" id="tag-list">${tagListHtml}</ul></div></nav></div><div class="sidebar-footer">${this.renderUserProfile()}</div>`;
+                return `<div class="sidebar-header"><a href="#" data-action="go-dashboard" class="logo"><i data-lucide="brain-circuit"></i> 학습 & 저작 v3.15</a></div><div class="sidebar-content"><div class="nav-section"><button class="btn" data-action="new-project" style="width: 100%;"><i data-lucide="plus"></i> 새 프로젝트</button></div><nav class="sidebar-nav"><div class="nav-section"><h3 class="nav-section-title">라이브러리</h3><ul class="nav-list" id="library-list"><li class="nav-item ${type === 'dashboard' ? 'active' : ''}" data-action="filter" data-filter-type="dashboard"><a><i class="icon" data-lucide="layout-dashboard"></i> 대시보드</a></li><li class="nav-item ${type === 'all' ? 'active' : ''}" data-action="filter" data-filter-type="all"><a><i class="icon" data-lucide="files"></i> 모든 프로젝트</a></li></ul></div><div class="nav-section"><div class="flex justify-between items-center p-2"><h3 class="nav-section-title mb-0">카테고리</h3><button data-action="toggle-sidebar-section" data-section="categories" title="카테고리 접기/펴기" class="text-slate-400 hover:text-slate-600"><i data-lucide="${state.sidebarCollapseState.categories ? 'chevron-right' : 'chevron-down'}" class="w-4 h-4"></i></button></div>${!state.sidebarCollapseState.categories ? `<ul class="nav-list" id="category-list">${categoryListHtml}</ul>` : ''}</div><div class="nav-section"><div class="flex justify-between items-center p-2"><h3 class="nav-section-title mb-0">태그</h3><button data-action="toggle-sidebar-section" data-section="tags" title="태그 접기/펴기" class="text-slate-400 hover:text-slate-600"><i data-lucide="${state.sidebarCollapseState.tags ? 'chevron-right' : 'chevron-down'}" class="w-4 h-4"></i></button></div>${!state.sidebarCollapseState.tags ? `<ul class="nav-list" id="tag-list">${tagListHtml}</ul>` : ''}</div></nav></div><div class="sidebar-footer">${this.renderUserProfile()}</div>`;
             },
             renderProjectSidebar() {
-                return `<div class="sidebar-header"><button data-action="go-dashboard" class="btn btn-secondary w-full text-sm"><i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i> 라이브러리로 돌아가기</button></div><div class="sidebar-content"><h3 class="nav-section-title">${state.activeProject.name} 목차</h3>${this.renderToc(state.activeProject.toc)}</div><div class="sidebar-footer">${this.renderUserProfile()}</div>`;
+                const tocControls = `<div class="flex justify-end gap-2 px-2 pb-2"><button class="btn btn-secondary btn-sm text-xs" data-action="toggle-toc-all" data-mode="expand">전체 펼치기</button><button class="btn btn-secondary btn-sm text-xs" data-action="toggle-toc-all" data-mode="collapse">전체 접기</button></div>`;
+                return `<div class="sidebar-header"><button data-action="go-dashboard" class="btn btn-secondary w-full text-sm"><i data-lucide="arrow-left" class="w-4 h-4 mr-2"></i> 라이브러리로 돌아가기</button></div><div class="sidebar-content"><h3 class="nav-section-title">${state.activeProject.name} 목차</h3>${tocControls}${this.renderToc(state.activeProject.toc)}</div><div class="sidebar-footer">${this.renderUserProfile()}</div>`;
             },
             renderUserProfile() {
                 const { level, xp } = state.userProfile; const currentLevelXP = CONFIG.LEVEL_THRESHOLDS[level - 1] || 0; const nextLevelXP = CONFIG.LEVEL_THRESHOLDS[level] || xp; const xpForLevel = nextLevelXP - currentLevelXP; const currentXPInLevel = xp - currentLevelXP; const progress = xpForLevel > 0 ? Math.round((currentXPInLevel / xpForLevel) * 100) : 100;
@@ -174,11 +186,28 @@
                 const title = this.getHeaderTitle();
                 const isProjectListView = state.currentView === 'project_list';
                 const workspaceControls = state.currentView === 'workspace' && state.activeProjectId ? `<button data-action="manage-toc" class="btn btn-secondary btn-sm"><i data-lucide="list-tree" class="w-4 h-4 mr-2"></i>목차 관리</button><button data-action="open-settings" class="btn btn-secondary btn-sm"><i data-lucide="settings" class="w-4 h-4 mr-2"></i>설정</button>`: '';
-                return `<header class="main-header"><button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar"><i data-lucide="menu"></i></button><h1 class="header-title">${title}</h1><div class="flex items-center gap-4"><div class="relative"><input type="text" class="search-input" id="search-input" placeholder="프로젝트 검색..." value="${state.searchResults ? document.getElementById('search-input')?.value || '' : ''}"><i class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" data-lucide="search"></i></div><div class="header-controls" style="${isProjectListView ? '' : 'display:none;'}"><select id="sort-select" data-action="sort-projects" class="btn btn-secondary btn-sm"><option value="updatedAt_desc" ${state.currentSortOrder === 'updatedAt_desc' ? 'selected' : ''}>최근 수정순</option><option value="createdAt_desc" ${state.currentSortOrder === 'createdAt_desc' ? 'selected' : ''}>최신 생성순</option><option value="name_asc" ${state.currentSortOrder === 'name_asc' ? 'selected' : ''}>이름 (가나다순)</option></select></div>${workspaceControls}</div></header>`;
+                
+                let saveStatusIndicator = '';
+                if(state.saveStatus === 'saving') {
+                    saveStatusIndicator = `<div class="flex items-center gap-2 text-sm text-slate-500"><div class="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div> 저장 중...</div>`;
+                } else if (state.saveStatus === 'saved' && state.saveTimestamp) {
+                    saveStatusIndicator = `<div class="flex items-center gap-2 text-sm text-green-600"><i data-lucide="check" class="w-4 h-4"></i> 마지막 저장: ${state.saveTimestamp.toLocaleTimeString()}</div>`;
+                }
+
+                return `<header class="main-header"><button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar"><i data-lucide="menu"></i></button><h1 class="header-title">${title}</h1><div class="flex items-center gap-4">${saveStatusIndicator}<div class="relative"><input type="text" class="search-input" id="search-input" placeholder="프로젝트 검색..." value="${state.searchResults ? document.getElementById('search-input')?.value || '' : ''}"><i class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" data-lucide="search"></i></div><div class="header-controls" style="${isProjectListView ? '' : 'display:none;'}"><select id="sort-select" data-action="sort-projects" class="btn btn-secondary btn-sm"><option value="updatedAt_desc" ${state.currentSortOrder === 'updatedAt_desc' ? 'selected' : ''}>최근 수정순</option><option value="createdAt_desc" ${state.currentSortOrder === 'createdAt_desc' ? 'selected' : ''}>최신 생성순</option><option value="name_asc" ${state.currentSortOrder === 'name_asc' ? 'selected' : ''}>이름 (가나다순)</option></select></div>${workspaceControls}</div></header>`;
             },
             getHeaderTitle() { if (state.currentView === 'workspace' && state.activeProject) return state.activeProject.name; const { type, id } = state.currentFilter; if (type === 'dashboard') return '대시보드'; if (type === 'all' || state.searchResults) return '모든 프로젝트'; if (type === 'category') return state.categories.find(c => c.id === id)?.name || '카테고리'; if (type === 'tag') return `#${id}`; return '학습 및 저작 시스템'; },
             renderCurrentView() { switch(state.currentView) { case 'dashboard': return this.renderDashboard(); case 'project_list': return this.renderProjectList(); case 'workspace': return this.renderWorkspace(); case 'quiz': return this.renderQuizView(); case 'quizResult': return this.renderQuizResultView(); default: return `<div class="text-center p-8 text-slate-500">뷰를 로드하는 중...</div>`; } },
-            renderDashboard() { const recentProjects = [...state.projects].sort((a,b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0,5); return `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"><div class="p-6 bg-white rounded-lg shadow-sm"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">빠른 작업</h3></div><div class="grid grid-cols-2 gap-4"><button class="btn" data-action="new-project"><i data-lucide="plus"></i> 새 프로젝트</button><button class="btn btn-secondary" data-action="new-category"><i data-lucide="folder-plus"></i> 새 카테고리</button></div></div><div class="p-6 bg-white rounded-lg shadow-sm"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">개요</h3></div><div class="flex justify-around text-center"><div><div class="text-3xl font-bold">${state.projects.length}</div><div class="text-sm text-slate-500">프로젝트</div></div><div><div class="text-3xl font-bold">${state.categories.length}</div><div class="text-sm text-slate-500">카테고리</div></div><div><div class="text-3xl font-bold">${state.tags.length}</div><div class="text-sm text-slate-500">태그</div></div></div></div><div class="p-6 bg-white rounded-lg shadow-sm md:col-span-2 lg:col-span-1"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">최근 프로젝트</h3></div><ul class="divide-y divide-slate-100">${recentProjects.map(p => `<li class="py-2 flex justify-between items-center hover:bg-slate-50 rounded-md"><a href="#" data-action="open-project" data-id="${p.id}" class="flex-grow min-w-0"><p class="font-medium truncate">${p.name}</p><p class="text-xs text-slate-500">${new Date(p.updatedAt || p.createdAt).toLocaleString()}</p></a><button data-action="open-project" data-id="${p.id}"><i data-lucide="chevron-right" class="w-4 h-4 text-slate-400"></i></button></li>`).join('') || '<li class="p-4 text-center text-slate-500">최근 프로젝트가 없습니다.</li>'}</ul></div></div>`; },
+            renderDashboard() {
+                const recentProjects = [...state.projects].sort((a,b) => (b.updatedAt || 0) - (a.updatedAt || 0)).slice(0,5);
+                const statItem = (value, label, filterType, id = null) => `
+                    <a href="#" class="text-center block hover:bg-slate-50 p-2 rounded-lg" data-action="filter" data-filter-type="${filterType}" ${id ? `data-id="${id}"` : ''}>
+                        <div class="text-3xl font-bold">${value}</div>
+                        <div class="text-sm text-slate-500">${label}</div>
+                    </a>
+                `;
+                return `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"><div class="p-6 bg-white rounded-lg shadow-sm"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">빠른 작업</h3></div><div class="grid grid-cols-2 gap-4"><button class="btn" data-action="new-project"><i data-lucide="plus"></i> 새 프로젝트</button><button class="btn btn-secondary" data-action="new-category"><i data-lucide="folder-plus"></i> 새 카테고리</button></div></div><div class="p-6 bg-white rounded-lg shadow-sm"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">개요</h3></div><div class="flex justify-around">${statItem(state.projects.length, '프로젝트', 'all')}${statItem(state.categories.length, '카테고리', 'category')}${statItem(state.tags.length, '태그', 'tag')}</div></div><div class="p-6 bg-white rounded-lg shadow-sm md:col-span-2 lg:col-span-1"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">최근 프로젝트</h3></div><ul class="divide-y divide-slate-100">${recentProjects.map(p => `<li class="py-2 flex justify-between items-center hover:bg-slate-50 rounded-md"><a href="#" data-action="open-project" data-id="${p.id}" class="flex-grow min-w-0"><p class="font-medium truncate">${p.name}</p><p class="text-xs text-slate-500">${new Date(p.updatedAt || p.createdAt).toLocaleString()}</p></a><button data-action="open-project" data-id="${p.id}"><i data-lucide="chevron-right" class="w-4 h-4 text-slate-400"></i></button></li>`).join('') || '<li class="p-4 text-center text-slate-500">최근 프로젝트가 없습니다.</li>'}</ul></div></div>`; 
+            },
             renderProjectList() { let filtered = Controller.getFilteredAndSortedProjects(); if (filtered.length === 0) { return `<div class="text-center p-8 text-slate-500">표시할 프로젝트가 없습니다.</div>`; } return `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${filtered.map(p => this.getProjectCardHTML(p)).join('')}</div>`; },
             getProjectCardHTML(p) { const category = p.categoryId ? state.categories.find(c => c.id === p.categoryId) : null; const noteCount = p.toc && p.toc.children ? Utils.getAllNodePaths(p.toc).length : 0; return `<div class="project-card flex flex-col"><div class="project-card-content flex-grow" data-action="open-project" data-id="${p.id}"><p class="text-sm text-indigo-600 font-semibold">${category ? category.name : '미분류'}</p><h3 class="mt-1 text-lg leading-tight font-bold text-black">${p.name}</h3><div class="mt-2 flex flex-wrap gap-2">${(p.tags || []).map(tag => `<span class="inline-block bg-slate-200 text-slate-600 text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full">#${tag}</span>`).join('')}</div></div><div class="border-t mt-4 pt-4 flex justify-between items-center"><p class="text-sm text-slate-500">${noteCount}개의 노트</p><div class="flex space-x-2"><button data-action="export-project" data-id="${p.id}" title="내보내기" class="p-2 text-slate-500 hover:bg-slate-200 rounded-full"><i data-lucide="download" class="w-4 h-4"></i></button><button data-action="delete-project-confirm" data-id="${p.id}" title="삭제" class="p-2 text-slate-500 hover:bg-red-100 rounded-full"><i data-lucide="trash-2" class="w-4 h-4 text-red-500"></i></button></div></div></div>`; },
             renderWorkspace() { 
@@ -202,6 +231,7 @@
                                 ${this.renderModeTab('view', 'eye', '보기')}
                                 ${this.renderModeTab('learn', 'graduation-cap', '학습')}
                                 ${this.renderModeTab('translate', 'languages', '번역')}
+                                ${this.renderModeTab('custom', 'wand-sparkles', '커스텀 버튼')}
                             </nav>
                         </div>
                         <div id="workspace-main-content" class="p-4 sm:p-6 min-h-[70vh] overflow-y-auto">${this.renderWorkspacePanel()}</div>
@@ -226,23 +256,265 @@
             },
             renderToc(toc, level = 0, pathPrefix = '') { if (!toc?.children?.length) return level === 0 ? `<p class="text-sm text-slate-500 p-2">목차가 비어있습니다.</p>` : ''; const items = toc.children.map((item, index) => { const currentPath = pathPrefix ? `${pathPrefix}.${index}` : `${index}`; const hasChildren = item.children && item.children.length > 0; const isCollapsed = state.tocCollapseState[currentPath]; const content = state.activeContentsMap.get(`${state.activeProjectId}_${currentPath}`); let statusIndicator = ''; if (content?.status && content.status !== 'empty') { const colorMap = { 'prompt-copied': 'bg-blue-400', 'manuscript-done': 'bg-yellow-400', 'quiz-done': 'bg-green-400' }; if (colorMap[content.status]) statusIndicator = `<span class="w-2 h-2 rounded-full ${colorMap[content.status]} mr-2 flex-shrink-0" title="상태: ${content.status}"></span>`; } return `<li class="my-1 toc-item ${state.activeChapterPath === currentPath ? 'active' : ''}"><div class="flex items-center" style="padding-left: ${level * 1}rem;"><a href="#" data-action="select-chapter" data-path="${currentPath}" class="flex-grow flex items-center p-2 rounded-md text-sm text-slate-700 hover:bg-slate-100 relative w-full">${hasChildren ? `<button data-action="toggle-toc-collapse" data-path="${currentPath}" class="p-1 rounded-md hover:bg-slate-200 flex-shrink-0 mr-1"><i data-lucide="${isCollapsed ? 'chevron-right' : 'chevron-down'}" class="w-4 h-4 text-slate-500"></i></button>` : `<span class="w-6 mr-1"></span>`}${statusIndicator} <span class="truncate">${item.title}</span></a></div>${hasChildren && !isCollapsed ? `<ul class="mt-1">${this.renderToc(item, level + 1, currentPath)}</ul>` : ''}</li>`; }).join(''); return `<ul class="nav-list">${items}</ul>`;},
             renderModeTab: (mode, icon, label) => { const isActive = state.workspaceMode === mode; return `<button data-action="switch-mode" data-mode="${mode}" class="${isActive ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'} group inline-flex items-center py-4 px-1 border-b-2 font-medium text-sm flex-shrink-0"><i data-lucide="${icon}" class="${isActive ? 'text-indigo-500' : 'text-slate-400 group-hover:text-slate-500'} -ml-0.5 mr-2 h-5 w-5"></i><span>${label}</span></button>`; },
-            renderWorkspacePanel() { if (!state.activeChapterPath) { return `<div class="flex flex-col items-center justify-center h-full min-h-[60vh] text-center p-4"><i data-lucide="file-text" class="h-16 w-16 text-slate-300"></i><h3 class="mt-4 text-xl font-semibold text-slate-800">노트를 선택하세요</h3><p class="mt-1 text-slate-500">좌측 목차에서 작업할 노트를 선택해주세요.</p></div>`; } if (!state.activeChapterContent) { return this.renderSpinner("노트 내용 로딩 중..."); } switch (state.workspaceMode) { case 'view': return this.renderViewPanel(); case 'write': return this.renderWritePanel(); case 'learn': return this.renderLearnPanel(); case 'translate': return this.renderTranslatePanel(); default: return `<div>알 수 없는 모드입니다.</div>`; } },
-            renderViewPanel: () => { const content = state.activeChapterContent; const viewText = content.manuscript ? marked.parse(DOMPurify.sanitize(content.manuscript)) : `<div class="text-center text-slate-500 py-16"><p>표시할 원고 내용이 없습니다.</p></div>`; return `<div><h3 class="text-xl font-semibold mb-4 text-slate-800 border-b pb-2">원고 보기</h3><div class="prose prose-custom prose-readable max-w-full">${viewText}</div></div>`;},
-            renderWritePanel: () => { const content = state.activeChapterContent; return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6 h-full"><div class="flex flex-col h-full"><label for="manuscript" class="block text-sm font-medium text-slate-700 mb-2">원고 (Markdown)</label><textarea id="manuscript" data-field="manuscript" class="w-full flex-grow p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 h-[60vh]">${content.manuscript || ''}</textarea></div><div class="flex flex-col h-full"><label for="notes" class="block text-sm font-medium text-slate-700 mb-2">메모</label><textarea id="notes" data-field="notes" class="w-full flex-grow p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 h-[60vh]">${content.notes || ''}</textarea></div></div><div class="mt-4 text-right"><button data-action="copy-writing-prompt" class="btn"><i data-lucide="copy" class="w-4 h-4 mr-2"></i> AI 글쓰기 프롬프트 복사</button></div>`;},
+            renderWorkspacePanel() { if (!state.activeChapterPath) { return `<div class="flex flex-col items-center justify-center h-full min-h-[60vh] text-center p-4"><i data-lucide="file-text" class="h-16 w-16 text-slate-300"></i><h3 class="mt-4 text-xl font-semibold text-slate-800">노트를 선택하세요</h3><p class="mt-1 text-slate-500">좌측 목차에서 작업할 노트를 선택해주세요.</p></div>`; } if (!state.activeChapterContent) { return this.renderSpinner("노트 내용 로딩 중..."); } switch (state.workspaceMode) { case 'view': return this.renderViewPanel(); case 'write': return this.renderWritePanel(); case 'learn': return this.renderLearnPanel(); case 'translate': return this.renderTranslatePanel(); case 'custom': return this.renderCustomButtonPanel(); default: return `<div>알 수 없는 모드입니다.</div>`; } },
+            renderViewPanel() {
+                const content = state.activeChapterContent;
+                const manuscriptHtml = content.manuscript 
+                    ? `<h3 class="text-xl font-semibold mb-4 text-slate-800 border-b pb-2">원고 보기</h3><div class="prose prose-custom prose-readable max-w-full">${marked.parse(DOMPurify.sanitize(content.manuscript))}</div>`
+                    : `<div class="text-center text-slate-500 py-16"><p>표시할 원고 내용이 없습니다.</p></div>`;
+
+                let translationHtml = '';
+                if (content.translation && content.translation.trim()) {
+                    const sanitizedTranslation = DOMPurify.sanitize(content.translation);
+                    const paragraphs = sanitizedTranslation.split(/\n+/).filter(p => p.trim() !== '');
+                    const boldedParagraphs = paragraphs.map(p => `<p><b>${p}</b></p>`).join('');
+                    
+                    translationHtml = `
+                        <h3 class="text-xl font-semibold mb-4 mt-8 text-slate-800 border-b pb-2">번역문 보기</h3>
+                        <div class="prose prose-custom prose-readable max-w-full">
+                            ${boldedParagraphs}
+                        </div>
+                    `;
+                }
+
+                return `<div>${manuscriptHtml}${translationHtml}</div>`;
+            },
+            renderWritePanel() {
+                const content = state.activeChapterContent; 
+                const layout = state.workspaceLayout;
+                const leftClasses = (layout === 'right') ? 'hidden' : '';
+                const rightClasses = (layout === 'left') ? 'hidden' : '';
+                const gridClasses = (layout === 'split') ? 'lg:grid-cols-2' : 'lg:grid-cols-1';
+
+                const controls = `
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex-grow flex justify-center">
+                            <div class="inline-flex rounded-md shadow-sm">
+                                <button data-action="set-workspace-layout" data-layout="left" title="원고만 보기" class="px-3 py-1 text-sm font-medium ${layout === 'left' ? 'bg-indigo-100 text-indigo-700' : 'bg-white'} border border-slate-300 rounded-l-md hover:bg-slate-50"><i data-lucide="sidebar-open" class="w-4 h-4"></i></button>
+                                <button data-action="set-workspace-layout" data-layout="split" title="양쪽 보기" class="px-3 py-1 text-sm font-medium ${layout === 'split' ? 'bg-indigo-100 text-indigo-700' : 'bg-white'} border-t border-b border-slate-300 hover:bg-slate-50"><i data-lucide="layout-grid" class="w-4 h-4"></i></button>
+                                <button data-action="set-workspace-layout" data-layout="right" title="설명만 보기" class="px-3 py-1 text-sm font-medium ${layout === 'right' ? 'bg-indigo-100 text-indigo-700' : 'bg-white'} border border-slate-300 rounded-r-md hover:bg-slate-50"><i data-lucide="sidebar-close" class="w-4 h-4"></i></button>
+                            </div>
+                        </div>
+                        <button data-action="copy-writing-prompt" class="btn btn-secondary p-2" title="AI 글쓰기 프롬프트 복사"><i data-lucide="copy" class="w-5 h-5"></i></button>
+                    </div>`;
+
+                return `<div>${controls}<div class="grid grid-cols-1 ${gridClasses} gap-6 h-full"><div class="${leftClasses} flex flex-col h-full"><label for="manuscript" class="block text-sm font-medium text-slate-700 mb-2">원고 (Markdown)</label><textarea id="manuscript" data-field="manuscript" class="w-full flex-grow p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 h-[60vh]">${content.manuscript || ''}</textarea></div><div class="${rightClasses} flex flex-col h-full"><label for="notes" class="block text-sm font-medium text-slate-700 mb-2">챕터 설명 (AI 프롬프트용) <span class="tooltip"><i data-lucide="help-circle" class="w-4 h-4 inline-block text-slate-400"></i><span class="tooltip-text">이곳에 입력된 내용은 AI 글쓰기 프롬프트의 '{{chapterDescription}}' 변수로 사용되어 AI가 글을 작성하는 데 핵심적인 맥락을 제공합니다.</span></span></label><textarea id="notes" data-field="notes" class="w-full flex-grow p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500 h-[60vh]">${content.notes || ''}</textarea></div></div></div>`;
+            },
             renderLearnPanel() { const hasQuestions = state.activeChapterContent?.questions?.length > 0; return `<div class="flex flex-col items-center justify-center h-full text-center min-h-[60vh]"><i data-lucide="lightbulb" class="h-12 w-12 text-slate-400"></i><h4 class="mt-4 text-lg font-semibold text-slate-700">지식을 테스트해보세요</h4><p class="mt-1 text-sm text-slate-500">학습한 내용을 기반으로 퀴즈를 풀어보세요.</p><div class="mt-6 flex flex-col space-y-3 w-full max-w-xs"><button data-action="start-quiz" class="btn w-full justify-center" ${!hasQuestions ? 'disabled' : ''}>퀴즈 시작 (${hasQuestions ? state.activeChapterContent.questions.length : 0}문제)</button><button data-action="manage-quiz" class="btn btn-secondary w-full justify-center">퀴즈 관리</button><button data-action="generate-quiz" class="btn btn-secondary w-full justify-center"><i data-lucide="sparkles" class="w-5 h-5 mr-2"></i>AI로 문제 추가</button></div>${!hasQuestions ? '<p class="mt-2 text-xs text-slate-400">퀴즈를 진행하려면 문제를 먼저 추가해주세요.</p>' : ''}</div>`;},
-            renderTranslatePanel() { const content = state.activeChapterContent; const sourceText = content.manuscript ? marked.parse(content.manuscript) : '<p>번역할 원문이 없습니다.</p>'; return `<div class="grid grid-cols-1 lg:grid-cols-2 gap-6"><div class="h-[60vh] flex flex-col"><h3 class="text-lg font-semibold mb-2 text-slate-800">원문</h3><div class="prose prose-custom flex-grow overflow-y-auto p-4 border rounded-md bg-slate-50">${sourceText}</div></div><div class="h-[60vh] flex flex-col"><h3 class="text-lg font-semibold mb-2 text-slate-800">번역문</h3><textarea id="translation" data-field="translation" class="w-full flex-grow p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.translation || ''}</textarea></div></div><div class="mt-4 flex justify-between items-center"><button data-action="open-split-chapter-modal" class="btn btn-secondary"><i data-lucide="git-fork" class="w-4 h-4 mr-2"></i>본문 분할</button><button data-action="copy-translation-prompt" class="btn">번역 프롬프트 복사</button></div>`;},
+            renderTranslatePanel() {
+                const content = state.activeChapterContent;
+                const layout = state.workspaceLayout;
+                const sourceText = content.manuscript ? marked.parse(content.manuscript) : '<p>번역할 원문이 없습니다.</p>';
+                const leftClasses = (layout === 'right') ? 'hidden' : '';
+                const rightClasses = (layout === 'left') ? 'hidden' : '';
+                const gridClasses = (layout === 'split') ? 'lg:grid-cols-2' : 'lg:grid-cols-1';
+
+                 const controls = `
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex-grow flex justify-center">
+                            <div class="inline-flex rounded-md shadow-sm">
+                                <button data-action="set-workspace-layout" data-layout="left" title="원문만 보기" class="px-3 py-1 text-sm font-medium ${layout === 'left' ? 'bg-indigo-100 text-indigo-700' : 'bg-white'} border border-slate-300 rounded-l-md hover:bg-slate-50"><i data-lucide="sidebar-open" class="w-4 h-4"></i></button>
+                                <button data-action="set-workspace-layout" data-layout="split" title="양쪽 보기" class="px-3 py-1 text-sm font-medium ${layout === 'split' ? 'bg-indigo-100 text-indigo-700' : 'bg-white'} border-t border-b border-slate-300 hover:bg-slate-50"><i data-lucide="layout-grid" class="w-4 h-4"></i></button>
+                                <button data-action="set-workspace-layout" data-layout="right" title="번역문만 보기" class="px-3 py-1 text-sm font-medium ${layout === 'right' ? 'bg-indigo-100 text-indigo-700' : 'bg-white'} border border-slate-300 rounded-r-md hover:bg-slate-50"><i data-lucide="sidebar-close" class="w-4 h-4"></i></button>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button data-action="open-split-chapter-modal" class="btn btn-secondary p-2" title="번역문 분할"><i data-lucide="git-fork" class="w-5 h-5"></i></button>
+                            <button data-action="copy-translation-prompt" class="btn btn-secondary p-2" title="번역 프롬프트 복사"><i data-lucide="copy" class="w-5 h-5"></i></button>
+                        </div>
+                    </div>`;
+
+                return `<div>${controls}<div class="grid grid-cols-1 ${gridClasses} gap-6"><div class="${leftClasses} h-[60vh] flex flex-col"><h3 class="text-lg font-semibold mb-2 text-slate-800">원문</h3><div class="prose prose-custom flex-grow overflow-y-auto p-4 border rounded-md bg-slate-50">${sourceText}</div></div><div class="${rightClasses} h-[60vh] flex flex-col"><h3 class="text-lg font-semibold mb-2 text-slate-800">번역문</h3><textarea id="translation" data-field="translation" class="w-full flex-grow p-4 border border-slate-300 rounded-md shadow-sm focus:ring-indigo-500 focus:border-indigo-500">${content.translation || ''}</textarea></div></div></div>`;
+            },
+            renderCustomButtonPanel() {
+                const customPrompts = state.activeProject.settings.customPrompts || [];
+                if (customPrompts.length === 0) {
+                    return `<div class="flex flex-col items-center justify-center h-full min-h-[60vh] text-center p-4">
+                        <i data-lucide="wand-sparkles" class="h-16 w-16 text-slate-300"></i>
+                        <h3 class="mt-4 text-xl font-semibold text-slate-800">커스텀 버튼이 없습니다</h3>
+                        <p class="mt-1 text-slate-500">프로젝트 설정에서 자주 사용하는 커스텀 프롬프트 버튼을 추가해보세요.</p>
+                        <button class="btn mt-6" data-action="open-settings"><i data-lucide="settings" class="w-4 h-4 mr-2"></i>설정으로 이동</button>
+                    </div>`;
+                }
+                const buttonsHtml = customPrompts.map((prompt, index) => {
+                    return `<button class="btn btn-secondary" data-action="copy-custom-prompt" data-index="${index}">
+                        <i data-lucide="copy" class="w-4 h-4 mr-2"></i>
+                        <span>${DOMPurify.sanitize(prompt.name)}</span>
+                    </button>`;
+                }).join('');
+                return `<div class="p-4">
+                    <h3 class="text-xl font-semibold mb-4 text-slate-800 border-b pb-2">커스텀 프롬프트 버튼</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        ${buttonsHtml}
+                    </div>
+                </div>`;
+            },
             renderSpinner: (message) => `<div class="flex items-center justify-center h-full"><div class="text-center"><svg class="mx-auto h-12 w-12 text-slate-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h2 class="mt-4 text-lg font-medium text-slate-900">${message}</h2></div></div>`,
             renderModal() { if (!state.modal.isOpen) return ''; let contentHtml = ''; switch(state.modal.type) { case 'newProject': contentHtml = this.renderNewProjectModal(); break; case 'confirm': contentHtml = this.renderConfirmModal(); break; case 'settings': contentHtml = this.renderSettingsModal(); break; case 'apiKey': contentHtml = this.renderApiKeyModal(); break; case 'manageQuiz': contentHtml = this.renderManageQuizModal(); break; case 'manageToc': contentHtml = this.renderManageTocModal(); break; case 'splitChapter': contentHtml = this.renderSplitChapterModal(); break; } return `<div class="modal-overlay show" data-action="close-modal-overlay"><div class="modal-container">${contentHtml}</div></div>`;},
-            renderNewProjectModal() { const activeTab = state.modal.data.activeTab || 'zip'; const tabButton = (id, label) => `<button type="button" data-action="switch-modal-tab" data-tab="${id}" class="px-3 py-2 text-sm font-medium rounded-md ${activeTab === id ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}">${label}</button>`; const fileInputTemplate = (id, accept, labelId, description) => `<p class="text-sm text-slate-600 mb-2">${description}</p><label for="${id}" class="cursor-pointer"><div data-dropzone-for="${id}" class="drop-zone w-full p-8 rounded-lg text-center bg-slate-50 hover:bg-slate-100"><div class="flex flex-col items-center justify-center space-y-2 pointer-events-none"><i data-lucide="upload-cloud" class="w-12 h-12 text-slate-400"></i><p class="text-slate-700 font-medium">파일을 드래그하거나 <span class="text-indigo-600">클릭하여 선택</span>하세요</p><p id="${labelId}" class="text-sm text-slate-500 truncate max-w-full" title="선택된 파일 없음">선택된 파일 없음</p></div><input type="file" id="${id}" accept="${accept}" class="hidden" data-target-label="${labelId}"/></div></label>`; const tabContent = () => { switch(activeTab) { case 'zip': return fileInputTemplate('zip-upload', '.zip', 'zip-file-label', 'HTML 또는 TXT 파일들이 포함된 ZIP 파일을 업로드하세요.'); case 'jsonFile': return fileInputTemplate('json-upload', '.json', 'json-file-label', '이전에 내보냈던 프로젝트(.json) 파일을 가져옵니다.'); case 'jsonText': return `<p class="text-sm text-slate-600 mb-2">프로젝트 내보내기(.json) 파일의 텍스트를 붙여넣으세요.</p><textarea id="json-text-input" placeholder='{"type": "ILS_PROJECT_EXPORT_V2", ...}' class="w-full h-40 p-2 border rounded-md font-mono text-sm"></textarea>`; case 'tocJson': return `<p class="text-sm text-slate-600 mb-2">책의 목차 구조를 나타내는 JSON 텍스트를 붙여넣으세요.</p><textarea id="toc-json-input" placeholder='{"title": "책 제목", "children": [...] }' class="w-full h-40 p-2 border rounded-md font-mono text-sm"></textarea>`; } }; return `<form data-action="submit-new-project"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">새 프로젝트 생성</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="border-b border-gray-200"><div class="p-1 mb-4 inline-flex space-x-1 bg-slate-100 rounded-lg">${tabButton('zip', 'ZIP')}${tabButton('tocJson', '목차 JSON')}${tabButton('jsonFile', '파일(.json)')}${tabButton('jsonText', '텍스트(.json)')}</div></div><div class="mt-4">${tabContent()}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="submit" class="btn">생성</button></div></form>`;},
+            renderNewProjectModal() { 
+                const { activeTab = 'zip', isLoading = false, loadingMessage = '', error = '' } = state.modal.data;
+                if(isLoading) {
+                    return `<div class="p-8">${this.renderSpinner(loadingMessage)}</div>`;
+                }
+
+                const tabButton = (id, label) => `<button type="button" data-action="switch-modal-tab" data-tab="${id}" class="px-3 py-2 text-sm font-medium rounded-md ${activeTab === id ? 'bg-indigo-100 text-indigo-700' : 'text-slate-500 hover:bg-slate-100'}">${label}</button>`; 
+                const fileInputTemplate = (id, accept, labelId, description) => `<p class="text-sm text-slate-600 mb-2">${description}</p><label for="${id}" class="cursor-pointer"><div data-dropzone-for="${id}" class="drop-zone w-full p-8 rounded-lg text-center bg-slate-50 hover:bg-slate-100"><div class="flex flex-col items-center justify-center space-y-2 pointer-events-none"><i data-lucide="upload-cloud" class="w-12 h-12 text-slate-400"></i><p class="text-slate-700 font-medium">파일을 드래그하거나 <span class="text-indigo-600">클릭하여 선택</span>하세요</p><p id="${labelId}" class="text-sm text-slate-500 truncate max-w-full" title="선택된 파일 없음">선택된 파일 없음</p></div><input type="file" id="${id}" accept="${accept}" class="hidden" data-target-label="${labelId}"/></div></label>`; 
+                const tabContent = () => { 
+                    switch(activeTab) { 
+                        case 'zip': return fileInputTemplate('zip-upload', '.zip', 'zip-file-label', 'HTML 또는 TXT 파일들이 포함된 ZIP 파일을 업로드하세요.'); 
+                        case 'jsonFile': return fileInputTemplate('json-upload', '.json', 'json-file-label', '이전에 내보냈던 프로젝트(.json) 파일을 가져옵니다.'); 
+                        case 'jsonText': return `<p class="text-sm text-slate-600 mb-2">프로젝트 내보내기(.json) 파일의 텍스트를 붙여넣으세요.</p><textarea id="json-text-input" placeholder='{"type": "ILS_PROJECT_EXPORT_V2", ...}' class="w-full h-40 p-2 border rounded-md font-mono text-sm"></textarea>${error ? `<p class="text-red-500 text-sm mt-2">${error}</p>` : ''}`; 
+                        case 'tocJson': return `<p class="text-sm text-slate-600 mb-2">책의 목차 구조를 나타내는 JSON 텍스트를 붙여넣으세요.</p><textarea id="toc-json-input" placeholder='{"title": "책 제목", "children": [...] }' class="w-full h-40 p-2 border rounded-md font-mono text-sm"></textarea>${error ? `<p class="text-red-500 text-sm mt-2">${error}</p>` : ''}`; 
+                    } 
+                }; 
+                return `<form data-action="submit-new-project"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">새 프로젝트 생성</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="border-b border-gray-200"><div class="p-1 mb-4 inline-flex space-x-1 bg-slate-100 rounded-lg">${tabButton('zip', 'ZIP')}${tabButton('tocJson', '목차 JSON')}${tabButton('jsonFile', '파일(.json)')}${tabButton('jsonText', '텍스트(.json)')}</div></div><div class="mt-4">${tabContent()}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="submit" class="btn">생성</button></div></form>`;
+            },
             renderConfirmModal() { const { title, message, confirmText } = state.modal.data; return `<div class="p-6"><div class="sm:flex sm:items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-100 sm:mx-0 sm:h-10 sm:w-10"><i data-lucide="alert-triangle" class="h-6 w-6 text-red-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">${title}</h3><div class="mt-2"><p class="text-sm text-gray-500">${message}</p></div></div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="button" data-action="confirm-action" class="btn bg-red-600 hover:bg-red-700">${confirmText}</button></div>`;},
             renderToasts() { return `<div class="fixed bottom-4 right-4 space-y-3 z-[3000]">${state.toasts.map(toast => `<div id="toast-${toast.id}" class="max-w-sm w-full bg-white shadow-lg rounded-lg pointer-events-auto ring-1 ring-black ring-opacity-5 overflow-hidden"><div class="p-4"><div class="flex items-start"><div class="flex-shrink-0">${toast.type === 'success' ? '<i data-lucide="check-circle" class="h-6 w-6 text-green-400"></i>' : ''}${toast.type === 'error' ? '<i data-lucide="alert-circle" class="h-6 w-6 text-red-400"></i>' : ''}${toast.type === 'info' ? '<i data-lucide="info" class="h-6 w-6 text-blue-400"></i>' : ''}</div><div class="ml-3 w-0 flex-1 pt-0.5"><p class="text-sm font-medium text-gray-900">${toast.message}</p></div><div class="ml-4 flex-shrink-0 flex"><button data-action="dismiss-toast" data-id="${toast.id}" class="bg-white rounded-md inline-flex text-gray-400 hover:text-gray-500"><i data-lucide="x" class="h-5 w-5"></i></button></div></div></div></div>`).join('')}</div>`;},
             renderQuizView() { const { quizState } = state; if (!quizState || !quizState.questions[quizState.currentIndex]) return this.renderSpinner('퀴즈 로딩 중...'); const q = quizState.questions[quizState.currentIndex]; const isAnswered = quizState.answers[quizState.currentIndex] !== undefined; const renderAnswerComponent = () => { switch (q.type) { case CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE: const userAnswerIndex = quizState.answers[quizState.currentIndex]?.selectedIndex; return `<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 w-full">${q.options.map((opt, index) => { let classes = 'border-slate-300 hover:border-indigo-500 hover:bg-indigo-50'; if (isAnswered) { if (index === q.answerIndex) classes = 'bg-emerald-100 border-emerald-500 text-emerald-800'; else if (index === userAnswerIndex) classes = 'bg-red-100 border-red-500 text-red-800'; } return `<button data-action="submit-answer" data-index="${index}" class="w-full text-left p-4 border rounded-lg transition-colors ${classes}" ${isAnswered ? 'disabled' : ''}>${opt}</button>` }).join('')}</div>`; default: return `<form data-action="submit-text-answer" class="w-full max-w-md text-center"><textarea id="answer-input" name="answer-input" rows="4" class="w-full text-lg border-2 p-2 bg-transparent border-slate-300 rounded-md focus:outline-none focus:border-indigo-500 transition-colors" placeholder="답안을 입력하세요..." ${isAnswered ? 'disabled' : 'autofocus'}></textarea><button type="submit" class="mt-8 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-12 rounded-lg text-lg transition-colors shadow hover:shadow-md" ${isAnswered ? 'disabled' : ''}>제출하고 정답 확인</button></form>`; } }; const renderFeedback = () => { if (!isAnswered) return `<div class="min-h-[148px]"></div>`; const { isCorrect } = quizState.answers[quizState.currentIndex]; const feedbackClass = isCorrect ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'; const icon = isCorrect ? `<i data-lucide="check-circle" class="w-5 h-5"></i>` : `<i data-lucide="x-circle" class="w-5 h-5"></i>`; const isLastQuestion = quizState.currentIndex + 1 >= quizState.questions.length; const nextButtonText = isLastQuestion ? '결과 보기' : '다음 문제'; const nextButtonIcon = isLastQuestion ? 'flag' : 'arrow-right-circle'; let correctDisplay = ''; if (!isCorrect) correctDisplay = q.type === 'multiple_choice' ? q.options[q.answerIndex] : q.answer; return `<div class="p-4 rounded-lg mt-8 w-full max-w-3xl ${feedbackClass}"><p class="font-bold flex items-center gap-2">${icon} ${isCorrect ? '정답입니다!' : '오답입니다.'}</p>${!isCorrect ? `<p class="text-sm mt-2"><span class="font-semibold">모범 답안:</span> ${correctDisplay}</p>` : ''}<p class="text-sm mt-2"><span class="font-semibold">해설:</span> ${q.explanation}</p><div class="mt-4 flex justify-end"><button data-action="next-question" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg flex items-center gap-2">${nextButtonText} <i data-lucide="${nextButtonIcon}" class="w-5 h-5"></i></button></div></div>`; }; const questionTypeMap = { [CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE]: '객관식', [CONFIG.QUIZ_TYPE.SHORT_ANSWER]: '단답형', [CONFIG.QUIZ_TYPE.SUBJECTIVE]: '서술형', [CONFIG.QUIZ_TYPE.CASE_BASED]: '사례형' }; return `<div class="fixed inset-0 bg-slate-50 flex flex-col z-[1000]"><header class="bg-white shadow-sm p-4 sticky top-0 z-10"><div class="flex items-center justify-between gap-4 max-w-5xl mx-auto"><div class="font-bold text-lg w-24">${quizState.currentIndex + 1} / ${quizState.questions.length}</div><div class="w-full bg-slate-200 rounded-full h-4 overflow-hidden"><div class="bg-indigo-500 h-4 rounded-full transition-all duration-300" style="width: ${((quizState.currentIndex) / quizState.questions.length) * 100}%"></div></div><button data-action="exit-quiz" class="p-2 rounded-full hover:bg-slate-200" title="퀴즈 나가기"><i data-lucide="x"></i></button></div></header><main class="flex-1 flex flex-col items-center justify-center p-6 text-center overflow-y-auto"><div class="w-full max-w-3xl"><p class="text-slate-500 text-sm mb-2">${questionTypeMap[q.type] || '문제'}</p><h2 class="text-2xl md:text-3xl font-bold leading-tight">${q.questionText}</h2></div><div class="mt-12 w-full flex justify-center">${renderAnswerComponent()}</div>${renderFeedback()}</main></div>`; },
-            renderQuizResultView() { const { questions, answers } = state.quizState; const totalQuestions = questions.length; const correctCount = answers.filter(a => a.isCorrect).length; const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0; const summaryHtml = `<div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 text-center mb-8"><h2 class="text-3xl font-bold text-slate-800">퀴즈 결과</h2><p class="text-slate-600 mt-2">학습 내용을 성공적으로 검토했습니다!</p><div class="mt-6"><span class="text-5xl font-bold text-indigo-600">${score}</span><span class="text-xl font-medium text-slate-500">점</span></div><p class="mt-2 font-medium text-slate-700">총 ${totalQuestions}문항 중 ${correctCount}문항 정답</p><div class="mt-8"><button data-action="back-to-workspace" class="w-full sm:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">작업실로 돌아가기</button></div></div>`; const questionCardsHtml = questions.map((q, index) => { const userAnswerData = answers[index]; const isCorrect = userAnswerData.isCorrect; const cardClass = isCorrect ? 'border-l-4 border-green-500' : 'border-l-4 border-red-500'; let answerFeedbackHtml = ''; if (q.type === CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE) { answerFeedbackHtml = q.options.map((option, optIndex) => { const isUserAnswer = optIndex === userAnswerData.selectedIndex; const isCorrectAnswer = optIndex === q.answerIndex; let classes = 'border-slate-200 bg-slate-50'; let icon = ''; if (isUserAnswer && !isCorrect) { classes = 'border-red-300 bg-red-50 text-red-800'; icon = `<i data-lucide="x-circle" class="w-5 h-5 text-red-500 mr-2 flex-shrink-0"></i>`; } if (isCorrectAnswer) { classes = 'border-green-300 bg-green-50 text-green-800 font-semibold'; icon = `<i data-lucide="check-circle" class="w-5 h-5 text-green-500 mr-2 flex-shrink-0"></i>`; } return `<div class="flex items-center p-3 mt-2 border rounded-md ${classes}">${icon}<span>${option}</span></div>`; }).join(''); } else { const userAnswerHtml = `<div class="flex items-start p-3 mt-2 border rounded-md border-red-300 bg-red-50 text-red-800"><i data-lucide="x-circle" class="w-5 h-5 text-red-500 mr-2 mt-1 flex-shrink-0"></i><p>${userAnswerData.userAnswer || '<i>답변 없음</i>'}</p></div>`; const correctAnswerHtml = `<div class="flex items-start p-3 mt-2 border rounded-md border-green-300 bg-green-50 text-green-800"><i data-lucide="check-circle" class="w-5 h-5 text-green-500 mr-2 mt-1 flex-shrink-0"></i><p>${q.answer}</p></div>`; if (isCorrect) { answerFeedbackHtml = correctAnswerHtml; } else { answerFeedbackHtml = `<div><p class="text-sm font-semibold text-slate-600">제출한 답:</p>${userAnswerHtml}<p class="text-sm font-semibold text-slate-600 mt-3">모범 답안:</p>${correctAnswerHtml}</div>`; } } return `<div class="bg-white rounded-lg shadow p-6 mb-6 ${cardClass}"><p class="font-semibold text-slate-800">${index + 1}. ${q.questionText}</p><div class="mt-4">${answerFeedbackHtml}</div><div class="mt-4 p-3 bg-slate-100 rounded-md text-sm text-slate-700"><p><span class="font-bold">해설:</span> ${q.explanation}</p></div></div>`; }).join(''); return `<div class="fixed inset-0 bg-slate-50 flex flex-col z-[1000] overflow-y-auto"><header class="bg-white shadow-sm p-4 sticky top-0 z-10"><div class="max-w-4xl mx-auto text-center text-2xl font-bold">퀴즈 결과</div></header><main class="flex-grow w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${summaryHtml}<h3 class="text-2xl font-bold text-slate-800 mb-6 border-b pb-3">문항별 다시보기</h3>${questionCardsHtml}</main></div>`;},
-            renderSettingsModal() { const settings = state.activeProject.settings; const categoryOptions = state.categories.map(c => `<option value="${c.id}" ${c.id === settings.categoryId ? 'selected' : ''}>${c.name}</option>`).join(''); const tagPills = (settings.tags || []).map(tag => `<span class="inline-flex items-center gap-x-0.5 rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">${tag}<button type="button" data-action="remove-tag" data-tag="${tag}" class="group relative -mr-1 h-3.5 w-3.5 rounded-sm hover:bg-indigo-500/20"><i data-lucide="x" class="h-3.5 w-3.5 text-indigo-600 hover:text-indigo-700"></i></button></span>`).join(''); const fields = [ { id: 'name', label: '프로젝트 이름', value: state.activeProject.name, type: 'text' }, { id: 'categoryId', label: '카테고리', type: 'select', options: categoryOptions }, { id: 'tags', label: '태그', type: 'tags', pills: tagPills }, { id: 'writingGenre', label: '글쓰기 - 장르', value: settings.writingGenre, type: 'text' }, { id: 'writingAudience', label: '글쓰기 - 목표 독자', value: settings.writingAudience, type: 'text' }, { id: 'writingAgeGroup', label: '글쓰기 - 대상 연령층', value: settings.writingAgeGroup, type: 'text' }, { id: 'writingStyle', label: '글쓰기 - 스타일', value: settings.writingStyle, type: 'textarea' }, { id: 'writingReferences', label: '글쓰기 - 자료', value: settings.writingReferences, type: 'textarea' }, { id: 'writingPrompt', label: '글쓰기 프롬프트 - 전체 템플릿', value: settings.writingPrompt, type: 'textarea' }, { id: 'quizQuestionCount', label: '퀴즈 - 생성 개수', value: settings.quizQuestionCount, type: 'number' }, { id: 'quizTaskDescription', label: '퀴즈 프롬프트 - 과업 설명 (Task)', value: settings.quizTaskDescription, type: 'textarea' }, { id: 'quizOutputFormatInstruction', label: '퀴즈 프롬프트 - 출력 형식 (Output)', value: settings.quizOutputFormatInstruction, type: 'textarea' }, { id: 'quizPromptTemplate', label: '퀴즈 프롬프트 - 전체 템플릿', value: settings.quizPromptTemplate, type: 'textarea' }, ]; const fieldsHtml = fields.map(f => { let fieldHtml = ''; switch (f.type) { case 'select': fieldHtml = `<select id="setting-${f.id}" data-setting-key="${f.id}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"><option value="">미분류</option>${f.options}</select>`; break; case 'textarea': fieldHtml = `<textarea id="setting-${f.id}" data-setting-key="${f.id}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 h-32 font-mono text-xs">${f.value}</textarea>`; break; case 'tags': fieldHtml = `<div class="relative"><input type="text" id="setting-tags-input" autocomplete="off" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="태그 입력 후 Enter..."><div id="tag-suggestions" class="absolute z-10 w-full bg-white border border-slate-300 rounded-md shadow-lg mt-1 hidden"></div><div id="tag-pills-container" class="mt-2 flex flex-wrap gap-2">${f.pills}</div></div>`; break; default: fieldHtml = `<input type="${f.type}" id="setting-${f.id}" data-setting-key="${f.id}" value="${f.value}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">`; } return `<div class="mb-4"><label for="setting-${f.id}" class="block text-sm font-medium text-slate-700">${f.label}</label>${fieldHtml}</div>`; }).join(''); return `<form data-action="save-settings"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">프로젝트 설정</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[60vh] overflow-y-auto pr-2">${fieldsHtml}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="submit" class="btn">저장</button></div></form>`; },
+            renderQuizResultView() { 
+                const { questions, answers } = state.quizState; 
+                const totalQuestions = questions.length; 
+                const correctCount = answers.filter(a => a.isCorrect).length; 
+                const score = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+                
+                const filterControls = `
+                    <div class="flex justify-center gap-4 mb-6">
+                        <button data-action="set-quiz-result-filter" data-filter="all" class="btn btn-sm ${state.quizResultFilter === 'all' ? '' : 'btn-secondary'}">전체 보기</button>
+                        <button data-action="set-quiz-result-filter" data-filter="incorrect" class="btn btn-sm ${state.quizResultFilter === 'incorrect' ? '' : 'btn-secondary'}">틀린 문항만 보기</button>
+                    </div>
+                `;
+
+                const summaryHtml = `<div class="bg-white rounded-xl shadow-lg p-6 sm:p-8 text-center mb-8"><h2 class="text-3xl font-bold text-slate-800">퀴즈 결과</h2><p class="text-slate-600 mt-2">학습 내용을 성공적으로 검토했습니다!</p><div class="mt-6"><span class="text-5xl font-bold text-indigo-600">${score}</span><span class="text-xl font-medium text-slate-500">점</span></div><p class="mt-2 font-medium text-slate-700">총 ${totalQuestions}문항 중 ${correctCount}문항 정답</p><div class="mt-8"><button data-action="back-to-workspace" class="w-full sm:w-auto inline-flex justify-center items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">작업실로 돌아가기</button></div></div>`; 
+                
+                const filteredQuestions = state.quizResultFilter === 'incorrect' 
+                    ? questions.filter((q, index) => !answers[index].isCorrect)
+                    : questions;
+
+                const questionCardsHtml = filteredQuestions.map((q, index) => {
+                    const originalIndex = state.quizResultFilter === 'incorrect' ? questions.findIndex(origQ => origQ.questionText === q.questionText) : index;
+                    const userAnswerData = answers[originalIndex]; 
+                    const isCorrect = userAnswerData.isCorrect; 
+                    const cardClass = isCorrect ? 'border-l-4 border-green-500' : 'border-l-4 border-red-500'; 
+                    let answerFeedbackHtml = ''; 
+                    if (q.type === CONFIG.QUIZ_TYPE.MULTIPLE_CHOICE) { 
+                        answerFeedbackHtml = q.options.map((option, optIndex) => { 
+                            const isUserAnswer = optIndex === userAnswerData.selectedIndex; 
+                            const isCorrectAnswer = optIndex === q.answerIndex; 
+                            let classes = 'border-slate-200 bg-slate-50'; 
+                            let icon = ''; 
+                            if (isUserAnswer && !isCorrect) { classes = 'border-red-300 bg-red-50 text-red-800'; icon = `<i data-lucide="x-circle" class="w-5 h-5 text-red-500 mr-2 flex-shrink-0"></i>`; } 
+                            if (isCorrectAnswer) { classes = 'border-green-300 bg-green-50 text-green-800 font-semibold'; icon = `<i data-lucide="check-circle" class="w-5 h-5 text-green-500 mr-2 flex-shrink-0"></i>`; } 
+                            return `<div class="flex items-center p-3 mt-2 border rounded-md ${classes}">${icon}<span>${option}</span></div>`; 
+                        }).join(''); 
+                    } else { 
+                        const userAnswerHtml = `<div class="flex items-start p-3 mt-2 border rounded-md border-red-300 bg-red-50 text-red-800"><i data-lucide="x-circle" class="w-5 h-5 text-red-500 mr-2 mt-1 flex-shrink-0"></i><p>${userAnswerData.userAnswer || '<i>답변 없음</i>'}</p></div>`; 
+                        const correctAnswerHtml = `<div class="flex items-start p-3 mt-2 border rounded-md border-green-300 bg-green-50 text-green-800"><i data-lucide="check-circle" class="w-5 h-5 text-green-500 mr-2 mt-1 flex-shrink-0"></i><p>${q.answer}</p></div>`; 
+                        if (isCorrect) { answerFeedbackHtml = correctAnswerHtml; } 
+                        else { answerFeedbackHtml = `<div><p class="text-sm font-semibold text-slate-600">제출한 답:</p>${userAnswerHtml}<p class="text-sm font-semibold text-slate-600 mt-3">모범 답안:</p>${correctAnswerHtml}</div>`; } 
+                    } 
+                    return `<div class="bg-white rounded-lg shadow p-6 mb-6 ${cardClass}"><p class="font-semibold text-slate-800">${originalIndex + 1}. ${q.questionText}</p><div class="mt-4">${answerFeedbackHtml}</div><div class="mt-4 p-3 bg-slate-100 rounded-md text-sm text-slate-700"><p><span class="font-bold">해설:</span> ${q.explanation}</p></div></div>`; 
+                }).join(''); 
+                
+                return `<div class="fixed inset-0 bg-slate-50 flex flex-col z-[1000] overflow-y-auto"><header class="bg-white shadow-sm p-4 sticky top-0 z-10"><div class="max-w-4xl mx-auto text-center text-2xl font-bold">퀴즈 결과</div></header><main class="flex-grow w-full max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">${summaryHtml}<h3 class="text-2xl font-bold text-slate-800 mb-6 border-b pb-3">문항별 다시보기</h3>${filterControls}${questionCardsHtml}</main></div>`;
+            },
+            renderSettingsModal() {
+                const settings = state.activeProject.settings;
+                const categoryOptions = state.categories.map(c => `<option value="${c.id}" ${c.id === settings.categoryId ? 'selected' : ''}>${c.name}</option>`).join('');
+                const tagPills = (state.modal.data.projectTags || []).map(tag => `<span class="inline-flex items-center gap-x-0.5 rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">${tag}<button type="button" data-action="remove-tag" data-tag="${tag}" class="group relative -mr-1 h-3.5 w-3.5 rounded-sm hover:bg-indigo-500/20"><i data-lucide="x" class="h-3.5 w-3.5 text-indigo-600 hover:text-indigo-700"></i></button></span>`).join('');
+
+                const generalFields = [
+                    { id: 'name', label: '프로젝트 이름', value: state.modal.data.projectName, type: 'text' },
+                    { id: 'categoryId', label: '카테고리', type: 'select', options: categoryOptions },
+                    { id: 'tags', label: '태그', type: 'tags', pills: tagPills }
+                ];
+                
+                const promptFields = [
+                    { id: 'writingGenre', label: '글쓰기 - 장르', value: settings.writingGenre, type: 'text' },
+                    { id: 'writingAudience', label: '글쓰기 - 목표 독자', value: settings.writingAudience, type: 'text' },
+                    { id: 'writingAgeGroup', label: '글쓰기 - 대상 연령층', value: settings.writingAgeGroup, type: 'text' },
+                    { id: 'writingStyle', label: '글쓰기 - 스타일', value: settings.writingStyle, type: 'textarea' },
+                    { id: 'writingReferences', label: '글쓰기 - 자료', value: settings.writingReferences, type: 'textarea' },
+                    { id: 'writingPrompt', label: '글쓰기 프롬프트 - 전체 템플릿', value: settings.writingPrompt, type: 'textarea' },
+                    { id: 'quizQuestionCount', label: '퀴즈 - 생성 개수', value: settings.quizQuestionCount, type: 'number' },
+                    { id: 'quizTaskDescription', label: '퀴즈 프롬프트 - 과업 설명 (Task)', value: settings.quizTaskDescription, type: 'textarea' },
+                    { id: 'quizOutputFormatInstruction', label: '퀴즈 프롬프트 - 출력 형식 (Output)', value: settings.quizOutputFormatInstruction, type: 'textarea' },
+                    { id: 'quizPromptTemplate', label: '퀴즈 프롬프트 - 전체 템플릿', value: settings.quizPromptTemplate, type: 'textarea' },
+                ];
+
+                const renderFields = (fields) => fields.map(f => {
+                    let fieldHtml = '';
+                    switch (f.type) {
+                        case 'select': fieldHtml = `<select id="setting-${f.id}" data-setting-key="${f.id}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"><option value="">미분류</option>${f.options}</select>`; break;
+                        case 'textarea': fieldHtml = `<textarea id="setting-${f.id}" data-setting-key="${f.id}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 h-32 font-mono text-xs">${f.value}</textarea>`; break;
+                        case 'tags': fieldHtml = `<div class="relative"><input type="text" id="setting-tags-input" autocomplete="off" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50" placeholder="태그 입력 후 Enter..."><div id="tag-suggestions" class="absolute z-10 w-full bg-white border border-slate-300 rounded-md shadow-lg mt-1 hidden"></div><div id="tag-pills-container" class="mt-2 flex flex-wrap gap-2">${f.pills}</div></div>`; break;
+                        default: fieldHtml = `<input type="${f.type}" id="setting-${f.id}" data-setting-key="${f.id}" value="${DOMPurify.sanitize(f.value)}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50">`;
+                    }
+                    return `<div class="mb-4"><label for="setting-${f.id}" class="block text-sm font-medium text-slate-700">${f.label}</label>${fieldHtml}</div>`;
+                }).join('');
+
+                const customPrompts = state.modal.data.customPrompts || [];
+                const customPromptsHtml = customPrompts.map((prompt, index) => `
+                    <div class="p-4 border border-slate-200 rounded-lg mb-4 bg-slate-50" data-prompt-id="${prompt.id}">
+                        <div class="flex justify-between items-center mb-2">
+                            <h5 class="text-sm font-semibold text-slate-800">커스텀 프롬프트 #${index + 1}</h5>
+                            <button type="button" data-action="remove-custom-prompt" data-id="${prompt.id}" class="p-1 rounded-full hover:bg-red-100 text-red-500">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                            </button>
+                        </div>
+                        <div class="mb-2">
+                            <label for="custom-prompt-name-${index}" class="block text-xs font-medium text-slate-600">버튼 이름</label>
+                            <input type="text" id="custom-prompt-name-${index}" data-custom-prompt-key="name" value="${DOMPurify.sanitize(prompt.name)}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm text-sm" required>
+                        </div>
+                        <div>
+                            <label for="custom-prompt-template-${index}" class="block text-xs font-medium text-slate-600">프롬프트 템플릿</label>
+                            <textarea id="custom-prompt-template-${index}" data-custom-prompt-key="template" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm h-32 font-mono text-xs" required>${DOMPurify.sanitize(prompt.template)}</textarea>
+                        </div>
+                    </div>
+                `).join('');
+
+                const promptVariablesHelpText = `
+                    <div class="mt-2 text-xs text-slate-500 p-3 bg-slate-100 rounded-md">
+                        <p class="font-semibold mb-1">사용 가능한 변수:</p>
+                        <ul class="list-disc list-inside space-y-1">
+                            <li><code class="bg-slate-200 px-1 rounded">{{bookTitle}}</code>: 전체 책 제목</li>
+                            <li><code class="bg-slate-200 px-1 rounded">{{partTitle}}</code>: 현재 파트 제목</li>
+                            <li><code class="bg-slate-200 px-1 rounded">{{chapterTitle}}</code>: 현재 챕터 제목</li>
+                            <li><code class="bg-slate-200 px-1 rounded">{{chapterDescription}}</code>: 현재 챕터 설명(메모)</li>
+                            <li><code class="bg-slate-200 px-1 rounded">{{manuscript}}</code>: 현재 챕터 원고</li>
+                            <li><code class="bg-slate-200 px-1 rounded">{{translation}}</code>: 현재 챕터 번역본</li>
+                            <li><code class="bg-slate-200 px-1 rounded">{{notes}}</code>: 현재 챕터 메모</li>
+                            <li><code class="bg-slate-200 px-1 rounded">{{fullToc}}</code>: 전체 목차 텍스트</li>
+                            <li><code class="bg-slate-200 px-1 rounded">{{partToc}}</code>: 현재 파트 목차 텍스트</li>
+                            <li>각종 글쓰기 설정 변수 (예: <code class="bg-slate-200 px-1 rounded">{{projectGenre}}</code>)</li>
+                        </ul>
+                    </div>
+                `;
+
+                const customPromptSection = `
+                    <div class="pb-4 border-b border-slate-200">
+                        <h4 class="text-md font-semibold text-slate-800 mb-2">커스텀 프롬프트 버튼 관리</h4>
+                        <div id="custom-prompts-container">
+                            ${customPromptsHtml}
+                        </div>
+                        <button type="button" data-action="add-custom-prompt" class="btn btn-secondary w-full justify-center mt-2">
+                            <i data-lucide="plus" class="w-4 h-4 mr-2"></i> 새 커스텀 프롬프트 추가
+                        </button>
+                        ${promptVariablesHelpText}
+                    </div>
+                `;
+                
+                return `<form data-action="save-settings"><div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">프로젝트 설정</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[60vh] overflow-y-auto pr-2">${renderFields(generalFields)}${customPromptSection}<div class="mt-6 pt-4 border-t border-slate-200"><h4 class="text-md font-semibold text-slate-800 mb-4">기본 프롬프트 설정</h4>${renderFields(promptFields)}</div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="submit" class="btn">저장</button></div></form>`;
+            },
             renderApiKeyModal() { return `<form data-action="submit-api-key"><div class="p-6"><div class="flex items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 sm:mx-0 sm:h-10 sm:w-10"><i data-lucide="key-round" class="h-6 w-6 text-indigo-600"></i></div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">Google AI API 키 입력</h3><div class="mt-2"><p class="text-sm text-gray-500">퀴즈 생성을 위해 Google AI Studio에서 발급받은 API 키를 입력해주세요.</p><input type="password" id="api-key-input" class="mt-2 block w-full rounded-md border-slate-300" placeholder="API 키를 여기에 붙여넣으세요"></div></div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="submit" class="btn">확인</button></div></form>`;},
             renderManageQuizModal() { const questions = state.activeChapterContent.questions || []; const questionsHtml = questions.map((q, index) => `<div class="p-3 my-2 border rounded-md bg-slate-50 flex justify-between items-center group"><p class="text-sm text-slate-800 truncate pr-4">${index + 1}. ${q.questionText}</p><button type="button" data-action="delete-quiz-question" data-index="${index}" class="p-1 text-slate-500 hover:text-red-600 rounded-full hover:bg-red-100 opacity-0 group-hover:opacity-100 transition-opacity"><i data-lucide="trash-2" class="w-4 h-4"></i></button></div>`).join(''); return `<div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">퀴즈 관리</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[30vh] overflow-y-auto border rounded-lg p-2 bg-white mb-4">${questions.length > 0 ? questionsHtml : '<p class="text-sm text-slate-500 text-center py-4">생성된 문제가 없습니다.</p>'}</div><h4 class="text-lg font-semibold text-slate-800 border-t pt-4 mb-3">AI 프롬프트를 사용하여 문제 추가</h4><p class="text-sm text-slate-600 mb-2">1. 아래 버튼으로 프롬프트를 복사하여 AI 도구(예: Google AI Studio)에 붙여넣고 결과를 생성하세요.</p><button data-action="copy-quiz-prompt" class="btn w-full justify-center"><i data-lucide="clipboard-copy" class="w-4 h-4 mr-2"></i>AI 생성 프롬프트 복사</button><form data-action="add-questions-from-json" class="mt-4"><label for="quiz-json-paste" class="text-sm text-slate-600 mb-2 block">2. AI가 생성한 JSON 배열을 아래에 붙여넣고 '추가' 버튼을 누르세요.</label><textarea id="quiz-json-paste" name="jsonContent" class="w-full h-24 p-2 border rounded-md font-mono text-xs" placeholder="[ { ... } ]" required></textarea><div class="bg-slate-50 -mx-6 -mb-6 px-6 py-4 mt-6 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">닫기</button><button type="submit" class="btn bg-emerald-600 hover:bg-emerald-700">JSON에서 문제 추가</button></div></form></div>`;},
             renderManageTocModal() { const renderNode = (node, path) => { const hasChildren = node.children && node.children.length > 0; const childrenHtml = hasChildren ? `<ul class="pl-4 border-l border-slate-200">${node.children.map((child, index) => renderNode(child, `${path}.${index}`)).join('')}</ul>` : ''; return `<li draggable="true" data-path="${path}" class="my-1 group toc-drag-item"><div class="flex items-center p-2 rounded-md hover:bg-slate-100"><i data-lucide="${hasChildren ? 'folder' : 'file-text'}" class="w-4 h-4 mr-2 text-slate-500 flex-shrink-0"></i><input type="text" value="${DOMPurify.sanitize(node.title)}" data-action="toc-edit-title" data-path="${path}" class="flex-grow bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-md px-1 py-0.5 text-sm"><div class="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity"><button data-action="toc-add-child" data-path="${path}" title="하위 항목 추가" class="p-1 rounded hover:bg-slate-200"><i data-lucide="corner-down-right" class="w-4 h-4 text-slate-600"></i></button><button data-action="toc-delete" data-path="${path}" title="삭제" class="p-1 rounded hover:bg-red-100"><i data-lucide="trash-2" class="w-4 h-4 text-red-500"></i></button></div></div>${childrenHtml}</li>`; }; const editableToc = state.modal.data.editableToc; if (!editableToc || !editableToc.children) return '<div>목차를 불러올 수 없습니다.</div>'; const tocHtml = `<ul id="toc-editor-list" class="space-y-1">${editableToc.children.map((child, index) => renderNode(child, String(index))).join('')}</ul>`; return `<div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">목차 관리</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="max-h-[60vh] overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50 mb-4">${tocHtml}</div><div class="text-right"><button data-action="toc-add-root-item" class="btn btn-secondary"><i data-lucide="plus" class="w-4 h-4 mr-2"></i>최상위 항목 추가</button></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="button" data-action="save-toc" class="btn">변경사항 저장</button></div>`; },
-            renderSplitChapterModal() { const stage = state.modal.data.stage || 1; const chapterNode = Utils.getNodeByPath(state.activeProject.toc, state.activeChapterPath); const header = `<div class="p-6 border-b"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900">본문 분할 및 하위 챕터 생성</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><p class="text-sm text-slate-500 mt-1">'${chapterNode.title}' 노트의 본문을 여러 개의 하위 노트로 분할합니다.</p></div>`; let stageContent = ''; if (stage === 1) { stageContent = `<div class="p-6"><p class="text-sm text-slate-600 mb-2">1. 분할할 하위 챕터의 개수를 입력하세요.</p><input type="number" id="split-chapter-count" class="w-full p-2 border rounded-md" value="5" min="2"><p class="text-sm text-slate-600 mt-4 mb-2">2. 아래 버튼을 눌러 AI 프롬프트를 생성하고 복사하세요.</p><button data-action="generate-split-prompt" class="btn w-full justify-center"><i data-lucide="clipboard-copy" class="w-4 h-4 mr-2"></i>프롬프트 생성 및 복사</button></div>`; } else { stageContent = `<form data-action="submit-split-chapter"><div class="p-6"><label for="split-json-paste" class="text-sm text-slate-600 mb-2 block">3. AI가 생성한 JSON 응답을 아래에 붙여넣으세요.</label><textarea id="split-json-paste" name="jsonContent" class="w-full h-40 p-2 border rounded-md font-mono text-xs" placeholder="[ { ... } ]" required></textarea></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="split-chapter-back" class="btn btn-secondary">뒤로</button><button type="submit" class="btn bg-emerald-600 hover:bg-emerald-700"><i data-lucide="check-circle" class="w-4 h-4 mr-2"></i>하위 챕터 생성 실행</button></div></form>`; } return header + stageContent; },
+            renderSplitChapterModal() {
+                const chapterNode = Utils.getNodeByPath(state.activeProject.toc, state.activeChapterPath);
+                const header = `<div class="p-6 border-b"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900">번역문 분할 및 하위 챕터 생성</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><p class="text-sm text-slate-500 mt-1">'${chapterNode.title}' 노트의 번역문을 여러 개의 하위 노트로 분할합니다. AI 프롬프트가 클립보드에 복사되었습니다.</p></div>`;
+                const content = `<form data-action="submit-split-chapter"><div class="p-6"><label for="split-json-paste" class="text-sm text-slate-600 mb-2 block">AI가 생성한 JSON 응답을 아래에 붙여넣으세요.</label><textarea id="split-json-paste" name="jsonContent" class="w-full h-40 p-2 border rounded-md font-mono text-xs" placeholder="[ { ... } ]" required></textarea></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">닫기</button><button type="submit" class="btn bg-emerald-600 hover:bg-emerald-700"><i data-lucide="check-circle" class="w-4 h-4 mr-2"></i>하위 챕터 생성 실행</button></div></form>`;
+                return header + content;
+            },
         };
 
         const Controller = {
@@ -264,7 +536,8 @@
                 document.body.addEventListener('click', e => { const trigger = e.target.closest('[data-action]'); if (!trigger || trigger.matches('form[data-action]')) return; const action = trigger.dataset.action; const handler = this.ACTION_HANDLERS[action]; if (handler) { e.preventDefault(); handler(trigger, e); } });
                 document.body.addEventListener('submit', e => { const form = e.target.closest('form[data-action]'); if (!form) return; e.preventDefault(); const action = form.dataset.action; const handler = this.ACTION_HANDLERS[action]; if (handler) handler(form, e); });
                 document.body.addEventListener('change', e => { const trigger = e.target; if (trigger.matches('input[type="file"]')) { this.handleFileSelection(trigger); } else if (trigger.closest('[data-action]')) { const actionEl = trigger.closest('[data-action]'); const action = actionEl.dataset.action; const handler = this.ACTION_HANDLERS[action]; if (handler) handler(actionEl, e); }});
-                document.body.addEventListener('input', Utils.debounce(async e => { if (e.target.matches('#search-input')) { this.handleSearch(e.target.value); } else if (e.target.matches('[data-action="toc-edit-title"]')) { this.handleTocTitleEdit(e.target); } else if (e.target.matches('#manuscript, #notes, #translation, [data-setting-key]')) { await this.handleContentChange(e); } else if (e.target.matches('#setting-tags-input')) { this.handleTagInput(e.target); } }, 300));
+                document.body.addEventListener('input', Utils.debounce(async e => { if (e.target.matches('#search-input')) { this.handleSearch(e.target.value); } else if (e.target.matches('[data-action="toc-edit-title"]')) { this.handleTocTitleEdit(e.target); } else if (e.target.matches('#manuscript, #notes, #translation, [data-setting-key], [data-custom-prompt-key]')) { await this.handleContentChange(e); } else if (e.target.matches('#setting-tags-input')) { this.handleTagInput(e.target); } }, 500));
+                document.addEventListener('keydown', e => { if (e.key === 'Escape' && state.modal.isOpen) { this.closeModal(); } });
                 document.addEventListener('katex-loaded', () => { state.isKaTeXLoaded = true; this.applyPostRenderEffects(); });
             },
             bindDynamicEventListeners() {
@@ -573,19 +846,43 @@ Micro-interactions are the small, often unnoticed animations and design elements
             ]]></selfCorrectionCommand>
         </constraints>
     </promptDesignFramework>
-</metaPrompt>`
+</metaPrompt>`,
+    customPrompts: [],
 };
             },
             updateTags() { const tagCounts = {}; state.projects.forEach(p => { (p.tags || []).forEach(tag => { tagCounts[tag] = (tagCounts[tag] || 0) + 1; }); }); state.tags = Object.entries(tagCounts).map(([name, count]) => ({name, count})).sort((a,b) => a.name.localeCompare(b.name, 'ko')); },
             buildSearchIndex() { fuse = new Fuse(state.projects, { keys: ['name', 'tags'], includeScore: true, threshold: 0.3 }); },
             handleSearch(query) { if (query.trim() === '') { state.searchResults = null; } else { state.searchResults = fuse.search(query).map(result => result.item); } state.currentView = 'project_list'; state.currentFilter = { type: 'all', id: null }; View.render(); },
-            handleNavFilter(target) { if (!target) return; const type = target.dataset.filterType; const id = target.dataset.id || null; state.currentFilter = { type, id }; state.searchResults = null; const searchInput = document.getElementById('search-input'); if(searchInput) searchInput.value = ''; state.currentView = (type === 'dashboard') ? 'dashboard' : 'project_list'; View.render(); if (window.innerWidth <= 1024) this.closeSidebar(); },
+            handleNavFilter(target) {
+                if (!target) return;
+                const type = target.dataset.filterType;
+                const id = target.dataset.id || null;
+                
+                if (type === 'category' && state.categories.length === 0) return;
+                if (type === 'tag' && state.tags.length === 0) return;
+                
+                state.currentFilter = { type, id };
+                state.searchResults = null;
+                const searchInput = document.getElementById('search-input');
+                if(searchInput) searchInput.value = '';
+                
+                state.currentView = (type === 'dashboard') ? 'dashboard' : 'project_list';
+                
+                if (type === 'category' && !id) {
+                    state.sidebarCollapseState.categories = false;
+                } else if (type === 'tag' && !id) {
+                    state.sidebarCollapseState.tags = false;
+                }
+                
+                View.render();
+                if (window.innerWidth <= 1024) this.closeSidebar();
+            },
             getFilteredAndSortedProjects() {
                 let filtered = state.searchResults ? state.searchResults : state.projects;
                 if (!state.searchResults) {
                     const { type, id } = state.currentFilter;
-                    if (type === 'category') filtered = filtered.filter(p => p.categoryId === id);
-                    else if (type === 'tag') filtered = filtered.filter(p => p.tags?.includes(id));
+                    if (type === 'category' && id) filtered = filtered.filter(p => p.categoryId === id);
+                    else if (type === 'tag' && id) filtered = filtered.filter(p => p.tags?.includes(id));
                 }
                 const [field, direction] = state.currentSortOrder.split('_');
                 return [...filtered].sort((a,b) => {
@@ -626,29 +923,84 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 if(state.isMobileSidebarOpen) this.closeSidebar();
             },
             async handleContentChange(event) {
-                const { field, settingKey } = event.target.dataset;
+                const { field, settingKey, customPromptKey } = event.target.dataset;
                 const value = event.target.value;
+
                 if (state.activeChapterContent && field) {
+                    state.saveStatus = 'saving';
+                    View.render();
                     const content = state.activeChapterContent;
                     content[field] = value;
                     if (field === 'manuscript' && value.trim() && (content.status === 'empty' || content.status === 'prompt-copied')) {
                         content.status = 'manuscript-done';
                     }
                     await DB.put(CONFIG.STORES.CONTENTS, content);
+                    state.saveStatus = 'saved';
+                    state.saveTimestamp = new Date();
+                    View.render();
+                    setTimeout(() => {
+                        state.saveStatus = 'idle';
+                        View.render();
+                    }, 2000);
                 } else if(state.modal.type === 'settings') {
                     if (settingKey === 'name') state.modal.data.projectName = value;
                     else if (settingKey === 'categoryId') state.modal.data.projectCategoryId = value;
+                    else if (customPromptKey) {
+                        const container = event.target.closest('[data-prompt-id]');
+                        const promptId = container.dataset.promptId;
+                        const prompt = state.modal.data.customPrompts.find(p => p.id === promptId);
+                        if(prompt) {
+                            prompt[customPromptKey] = value;
+                        }
+                    }
                 }
             },
             showToast(message, type = 'info', duration = 3000) { const id = Utils.generateId('toast'); state.toasts.push({ id, message, type }); View.render(); setTimeout(() => Controller.dismissToast(id), duration); },
             dismissToast(id) { const toastEl = document.getElementById(`toast-${id}`); if(toastEl) { toastEl.style.transition = 'opacity 0.5s ease'; toastEl.style.opacity = 0; setTimeout(() => { state.toasts = state.toasts.filter(t => t.id !== id); View.render(); }, 500); } else { state.toasts = state.toasts.filter(t => t.id !== id); } },
-            applyPostRenderEffects() { if (state.currentView === 'workspace' && state.workspaceMode === 'view' && state.isKaTeXLoaded && window.renderMathInElement) { const viewPanel = document.querySelector('.prose.prose-readable'); if(viewPanel) try { renderMathInElement(viewPanel, { delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}] }); } catch(e) { console.error("KaTeX rendering failed:", e); } } },
+            applyPostRenderEffects() {
+                if (state.currentView === 'workspace' && state.workspaceMode === 'view' && state.isKaTeXLoaded && window.renderMathInElement) {
+                    const viewPanel = document.querySelector('.prose.prose-readable');
+                    if (viewPanel) {
+                        try {
+                            renderMathInElement(viewPanel, {
+                                delimiters: [
+                                    {left: '$$', right: '$$', display: true},
+                                    {left: '$', right: '$', display: false},
+                                    {left: '\\(', right: '\\)', display: false},
+                                    {left: '\\[', right: '\\]', display: true}
+                                ]
+                            });
+                        } catch (e) {
+                            console.error("KaTeX rendering failed:", e);
+                        }
+                    }
+                }
+            },
             async submitNewProject(form) {
                 const activeTab = state.modal.data.activeTab || 'zip';
-                state.isLoading = true; Controller.closeModal(); View.render();
+                
                 try {
                     let projectData, contentsData;
+                    
+                    if (['jsonText', 'tocJson'].includes(activeTab)) {
+                        const textarea = form.querySelector('textarea');
+                        try {
+                            JSON.parse(textarea.value);
+                            state.modal.data.error = '';
+                        } catch (e) {
+                            state.modal.data.error = `JSON 형식이 올바르지 않습니다: ${e.message}`;
+                            View.render();
+                            return;
+                        }
+                    }
+
+                    state.modal.data.isLoading = true;
+                    state.modal.data.loadingMessage = '프로젝트 생성 중...';
+                    View.render();
+
                     if (activeTab === 'zip') {
+                        state.modal.data.loadingMessage = 'ZIP 파일 분석 중...';
+                        View.render();
                         const fileInput = form.querySelector('#zip-upload');
                         if (!fileInput.files[0]) throw new Error("ZIP 파일을 선택해주세요.");
                         ({ project: projectData, contents: contentsData } = await this.processZipFile(fileInput.files[0]));
@@ -657,19 +1009,31 @@ Micro-interactions are the small, often unnoticed animations and design elements
                         if (fileInput.files[0].type.includes('zip') || fileInput.files[0].name.toLowerCase().endsWith('.zip')) { throw new Error("ZIP 파일은 'ZIP' 탭에서 업로드해야 합니다."); }
                         ({ project: projectData, contents: contentsData } = this.processJsonData(JSON.parse(await fileInput.files[0].text())));
                     } else if (activeTab === 'jsonText') {
-                        const jsonTextInput = form.querySelector('#json-text-input'); if (!jsonTextInput.value) throw new Error("JSON 텍스트를 입력해주세요.");
+                        const jsonTextInput = form.querySelector('#json-text-input');
                         ({ project: projectData, contents: contentsData } = this.processJsonData(JSON.parse(jsonTextInput.value)));
                     } else if (activeTab === 'tocJson') {
-                        const tocJsonInput = form.querySelector('#toc-json-input'); if (!tocJsonInput.value) throw new Error("목차 JSON 텍스트를 입력해주세요.");
+                        const tocJsonInput = form.querySelector('#toc-json-input');
                         ({ project: projectData, contents: contentsData } = this.processTocJson(JSON.parse(tocJsonInput.value)));
                     } else { throw new Error("알 수 없는 생성 방식입니다."); }
+                    
+                    state.modal.data.loadingMessage = '데이터베이스에 저장 중...';
+                    View.render();
+
                     await DB.put(CONFIG.STORES.PROJECTS, projectData);
                     await Promise.all(contentsData.map(c => DB.put(CONFIG.STORES.CONTENTS, c)));
+                    
                     state.projects.unshift(projectData);
                     this.updateTags(); this.buildSearchIndex();
                     this.showToast(`'${projectData.name}' 프로젝트가 생성되었습니다.`, 'success');
-                } catch (error) { console.error("Project creation failed:", error); this.showToast(`프로젝트 생성 실패: ${error.message}`, 'error');
-                } finally { state.isLoading = false; View.render(); }
+                    this.closeModal();
+                } catch (error) { 
+                    console.error("Project creation failed:", error); 
+                    this.showToast(`프로젝트 생성 실패: ${error.message}`, 'error');
+                    state.modal.data.isLoading = false;
+                } finally { 
+                    state.isLoading = false;
+                    View.render(); 
+                }
             },
             handleFileSelection(input) { const label = document.getElementById(input.dataset.targetLabel); if (label) { const fileName = input.files[0] ? input.files[0].name : '선택된 파일 없음'; label.textContent = fileName; label.title = fileName; } },
             async processZipFile(file) { const turndownService = new TurndownService(); const zip = await JSZip.loadAsync(file); const allEntries = []; zip.forEach((relPath, entry) => { const normPath = relPath.replace(/\/$/, '').replace(/\\/g, '/'); if (normPath && !normPath.startsWith('__MACOSX') && (entry.dir || /\.(html?|txt)$/i.test(normPath))) allEntries.push({ path: normPath, isDir: entry.dir, entry }); }); allEntries.sort((a, b) => Utils.naturalSort(a.path, b.path)); const projectToc = { title: Utils.formatTitle(file.name), children: [] }; const pathMap = new Map(); for (const { path } of allEntries) { let currentNode = projectToc; let currentPath = ''; path.split('/').forEach((part) => { currentPath = currentPath ? `${currentPath}/${part}` : part; let childNode = pathMap.get(currentPath); if (!childNode) { childNode = { title: Utils.formatTitle(part), originalPath: path }; currentNode.children.push(childNode); pathMap.set(currentPath, childNode); } currentNode = childNode; }); } Utils.normalizeTocNode(projectToc); const projectId = Utils.generateId('proj'); const project = { id: projectId, name: projectToc.title, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), toc: projectToc, settings: { ...CONFIG.DEFAULT_PROJECT_SETTINGS } }; const contents = (await Promise.all(Utils.getAllNodePaths(projectToc).map(async ({ path, node }) => { const fileEntry = allEntries.find(f => f.path === node.originalPath)?.entry; let manuscript = ''; if (fileEntry && !fileEntry.dir) { if (/\.html?$/i.test(fileEntry.name)) { const rawHtml = await fileEntry.async('string'); const bodyMatch = rawHtml.match(/<body[^>]*>([\s\S]*)<\/body>/i); manuscript = turndownService.turndown(DOMPurify.sanitize(bodyMatch ? bodyMatch[1] : '')); } else { manuscript = await fileEntry.async('string'); } } return { id: `${projectId}_${path}`, manuscript, notes: '', translation: '', questions: [], status: manuscript.trim() ? 'manuscript-done' : 'empty' }; }))).filter(Boolean); return { project, contents }; },
@@ -818,13 +1182,21 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 finally { state.isLoading = false; View.render(); }
             },
             buildSplitChapterPrompt() {
-                const sourceText = state.activeChapterContent.manuscript;
-                if (!sourceText?.trim()) { this.showToast('분할할 원고가 없습니다.', 'error'); return null; }
+                const sourceText = state.activeChapterContent.translation;
+                if (!sourceText?.trim()) { this.showToast('분할할 번역문이 없습니다.', 'error'); return null; }
                 const paragraphs = sourceText.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
                 if (paragraphs.length < 2) { this.showToast('분할하기에 내용이 충분하지 않습니다.', 'error'); return null; }
                 const numberedContent = paragraphs.map((p, i) => `[Paragraph ${i + 1}] ${p}`).join('\n\n');
-                const chapterCount = document.getElementById('split-chapter-count').value;
-                const prompt = `<Prime_Directive>Analyze the provided text, which is broken into numbered paragraphs, and identify logical division points to create sub-chapters.</Prime_Directive><purpose>1.  Analyze the ENTIRE provided text from beginning to end to understand its structure and flow. 2.  Divide the content into exactly ${chapterCount} sub-chapters. 3.  Each sub-chapter should represent a distinct sub-topic or section of the main text. 4.  The sub-chapters MUST collectively cover the entire document's content. The start points of the sub-chapters should be distributed throughout the text. 5.  Your output MUST be a valid JSON array of objects following the specified schema. Do not add any explanation or commentary outside the JSON markup.</purpose><Output_Specification><Format>JSON Array</Format><Schema>[ { "sub_chapter_title": "A descriptive title for the first sub-topic.", "start_paragraph": 1 }, { "sub_chapter_title": "Title for the second sub-topic.", "start_paragraph": ... } ]</Schema><interaction_language>Korean</interaction_language></Output_Specification><data content="formatted_content">--- START OF DATA ---${numberedContent}--- END OF DATA ---</data>`;
+                
+                const prompt = `<Prime_Directive>Analyze the provided text, which is broken into numbered paragraphs, and identify logical division points to create sub-chapters.</Prime_Directive><purpose>
+                    **1. First, count the total number of paragraphs in the provided text and state it clearly.**
+                    **2. Analyze the ENTIRE provided text from beginning to end to understand its structure and flow.**
+                    **3. Divide the content into an appropriate number of sub-chapters. Each sub-chapter's content should be approximately 10KB in size (around 3400 Korean characters). The number of chapters should be determined by this size constraint, not a fixed number.**
+                    4. Each sub-chapter should represent a distinct sub-topic or section of the main text.
+                    5. The sub-chapters MUST collectively cover the entire document's content. The start points of the sub-chapters should be distributed throughout the text.
+                    6. Your output MUST be a valid JSON array of objects following the specified schema. Do not add any explanation or commentary outside the JSON markup.
+                </purpose><Output_Specification><Format>JSON Array</Format><Schema>[ { "sub_chapter_title": "A descriptive title for the first sub-topic.", "start_paragraph": 1 }, { "sub_chapter_title": "Title for the second sub-topic.", "start_paragraph": ... } ]</Schema><interaction_language>Korean</interaction_language></Output_Specification><data content="formatted_content">--- START OF DATA ---${numberedContent}--- END OF DATA ---</data>`;
+                
                 return prompt.trim();
             },
             async handleSplitChapterSubmit(form) {
@@ -833,7 +1205,7 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 try {
                     const subChaptersData = JSON.parse(jsonContent.trim().match(/\[[\s\S]*\]/)?.[0] || '[]');
                     if (!Array.isArray(subChaptersData) || !subChaptersData.every(i => i.sub_chapter_title && i.start_paragraph)) throw new Error('Invalid JSON format.');
-                    const paragraphs = state.activeChapterContent.manuscript.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+                    const paragraphs = state.activeChapterContent.translation.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
                     const projectId = state.activeProjectId;
                     const parentPath = state.activeChapterPath;
                     const parentNode = Utils.getNodeByPath(state.activeProject.toc, parentPath);
@@ -851,12 +1223,12 @@ Micro-interactions are the small, often unnoticed animations and design elements
                         state.activeContentsMap.set(newContent.id, newContent);
                         creationPromises.push(DB.put(CONFIG.STORES.CONTENTS, newContent));
                     }
-                    state.activeChapterContent.manuscript = `[본문이 ${subChaptersData.length}개의 하위 노트로 분할되었습니다.]`;
+                    state.activeChapterContent.translation = `[번역문이 ${subChaptersData.length}개의 하위 노트로 분할되었습니다.]`;
                     creationPromises.push(DB.put(CONFIG.STORES.CONTENTS, state.activeChapterContent));
                     state.activeProject.updatedAt = new Date().toISOString();
                     creationPromises.push(DB.put(CONFIG.STORES.PROJECTS, state.activeProject));
                     await Promise.all(creationPromises);
-                    this.showToast('본문 분할 및 하위 챕터 생성이 완료되었습니다.', 'success');
+                    this.showToast('번역문 분할 및 하위 챕터 생성이 완료되었습니다.', 'success');
                 } catch (error) { console.error("Chapter split failed:", error); this.showToast(`챕터 분할 실패: ${error.message}`, 'error'); }
                 finally { state.isLoading = false; View.render(); }
             },
@@ -890,38 +1262,62 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 if (item) {
                     state.modal.data.draggedPath = item.dataset.path;
                     e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', item.dataset.path);
                 }
             },
             handleTocDragOver(e) {
                 e.preventDefault();
                 const targetItem = e.target.closest('.toc-drag-item');
+                document.querySelectorAll('.toc-drop-indicator-before, .toc-drop-indicator-after, .toc-drop-indicator-inside').forEach(el => el.classList.remove('toc-drop-indicator-before', 'toc-drop-indicator-after', 'toc-drop-indicator-inside'));
+
                 if (targetItem) {
-                    document.querySelectorAll('.drag-over-indicator').forEach(el => el.classList.remove('drag-over-indicator'));
-                    targetItem.classList.add('drag-over-indicator');
+                    const rect = targetItem.getBoundingClientRect();
+                    const dropZoneHeight = rect.height / 3;
+                    if (e.clientY < rect.top + dropZoneHeight) {
+                        targetItem.classList.add('toc-drop-indicator-before');
+                        state.modal.data.dropTarget = { path: targetItem.dataset.path, position: 'before' };
+                    } else if (e.clientY > rect.bottom - dropZoneHeight) {
+                        targetItem.classList.add('toc-drop-indicator-after');
+                        state.modal.data.dropTarget = { path: targetItem.dataset.path, position: 'after' };
+                    } else {
+                        targetItem.classList.add('toc-drop-indicator-inside');
+                        state.modal.data.dropTarget = { path: targetItem.dataset.path, position: 'inside' };
+                    }
                 }
             },
             handleTocDragLeave(e) {
-                const targetItem = e.target.closest('.toc-drag-item');
-                if (targetItem) {
-                    targetItem.classList.remove('drag-over-indicator');
-                }
+                document.querySelectorAll('.toc-drop-indicator-before, .toc-drop-indicator-after, .toc-drop-indicator-inside').forEach(el => el.classList.remove('toc-drop-indicator-before', 'toc-drop-indicator-after', 'toc-drop-indicator-inside'));
             },
             handleTocDrop(e) {
                 e.preventDefault();
-                document.querySelectorAll('.drag-over-indicator').forEach(el => el.classList.remove('drag-over-indicator'));
-                const targetItem = e.target.closest('.toc-drag-item');
+                document.querySelectorAll('.toc-drop-indicator-before, .toc-drop-indicator-after, .toc-drop-indicator-inside').forEach(el => el.classList.remove('toc-drop-indicator-before', 'toc-drop-indicator-after', 'toc-drop-indicator-inside'));
+
                 const draggedPath = state.modal.data.draggedPath;
-                if (!targetItem || !draggedPath || targetItem.dataset.path === draggedPath) return;
+                const dropTarget = state.modal.data.dropTarget;
+
+                if (!draggedPath || !dropTarget || dropTarget.path === draggedPath || dropTarget.path.startsWith(draggedPath + '.')) return;
 
                 const toc = state.modal.data.editableToc;
                 const { parent: draggedParent, index: draggedIndex } = Utils.getParentNodeAndIndexByPath(toc, draggedPath);
+                if(!draggedParent) return;
+
                 const [draggedNode] = draggedParent.children.splice(draggedIndex, 1);
 
-                const targetPath = targetItem.dataset.path;
-                const { parent: targetParent, index: targetIndex } = Utils.getParentNodeAndIndexByPath(toc, targetPath);
-                targetParent.children.splice(targetIndex, 0, draggedNode);
+                if (dropTarget.position === 'inside') {
+                    const newParentNode = Utils.getNodeByPath(toc, dropTarget.path);
+                    if (newParentNode) {
+                        if (!newParentNode.children) newParentNode.children = [];
+                        newParentNode.children.push(draggedNode);
+                    }
+                } else {
+                    const { parent: targetParent, index: targetIndex } = Utils.getParentNodeAndIndexByPath(toc, dropTarget.path);
+                    if(!targetParent) return;
+                    const insertIndex = dropTarget.position === 'before' ? targetIndex : targetIndex + 1;
+                    targetParent.children.splice(insertIndex, 0, draggedNode);
+                }
 
                 state.modal.data.draggedPath = null;
+                state.modal.data.dropTarget = null;
                 View.render();
             },
             handleTagInput(input) {
@@ -989,7 +1385,8 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 'open-settings': () => Controller.openModal('settings', {
                     projectName: state.activeProject.name,
                     projectCategoryId: state.activeProject.categoryId,
-                    projectTags: [...(state.activeProject.tags || [])]
+                    projectTags: [...(state.activeProject.tags || [])],
+                    customPrompts: JSON.parse(JSON.stringify(state.activeProject.settings.customPrompts || []))
                 }),
                 'save-settings': async (form) => {
                     form.querySelectorAll('[data-setting-key]').forEach(input => {
@@ -999,12 +1396,93 @@ Micro-interactions are the small, often unnoticed animations and design elements
                         else state.activeProject.settings[key] = input.type === 'number' ? parseInt(input.value, 10) : input.value;
                     });
                     state.activeProject.tags = state.modal.data.projectTags;
+                    
+                    const newCustomPrompts = [];
+                    const promptContainers = form.querySelectorAll('#custom-prompts-container > div');
+                    promptContainers.forEach(container => {
+                        const id = container.dataset.promptId;
+                        const nameInput = container.querySelector('[data-custom-prompt-key="name"]');
+                        const templateInput = container.querySelector('[data-custom-prompt-key="template"]');
+                        if (id && nameInput && templateInput) {
+                            newCustomPrompts.push({
+                                id,
+                                name: nameInput.value.trim(),
+                                template: templateInput.value.trim()
+                            });
+                        }
+                    });
+                    state.activeProject.settings.customPrompts = newCustomPrompts;
+
                     state.activeProject.updatedAt = new Date().toISOString();
                     await DB.put(CONFIG.STORES.PROJECTS, state.activeProject); 
                     Controller.updateTags();
                     Controller.showToast('설정이 저장되었습니다.', 'success'); 
                     Controller.closeModal(); 
                     View.render();
+                },
+                'add-custom-prompt': () => {
+                    state.modal.data.customPrompts.push({
+                        id: Utils.generateId('cp'),
+                        name: '새 버튼',
+                        template: '여기에 프롬프트 템플릿을 입력하세요.'
+                    });
+                    View.render();
+                },
+                'remove-custom-prompt': (el) => {
+                    const idToRemove = el.dataset.id;
+                    state.modal.data.customPrompts = state.modal.data.customPrompts.filter(p => p.id !== idToRemove);
+                    View.render();
+                },
+                'copy-custom-prompt': (el) => {
+                    const index = parseInt(el.dataset.index, 10);
+                    const customPrompts = state.activeProject.settings.customPrompts || [];
+                    const promptToCopy = customPrompts[index];
+
+                    if (!promptToCopy || !promptToCopy.template) {
+                        return Controller.showToast('프롬프트 템플릿이 비어있습니다.', 'error');
+                    }
+                    
+                    const { settings, toc } = state.activeProject;
+                    const chapterNode = Utils.getNodeByPath(toc, state.activeChapterPath);
+                    if (!chapterNode) {
+                        return Controller.showToast('프롬프트를 생성하려면 먼저 챕터를 선택해야 합니다.', 'error');
+                    }
+
+                    const pathParts = state.activeChapterPath.split('.').map(Number);
+                    const partNode = toc.children?.[pathParts[0]];
+                    const fullTocText = Utils.generateTocText(toc, 0, '', state.activeChapterPath);
+                    const partTocText = partNode ? Utils.generateTocText(partNode, 0, '', pathParts.slice(1).join('.')) : '';
+                    const chapterDescription = state.activeChapterContent.notes || chapterNode.description || '';
+                    const manuscript = state.activeChapterContent.manuscript || '';
+                    const translation = state.activeChapterContent.translation || '';
+                    const notes = state.activeChapterContent.notes || '';
+
+
+                    let prompt = promptToCopy.template;
+                    const replacements = {
+                        '{{bookTitle}}': toc.title,
+                        '{{projectGenre}}': settings.writingGenre,
+                        '{{projectAgeGroup}}': settings.writingAgeGroup,
+                        '{{projectAudience}}': settings.writingAudience,
+                        '{{references}}': settings.writingReferences,
+                        '{{partTitle}}': partNode?.title || '',
+                        '{{partDescription}}': partNode?.description || '',
+                        '{{chapterTitle}}': chapterNode.title,
+                        '{{chapterDescription}}': chapterDescription,
+                        '{{fullToc}}': fullTocText,
+                        '{{partToc}}': partTocText,
+                        '{{projectStyleExample}}': settings.writingStyle,
+                        '{{manuscript}}': manuscript,
+                        '{{translation}}': translation,
+                        '{{notes}}': notes,
+                    };
+
+                    for (const [key, value] of Object.entries(replacements)) {
+                        const placeholder = key.replace(/{{/g, '{{\\s*').replace(/}}/g, '\\s*}}');
+                        prompt = prompt.replace(new RegExp(placeholder, 'g'), value || '');
+                    }
+
+                    Controller.copyToClipboard(prompt);
                 },
                 'copy-writing-prompt': () => Controller.copyPromptForCurrentChapter(),
                 'copy-translation-prompt': () => Controller.copyTranslationPrompt(),
@@ -1025,13 +1503,30 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 'toc-add-root-item': () => { state.modal.data.editableToc.children.push({ title: "새 최상위 항목", children: [] }); View.render(); },
                 'toc-delete': (el) => { const { parent, index } = Utils.getParentNodeAndIndexByPath(state.modal.data.editableToc, el.dataset.path); if (parent?.children) { parent.children.splice(index, 1); View.render(); } },
                 'save-toc': () => Controller.saveToc(),
-                'open-split-chapter-modal': () => Controller.openModal('splitChapter', { stage: 1 }),
-                'generate-split-prompt': () => { const prompt = Controller.buildSplitChapterPrompt(); if (prompt) { Controller.copyToClipboard(prompt); state.modal.data.stage = 2; View.render(); } },
-                'split-chapter-back': () => { state.modal.data.stage = 1; View.render(); },
+                'open-split-chapter-modal': () => {
+                    const prompt = Controller.buildSplitChapterPrompt();
+                    if (prompt) {
+                        Controller.copyToClipboard(prompt);
+                        Controller.openModal('splitChapter');
+                    }
+                },
                 'submit-split-chapter': (form) => Controller.handleSplitChapterSubmit(form),
                 'dismiss-toast': (el) => Controller.dismissToast(el.dataset.id),
                 'remove-tag': (el) => { const tagToRemove = el.dataset.tag; state.modal.data.projectTags = state.modal.data.projectTags.filter(t => t !== tagToRemove); View.render(); },
                 'select-tag-suggestion': (el) => { Controller.addTagToProject(el.dataset.tag); document.getElementById('setting-tags-input').value = ''; document.getElementById('tag-suggestions').classList.add('hidden'); },
+                'toggle-sidebar-section': (el) => { const section = el.dataset.section; state.sidebarCollapseState[section] = !state.sidebarCollapseState[section]; View.render(); },
+                'toggle-toc-all': (el) => {
+                    const mode = el.dataset.mode;
+                    const allPaths = Utils.getFlatToc(state.activeProject.toc).map(item => item.path);
+                    if (mode === 'collapse') {
+                        allPaths.forEach(path => state.tocCollapseState[path] = true);
+                    } else {
+                        state.tocCollapseState = {};
+                    }
+                    View.render();
+                },
+                'set-workspace-layout': (el) => { state.workspaceLayout = el.dataset.layout; View.render(); },
+                'set-quiz-result-filter': (el) => { state.quizResultFilter = el.dataset.filter; View.render(); }
             }
         };
         
