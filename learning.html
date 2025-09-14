@@ -80,7 +80,7 @@
             margin-left: auto;
             margin-right: auto;
             
-            clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
+            font-size:clamp(1.125rem, 1rem + 0.5vw, 1.375rem);
             
             /* 글자 크기가 커짐에 따라 줄 간격도 적절히 조절하여 문단 가독성 향상 */
             line-height: 1.7;
@@ -923,6 +923,7 @@ Micro-interactions are the small, often unnoticed animations and design elements
             },
             openModal(type, data = {}) { if(window.innerWidth <= 1024) Controller.closeSidebar(); state.modal = { isOpen: true, type, data }; View.render(); },
             closeModal() { state.modal = { isOpen: false, type: '', data: {} }; View.render(); },
+            
             async openProject(id) {
                 state.isLoading = true; View.render();
                 try {
@@ -937,16 +938,42 @@ Micro-interactions are the small, often unnoticed animations and design elements
                         state.activeProjectId = id;
                         state.activeProject = project;
                         state.currentView = 'workspace';
-                        const pathToSelect = allNodes.length > 0 ? allNodes[0].path : null;
+                        
+                        // --- [수정 시작] ---
+                        // 기존: const pathToSelect = allNodes.length > 0 ? allNodes[0].path : null;
+                        
+                        // 유효한 모든 챕터 경로를 Set으로 만들어 빠른 조회를 준비합니다.
+                        const allNodePaths = new Set(allNodes.map(n => n.path));
+                        let pathToSelect = null;
+                        
+                        // 프로젝트에 저장된 마지막 챕터 경로가 있고, 그 경로가 현재 목차에 유효한 경우 해당 경로를 사용합니다.
+                        if (project.lastChapterPath && allNodePaths.has(project.lastChapterPath)) {
+                            pathToSelect = project.lastChapterPath;
+                        } else if (allNodes.length > 0) { // 그렇지 않으면 첫 번째 챕터를 기본값으로 사용합니다.
+                            pathToSelect = allNodes[0].path;
+                        }
+                        // --- [수정 끝] ---
+
                         if(pathToSelect) await this.selectChapter(pathToSelect, false); else { state.activeChapterPath = null; state.activeChapterContent = null; }
                     }
                 } catch (error) { console.error("Failed to open project:", error); } 
                 finally { state.isLoading = false; View.render(); }
             },
+           
             async selectChapter(path, shouldRender = true) {
                 this.saveScrollPosition();
                 if (state.activeChapterPath === path && shouldRender) return;
                 state.activeChapterPath = path;
+
+                // --- [추가 시작] ---
+                // 현재 활성화된 프로젝트가 있고, 마지막 챕터 경로가 현재 선택한 챕터와 다를 경우 업데이트합니다.
+                if (state.activeProject && state.activeProject.lastChapterPath !== path) {
+                    state.activeProject.lastChapterPath = path; // 마지막 챕터 경로 저장
+                    state.activeProject.updatedAt = new Date().toISOString(); // 수정일자 업데이트
+                    await DB.put(CONFIG.STORES.PROJECTS, state.activeProject); // 데이터베이스에 저장
+                }
+                // --- [추가 끝] ---
+
                 state.quizState = null;
                 state.activeChapterContent = state.activeContentsMap.get(`${state.activeProjectId}_${path}`);
                 if (shouldRender) View.render();
