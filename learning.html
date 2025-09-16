@@ -205,6 +205,53 @@
             background-color: #f6f8fa;
         }
         /* ▲▲▲ [추가] 마크다운 테이블 스타일 ▲▲▲ */
+        /* ▼▼▼ [최종 개선] 생산성 푸터 스타일 ▼▼▼ */
+        .main-footer {
+            flex-shrink: 0;
+            background-color: var(--bg-primary);
+            border-top: 1px solid var(--border-color);
+            padding: 0.375rem 1.5rem; /* 세로 여백을 줄여 더 얇게 */
+            font-size: 0.75rem; /* 전체 폰트 크기를 미세 조정 */
+            color: var(--text-secondary);
+            transition: background-color 0.2s;
+        }
+        .footer-breadcrumb-path {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 40vw; /* 너비 살짝 조정 */
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        .footer-stats span {
+            margin: 0 0.75rem; /* 통계 좌우 여백으로 변경 */
+            display: inline-flex;
+            align-items: center;
+            color: var(--text-tertiary); /* 통계 정보는 살짝 연한 색으로 */
+        }
+        .footer-actions button, .footer-nav button {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            padding: 0.25rem 0.5rem; /* 버튼 내부 여백도 미세 조정 */
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            transition: all 0.2s ease-in-out;
+        }
+        .footer-actions button:hover, .footer-nav button:hover {
+            background-color: var(--bg-hover);
+            color: var(--accent-primary);
+        }
+        .footer-actions button:disabled, .footer-nav button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            background-color: transparent !important;
+            color: var(--text-secondary) !important;
+        }
+        /* ▲▲▲ [최종 개선] 생산성 푸터 스타일 ▲▲▲ */
     </style>
 </head>
 <body>
@@ -915,7 +962,69 @@ const Heroicons = {
          renderAppLayout() {
              if (state.isLoading) return this.renderSpinner("시스템 로딩 중...");
              if (['quiz', 'quizResult'].includes(state.currentView)) return this.renderCurrentView();
-            return `<aside class="sidebar ${state.isSidebarOpen ? '' : 'w-0 overflow-hidden !p-0 !border-0'} ${state.isMobileSidebarOpen ? 'open' : ''}" id="sidebar"> ${this.renderSidebar()} </aside><div class="sidebar-overlay ${state.isMobileSidebarOpen ? 'show' : ''}" id="sidebar-overlay" data-action="close-sidebar"></div><main class="main-content">${this.renderMainHeader()}<div class="content-view" id="content-view"> ${this.renderCurrentView()} </div></main>`;
+             
+             // ▼▼▼ [수정] this.renderFooter() 호출을 추가합니다. ▼▼▼
+             return `<aside class="sidebar ${state.isSidebarOpen ? '' : 'w-0 overflow-hidden !p-0 !border-0'} ${state.isMobileSidebarOpen ? 'open' : ''}" id="sidebar"> ${this.renderSidebar()} </aside>
+                     <div class="sidebar-overlay ${state.isMobileSidebarOpen ? 'show' : ''}" id="sidebar-overlay" data-action="close-sidebar"></div>
+                     <main class="main-content">
+                         ${this.renderMainHeader()}
+                         <div class="content-view" id="content-view"> ${this.renderCurrentView()} </div>
+                         ${this.renderFooter()} 
+                     </main>`;
+         },
+         renderFooter() {
+             if (state.currentView !== 'workspace' || !state.activeProject) {
+                 return '';
+             }
+
+             const allNodes = Utils.getFlatToc(state.activeProject.toc);
+             const currentIndex = allNodes.findIndex(c => c.path === state.activeChapterPath);
+             const hasPrev = currentIndex > 0;
+             const hasNext = currentIndex !== -1 && currentIndex < allNodes.length - 1;
+             
+             let breadcrumbPath = '노트를 선택하세요.';
+             if (state.activeChapterPath) {
+                 const breadcrumbs = [];
+                 let currentNode = state.activeProject.toc;
+                 state.activeChapterPath.split('.').forEach((part) => {
+                     currentNode = currentNode.children[part];
+                     breadcrumbs.push(currentNode.title);
+                 });
+                 breadcrumbPath = `📚 ${breadcrumbs.join(' > ')}`;
+             }
+
+             const manuscriptCount = state.activeChapterContent?.manuscript?.length || 0;
+             const notesCount = state.activeChapterContent?.notes?.length || 0;
+
+             return `
+                <footer class="main-footer">
+                    <div class="flex items-center justify-between h-full">
+                        <div class="flex items-center gap-2 footer-nav">
+                            <button data-action="prev-chapter" title="이전 노트" ${!hasPrev ? 'disabled' : ''}>
+                                ${Heroicons.render('chevron-left', { class: 'w-4 h-4' })}
+                            </button>
+                            <button data-action="next-chapter" title="다음 노트" ${!hasNext ? 'disabled' : ''}>
+                                ${Heroicons.render('chevron-right', { class: 'w-4 h-4' })}
+                            </button>
+                            <span class="border-l border-slate-200 h-4 mx-2"></span>
+                            <span class="footer-breadcrumb-path" title="${breadcrumbPath}">${breadcrumbPath}</span>
+                        </div>
+
+                        <div class="flex items-center gap-2">
+                            <div class="footer-stats text-xs">
+                                <span>✍️ ${manuscriptCount.toLocaleString()}자</span>
+                                <span>📝 ${notesCount.toLocaleString()}자</span>
+                            </div>
+                            <span class="border-l border-slate-200 h-4 mx-2"></span>
+                            <div class="footer-actions">
+                                <button data-action="go-dashboard" title="대시보드">${Heroicons.render('squares-2x2', { class: 'w-4 h-4' })}</button>
+                                <button data-action="open-settings" title="설정">${Heroicons.render('cog-6-tooth', { class: 'w-4 h-4' })}</button>
+                                <button data-action="export-project" title="내보내기">${Heroicons.render('arrow-down-tray', { class: 'w-4 h-4' })}</button>
+                            </div>
+                        </div>
+                    </div>
+                </footer>
+             `;
          },
          renderSidebar() {
              if (state.activeProjectId && state.activeProject) return this.renderProjectSidebar();
@@ -2939,7 +3048,13 @@ Micro-interactions are the small, often unnoticed animations and design elements
                  }),
                  'open-project': (el) => Controller.openProject(el.dataset.id),
                  'export-project': (el) => {
-                     Controller.exportProject(el.dataset.id)
+                     // ▼▼▼ [수정] data-id가 없으면 현재 활성 프로젝트 ID를 사용하도록 변경 ▼▼▼
+                     const projectId = el.dataset.id || state.activeProjectId;
+                     if (projectId) {
+                         Controller.exportProject(projectId);
+                     } else {
+                         Controller.showToast('내보낼 프로젝트가 선택되지 않았습니다.', 'error');
+                     }
                  },
                  'delete-project-confirm': (el) => {
                      const project = state.projects.find(p => p.id === el.dataset.id);
