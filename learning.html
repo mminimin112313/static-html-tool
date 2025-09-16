@@ -1215,50 +1215,59 @@ const Heroicons = {
          },
          renderSpinner: (message) => `<div class="flex items-center justify-center h-full"><div class="text-center"><svg class="mx-auto h-12 w-12 text-slate-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h2 class="mt-4 text-lg font-medium text-slate-900">${message}</h2></div></div>`,
          renderContextMenu() {
+            // 1. 메뉴를 담을 최상위 컨테이너를 찾습니다.
+            const contextMenuContainer = document.getElementById('context-menu-root');
+            if (!contextMenuContainer) return; // 컨테이너가 없으면 아무 작업도 하지 않습니다.
+
             const { isOpen, x, y } = state.contextMenu;
-            if (!isOpen) return '';
+            
+            // 2. 메뉴가 닫혀야 하는 상태라면, 컨테이너 내용을 완전히 비우고 함수를 종료합니다.
+            if (!isOpen) {
+                contextMenuContainer.innerHTML = '';
+                return;
+            }
 
             const menuItems = state.activeProject?.settings?.contextMenuItems || [];
-            if (menuItems.length === 0) return '';
+            
+            // 3. 메뉴를 열어야 하지만 표시할 아이템이 없다면, 역시 컨테이너를 비우고 종료합니다.
+            if (menuItems.length === 0) {
+                // ▼▼▼ [수정] 이 부분도 컨테이너를 비워야 합니다. ▼▼▼
+                contextMenuContainer.innerHTML = '';
+                return;
+            }
 
             const itemsHtml = menuItems.map((item, index) =>
                 `<button data-action="execute-context-menu" data-index="${index}" class="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-slate-900">${DOMPurify.sanitize(item.name)}</button>`
             ).join('');
             
-            // 이 부분을 수정합니다: 바로 렌더링하지 않고, 위치 조정을 위한 준비를 합니다.
-            const contextMenuContainer = document.getElementById('context-menu-root');
-            if (contextMenuContainer) {
-                // 1. 먼저 보이지 않는 상태로 메뉴를 DOM에 추가합니다.
-                contextMenuContainer.innerHTML = `
-                    <div id="context-menu" class="fixed z-[2500] w-56 mt-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" 
-                        style="visibility: hidden; top: ${y}px; left: ${x}px;">
-                        <div class="py-1" role="menu" aria-orientation="vertical">${itemsHtml}</div>
-                    </div>`;
-                
-                // 2. DOM에 추가된 메뉴 요소의 크기를 가져옵니다.
-                const menuEl = document.getElementById('context-menu');
-                if (menuEl) {
-                    const rect = menuEl.getBoundingClientRect();
-                    let finalX = x;
-                    let finalY = y;
-
-                    // 3. 화면 경계를 벗어나는지 확인하고 위치를 보정합니다.
-                    if (x + rect.width > window.innerWidth) {
-                        finalX = window.innerWidth - rect.width - 10; // 오른쪽 경계 보정
-                    }
-                    if (y + rect.height > window.innerHeight) {
-                        finalY = window.innerHeight - rect.height - 10; // 아래쪽 경계 보정
-                    }
-
-                    // 4. 최종 위치를 적용하고 메뉴를 보이게 만듭니다.
-                    menuEl.style.left = `${finalX}px`;
-                    menuEl.style.top = `${finalY}px`;
-                    menuEl.style.visibility = 'visible';
-                }
-            }
+            // 4. 메뉴 HTML을 생성하여 컨테이너에 삽입합니다. (처음에는 숨겨진 상태로)
+            contextMenuContainer.innerHTML = `
+                <div id="context-menu" class="fixed z-[2500] w-56 mt-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" 
+                    style="visibility: hidden; top: ${y}px; left: ${x}px;">
+                    <div class="py-1" role="menu" aria-orientation="vertical">${itemsHtml}</div>
+                </div>`;
             
-            // 이 함수는 이제 직접 HTML을 반환하지 않고, DOM을 직접 조작합니다.
-            return '';
+            // 5. 생성된 메뉴 요소의 크기를 측정하고 화면 경계를 벗어나는지 확인합니다.
+            const menuEl = document.getElementById('context-menu');
+            if (menuEl) {
+                const rect = menuEl.getBoundingClientRect();
+                let finalX = x;
+                let finalY = y;
+
+                // 화면 오른쪽 경계를 벗어나면 위치 조정
+                if (x + rect.width > window.innerWidth) {
+                    finalX = window.innerWidth - rect.width - 10;
+                }
+                // 화면 아래쪽 경계를 벗어나면 위치 조정
+                if (y + rect.height > window.innerHeight) {
+                    finalY = window.innerHeight - rect.height - 10;
+                }
+
+                // 6. 최종 위치를 적용하고 메뉴를 화면에 표시합니다.
+                menuEl.style.left = `${finalX}px`;
+                menuEl.style.top = `${finalY}px`;
+                menuEl.style.visibility = 'visible';
+            }
         },
          renderToasts() {
              return `<div class="fixed bottom-4 right-4 space-y-3 z-[3000]">${state.toasts.map(toast => {
