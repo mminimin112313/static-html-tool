@@ -1705,6 +1705,21 @@ const Heroicons = {
 
          const Controller = {
              async init() {
+                if (navigator.storage && navigator.storage.persist) {
+                    try {
+                        const isPersisted = await navigator.storage.persisted();
+                        if (!isPersisted) {
+                            const granted = await navigator.storage.persist();
+                            if (granted) {
+                                console.log("영구 저장소 권한이 부여되었습니다. 데이터가 더 안정적으로 보존됩니다.");
+                            } else {
+                                console.warn("영구 저장소 권한이 거부되었습니다. 브라우저가 데이터를 임의로 삭제할 수 있습니다.");
+                            }
+                        }
+                    } catch (error) {
+                        console.error("영구 저장소 요청 중 오류 발생:", error);
+                    }
+                }
                 // ▼▼▼ [수정] 앱 초기화 시 Heroicons를 먼저 불러옵니다. ▼▼▼
                 await Heroicons.load(); 
                 // ▲▲▲ [수정] 앱 초기화 시 Heroicons를 먼저 불러옵니다. ▲▲▲
@@ -1775,15 +1790,28 @@ const Heroicons = {
                 }
             },
              bindGlobalEventListeners() {
-                 document.body.addEventListener('click', e => {
+                const handleAction = e => {
                      const trigger = e.target.closest('[data-action]');
                      if (!trigger || trigger.matches('form[data-action]')) return;
                      const action = trigger.dataset.action;
                      const handler = this.ACTION_HANDLERS[action];
                      if (handler) {
-                         e.preventDefault();
+                         e.preventDefault(); // 이벤트 기본 동작 방지 (터치 후 클릭 중복 방지 포함)
                          handler(trigger, e);
                      }
+                 };
+
+                 // 클릭과 터치 종료 이벤트에 공통 핸들러 등록
+                 document.body.addEventListener('click', handleAction);
+                 document.body.addEventListener('touchend', handleAction);
+
+                 document.body.addEventListener('submit', e => {
+                     const form = e.target.closest('form[data-action]');
+                     if (!form) return;
+                     e.preventDefault();
+                     const action = form.dataset.action;
+                     const handler = this.ACTION_HANDLERS[action];
+                     if (handler) handler(form, e);
                  });
                  document.body.addEventListener('submit', e => {
                      const form = e.target.closest('form[data-action]');
