@@ -486,7 +486,7 @@
              this.el.innerHTML = '';
              console.error(`Modal type "${this.type}" not found.`);
          }
-         lucide.createIcons();
+         lucide.createIcons({ nodes: [this.el] });
          Controller.bindDynamicEventListeners();
      },
 
@@ -2685,40 +2685,59 @@ Micro-interactions are the small, often unnoticed animations and design elements
                      ModalManager.data.activeTab = el.dataset.tab;
                      ModalManager.render();
                  },
-                 'open-settings': () => ModalManager.open('settings', {
-                     activeTab: 'general',
-                     name: state.activeProject.name,
-                     categoryId: state.activeProject.categoryId,
-                     projectTags: [...(state.activeProject.tags || [])],
-                     ...JSON.parse(JSON.stringify(state.activeProject.settings))
-                 }),
+                 'open-settings': () => {
+                if (!state.activeProject) {
+                    Controller.showToast('활성화된 프로젝트가 없어 설정을 열 수 없습니다.', 'error');
+                    return;
+                }
+
+                const defaults = Controller.getDefaultProjectSettings?.() || {
+                    writingPrompt: '',
+                    writingStyle: '',
+                    writingReferences: '',
+                    quizQuestionCount: 10,
+                    quizTaskDescription: '',
+                    quizOutputFormatInstruction: '',
+                    quizPromptTemplate: '',
+                    customPrompts: [],
+                    contextMenuItems: [],
+                };
+
+                // 깊은 복사 후 플랫 머지
+                const s = JSON.parse(JSON.stringify(state.activeProject.settings || {}));
+                ModalManager.open('settings', {
+                    activeTab: 'general',
+                    name: state.activeProject.name,
+                    categoryId: state.activeProject.categoryId,
+                    projectTags: [...(state.activeProject.tags || [])],
+                    ...defaults,         // 기본값 먼저
+                    ...s,                // 프로젝트 설정이 있으면 덮어씀
+                    customPrompts: s.customPrompts || defaults.customPrompts,
+                    contextMenuItems: s.contextMenuItems || defaults.contextMenuItems,
+                });
+                },
+
+
                  'switch-settings-tab': (el) => {
                      ModalManager.data.activeTab = el.dataset.tab;
                      ModalManager.render();
                  },
-                 'save-settings': async (form) => {
-                     const {
-                         name,
-                         categoryId,
-                         projectTags,
-                         customPrompts,
-                         contextMenuItems,
-                         ...otherSettings
-                     } = ModalManager.data;
-                     state.activeProject.name = name;
-                     state.activeProject.categoryId = categoryId;
-                     state.activeProject.tags = projectTags;
-                     Object.assign(state.activeProject.settings, otherSettings);
-                     state.activeProject.settings.customPrompts = (customPrompts || []).filter(p => p.name && p.template);
-                     state.activeProject.settings.contextMenuItems = (contextMenuItems || []).filter(p => p.name && p.template);
-                     state.activeProject.updatedAt = new Date().toISOString();
-                     await DB.put(CONFIG.STORES.PROJECTS, state.activeProject);
-                     Controller.updateTags();
-                     Controller.showToast('설정이 성공적으로 저장되었습니다.', 'success');
+                 'save-settings': async () => {
+                const { name, categoryId, projectTags, customPrompts, contextMenuItems, otherSettings } = ModalManager.data;
+                state.activeProject.name = name;
+                state.activeProject.categoryId = categoryId;
+                state.activeProject.tags = projectTags;
+                Object.assign(state.activeProject.settings, otherSettings);
+                state.activeProject.settings.customPrompts = (customPrompts || []).filter(p => p.name && p.template);
+                state.activeProject.settings.contextMenuItems = (contextMenuItems || []).filter(p => p.name && p.template);
 
-                     console.log('[디버그] 모달 닫힘: "설정 저장" 작업 완료');
-                     ModalManager.close();
-                 },
+                state.activeProject.updatedAt = new Date().toISOString();
+                await DB.put(CONFIG.STORES.PROJECTS, state.activeProject);
+                Controller.updateTags();
+                Controller.showToast('설정이 성공적으로 저장되었습니다.', 'success');
+                ModalManager.close();
+                },
+
                  'add-custom-prompt': () => {
                      const nameInput = document.getElementById('new-prompt-name');
                      const templateInput = document.getElementById('new-prompt-template');
