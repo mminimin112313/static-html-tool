@@ -7,10 +7,8 @@
     
     <!-- Core Dependencies -->
     <script src="https://cdn.tailwindcss.com" defer></script>
-    <!-- ▼▼▼ [성능 개선] Heroicons v2 CDN 추가 ▼▼▼ -->
-    <script src="https://unpkg.com/heroicons@2.1.1/24/outline/index.js" defer></script>
-    <script src="https://unpkg.com/heroicons@2.1.1/24/solid/index.js" defer></script>
-    <!-- ▲▲▲ [성능 개선] Heroicons v2 CDN 추가 ▲▲▲ -->
+    <!-- ▼▼▼ [수정] Heroicons v2 CDN 스크립트는 JavaScript 내에서 직접 로드하도록 변경되어 삭제합니다. ▼▼▼ -->
+    <!-- ▲▲▲ [수정] Heroicons v2 CDN 스크립트는 JavaScript 내에서 직접 로드하도록 변경되어 삭제합니다. ▲▲▲ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js" defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
@@ -218,18 +216,28 @@
  };
 
  /**
-  * ▼▼▼ [성능 개선] Heroicons 렌더링 및 캐싱 유틸리티 ▼▼▼
+  * ▼▼▼ [수정] Heroicons 렌더링 및 캐싱 유틸리티 (비동기 로딩 방식 적용) ▼▼▼
   */
  const Heroicons = {
      _cache: new Map(),
-     /**
-      * Heroicon SVG를 렌더링합니다.
-      * @param {string} name - 아이콘 이름 (예: 'plus', 'x-mark')
-      * @param {object} options - 옵션 객체
-      * @param {string} [options.style='outline'] - 'outline' 또는 'solid'
-      * @param {string} [options.class=''] - 추가할 CSS 클래스
-      * @returns {string} SVG HTML 문자열
-      */
+     _icons: {
+         outline: {},
+         solid: {}
+     },
+     async load() {
+         try {
+             // dynamic import를 사용해 아이콘 모듈들을 불러옵니다.
+             const [outline, solid] = await Promise.all([
+             import('https://unpkg.com/heroicons@2.1.1/24/outline/index.js?module'),
+             import('https://unpkg.com/heroicons@2.1.1/24/solid/index.js?module')
+             ]);
+             this._icons.outline = outline;
+             this._icons.solid = solid;
+             console.log("Heroicons loaded successfully.");
+         } catch (e) {
+             console.error("Heroicons failed to load.", e);
+         }
+     },
      render(name, options = {}) {
          const { style = 'outline', class: className = '' } = options;
          const cacheKey = `${style}-${name}-${className}`;
@@ -238,8 +246,11 @@
              return this._cache.get(cacheKey);
          }
 
-         const iconSet = window.heroicons?.[style];
-         let svgString = iconSet?.[this.toCamelCase(name)] || '';
+         // window.heroicons 대신 내부 _icons 객체를 참조합니다.
+         const iconSet = this._icons[style];
+         if (!iconSet) return '';
+
+         let svgString = iconSet[this.toCamelCase(name)] || '';
 
          if (svgString && className) {
              svgString = svgString.replace('<svg ', `<svg class="${className}" `);
@@ -247,11 +258,8 @@
          
          if (svgString) {
             this._cache.set(cacheKey, svgString);
-         } else {
-            // Heroicons 스크립트가 아직 로드되지 않았을 수 있으므로 경고를 잠시 보류합니다.
-            // console.warn(`Heroicon not found: { style: '${style}', name: '${name}' }`);
          }
-
+         
          return svgString;
      },
      toCamelCase(str) {
@@ -754,7 +762,7 @@
              const hasChildren = node.children && node.children.length > 0;
              const childrenHtml = hasChildren ? `<ul class="pl-4 border-l border-slate-200">${node.children.map((child, index) => renderNode(child, `${path}.${index}`)).join('')}</ul>` : '';
              const iconName = hasChildren ? 'folder' : 'document-text';
-             return `<li draggable="true" data-path="${path}" class="my-1 group toc-drag-item"><div class="flex items-center p-2 rounded-md hover:bg-slate-100">${Heroicons.render(iconName, { class: 'w-4 h-4 mr-2 text-slate-500 flex-shrink-0' })}<input type="text" value="${DOMPurify.sanitize(node.title)}" data-action="toc-edit-title" data-path="${path}" class="flex-grow bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-md px-1 py-0.5 text-sm"><div class="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity"><button data-action="toc-add-child" data-path="${path}" title="하위 항목 추가" class="p-1 rounded hover:bg-slate-200">${Heroicons.render('arrow-uturn-down-right', { class: 'w-4 h-4 text-slate-600' })}</button><button data-action="toc-delete" data-path="${path}" title="삭제" class="p-1 rounded hover:bg-red-100">${Heroicons.render('trash', { class: 'w-4 h-4 text-red-500' })}</button></div></div>${childrenHtml}</li>`;
+             return `<li draggable="true" data-path="${path}" class="my-1 group toc-drag-item"><div class="flex items-center p-2 rounded-md hover:bg-slate-100">${Heroicons.render(iconName, { class: 'w-4 h-4 mr-2 text-slate-500 flex-shrink-0' })}<input type="text" value="${DOMPurify.sanitize(node.title)}" data-action="toc-edit-title" data-path="${path}" class="flex-grow bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-md px-1 py-0.5 text-sm"><div class="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity"><button data-action="toc-add-child" data-path="${path}" title="하위 항목 추가" class="p-1 rounded hover:bg-slate-200">${Heroicons.render('arrow-turn-down-right', { class: 'w-4 h-4 text-slate-600' })}</button><button data-action="toc-delete" data-path="${path}" title="삭제" class="p-1 rounded hover:bg-red-100">${Heroicons.render('trash', { class: 'w-4 h-4 text-red-500' })}</button></div></div>${childrenHtml}</li>`;
          };
          const editableToc = this.data.editableToc;
          if (!editableToc || !editableToc.children) return '<div>목차를 불러올 수 없습니다.</div>';
@@ -1255,6 +1263,9 @@
 
          const Controller = {
              async init() {
+                // ▼▼▼ [수정] 앱 초기화 시 Heroicons를 먼저 불러옵니다. ▼▼▼
+                await Heroicons.load(); 
+                // ▲▲▲ [수정] 앱 초기화 시 Heroicons를 먼저 불러옵니다. ▲▲▲
                  this.initializeConfig();
                  ModalManager.init(); // ModalManager 초기화
                  marked.setOptions({
@@ -2257,7 +2268,10 @@ Micro-interactions are the small, often unnoticed animations and design elements
              },
              async generateQuiz() {
                  let apiKey = localStorage.getItem('googleApiKey');
-                 if (!apiKey) return this.openModal('apiKey');
+                 if (!apiKey) {
+                    ModalManager.open('apiKey');
+                    return;
+                }
                  const prompt = this.buildQuizPrompt();
                  if (!prompt) {
                      this.showToast('퀴즈를 생성할 학습 내용이 없습니다.', 'error');
@@ -2266,6 +2280,7 @@ Micro-interactions are the small, often unnoticed animations and design elements
                  this.showToast('AI가 문제를 생성하고 있습니다...', 'info');
                  const spinnerEl = document.querySelector('[data-action="generate-quiz"]');
                  if (spinnerEl) spinnerEl.innerHTML = `<div class="w-5 h-5 border-2 border-slate-500 border-t-transparent rounded-full animate-spin"></div>`;
+                 
                  try {
                      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${apiKey}`, {
                          method: 'POST',
@@ -2284,8 +2299,10 @@ Micro-interactions are the small, often unnoticed animations and design elements
                      const result = await response.json();
                      const responseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
                      if (!responseText) throw new Error("AI로부터 빈 응답을 받았습니다.");
+                     
                      const jsonMatch = responseText.match(/<json_response>([\s\S]*?)<\/json_response>/);
                      const jsonText = jsonMatch ? jsonMatch[1].trim() : responseText.match(/\[[\s\S]*\]/)?.[0] || responseText.trim();
+                     
                      const questions = JSON.parse(jsonText);
                      const content = state.activeChapterContent;
                      content.questions = [...(content.questions || []), ...questions];
@@ -2424,12 +2441,10 @@ Micro-interactions are the small, often unnoticed animations and design elements
 
                  return prompt.trim();
              },
-             // Controller.handleSplitChapterSubmit 함수를 아래 코드로 교체합니다.
              async handleSplitChapterSubmit(form) {
                  const jsonContent = new FormData(form).get('jsonContent');
                  if (!jsonContent) return;
 
-                 // 모달 데이터에서 어떤 소스를 분할했는지 가져옵니다.
                  const sourceType = ModalManager.data.sourceToSplit || 'manuscript';
                  const sourceLabel = sourceType === 'manuscript' ? '원문' : '번역문';
 
@@ -2440,7 +2455,6 @@ Micro-interactions are the small, often unnoticed animations and design elements
                      const subChaptersData = JSON.parse(jsonContent.trim().match(/\[[\s\S]*\]/)?.[0] || '[]');
                      if (!Array.isArray(subChaptersData) || !subChaptersData.every(i => i.sub_chapter_title && i.start_paragraph)) throw new Error('Invalid JSON format.');
 
-                     // 선택된 소스 텍스트를 가져와서 분할합니다.
                      const sourceText = state.activeChapterContent[sourceType];
                      const paragraphs = sourceText.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
 
@@ -2462,7 +2476,6 @@ Micro-interactions are the small, often unnoticed animations and design elements
                          parentNode.children.push(newChildNode);
                          const newChildPath = `${parentPath}.${initialChildCount + i}`;
 
-                         // 새 콘텐츠 객체를 생성하고, 분할한 소스 타입에 맞게 데이터를 채워줍니다.
                          const newContent = {
                              id: `${projectId}_${newChildPath}`,
                              manuscript: '',
@@ -2471,13 +2484,12 @@ Micro-interactions are the small, often unnoticed animations and design elements
                              questions: [],
                              status: 'manuscript-done'
                          };
-                         newContent[sourceType] = content; // 핵심: manuscript 또는 translation 필드에 저장
+                         newContent[sourceType] = content;
 
                          state.activeContentsMap.set(newContent.id, newContent);
                          creationPromises.push(DB.put(CONFIG.STORES.CONTENTS, newContent));
                      }
 
-                     // 부모 챕터의 원본 소스에 분할 완료 메시지를 남깁니다.
                      state.activeChapterContent[sourceType] = `[${sourceLabel}이(가) ${subChaptersData.length}개의 하위 노트로 분할되었습니다.]`;
                      creationPromises.push(DB.put(CONFIG.STORES.CONTENTS, state.activeChapterContent));
 
@@ -2699,15 +2711,9 @@ Micro-interactions are the small, often unnoticed animations and design elements
                          }
                      });
                  },
-                 'close-modal': () => {
-                     console.log('[디버그] 모달 닫힘: "닫기/취소" 버튼 클릭');
-                     ModalManager.close();
-                 },
+                 'close-modal': () => ModalManager.close(),
                  'close-modal-overlay': (el, e) => {
-                     if (e.target === el) {
-                         console.log('[디버그] 모달 닫힘: "모달 바깥 배경" 클릭');
-                         ModalManager.close();
-                     }
+                     if (e.target === el) ModalManager.close();
                  },
                  'confirm-action': () => {
                      const onConfirm = ModalManager.data.onConfirm;
@@ -2731,72 +2737,56 @@ Micro-interactions are the small, often unnoticed animations and design elements
                      ModalManager.render();
                  },
                  'open-settings': () => {
-                if (!state.activeProject) {
-                    Controller.showToast('활성화된 프로젝트가 없어 설정을 열 수 없습니다.', 'error');
-                    return;
-                }
-
-                const defaults = CONFIG.DEFAULT_PROJECT_SETTINGS || {
-                    writingPrompt: '',
-                    writingStyle: '',
-                    writingReferences: '',
-                    quizQuestionCount: 10,
-                    quizTaskDescription: '',
-                    quizOutputFormatInstruction: '',
-                    quizPromptTemplate: '',
-                    customPrompts: [],
-                    contextMenuItems: [],
-                };
-
-                const s = JSON.parse(JSON.stringify(state.activeProject.settings || {}));
-                ModalManager.open('settings', {
-                    activeTab: 'general',
-                    name: state.activeProject.name,
-                    categoryId: state.activeProject.categoryId,
-                    projectTags: [...(state.activeProject.tags || [])],
-                    ...defaults,
-                    ...s,
-                    customPrompts: s.customPrompts || defaults.customPrompts,
-                    contextMenuItems: s.contextMenuItems || defaults.contextMenuItems,
-                });
-                },
-
-
+                     if (!state.activeProject) {
+                         Controller.showToast('활성화된 프로젝트가 없어 설정을 열 수 없습니다.', 'error');
+                         return;
+                     }
+                     const s = JSON.parse(JSON.stringify(state.activeProject.settings || {}));
+                     ModalManager.open('settings', {
+                         activeTab: 'general',
+                         name: state.activeProject.name,
+                         categoryId: state.activeProject.categoryId,
+                         projectTags: [...(state.activeProject.tags || [])],
+                         ...CONFIG.DEFAULT_PROJECT_SETTINGS,
+                         ...s,
+                         customPrompts: s.customPrompts || CONFIG.DEFAULT_PROJECT_SETTINGS.customPrompts,
+                         contextMenuItems: s.contextMenuItems || CONFIG.DEFAULT_PROJECT_SETTINGS.contextMenuItems,
+                     });
+                 },
                  'switch-settings-tab': (el) => {
                      ModalManager.data.activeTab = el.dataset.tab;
                      ModalManager.render();
                  },
-                'save-settings': async (form) => {
-                    const data = ModalManager.data;
-                    const name = data.name || state.activeProject.name;
-                    const categoryId = data.categoryId;
-                    const projectTags = data.projectTags || [];
-                    
-                    const settingsToSave = {};
-                    form.querySelectorAll('[data-setting-key]').forEach(input => {
-                        const key = input.dataset.settingKey;
-                        settingsToSave[key] = input.type === 'number' ? Number(input.value) : input.value;
-                    });
-                    
-                    Object.assign(state.activeProject.settings, settingsToSave);
+                 'save-settings': async (form) => {
+                     const data = ModalManager.data;
+                     const name = data.name || state.activeProject.name;
+                     const categoryId = data.categoryId;
+                     const projectTags = data.projectTags || [];
 
-                    state.activeProject.name = name;
-                    state.activeProject.categoryId = categoryId;
-                    state.activeProject.tags = projectTags;
-                    state.activeProject.settings.customPrompts = (data.customPrompts || []).filter(p => p.name && p.template);
-                    state.activeProject.settings.contextMenuItems = (data.contextMenuItems || []).filter(p => p.name && p.template);
+                     const settingsToSave = {};
+                     form.querySelectorAll('[data-setting-key]').forEach(input => {
+                         const key = input.dataset.settingKey;
+                         settingsToSave[key] = input.type === 'number' ? Number(input.value) : input.value;
+                     });
 
-                    state.activeProject.updatedAt = new Date().toISOString();
-                    await DB.put(CONFIG.STORES.PROJECTS, state.activeProject);
-                    
-                    Controller.updateTags();
-                    Controller.buildSearchIndex();
-                    Controller.showToast('설정이 성공적으로 저장되었습니다.', 'success');
-                    
-                    ModalManager.close();
-                    View.render(); 
-                },
+                     Object.assign(state.activeProject.settings, settingsToSave);
 
+                     state.activeProject.name = name;
+                     state.activeProject.categoryId = categoryId;
+                     state.activeProject.tags = projectTags;
+                     state.activeProject.settings.customPrompts = (data.customPrompts || []).filter(p => p.name && p.template);
+                     state.activeProject.settings.contextMenuItems = (data.contextMenuItems || []).filter(p => p.name && p.template);
+
+                     state.activeProject.updatedAt = new Date().toISOString();
+                     await DB.put(CONFIG.STORES.PROJECTS, state.activeProject);
+
+                     Controller.updateTags();
+                     Controller.buildSearchIndex();
+                     Controller.showToast('설정이 성공적으로 저장되었습니다.', 'success');
+
+                     ModalManager.close();
+                     View.render();
+                 },
                  'add-custom-prompt': () => {
                      const nameInput = document.getElementById('new-prompt-name');
                      const templateInput = document.getElementById('new-prompt-template');
@@ -3115,7 +3105,7 @@ Micro-interactions are the small, often unnoticed animations and design elements
                  'set-quiz-result-filter': (el) => {
                      state.quizResultFilter = el.dataset.filter;
                      View.render();
-                 }
+                 },
              },
              async exportProject(projectId) {
                  try {
@@ -3170,6 +3160,6 @@ Micro-interactions are the small, often unnoticed animations and design elements
          };
 
          Controller.init();
-    </script>
-</body>
-</html>
+     </script>
+ </body>
+ </html>
