@@ -15,10 +15,6 @@
     <script src="https://unpkg.com/turndown/dist/turndown.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/morphdom@2.7.0/dist/morphdom-umd.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js" defer></script>
-
-    <!-- Feather Icons CDN for icon rendering -->
-    <!-- Feather Icons provides a global `feather` object with SVG icons accessible via `feather.icons[iconName].toSvg()` -->
-    <script src="https://cdn.jsdelivr.net/npm/feather-icons@4.29.2/dist/feather.min.js" defer></script>
     
     <!-- KaTeX for Math Rendering -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
@@ -222,132 +218,54 @@
  /**
   * ▼▼▼ [수정] Heroicons 렌더링 및 캐싱 유틸리티 (비동기 로딩 방식 적용) ▼▼▼
   */
-const Heroicons = {
-    /**
-     * Cache rendered SVG strings for performance. The key is the original
-     * Heroicons name and the optional class.
-     */
-    _cache: new Map(),
-    /**
-     * Mapping from Heroicons names used throughout this application to the
-     * equivalent Feather icon names. If a name is not present, the same
-     * name will be used directly. Update this map when adding new icons.
-     */
-    _nameMap: {
-        // General actions
-        'bars-3': 'menu',
-        'bars-3-bottom-left': 'menu',
-        'cog-6-tooth': 'settings',
-        'academic-cap': 'book-open',
-        'arrow-down-tray': 'download',
-        'cloud-arrow-up': 'upload-cloud',
-        'sparkles': 'star',
-        'arrow-left-on-rectangle': 'log-out',
-        'arrow-right-on-rectangle': 'log-in',
-        'folder': 'folder',
-        'trash': 'trash',
-        'tag': 'tag',
-        'check-circle': 'check-circle',
-        'exclamation-triangle': 'alert-triangle',
-        'x-mark': 'x',
-        'arrow-turn-down-right': 'corner-right-down',
-        'user': 'user',
-        'plus': 'plus',
-        'plus-circle': 'plus-circle',
-        'minus': 'minus',
-        'minus-circle': 'minus-circle',
-        'pencil-square': 'edit',
-        'magnifying-glass': 'search',
-        'bookmark': 'bookmark',
-        'bookmark-square': 'bookmark',
-        'paper-airplane': 'send',
-        'arrow-up-right': 'arrow-up-right',
-        'arrow-left': 'arrow-left',
-        'arrow-right': 'arrow-right',
-        'ellipsis-vertical': 'more-vertical',
-        'ellipsis-horizontal': 'more-horizontal',
-        'square-3-stack-3d': 'layers',
-        'arrow-down-left': 'arrow-down-left',
-        'arrow-path': 'repeat',
-        'arrows-right-left': 'repeat',
-        'arrows-up-down-left-right': 'move',
-        'arrow-up': 'arrow-up',
-        'arrow-down': 'arrow-down',
-        'arrow-long-right': 'arrow-right',
-        'information-circle': 'info',
-        'microchip': 'cpu',
-        'clock': 'clock',
-        'question-mark-circle': 'help-circle',
-        'chat-bubble-left': 'message-circle',
-        'check-badge': 'check-circle',
-        'arrow-long-left': 'arrow-left',
-        'circle-stack': 'layers',
-        'document': 'file-text',
-        'document-text': 'file-text',
-        'document-plus': 'file-plus',
-        'document-duplicate': 'copy',
-        'arrow-long-up': 'arrow-up',
-        'arrow-long-down': 'arrow-down',
-        'arrow-small-right': 'arrow-right',
-        'arrow-small-left': 'arrow-left'
-        ,
-        'flag': 'flag',
-        'arrow-right-circle': 'arrow-right-circle'
-        ,
-        'clipboard-document': 'file-text',
-        'folder-plus': 'folder-plus',
-        'exclamation-circle': 'alert-circle',
-        'light-bulb': 'sun',
-        'squares-2x2': 'grid',
-        'x-circle': 'x-circle'
-    },
-    /**
-     * Wait until the Feather icons script has been loaded. Because the
-     * Feather script is loaded with defer in the head, it should be
-     * available by the time module scripts run, but this method guards
-     * against race conditions.
-     */
-    async load() {
-        if (window.feather && window.feather.icons) return;
-        return new Promise(resolve => {
-            const timer = setInterval(() => {
-                if (window.feather && window.feather.icons) {
-                    clearInterval(timer);
-                    resolve();
-                }
-            }, 20);
-        });
-    },
-    /**
-     * Render a named icon. Accepts an optional `class` property in the
-     * options to apply classes to the <svg> element. Other options like
-     * `style` from the original Heroicons API are ignored because Feather
-     * only provides a single style for each icon.
-     *
-     * @param {string} name - The Heroicons name used in the application.
-     * @param {object} options - Rendering options; only `class` is used.
-     * @returns {string} An SVG string representing the icon, or an empty
-     * string if the icon cannot be found.
-     */
-    render(name, options = {}) {
-        const { class: className = '' } = options;
-        const cacheKey = `${name}-${className}`;
-        if (this._cache.has(cacheKey)) {
-            return this._cache.get(cacheKey);
-        }
-        const featherName = this._nameMap[name] || name;
-        // If the Feather library or the specific icon is unavailable, return an empty string.
-        if (!window.feather || !window.feather.icons || !window.feather.icons[featherName]) {
-            return '';
-        }
-        let svgString = window.feather.icons[featherName].toSvg();
-        if (className) {
-            svgString = svgString.replace('<svg', `<svg class="${className}"`);
-        }
-        this._cache.set(cacheKey, svgString);
-        return svgString;
-    }
-};
+ const Heroicons = {
+     _cache: new Map(),
+     _icons: {
+         outline: {},
+         solid: {}
+     },
+     async load() {
+         try {
+             // dynamic import를 사용해 아이콘 모듈들을 불러옵니다.
+             const [outline, solid] = await Promise.all([
+                 import('https://unpkg.com/heroicons@2.1.1/24/outline/index.js'),
+                 import('https://unpkg.com/heroicons@2.1.1/24/solid/index.js')
+             ]);
+             this._icons.outline = outline;
+             this._icons.solid = solid;
+             console.log("Heroicons loaded successfully.");
+         } catch (e) {
+             console.error("Heroicons failed to load.", e);
+         }
+     },
+     render(name, options = {}) {
+         const { style = 'outline', class: className = '' } = options;
+         const cacheKey = `${style}-${name}-${className}`;
+         
+         if (this._cache.has(cacheKey)) {
+             return this._cache.get(cacheKey);
+         }
+
+         // window.heroicons 대신 내부 _icons 객체를 참조합니다.
+         const iconSet = this._icons[style];
+         if (!iconSet) return '';
+
+         let svgString = iconSet[this.toCamelCase(name)] || '';
+
+         if (svgString && className) {
+             svgString = svgString.replace('<svg ', `<svg class="${className}" `);
+         }
+         
+         if (svgString) {
+            this._cache.set(cacheKey, svgString);
+         }
+         
+         return svgString;
+     },
+     toCamelCase(str) {
+         return str.replace(/-([a-z])/g, g => g[1].toUpperCase());
+     }
+ };
 
  const state = {
      currentView: 'dashboard',
@@ -896,7 +814,7 @@ const Heroicons = {
          renderAppLayout() {
              if (state.isLoading) return this.renderSpinner("시스템 로딩 중...");
              if (['quiz', 'quizResult'].includes(state.currentView)) return this.renderCurrentView();
-            return `<aside class="sidebar ${state.isSidebarOpen ? '' : 'w-0 overflow-hidden !p-0 !border-0'} ${state.isMobileSidebarOpen ? 'open' : ''}" id="sidebar"> ${this.renderSidebar()} </aside><div class="sidebar-overlay ${state.isMobileSidebarOpen ? 'show' : ''}" id="sidebar-overlay" data-action="close-sidebar"></div><main class="main-content">${this.renderMainHeader()}<div class="content-view" id="content-view"> ${this.renderCurrentView()} </div></main>`;
+             return `<aside class="sidebar ${state.isSidebarOpen ? '' : 'w-0 !p-0 !border-0'} ${state.isMobileSidebarOpen ? 'open' : ''}" id="sidebar"> ${this.renderSidebar()} </aside><div class="sidebar-overlay ${state.isMobileSidebarOpen ? 'show' : ''}" id="sidebar-overlay" data-action="close-sidebar"></div><main class="main-content">${this.renderMainHeader()}<div class="content-view" id="content-view"> ${this.renderCurrentView()} </div></main>`;
          },
          renderSidebar() {
              if (state.activeProjectId && state.activeProject) return this.renderProjectSidebar();
@@ -939,9 +857,7 @@ const Heroicons = {
                  saveStatusIndicator = `<div class="flex items-center gap-2 text-sm text-green-600">${Heroicons.render('check', { class: 'w-4 h-4' })} 마지막 저장: ${state.saveTimestamp.toLocaleTimeString()}</div>`;
              }
 
-            // Render a slightly larger menu icon for better visibility
-            const sidebarIcon = Heroicons.render('bars-3', { class: 'w-6 h-6' });
-            return `<header class="main-header"><button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar">${sidebarIcon}</button><h1 class="header-title">${title}</h1><div class="flex items-center gap-4">${saveStatusIndicator}<div class="relative"><input type="text" class="search-input" id="search-input" placeholder="프로젝트 검색..." value="${state.searchResults ? document.getElementById('search-input')?.value || '' : ''}"><div class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400">${Heroicons.render('magnifying-glass')}</div></div><div class="header-controls" style="${isProjectListView ? '' : 'display:none;'}"><select id="sort-select" data-action="sort-projects" class="btn btn-secondary btn-sm"><option value="updatedAt_desc" ${state.currentSortOrder === 'updatedAt_desc' ? 'selected' : ''}>최근 수정순</option><option value="createdAt_desc" ${state.currentSortOrder === 'createdAt_desc' ? 'selected' : ''}>최신 생성순</option><option value="name_asc" ${state.currentSortOrder === 'name_asc' ? 'selected' : ''}>이름 (가나다순)</option></select></div>${workspaceControls}</div></header>`;
+             return `<header class="main-header"><button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar">${Heroicons.render('bars-3')}</button><h1 class="header-title">${title}</h1><div class="flex items-center gap-4">${saveStatusIndicator}<div class="relative"><input type="text" class="search-input" id="search-input" placeholder="프로젝트 검색..." value="${state.searchResults ? document.getElementById('search-input')?.value || '' : ''}"><div class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400">${Heroicons.render('magnifying-glass')}</div></div><div class="header-controls" style="${isProjectListView ? '' : 'display:none;'}"><select id="sort-select" data-action="sort-projects" class="btn btn-secondary btn-sm"><option value="updatedAt_desc" ${state.currentSortOrder === 'updatedAt_desc' ? 'selected' : ''}>최근 수정순</option><option value="createdAt_desc" ${state.currentSortOrder === 'createdAt_desc' ? 'selected' : ''}>최신 생성순</option><option value="name_asc" ${state.currentSortOrder === 'name_asc' ? 'selected' : ''}>이름 (가나다순)</option></select></div>${workspaceControls}</div></header>`;
          },
          getHeaderTitle() {
              if (state.currentView === 'workspace' && state.activeProject) return state.activeProject.name;
@@ -1457,6 +1373,68 @@ const Heroicons = {
                      }
                      View.render();
                  });
+
+                // 모바일(안드로이드 등) 환경에서는 마우스 이벤트가 발생하지 않아 텍스트 선택 후 컨텍스트 메뉴가 뜨지 않는 문제가 있습니다.
+                // 이를 해결하기 위해 touchend 이벤트를 추가하여, 선택된 텍스트가 있을 때 커스텀 컨텍스트 메뉴를 노출합니다.
+                document.body.addEventListener('touchend', e => {
+                    // 모달이 열려있거나 컨텍스트 메뉴 내부를 터치했다면 아무 작업도 하지 않음
+                    if (ModalManager.isOpen || e.target.closest('#context-menu')) {
+                        return;
+                    }
+
+                    const selection = window.getSelection();
+                    const selectedText = selection.toString().trim();
+                    const viewPanel = document.querySelector('#workspace-main-content .prose-readable');
+
+                    if (state.currentView === 'workspace' && state.workspaceMode === 'view' && selectedText && viewPanel && selection.rangeCount > 0 && viewPanel.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+                        // 기본 좌표는 선택 영역의 boundingRect를 기준으로 합니다.
+                        let x, y;
+                        try {
+                            // 모바일에서는 e.changedTouches에서 좌표를 얻을 수 있습니다.
+                            if (e.changedTouches && e.changedTouches.length > 0) {
+                                const touch = e.changedTouches[0];
+                                x = touch.pageX;
+                                y = touch.pageY;
+                            }
+                        } catch (err) {
+                            // ignore
+                        }
+                        // 만약 터치 좌표를 얻지 못했다면 선택된 텍스트의 위치를 기준으로 좌표를 계산합니다.
+                        if (typeof x !== 'number' || typeof y !== 'number') {
+                            const rangeRect = selection.getRangeAt(0).getBoundingClientRect();
+                            x = rangeRect.left + (rangeRect.width / 2) + window.scrollX;
+                            y = rangeRect.bottom + window.scrollY;
+                        }
+
+                        state.contextMenu = {
+                            isOpen: true,
+                            x: x,
+                            y: y,
+                            selectedText: selectedText
+                        };
+                    } else {
+                        state.contextMenu.isOpen = false;
+                    }
+                    View.render();
+                });
+
+                // 데스크톱과 모바일 환경 모두에서 기본 브라우저 컨텍스트 메뉴 대신 커스텀 메뉴를 표시하기 위한 처리입니다.
+                // 텍스트가 선택되어 있는 경우 브라우저의 기본 메뉴를 막고 커스텀 메뉴를 표시합니다.
+                document.body.addEventListener('contextmenu', e => {
+                    const selection = window.getSelection();
+                    const selectedText = selection.toString().trim();
+                    const viewPanel = document.querySelector('#workspace-main-content .prose-readable');
+                    if (state.currentView === 'workspace' && state.workspaceMode === 'view' && selectedText && viewPanel && selection.rangeCount > 0 && viewPanel.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+                        e.preventDefault();
+                        state.contextMenu = {
+                            isOpen: true,
+                            x: e.pageX,
+                            y: e.pageY,
+                            selectedText: selectedText
+                        };
+                        View.render();
+                    }
+                });
              },
              bindDynamicEventListeners() {
                  if (ModalManager.type === 'manageToc') {
