@@ -1260,6 +1260,7 @@ const Heroicons = {
              const uploadBoxHtml = `
                 <div class="mb-6">
                     <label for="image-upload" class="block text-sm font-medium text-slate-700 mb-2">이미지 파일 변경</label>
+                    <div data-dropzone="image" class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-md transition-colors">
                     <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-md">
                         <div class="space-y-1 text-center">
                             ${Heroicons.render('photo', { class: 'mx-auto h-12 w-12 text-slate-400' })}
@@ -1693,6 +1694,50 @@ const Heroicons = {
                  state.isLoading = false;
                  View.render();
              },
+             handleImagePaste(e) {
+                // 이미지 탭이 활성화된 상태가 아니면 아무것도 하지 않음
+                if (state.currentView !== 'workspace' || state.workspaceMode !== 'image') {
+                    return;
+                }
+
+                const items = e.clipboardData.items;
+                for (let i = 0; i < items.length; i++) {
+                    // 붙여넣은 항목이 이미지 파일일 경우
+                    if (items[i].kind === 'file' && items[i].type.startsWith('image/')) {
+                        const file = items[i].getAsFile();
+                        if (file) {
+                            e.preventDefault(); // 기본 붙여넣기 동작 방지
+                            Controller.processImageFile(file);
+                            break; // 첫 번째 이미지만 처리하고 종료
+                        }
+                    }
+                }
+            },
+             handleImageDragOver(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                // 드래그 중일 때 시각적 피드백을 줍니다 (예: 배경색 변경)
+                e.currentTarget.classList.add('bg-indigo-50', 'border-indigo-400');
+            },
+
+            handleImageDragLeave(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                // 드래그가 영역을 벗어나면 시각적 피드백을 제거합니다.
+                e.currentTarget.classList.remove('bg-indigo-50', 'border-indigo-400');
+            },
+
+            handleImageDrop(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                e.currentTarget.classList.remove('bg-indigo-50', 'border-indigo-400');
+                
+                const files = e.dataTransfer.files;
+                if (files && files.length > 0) {
+                    // 드롭된 첫 번째 파일을 처리 함수로 넘깁니다.
+                    Controller.processImageFile(files[0]);
+                }
+            },
              bindGlobalEventListeners() {
                  document.body.addEventListener('click', e => {
                      const trigger = e.target.closest('[data-action]');
@@ -1782,6 +1827,8 @@ const Heroicons = {
                      }
                      View.render();
                  });
+                 document.addEventListener('paste', e => this.handleImagePaste(e));
+
              },
              bindDynamicEventListeners() {
                  if (ModalManager.type === 'manageToc') {
@@ -1820,6 +1867,14 @@ const Heroicons = {
                         });
                     }
                      // ✅ END: Enter 키 오작동 방지 코드 추가
+                 }
+                 if (state.currentView === 'workspace' && state.workspaceMode === 'image') {
+                    const dropzone = document.querySelector('[data-dropzone="image"]');
+                    if (dropzone) {
+                        dropzone.addEventListener('dragover', this.handleImageDragOver);
+                        dropzone.addEventListener('dragleave', this.handleImageDragLeave);
+                        dropzone.addEventListener('drop', this.handleImageDrop);
+                    }
                  }
              },
              initializeConfig() {
@@ -3085,6 +3140,31 @@ Micro-interactions are the small, often unnoticed animations and design elements
                      }
                  });
              },
+             // ▼▼▼ [추가] 1단계: 이미지 파일 처리 로직을 공통 함수로 분리 ▼▼▼
+            async processImageFile(file) {
+                if (!file || !file.type.startsWith('image/')) {
+                    this.showToast('이미지 파일만 업로드할 수 있습니다.', 'error');
+                    return;
+                }
+
+                const reader = new FileReader();
+
+                reader.onload = async (e) => {
+                    const imageDataUrl = e.target.result;
+                    state.activeChapterContent.imageDataUrl = imageDataUrl;
+                    await DB.put(CONFIG.STORES.CONTENTS, state.activeChapterContent);
+                    this.showToast('이미지가 성공적으로 저장되었습니다.', 'success');
+                    View.render();
+                };
+
+                reader.onerror = () => {
+                    this.showToast('파일을 읽는 데 실패했습니다.', 'error');
+                };
+
+                reader.readAsDataURL(file);
+            },
+
+                
              ACTION_HANDLERS: {
                  'toggle-sidebar': () => Controller.toggleSidebar(),
                  'close-sidebar': () => Controller.closeSidebar(),
@@ -3130,6 +3210,12 @@ Micro-interactions are the small, often unnoticed animations and design elements
                          View.render();
                      }
                  },
+                 'handle-image-upload': (input) => {
+                    const file = input.files[0];
+                    if (file) {
+                        Controller.processImageFile(file);
+                    }
+                },
                  'sort-projects': (select) => {
                      state.currentSortOrder = select.value;
                      View.render();
