@@ -378,6 +378,7 @@ const Heroicons = {
      toasts: [],
      isKaTeXLoaded: false,
      searchResults: null,
+     searchQuery: '', 
      sidebarCollapseState: {
          categories: false,
          tags: false
@@ -941,7 +942,7 @@ const Heroicons = {
 
             // Render a slightly larger menu icon for better visibility
             const sidebarIcon = Heroicons.render('bars-3', { class: 'w-6 h-6' });
-            return `<header class="main-header"><button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar">${sidebarIcon}</button><h1 class="header-title">${title}</h1><div class="flex items-center gap-4">${saveStatusIndicator}<div class="relative"><input type="text" class="search-input" id="search-input" placeholder="프로젝트 검색..." value="${state.searchResults ? document.getElementById('search-input')?.value || '' : ''}"><div class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400">${Heroicons.render('magnifying-glass')}</div></div><div class="header-controls" style="${isProjectListView ? '' : 'display:none;'}"><select id="sort-select" data-action="sort-projects" class="btn btn-secondary btn-sm"><option value="updatedAt_desc" ${state.currentSortOrder === 'updatedAt_desc' ? 'selected' : ''}>최근 수정순</option><option value="createdAt_desc" ${state.currentSortOrder === 'createdAt_desc' ? 'selected' : ''}>최신 생성순</option><option value="name_asc" ${state.currentSortOrder === 'name_asc' ? 'selected' : ''}>이름 (가나다순)</option></select></div>${workspaceControls}</div></header>`;
+            return `<header class="main-header"><button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar">${sidebarIcon}</button><h1 class="header-title">${title}</h1><div class="flex items-center gap-4">${saveStatusIndicator}<div class="relative"><input type="text" class="search-input" id="search-input" placeholder="프로젝트 검색..." value="${DOMPurify.sanitize(state.searchQuery)}"><div class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400">${Heroicons.render('magnifying-glass')}</div></div><div class="header-controls" style="${isProjectListView ? '' : 'display:none;'}"><select id="sort-select" data-action="sort-projects" class="btn btn-secondary btn-sm"><option value="updatedAt_desc" ${state.currentSortOrder === 'updatedAt_desc' ? 'selected' : ''}>최근 수정순</option><option value="createdAt_desc" ${state.currentSortOrder === 'createdAt_desc' ? 'selected' : ''}>최신 생성순</option><option value="name_asc" ${state.currentSortOrder === 'name_asc' ? 'selected' : ''}>이름 (가나다순)</option></select></div>${workspaceControls}</div></header>`;
          },
          getHeaderTitle() {
              if (state.currentView === 'workspace' && state.activeProject) return state.activeProject.name;
@@ -982,12 +983,21 @@ const Heroicons = {
              return `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"><div class="p-6 bg-white rounded-lg shadow-sm"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">빠른 작업</h3></div><div class="grid grid-cols-2 gap-4"><button class="btn" data-action="new-project">${Heroicons.render('plus')} 새 프로젝트</button><button class="btn btn-secondary" data-action="new-category">${Heroicons.render('folder-plus')} 새 카테고리</button></div></div><div class="p-6 bg-white rounded-lg shadow-sm"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">개요</h3></div><div class="flex justify-around">${statItem(state.projects.length, '프로젝트', 'all')}${statItem(state.categories.length, '카테고리', 'category')}${statItem(state.tags.length, '태그', 'tag')}</div></div><div class="p-6 bg-white rounded-lg shadow-sm md:col-span-2 lg:col-span-1"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-semibold">최근 프로젝트</h3></div><ul class="divide-y divide-slate-100">${recentProjects.map(p => `<li class="py-2 flex justify-between items-center hover:bg-slate-50 rounded-md"><a href="#" data-action="open-project" data-id="${p.id}" class="flex-grow min-w-0"><p class="font-medium truncate">${p.name}</p><p class="text-xs text-slate-500">${new Date(p.updatedAt || p.createdAt).toLocaleString()}</p></a><button data-action="open-project" data-id="${p.id}">${Heroicons.render('chevron-right', { class: 'w-4 h-4 text-slate-400' })}</button></li>`).join('') || '<li class="p-4 text-center text-slate-500">최근 프로젝트가 없습니다.</li>'}</ul></div></div>`;
          },
          renderProjectList() {
-             let filtered = Controller.getFilteredAndSortedProjects();
-             if (filtered.length === 0) {
-                 return `<div class="text-center p-8 text-slate-500">표시할 프로젝트가 없습니다.</div>`;
-             }
-             return `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${filtered.map(p => this.getProjectCardHTML(p)).join('')}</div>`;
-         },
+            let filtered = Controller.getFilteredAndSortedProjects();
+            if (filtered.length === 0) {
+                // 기존: return `<div class="text-center p-8 text-slate-500">표시할 프로젝트가 없습니다.</div>`;
+                // 수정 후:
+                return `<div class="flex flex-col items-center justify-center h-full min-h-[60vh] text-center p-4">
+                            ${Heroicons.render('document-duplicate', { class: 'h-16 w-16 text-slate-300' })}
+                            <h3 class="mt-4 text-xl font-semibold text-slate-800">프로젝트가 없습니다</h3>
+                            <p class="mt-1 text-slate-500">새로운 학습 프로젝트를 만들어 시작해보세요.</p>
+                            <button class="btn mt-6" data-action="new-project">
+                                ${Heroicons.render('plus', { class: 'w-4 h-4 mr-2' })}새 프로젝트 생성
+                            </button>
+                        </div>`;
+            }
+            return `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${filtered.map(p => this.getProjectCardHTML(p)).join('')}</div>`;
+        },
          getProjectCardHTML(p) {
              const category = p.categoryId ? state.categories.find(c => c.id === p.categoryId) : null;
              const noteCount = p.toc && p.toc.children ? Utils.getAllNodePaths(p.toc).length : 0;
@@ -1205,28 +1215,51 @@ const Heroicons = {
          },
          renderSpinner: (message) => `<div class="flex items-center justify-center h-full"><div class="text-center"><svg class="mx-auto h-12 w-12 text-slate-400 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg><h2 class="mt-4 text-lg font-medium text-slate-900">${message}</h2></div></div>`,
          renderContextMenu() {
-             const {
-                 isOpen,
-                 x,
-                 y
-             } = state.contextMenu;
-             if (!isOpen) return '';
+            const { isOpen, x, y } = state.contextMenu;
+            if (!isOpen) return '';
 
-             const menuItems = state.activeProject?.settings?.contextMenuItems || [];
-             if (menuItems.length === 0) return '';
+            const menuItems = state.activeProject?.settings?.contextMenuItems || [];
+            if (menuItems.length === 0) return '';
 
-             const itemsHtml = menuItems.map((item, index) =>
-                 `<button data-action="execute-context-menu" data-index="${index}" class="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-slate-900">${DOMPurify.sanitize(item.name)}</button>`
-             ).join('');
+            const itemsHtml = menuItems.map((item, index) =>
+                `<button data-action="execute-context-menu" data-index="${index}" class="block w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-100 hover:text-slate-900">${DOMPurify.sanitize(item.name)}</button>`
+            ).join('');
+            
+            // 이 부분을 수정합니다: 바로 렌더링하지 않고, 위치 조정을 위한 준비를 합니다.
+            const contextMenuContainer = document.getElementById('context-menu-root');
+            if (contextMenuContainer) {
+                // 1. 먼저 보이지 않는 상태로 메뉴를 DOM에 추가합니다.
+                contextMenuContainer.innerHTML = `
+                    <div id="context-menu" class="fixed z-[2500] w-56 mt-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" 
+                        style="visibility: hidden; top: ${y}px; left: ${x}px;">
+                        <div class="py-1" role="menu" aria-orientation="vertical">${itemsHtml}</div>
+                    </div>`;
+                
+                // 2. DOM에 추가된 메뉴 요소의 크기를 가져옵니다.
+                const menuEl = document.getElementById('context-menu');
+                if (menuEl) {
+                    const rect = menuEl.getBoundingClientRect();
+                    let finalX = x;
+                    let finalY = y;
 
-             return `
-                    <div id="context-menu" class="fixed z-[2500] w-56 mt-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" style="top: ${y}px; left: ${x}px;">
-                        <div class="py-1" role="menu" aria-orientation="vertical">
-                            ${itemsHtml}
-                        </div>
-                    </div>
-                `;
-         },
+                    // 3. 화면 경계를 벗어나는지 확인하고 위치를 보정합니다.
+                    if (x + rect.width > window.innerWidth) {
+                        finalX = window.innerWidth - rect.width - 10; // 오른쪽 경계 보정
+                    }
+                    if (y + rect.height > window.innerHeight) {
+                        finalY = window.innerHeight - rect.height - 10; // 아래쪽 경계 보정
+                    }
+
+                    // 4. 최종 위치를 적용하고 메뉴를 보이게 만듭니다.
+                    menuEl.style.left = `${finalX}px`;
+                    menuEl.style.top = `${finalY}px`;
+                    menuEl.style.visibility = 'visible';
+                }
+            }
+            
+            // 이 함수는 이제 직접 HTML을 반환하지 않고, DOM을 직접 조작합니다.
+            return '';
+        },
          renderToasts() {
              return `<div class="fixed bottom-4 right-4 space-y-3 z-[3000]">${state.toasts.map(toast => {
                 let icon = '';
@@ -1825,18 +1858,20 @@ Micro-interactions are the small, often unnoticed animations and design elements
                  });
              },
              handleSearch(query) {
-                 if (query.trim() === '') {
-                     state.searchResults = null;
-                 } else {
-                     state.searchResults = fuse.search(query).map(result => result.item);
-                 }
-                 state.currentView = 'project_list';
-                 state.currentFilter = {
-                     type: 'all',
-                     id: null
-                 };
-                 View.render();
-             },
+                state.searchQuery = query; // 검색어를 state에 저장하는 로직 추가
+                if (query.trim() === '') {
+                    state.searchResults = null;
+                } else {
+                    state.searchResults = fuse.search(query).map(result => result.item);
+                }
+                state.currentView = 'project_list';
+                state.currentFilter = {
+                    type: 'all',
+                    id: null
+                };
+                // searchInput.value를 직접 제어할 필요가 없어졌습니다.
+                View.render();
+            },
              handleNavFilter(target) {
                  if (!target) return;
                  const type = target.dataset.filterType;
