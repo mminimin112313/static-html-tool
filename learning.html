@@ -1025,6 +1025,7 @@ const Heroicons = {
                                 ${this.renderModeTab('learn', 'academic-cap', '학습')}
                                 ${this.renderModeTab('translate', 'language', '번역')}
                                 ${this.renderModeTab('custom', 'sparkles', '커스텀 버튼')}
+                                ${this.renderModeTab('image', 'image', '이미지')}
                             </nav>
                         </div>
                         <div id="workspace-main-content" class="p-4 sm:p-6 min-h-[70vh] overflow-y-auto">${this.renderWorkspacePanel()}</div>
@@ -1051,6 +1052,56 @@ const Heroicons = {
                  return `<li class="flex items-center"><a href="#" data-action="select-chapter" data-path="${crumb.path}" class="text-sm ${textColor}">${crumb.title}</a>${chevron}</li>`;
              }).join('');
              return `<nav class="bg-slate-100 rounded-lg p-2.5"><ol class="flex items-center flex-wrap">${items}</ol></nav>`;
+         },
+         renderImagePanel() {
+             if (!state.activeChapterContent) return '';
+
+             const content = state.activeChapterContent;
+             const imageUrl = content.imageDataUrl;
+
+             const uploadBoxHtml = `
+                <div class="mb-6">
+                    <label for="image-upload" class="block text-sm font-medium text-slate-700 mb-2">이미지 파일 변경</label>
+                    <div class="mt-1 flex justify-center px-6 pt-5 pb-6 border-2 border-slate-300 border-dashed rounded-md">
+                        <div class="space-y-1 text-center">
+                            ${Heroicons.render('photo', { class: 'mx-auto h-12 w-12 text-slate-400' })}
+                            <div class="flex text-sm text-slate-600">
+                                <label for="image-upload" class="relative cursor-pointer bg-white rounded-md font-medium text-indigo-600 hover:text-indigo-500 focus-within:outline-none">
+                                    <span>파일 선택</span>
+                                    <input id="image-upload" name="image-upload" type="file" class="sr-only" accept="image/*">
+                                </label>
+                                <p class="pl-1">또는 파일을 드래그하세요</p>
+                            </div>
+                            <p class="text-xs text-slate-500">PNG, JPG, GIF 등 이미지 파일</p>
+                        </div>
+                    </div>
+                </div>
+             `;
+             
+            // ▼▼▼ [추가] 삭제 버튼 UI ▼▼▼
+            const deleteButtonHtml = `
+                <div class="mt-4 text-center">
+                    <button data-action="delete-image" class="btn btn-secondary bg-red-100 text-red-700 hover:bg-red-200">
+                        ${Heroicons.render('trash', { class: 'w-4 h-4 mr-2' })}
+                        이미지 삭제
+                    </button>
+                </div>
+            `;
+
+             if (imageUrl) {
+                 return `
+                    <div>
+                        ${uploadBoxHtml}
+                        <h3 class="text-lg font-semibold text-slate-800 border-b pb-2 mb-4">업로드된 이미지</h3>
+                        <div class="bg-slate-50 p-2 rounded-lg">
+                           <img src="${imageUrl}" alt="업로드된 이미지" style="width: 100%; border-radius: 0.5rem; object-fit: contain;">
+                        </div>
+                        ${deleteButtonHtml}
+                    </div>
+                 `;
+             }
+
+             return uploadBoxHtml;
          },
          renderToc(toc, level = 0, pathPrefix = '') {
              if (!toc?.children?.length) return level === 0 ? `<p class="text-sm text-slate-500 p-2">목차가 비어있습니다.</p>` : '';
@@ -1096,6 +1147,9 @@ const Heroicons = {
                      return this.renderTranslatePanel();
                  case 'custom':
                      return this.renderCustomButtonPanel();
+                 // ▼▼▼ [추가] 이 부분을 추가하세요 ▼▼▼
+                 case 'image':
+                     return this.renderImagePanel();
                  default:
                      return `<div>알 수 없는 모드입니다.</div>`;
              }
@@ -1435,6 +1489,10 @@ const Heroicons = {
                  });
                  document.body.addEventListener('change', e => {
                      const trigger = e.target;
+                     if (trigger.id === 'image-upload') {
+                         this.ACTION_HANDLERS['handle-image-upload'](trigger);
+                         return;
+                     }
                      if (trigger.matches('input[type="file"]')) {
                          this.handleFileSelection(trigger);
                          return
@@ -2805,6 +2863,22 @@ Micro-interactions are the small, often unnoticed animations and design elements
                      state.activeProject = null;
                      View.render();
                  },
+                 'delete-image': async () => {
+                        // 현재 챕터에 이미지 데이터가 있는지 확인합니다.
+                        if (state.activeChapterContent?.imageDataUrl) {
+                            // 1. 상태 객체에서 이미지 데이터를 null로 변경합니다.
+                            state.activeChapterContent.imageDataUrl = null;
+                            
+                            // 2. 변경된 내용을 데이터베이스에 비동기적으로 저장합니다.
+                            await DB.put(CONFIG.STORES.CONTENTS, state.activeChapterContent);
+                            
+                            // 3. 사용자에게 성공 메시지를 보여줍니다.
+                            Controller.showToast('이미지가 삭제되었습니다.', 'success');
+                            
+                            // 4. 화면을 다시 그려서 이미지 미리보기를 없애고 업로드 UI를 보여줍니다.
+                            View.render();
+                        }
+                    },
                  'prev-chapter': () => Controller.navigateChapter(-1),
                  'next-chapter': () => Controller.navigateChapter(1),
                  'filter': (el) => Controller.handleNavFilter(el),
@@ -2945,6 +3019,39 @@ Micro-interactions are the small, often unnoticed animations and design elements
                      templateInput.value = '';
                      ModalManager.render();
                  },
+                 'handle-image-upload': (input) => {
+                    const file = input.files[0];
+                    if (!file || !file.type.startsWith('image/')) {
+                        Controller.showToast('이미지 파일을 선택해주세요.', 'error');
+                        return;
+                    }
+
+                    const reader = new FileReader();
+
+                    // 파일 읽기가 성공했을 때 실행될 로직
+                    reader.onload = async (e) => {
+                        const imageDataUrl = e.target.result; // 이미지를 Base64 데이터 URL로 변환
+                        
+                        // 현재 챕터의 콘텐츠 객체에 이미지 데이터를 저장
+                        state.activeChapterContent.imageDataUrl = imageDataUrl;
+                        
+                        // 변경된 내용을 데이터베이스에 저장
+                        await DB.put(CONFIG.STORES.CONTENTS, state.activeChapterContent);
+
+                        Controller.showToast('이미지가 성공적으로 저장되었습니다.', 'success');
+                        
+                        // 화면을 다시 그려서 업로드된 이미지를 표시
+                        View.render();
+                    };
+
+                    // 파일 읽기에 실패했을 때
+                    reader.onerror = () => {
+                        Controller.showToast('파일을 읽는 데 실패했습니다.', 'error');
+                    };
+
+                    // 파일 읽기 시작
+                    reader.readAsDataURL(file);
+                },
                  'remove-custom-prompt': (el) => {
                      const idToRemove = el.dataset.id;
                      ModalManager.data.customPrompts = ModalManager.data.customPrompts.filter(p => p.id !== idToRemove);
