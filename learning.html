@@ -289,6 +289,7 @@
             font-weight: 700;
             background-color: #f8fafc;
         }
+        
         /* === 푸터(Footer) 전체 스타일 (모바일 가로 스크롤 적용) === */
 
         /* --- 1. 푸터 기본 컨테이너 & 레이아웃 --- */
@@ -438,8 +439,6 @@
             }
         }
 
-        /* ▼▼▼ [개선] 전체 스크롤바 스타일 ▼▼▼ */
-        /* Firefox를 위한 스크롤바 스타일 */
         html {
             scrollbar-width: thin;
             scrollbar-color: #a8a29e var(--bg-tertiary); /* 스크롤바 색상(막대, 트랙) */
@@ -1213,8 +1212,6 @@ const View = {
             const manuscriptCount = state.activeChapterContent?.manuscript?.length || 0;
             const notesCount = state.activeChapterContent?.notes?.length || 0;
 
-            // ▼▼▼ [추가] 1. 푸터에 표시할 워크스페이스 탭(모드) 정보를 배열로 정의합니다. ▼▼▼
-            // 이렇게 하면 관리가 용이하고 코드가 깔끔해집니다. 각 객체는 탭의 id, 아이콘, 툴팁 라벨을 가집니다.
             const workspaceModes = [{
                     mode: 'write',
                     icon: 'pencil-square',
@@ -1247,55 +1244,53 @@ const View = {
                 }
             ];
 
-            // ▼▼▼ [추가] 2. 위에서 정의한 배열을 바탕으로 실제 버튼 HTML을 생성합니다. ▼▼▼
             const modeButtonsHtml = workspaceModes.map(item => {
-                // 현재 활성화된 모드인지 state에서 확인합니다.
                 const isActive = state.workspaceMode === item.mode;
-                // 활성화 상태일 때 적용할 Tailwind CSS 클래스를 정의합니다.
                 const activeClasses = isActive ? 'bg-indigo-100 text-indigo-600' : '';
 
                 return `
                     <button data-action="switch-mode" 
                             data-mode="${item.mode}" 
                             title="${item.label}"
-                            class="footer-actions button ${activeClasses}">
+                            class="footer-mode-button ${activeClasses}">
                         ${Heroicons.render(item.icon, { class: 'w-4 h-4' })}
                     </button>
                 `;
             }).join('');
 
-
+            // ▼▼▼ [수정된 부분] 기존의 복잡한 3단 구조 대신, 오른쪽 컨트롤들을 footer-controls-group으로 묶어 2단 구조로 변경했습니다. ▼▼▼
             return `
                 <footer class="main-footer">
-                    <div class="flex items-center justify-between h-full">
-                        
-                        <div class="flex items-center gap-2 footer-nav">
+                    <div>
+                        <div class="footer-nav">
                             <button data-action="prev-chapter" title="이전 노트" ${!hasPrev ? 'disabled' : ''}>
                                 ${Heroicons.render('chevron-left', { class: 'w-4 h-4' })}
                             </button>
                             <button data-action="next-chapter" title="다음 노트" ${!hasNext ? 'disabled' : ''}>
                                 ${Heroicons.render('chevron-right', { class: 'w-4 h-4' })}
                             </button>
-                            <span class="border-l border-slate-200 h-4 mx-2"></span>
-                            <span class="footer-breadcrumb-path" title="${breadcrumbPath}">${breadcrumbPath}</span>
-                        </div>
-                        <div class="footer-actions flex items-center gap-1">
-                            ${modeButtonsHtml}
+                            <span class="border-l border-slate-200 h-4"></span>
+                            <span class="footer-breadcrumb-path" title="${DOMPurify.sanitize(breadcrumbPath)}">${DOMPurify.sanitize(breadcrumbPath)}</span>
                         </div>
 
-                        <div class="flex items-center gap-2">
-                            <div class="footer-stats text-xs">
+                        <div class="footer-controls-group">
+                            <div class="footer-modes-wrapper">
+                                ${modeButtonsHtml}
+                            </div>
+                            
+                            <div class="footer-stats">
                                 <span>✍️ ${manuscriptCount.toLocaleString()}자</span>
                                 <span>📝 ${notesCount.toLocaleString()}자</span>
                             </div>
-                            <span class="border-l border-slate-200 h-4 mx-2"></span>
-                            <div class="footer-actions">
+                            
+                            <div class="border-l border-slate-200 h-4"></div>
+                            
+                            <div class="footer-right-actions">
                                 <button data-action="go-dashboard" title="대시보드">${Heroicons.render('squares-2x2', { class: 'w-4 h-4' })}</button>
                                 <button data-action="open-settings" title="설정">${Heroicons.render('cog-6-tooth', { class: 'w-4 h-4' })}</button>
                                 <button data-action="export-project" title="내보내기">${Heroicons.render('arrow-down-tray', { class: 'w-4 h-4' })}</button>
                             </div>
                         </div>
-
                     </div>
                 </footer>
              `;
@@ -1933,60 +1928,38 @@ const View = {
                 View.render();
             },
             // 1. (유지) 브라우저의 기본 컨텍스트 메뉴를 막는 역할은 여전히 매우 중요합니다.
-            handleContextMenu(e) {
-                const selection = window.getSelection();
-                // 텍스트가 선택된 상태에서 contextmenu 이벤트가 발생하면 안드로이드 기본 메뉴를 막습니다.
-                if (selection && selection.toString().trim()) {
-                    e.preventDefault();
-                }
-            },
+           handleContextMenu(e) {
+                // 이 함수는 이제 모바일(길게 누르기)과 데스크톱(우클릭) 모두에서
+                // 컨텍스트 메뉴를 여는 유일한 핸들러 역할을 합니다.
+                // 중요: e.preventDefault()를 호출하지 않아 네이티브 메뉴가 정상적으로 나타나도록 합니다.
 
-            // 2. (신규) 데스크톱과 모바일의 선택 종료 이벤트를 통합 처리하는 함수
-            handleSelectionEnd(e) {
-                // 모달이 열려있거나, 커스텀 메뉴 내부를 클릭/터치한 경우는 무시
-                if (ModalManager.isOpen || e.target.closest('#context-menu')) {
-                    return;
-                }
-
-                // 약간의 지연(setTimeout 0)을 주어 브라우저가 선택 영역을 확정할 시간을 줍니다.
+                // 브라우저가 텍스트 선택을 확정할 수 있도록 약간의 지연 시간을 줍니다.
                 setTimeout(() => {
                     const selection = window.getSelection();
                     const selectedText = selection.toString().trim();
-                    
                     const viewPanel = document.querySelector('#workspace-main-content .prose-readable');
-                    
-                    // 최종적으로 선택된 텍스트가 있고, 올바른 영역에서 발생한 이벤트일 경우
-                    if (state.currentView === 'workspace' && 
-                        state.workspaceMode === 'view' && 
-                        selectedText && 
-                        viewPanel && 
-                        selection.rangeCount > 0 && 
-                        viewPanel.contains(selection.getRangeAt(0).commonAncestorContainer)) {
-                        
-                        let x = 0, y = 0;
-                        if (e.type === 'mouseup') {
-                            x = e.pageX;
-                            y = e.pageY;
-                        } else if (e.type === 'touchend') {
-                            // touchend 이벤트는 changedTouches를 사용해야 좌표를 얻을 수 있습니다.
-                            const touch = e.changedTouches[0];
-                            x = touch.pageX;
-                            y = touch.pageY;
-                        }
 
+                    // '보기' 패널 내에서 유효한 텍스트가 선택되었을 경우에만 메뉴를 엽니다.
+                    if (
+                        state.currentView === 'workspace' &&
+                        state.workspaceMode === 'view' &&
+                        selectedText &&
+                        viewPanel &&
+                        selection.rangeCount > 0 &&
+                        viewPanel.contains(selection.getRangeAt(0).commonAncestorContainer)
+                    ) {
+                        // 이벤트가 발생한 좌표에 커스텀 메뉴를 엽니다.
                         state.contextMenu = {
                             isOpen: true,
-                            x: x,
-                            y: y,
+                            x: e.pageX,
+                            y: e.pageY,
                             selectedText: selectedText
                         };
-                    } else {
-                        // 선택된 텍스트가 없으면 메뉴를 닫습니다.
-                        state.contextMenu.isOpen = false;
+                        View.render();
                     }
-                    View.render();
-                }, 0); 
+                }, 50); // 50ms 지연으로 안정성 확보
             },
+           
             handleImagePaste(e) {
                 // 이미지 탭이 활성화된 상태가 아니면 아무것도 하지 않음
                 if (state.currentView !== 'workspace' || state.workspaceMode !== 'image') {
@@ -2127,24 +2100,22 @@ const View = {
                     View.render();
                 });
                 document.addEventListener('paste', e => this.handleImagePaste(e));
-                 const contentView = document.getElementById('content-view');
-                if (contentView) {
-                    // 1. 안드로이드의 기본 메뉴 호출을 막습니다. (가장 중요)
-                    contentView.addEventListener('contextmenu', this.handleContextMenu, false);
-                }
-                
-                // 2. 데스크톱과 모바일의 '선택 종료' 시점을 통합 핸들러에 연결합니다.
-                document.body.addEventListener('mouseup', (e) => this.handleSelectionEnd(e));
-                document.body.addEventListener('touchend', (e) => this.handleSelectionEnd(e));
-
-                // 3. 메뉴 외부를 클릭/터치하면 메뉴를 닫는 로직
-                document.body.addEventListener('mousedown', e => {
-                if (!e.target.closest('#context-menu')) {
-                    if (state.contextMenu.isOpen) {
-                        state.contextMenu.isOpen = false;
-                        View.render();
+                    const contentView = document.getElementById('content-view');
+                    if (contentView) {
+                        contentView.addEventListener('contextmenu', (e) => this.handleContextMenu(e), false);
                     }
-                }
+                    
+                    // 2. 메뉴 닫기: 문서 전체의 'mousedown' 이벤트를 감지합니다.
+                    //    사용자가 메뉴 바깥의 아무 곳이나 클릭(터치)하면 메뉴가 닫힙니다.
+                    //    캡처링 단계(true)에서 실행하여 다른 이벤트보다 먼저 안정적으로 처리합니다.
+                    document.body.addEventListener('mousedown', e => {
+                    // 클릭된 대상이 컨텍스트 메뉴 자신이 아닐 경우에만 메뉴를 닫습니다.
+                    if (!e.target.closest('#context-menu')) {
+                        if (state.contextMenu.isOpen) {
+                            state.contextMenu.isOpen = false;
+                            View.render();
+                        }
+                    }
                 }, true);
 
             },
