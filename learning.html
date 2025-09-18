@@ -1836,6 +1836,61 @@ const View = {
                 state.isLoading = false;
                 View.render();
             },
+            // 1. (유지) 브라우저의 기본 컨텍스트 메뉴를 막는 역할은 여전히 매우 중요합니다.
+            handleContextMenu(e) {
+                const selection = window.getSelection();
+                // 텍스트가 선택된 상태에서 contextmenu 이벤트가 발생하면 안드로이드 기본 메뉴를 막습니다.
+                if (selection && selection.toString().trim()) {
+                    e.preventDefault();
+                }
+            },
+
+            // 2. (신규) 데스크톱과 모바일의 선택 종료 이벤트를 통합 처리하는 함수
+            handleSelectionEnd(e) {
+                // 모달이 열려있거나, 커스텀 메뉴 내부를 클릭/터치한 경우는 무시
+                if (ModalManager.isOpen || e.target.closest('#context-menu')) {
+                    return;
+                }
+
+                // 약간의 지연(setTimeout 0)을 주어 브라우저가 선택 영역을 확정할 시간을 줍니다.
+                setTimeout(() => {
+                    const selection = window.getSelection();
+                    const selectedText = selection.toString().trim();
+                    
+                    const viewPanel = document.querySelector('#workspace-main-content .prose-readable');
+                    
+                    // 최종적으로 선택된 텍스트가 있고, 올바른 영역에서 발생한 이벤트일 경우
+                    if (state.currentView === 'workspace' && 
+                        state.workspaceMode === 'view' && 
+                        selectedText && 
+                        viewPanel && 
+                        selection.rangeCount > 0 && 
+                        viewPanel.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+                        
+                        let x = 0, y = 0;
+                        if (e.type === 'mouseup') {
+                            x = e.pageX;
+                            y = e.pageY;
+                        } else if (e.type === 'touchend') {
+                            // touchend 이벤트는 changedTouches를 사용해야 좌표를 얻을 수 있습니다.
+                            const touch = e.changedTouches[0];
+                            x = touch.pageX;
+                            y = touch.pageY;
+                        }
+
+                        state.contextMenu = {
+                            isOpen: true,
+                            x: x,
+                            y: y,
+                            selectedText: selectedText
+                        };
+                    } else {
+                        // 선택된 텍스트가 없으면 메뉴를 닫습니다.
+                        state.contextMenu.isOpen = false;
+                    }
+                    View.render();
+                }, 0); 
+            },
             handleImagePaste(e) {
                 // 이미지 탭이 활성화된 상태가 아니면 아무것도 하지 않음
                 if (state.currentView !== 'workspace' || state.workspaceMode !== 'image') {
@@ -1976,6 +2031,25 @@ const View = {
                     View.render();
                 });
                 document.addEventListener('paste', e => this.handleImagePaste(e));
+                 const contentView = document.getElementById('content-view');
+                if (contentView) {
+                    // 1. 안드로이드의 기본 메뉴 호출을 막습니다. (가장 중요)
+                    contentView.addEventListener('contextmenu', this.handleContextMenu, false);
+                }
+                
+                // 2. 데스크톱과 모바일의 '선택 종료' 시점을 통합 핸들러에 연결합니다.
+                document.body.addEventListener('mouseup', (e) => this.handleSelectionEnd(e));
+                document.body.addEventListener('touchend', (e) => this.handleSelectionEnd(e));
+
+                // 3. 메뉴 외부를 클릭/터치하면 메뉴를 닫는 로직
+                document.body.addEventListener('mousedown', e => {
+                if (!e.target.closest('#context-menu')) {
+                    if (state.contextMenu.isOpen) {
+                        state.contextMenu.isOpen = false;
+                        View.render();
+                    }
+                }
+                }, true);
 
             },
             bindDynamicEventListeners() {
