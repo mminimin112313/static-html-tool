@@ -176,7 +176,7 @@ html.dark .modal-container .hover\:bg-indigo-500\/20:hover {
          * The body acts as a flex container housing the sidebar and the main content area.  Originally the
          * height was fixed at 100dvh and overflow was hidden.  On mobile browsers, especially Android,
          * the address bar and navigation controls shrink and expand as you scroll.  When the body is
-         * constrained to a fixed height and overflow is clipped, the dynamic viewport changes can push
+         *  rained to a fixed height and overflow is clipped, the dynamic viewport changes can push
          * the footer out of view.  To accommodate dynamic viewport units and allow vertical scrolling
          * when necessary, the body now uses a minimum height based on the dynamic viewport (`dvh`) and
          * WebKit's `-webkit-fill-available` for Safari.  Overflow on the Y‑axis is enabled so that
@@ -1452,6 +1452,22 @@ const View = {
                          ${this.renderFooter()} 
                      </main>`;
         },
+        updateSaveStatusIndicator() {
+            const container = document.getElementById('save-status-container');
+            if (!container) return;
+
+            let saveStatusIndicatorHtml = '';
+            if (state.saveStatus === 'saving') {
+                saveStatusIndicatorHtml = `<div class="flex items-center gap-2 text-sm text-slate-500"><div class="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div> 저장 중...</div>`;
+            } else if (state.saveStatus === 'saved' && state.saveTimestamp) {
+                saveStatusIndicatorHtml = `<div class="flex items-center gap-2 text-sm text-green-600">${Heroicons.render('check', { class: 'w-4 h-4' })} 마지막 저장: ${state.saveTimestamp.toLocaleTimeString()}</div>`;
+            }
+            
+            // morphdom을 사용하여 컨테이너의 내용만 효율적으로 교체합니다.
+            const newContainer = container.cloneNode(false);
+            newContainer.innerHTML = saveStatusIndicatorHtml;
+            morphdom(container, newContainer);
+        },
         renderFooter() {
             if (state.currentView !== 'workspace' || !state.activeProject) {
                 return '';
@@ -1646,7 +1662,18 @@ const View = {
             const sidebarIcon = Heroicons.render('bars-3', {
                 class: 'w-6 h-6'
             });
-            return `<header class="main-header"><button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar">${sidebarIcon}</button><h1 class="header-title">${title}</h1><div class="flex items-center gap-4">${saveStatusIndicator}<div class="relative"><input type="text" class="search-input" id="search-input" placeholder="프로젝트 검색..." value="${DOMPurify.sanitize(state.searchQuery)}"><div class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400">${Heroicons.render('magnifying-glass')}</div></div><div class="header-controls" style="${isProjectListView ? '' : 'display:none;'}"><select id="sort-select" data-action="sort-projects" class="btn btn-secondary btn-sm"><option value="updatedAt_desc" ${state.currentSortOrder === 'updatedAt_desc' ? 'selected' : ''}>최근 수정순</option><option value="createdAt_desc" ${state.currentSortOrder === 'createdAt_desc' ? 'selected' : ''}>최신 생성순</option><option value="name_asc" ${state.currentSortOrder === 'name_asc' ? 'selected' : ''}>이름 (가나다순)</option></select></div>${workspaceControls}</div></header>`;
+            return `<header class="main-header">
+                <button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar">${sidebarIcon}</button>
+                <h1 class="header-title">${title}</h1>
+                <div class="flex items-center gap-4">
+                    <div id="save-status-container">${saveStatusIndicator}</div>
+                    <div class="relative">
+                        <input type="text" class="search-input" id="search-input" placeholder="프로젝트 검색..." value="${DOMPurify.sanitize(state.searchQuery)}">
+                        <div class="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400">${Heroicons.render('magnifying-glass')}</div>
+                    </div>
+                    ${workspaceControls}
+                </div>
+            </header>`;
         },
         getHeaderTitle() {
             if (state.currentView === 'workspace' && state.activeProject) return state.activeProject.name;
@@ -2407,6 +2434,16 @@ const View = {
                 state.isLoading = false;
                 View.render();
             },
+
+            updateSaveStatus(status) {
+                state.saveStatus = status;
+                if (status === 'saved') {
+                    state.saveTimestamp = new Date();
+                }
+                // View의 전체 렌더링 대신, 상태 표시기만 업데이트하도록 요청합니다.
+                View.updateSaveStatusIndicator(); 
+                this.updateUnloadWarning(); // 저장 중 경고 상태도 함께 업데이트
+            },
             // 1. (유지) 브라우저의 기본 컨텍스트 메뉴를 막는 역할은 여전히 매우 중요합니다.
            handleContextMenu(e) {
                 // 이 함수는 이제 모바일(길게 누르기)과 데스크톱(우클릭) 모두에서
@@ -3127,30 +3164,31 @@ Micro-interactions are the small, often unnoticed animations and design elements
             if (state.isMobileSidebarOpen) this.closeSidebar();
         },
             async handleContentChange(event) {
-                const {
-                    field,
-                    settingKey
-                } = event.target.dataset;
+                const { field } = event.target.dataset;
                 const value = event.target.value;
 
                 if (state.activeChapterContent && field) {
-                    state.saveStatus = 'saving';
-                    View.render();
+                    // 기존: state.saveStatus = 'saving'; View.render();
+                    this.updateSaveStatus('saving'); // 수정
+
                     const content = state.activeChapterContent;
                     content[field] = value;
                     if (field === 'manuscript' && value.trim() && (content.status === 'empty' || content.status === 'prompt-copied')) {
                         content.status = 'manuscript-done';
                     }
                     await DB.put(CONFIG.STORES.CONTENTS, content);
-                    state.saveStatus = 'saved';
-                    state.saveTimestamp = new Date();
-                    View.render();
+                    
+                    // 기존: state.saveStatus = 'saved'; ... View.render();
+                    this.updateSaveStatus('saved'); // 수정
+
                     setTimeout(() => {
-                        state.saveStatus = 'idle';
-                        View.render();
+                        // 기존: state.saveStatus = 'idle'; View.render();
+                        this.updateSaveStatus('idle'); // 수정
                     }, 2000);
-                } else if (ModalManager.isOpen && ModalManager.type === 'settings' && settingKey) {
-                    ModalManager.data[settingKey] = value;
+                } 
+                // 설정 모달 관련 로직은 그대로 유지
+                else if (ModalManager.isOpen && ModalManager.type === 'settings' && event.target.dataset.settingKey) {
+                    ModalManager.data[event.target.dataset.settingKey] = value;
                 }
             },
             showToast(message, type = 'info', duration = 3000) {
