@@ -1026,6 +1026,13 @@ const Utils = {
         }
         return ax.length - bx.length;
     },
+    createTocNode(title) {
+        return {
+            title: title,
+            contentId: Utils.generateId('content'), // 고유 콘텐츠 ID 생성
+            children: []
+        };
+    },
     formatTitle: (name) => name.replace(/\.(zip|json|html?|txt)$/i, '').replace(/^Chapter_(\d+)_/, 'Chapter $1: ').replace(/_/g, ' '),
     getAllNodePaths: (tocNode, path = []) => {
         if (!tocNode || !tocNode.children) return [];
@@ -3079,90 +3086,149 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 View.render();
                 try {
                     const project = await DB.get(CONFIG.STORES.PROJECTS, id);
-                    if (project) {
-                        project.settings = {
-                            ...CONFIG.DEFAULT_PROJECT_SETTINGS,
-                            ...(project.settings || {})
-                        };
-                        Utils.normalizeTocNode(project.toc);
-                        const allNodes = Utils.getAllNodePaths(project.toc);
-                        const contents = await DB.getProjectContents(id);
-                        state.activeContentsMap = new Map(contents.map(c => [c.id, c]));
-                        const creationPromises = allNodes.map(nodeInfo => {
-                            const contentId = `${id}_${nodeInfo.path}`;
-                            if (!state.activeContentsMap.has(contentId)) {
-                                const newContent = {
-                                    id: contentId,
-                                    manuscript: '',
-                                    notes: '',
-                                    translation: '',
-                                    questions: [],
-                                    status: 'empty'
+                    if (!project) throw new Error("프로젝트를 찾을 수 없습니다.");
+
+                    project.settings = { ...CONFIG.DEFAULT_PROJECT_SETTINGS, ...(project.settings || {}) };
+
+                    // 1. 마이그레이션이 필요한지 먼저 확인합니다.
+                    let needsMigration = false;
+                    const checkNeedsMigration = (node) => {
+                        if (!node) return;
+                        if (!node.contentId) needsMigration = true;
+                        if (node.children) node.children.forEach(checkNeedsMigration);
+                    };
+                    if (project.toc) checkNeedsMigration(project.toc);
+
+                    // 2. 마이그레이션이 필요할 경우에만 실행합니다.
+                    if (needsMigration) {
+                        this.showToast('이전 버전 프로젝트를 업데이트합니다...', 'info');
+                        const migrationPromises = [];
+                        
+                        const migrateNode = (node, path) => {
+                            if (!node) return;
+                            // contentId가 없는 경우에만 마이그레이션 작업을 수행합니다.
+                            if (!node.contentId) {
+                                node.contentId = Utils.generateId('content');
+                                const oldContentId = `${id}_${path}`;
+                                const newContentId = `${id}_${node.contentId}`;
+
+                                const migrationTask = async () => {
+                                    const oldContent = await DB.get(CONFIG.STORES.CONTENTS, oldContentId);
+                                    if (oldContent) {
+                                        // 기존 콘텐츠가 있으면 ID를 바꿔서 다시 저장합니다.
+                                        await DB.delete(CONFIG.STORES.CONTENTS, oldContentId);
+                                        oldContent.id = newContentId;
+                                        await DB.put(CONFIG.STORES.CONTENTS, oldContent);
+                                    } else {
+                                        // ▼▼▼ [핵심 수정] 기존 콘텐츠가 없으면, 새 ID로 빈 콘텐츠를 생성합니다. ▼▼▼
+                                        const newEmptyContent = { id: newContentId, manuscript: '', notes: '', translation: '', questions: [], status: 'empty' };
+                                        await DB.put(CONFIG.STORES.CONTENTS, newEmptyContent);
+                                    }
                                 };
-                                state.activeContentsMap.set(contentId, newContent);
-                                return DB.put(CONFIG.STORES.CONTENTS, newContent);
+                                migrationPromises.push(migrationTask());
                             }
-                            return Promise.resolve();
-                        });
-                        await Promise.all(creationPromises);
-                        state.activeProjectId = id;
-                        state.activeProject = project;
-                        state.currentView = 'workspace';
-                        const allNodePaths = new Set(allNodes.map(n => n.path));
-                        let pathToSelect = null;
-                        if (project.lastChapterPath && allNodePaths.has(project.lastChapterPath)) {
-                            pathToSelect = project.lastChapterPath;
-                        } else if (allNodes.length > 0) {
-                            pathToSelect = allNodes[0].path;
+                            if (node.children) {
+                                node.children.forEach((child, index) => migrateNode(child, `${path ? path + '.' : ''}${index}`));
+                            }
+                        };
+
+                        if (project.toc && project.toc.children) {
+                            project.toc.children.forEach((child, index) => migrateNode(child, `${index}`));
                         }
-                        if (pathToSelect) await this.selectChapter(pathToSelect, false);
-                        else {
-                            state.activeChapterPath = null;
-                            state.activeChapterContent = null;
-                        }
+                        
+                        await Promise.all(migrationPromises);
+                        await DB.put(CONFIG.STORES.PROJECTS, project); // contentId가 추가된 TOC 구조를 저장합니다.
+                        this.showToast('프로젝트 업데이트가 완료되었습니다.', 'success');
                     }
+
+                    // 3. 마이그레이션이 완료된 TOC를 기준으로 모든 콘텐츠를 다시 불러옵니다.
+                    const allNodes = Utils.getFlatToc(project.toc);
+                    const contents = await Promise.all(
+                        allNodes.map(nodeInfo => DB.get(CONFIG.STORES.CONTENTS, `${id}_${nodeInfo.node.contentId}`))
+                    );
+
+                    state.activeContentsMap = new Map();
+                    contents.forEach((c, index) => {
+                        const nodeInfo = allNodes[index];
+                        const contentId = `${id}_${nodeInfo.node.contentId}`;
+                        // 만약 DB에서 콘텐츠를 가져오지 못했다면(null/undefined), 여기서 한 번 더 안전장치를 마련합니다.
+                        if (c) {
+                            state.activeContentsMap.set(c.id, c);
+                        } else {
+                            console.warn(`콘텐츠를 찾을 수 없어 새로 생성합니다: ${contentId}`);
+                            const newContent = { id: contentId, manuscript: '', notes: '', translation: '', questions: [], status: 'empty' };
+                            state.activeContentsMap.set(contentId, newContent);
+                            DB.put(CONFIG.STORES.CONTENTS, newContent); // 비동기로 생성 (백그라운드 처리)
+                        }
+                    });
+                    
+                    state.activeProjectId = id;
+                    state.activeProject = project;
+                    state.currentView = 'workspace';
+
+                    const allNodePaths = new Set(allNodes.map(n => n.path));
+                    let pathToSelect = (project.lastChapterPath && allNodePaths.has(project.lastChapterPath)) ? project.lastChapterPath : (allNodes[0]?.path || null);
+                    
+                    if (pathToSelect) {
+                        await this.selectChapter(pathToSelect, false);
+                    } else {
+                        state.activeChapterPath = null;
+                        state.activeChapterContent = null;
+                    }
+
                 } catch (error) {
-                    console.error("Failed to open project:", error);
+                    console.error("프로젝트 열기 실패:", error);
+                    this.showToast(`프로젝트를 여는 중 오류 발생: ${error.message}`, 'error');
                 } finally {
                     state.isLoading = false;
                     View.render();
                 }
             },
             async selectChapter(path, shouldRender = true) {
-            this.saveScrollPosition();
-            if (state.activeChapterPath === path && shouldRender) return;
+                this.saveScrollPosition();
+                if (state.activeChapterPath === path && shouldRender) return;
 
-            state.activeChapterPath = path;
-            if (state.activeProject && state.activeProject.lastChapterPath !== path) {
-                state.activeProject.lastChapterPath = path;
-                state.activeProject.updatedAt = new Date().toISOString();
-                await DB.put(CONFIG.STORES.PROJECTS, state.activeProject);
-            }
-            state.quizState = null;
-            state.viewPanelDisplayMode = 'auto';
-            state.activeChapterContent = state.activeContentsMap.get(`${state.activeProjectId}_${path}`);
-
-            if (shouldRender) View.render();
-
-            const contentView = document.getElementById('content-view');
-            if (contentView) {
-                contentView.scrollTop = 0;
-            }
-
-            // ▼▼▼ [핵심 추가] 렌더링 후, 활성화된 TOC 항목으로 자동 스크롤 ▼▼▼
-            setTimeout(() => {
-                const activeTocItem = document.querySelector(`.sidebar .toc-item.active`);
-                if (activeTocItem) {
-                    activeTocItem.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'center' // 항목이 화면 중앙에 오도록 스크롤
-                    });
+                state.activeChapterPath = path;
+                if (state.activeProject && state.activeProject.lastChapterPath !== path) {
+                    state.activeProject.lastChapterPath = path;
+                    state.activeProject.updatedAt = new Date().toISOString();
+                    await DB.put(CONFIG.STORES.PROJECTS, state.activeProject);
                 }
-            }, 100); // 렌더링이 확실히 끝난 후 실행되도록 약간의 지연을 줍니다.
-            // ▲▲▲ [추가 완료] ▲▲▲
 
-            if (state.isMobileSidebarOpen) this.closeSidebar();
-        },
+                const node = Utils.getNodeByPath(state.activeProject.toc, path);
+                if (node && node.contentId) {
+                    // ▼▼▼ [수정] contentId 기반으로 콘텐츠를 가져오는 올바른 로직만 남깁니다. ▼▼▼
+                    state.activeChapterContent = state.activeContentsMap.get(`${state.activeProjectId}_${node.contentId}`);
+                } else {
+                    state.activeChapterContent = null;
+                }
+
+                // ▼▼▼ [버그 원인] 이 잘못된 라인을 삭제합니다. ▼▼▼
+                // state.activeChapterContent = state.activeContentsMap.get(`${state.activeProjectId}_${path}`);
+                // ▲▲▲ [수정 완료] ▲▲▲
+
+                state.quizState = null;
+                state.viewPanelDisplayMode = 'auto';
+
+                if (shouldRender) View.render();
+
+                const contentView = document.getElementById('content-view');
+                if (contentView) {
+                    contentView.scrollTop = 0;
+                }
+
+                setTimeout(() => {
+                    const activeTocItem = document.querySelector(`.sidebar .toc-item.active`);
+                    if (activeTocItem) {
+                        activeTocItem.scrollIntoView({
+                            behavior: 'smooth',
+                            block: 'center'
+                        });
+                    }
+                }, 100);
+
+                if (state.isMobileSidebarOpen) this.closeSidebar();
+            },
             async handleContentChange(event) {
                 const { field } = event.target.dataset;
                 const value = event.target.value;
@@ -3352,7 +3418,8 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     updatedAt: new Date().toISOString(),
                     toc: {
                         title: name,
-                        children: []
+                        // 'children' 속성을 항상 빈 배열로 초기화합니다.
+                        children: [] 
                     },
                     settings: {
                         ...CONFIG.DEFAULT_PROJECT_SETTINGS,
@@ -3389,10 +3456,8 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 });
 
                 allEntries.sort((a, b) => Utils.naturalSort(a.path, b.path));
-                const projectToc = {
-                    title: Utils.formatTitle(file.name),
-                    children: []
-                };
+                const projectToc = Utils.createTocNode(Utils.formatTitle(file.name)); // 수정
+
                 const pathMap = new Map();
 
                 for (const {
@@ -3402,18 +3467,16 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     let currentNode = projectToc;
                     let currentPath = '';
                     path.split('/').forEach((part) => {
-                        currentPath = currentPath ? `${currentPath}/${part}` : part;
-                        let childNode = pathMap.get(currentPath);
-                        if (!childNode) {
-                            childNode = {
-                                title: Utils.formatTitle(part),
-                                originalPath: path
-                            };
-                            currentNode.children.push(childNode);
-                            pathMap.set(currentPath, childNode);
-                        }
-                        currentNode = childNode;
-                    });
+                    currentPath = currentPath ? `${currentPath}/${part}` : part;
+                    let childNode = pathMap.get(currentPath);
+                    if (!childNode) {
+                        childNode = Utils.createTocNode(Utils.formatTitle(part)); // 수정
+                        childNode.originalPath = path; // 기존 로직 유지를 위해 originalPath 추가
+                        currentNode.children.push(childNode);
+                        pathMap.set(currentPath, childNode);
+                    }
+                    currentNode = childNode;
+                });
                 }
 
                 Utils.normalizeTocNode(projectToc);
@@ -3468,36 +3531,38 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
                 };
-
-                // [BUGFIX] Ensure settings object exists on imported project.
-                newProject.settings = {
-                    ...CONFIG.DEFAULT_PROJECT_SETTINGS,
-                    ...(newProject.settings || {})
+                newProject.settings = { ...CONFIG.DEFAULT_PROJECT_SETTINGS, ...(newProject.settings || {}) };
+                
+                // ▼▼▼ [수정] JSON 데이터에 contentId가 없을 경우를 대비한 마이그레이션 로직 추가 ▼▼▼
+                const addContentIdIfNeeded = (node) => {
+                    if (!node.contentId) {
+                        node.contentId = Utils.generateId('content');
+                    }
+                    if (node.children) {
+                        node.children.forEach(addContentIdIfNeeded);
+                    }
                 };
-
+                addContentIdIfNeeded(newProject.toc);
                 Utils.normalizeTocNode(newProject.toc);
+                // ▲▲▲ [수정 완료] ▲▲▲
+
                 const allNodes = Utils.getAllNodePaths(newProject.toc);
                 const contentMap = new Map(data.contents.map(c => [c.path, c]));
+
                 const newContents = allNodes.map(nodeInfo => {
                     const originalContent = contentMap.get(nodeInfo.path) || {};
-                    const {
-                        path,
-                        ...rest
-                    } = originalContent;
+                    const { path, ...rest } = originalContent;
+                    
+                    // ▼▼▼ [수정] contentId 기반으로 새로운 ID를 생성합니다. ▼▼▼
                     return {
-                        id: `${newId}_${nodeInfo.path}`,
-                        manuscript: '',
-                        notes: '',
-                        translation: '',
-                        questions: [],
-                        status: 'empty',
+                        id: `${newId}_${nodeInfo.node.contentId}`,
+                        manuscript: '', notes: '', translation: '', questions: [], status: 'empty',
                         ...rest
                     };
+                    // ▲▲▲ [수정 완료] ▲▲▲
                 });
-                return {
-                    project: newProject,
-                    contents: newContents
-                };
+
+                return { project: newProject, contents: newContents };
             },
             processTocJson(tocData) {
                 if (!tocData.title || !Array.isArray(tocData.children)) {
@@ -3690,45 +3755,47 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 if (node) node.title = input.value;
             },
             async saveToc() {
-                const originalToc = state.activeProject.toc;
-                const modifiedToc = ModalManager.data.editableToc;
                 state.isLoading = true;
                 ModalManager.close();
                 View.render();
                 try {
                     const projectId = state.activeProjectId;
-                    const oldPaths = new Set(Utils.getAllNodePaths(originalToc).map(c => c.path));
-                    const newPaths = new Set(Utils.getAllNodePaths(modifiedToc).map(c => c.path));
-                    const addedNodes = Utils.getAllNodePaths(modifiedToc).filter(c => !oldPaths.has(c.path));
-                    const deletedNodes = Utils.getAllNodePaths(originalToc).filter(c => !newPaths.has(c.path));
+                    const originalToc = state.activeProject.toc;
+                    const modifiedToc = ModalManager.data.editableToc;
+
+                    const getIds = (node) => {
+                        let ids = new Set([node.contentId]);
+                        if (node.children) {
+                            node.children.forEach(child => getIds(child).forEach(id => ids.add(id)));
+                        }
+                        return ids;
+                    };
+
+                    const oldContentIds = getIds(originalToc);
+                    const newContentIds = getIds(modifiedToc);
+                    
+                    const deletedContentIds = [...oldContentIds].filter(id => id && !newContentIds.has(id));
+
                     const promises = [];
-                    for (const node of deletedNodes) {
-                        const contentId = `${projectId}_${node.path}`;
-                        promises.push(DB.delete(CONFIG.STORES.CONTENTS, contentId));
-                        state.activeContentsMap.delete(contentId);
+                    for (const contentId of deletedContentIds) {
+                        const fullContentId = `${projectId}_${contentId}`;
+                        promises.push(DB.delete(CONFIG.STORES.CONTENTS, fullContentId));
+                        state.activeContentsMap.delete(fullContentId);
                     }
-                    for (const node of addedNodes) {
-                        const contentId = `${projectId}_${node.path}`;
-                        const newContent = {
-                            id: contentId,
-                            manuscript: '',
-                            notes: '',
-                            translation: '',
-                            questions: [],
-                            status: 'empty'
-                        };
-                        promises.push(DB.put(CONFIG.STORES.CONTENTS, newContent));
-                        state.activeContentsMap.set(contentId, newContent);
-                    }
-                    if (state.activeChapterPath && !newPaths.has(state.activeChapterPath)) {
+
+                    // 현재 선택된 챕터가 삭제되었는지 확인
+                    const activeNode = state.activeChapterPath ? Utils.getNodeByPath(originalToc, state.activeChapterPath) : null;
+                    if (activeNode && deletedContentIds.includes(activeNode.contentId)) {
                         state.activeChapterPath = null;
                         state.activeChapterContent = null;
                     }
+                    
                     state.activeProject.toc = modifiedToc;
                     state.activeProject.updatedAt = new Date().toISOString();
                     promises.push(DB.put(CONFIG.STORES.PROJECTS, state.activeProject));
+                    
                     await Promise.all(promises);
-                    this.showToast('목차가 업데이트되었습니다.', 'success');
+                    this.showToast('목차가 성공적으로 업데이트되었습니다.', 'success');
                 } catch (error) {
                     console.error("Failed to save TOC:", error);
                     this.showToast(`목차 저장 실패: ${error.message}`, 'error');
