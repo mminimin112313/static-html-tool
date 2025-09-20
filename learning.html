@@ -284,6 +284,38 @@ html.dark .modal-container .hover\:bg-indigo-500\/20:hover {
         }
         
         .xp-bar-inner { background: linear-gradient(90deg, #4f46e5, #818cf8); transition: width 0.5s ease-out; }
+        /* Context Menu Styles */
+#toc-context-menu {
+    position: fixed;
+    z-index: 3000; /* Ensure it's above the modal overlay */
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-md);
+    min-width: 180px;
+    padding: 0.5rem 0;
+}
+#toc-context-menu button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+#toc-context-menu button:hover {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+}
+#toc-context-menu hr {
+    border-top: 1px solid var(--border-color);
+    margin: 0.5rem 0;
+}
         .toc-item ul {
             position: relative;
             padding-left: 1rem; /* 선이 그려질 공간 확보 */
@@ -932,6 +964,12 @@ const state = {
         y: 0,
         selectedText: ''
     },
+     tocContextMenu: {
+        isOpen: false,
+        x: 0, 
+        y: 0,
+        path: null // Tracks which item was right-clicked
+    },
 };
 
 let fuse = null;
@@ -1168,9 +1206,10 @@ const ModalManager = {
         }
         const renderer = this.renderFunctions[this.type];
         if (typeof renderer === 'function') {
-            const contentHtml = renderer.call(this);
+            
+            const contentHtml = renderer.call(this); 
             this.el.innerHTML = `<div class="modal-overlay show" data-action="close-modal-overlay"><div class="modal-container">${contentHtml}</div></div>`;
-        } else {
+        }  else {
             this.el.innerHTML = '';
             console.error(`Modal type "${this.type}" not found.`);
         }
@@ -1395,13 +1434,26 @@ const ModalManager = {
     renderManageTocModal() {
         const renderNode = (node, path) => {
             const hasChildren = node.children && node.children.length > 0;
-            const childrenHtml = hasChildren ? `<ul class="pl-4 border-l border-slate-200">${node.children.map((child, index) => renderNode(child, `${path}.${index}`)).join('')}</ul>` : '';
+            const isSelected = this.data.selectedTocPaths.has(path); // 수정: ModalManager의 데이터 사용
             const iconName = hasChildren ? 'folder' : 'document-text';
-            return `<li draggable="true" data-path="${path}" class="my-1 group toc-drag-item"><div class="flex items-center p-2 rounded-md hover:bg-slate-100">${Heroicons.render(iconName, { class: 'w-4 h-4 mr-2 text-slate-500 flex-shrink-0' })}<input type="text" value="${DOMPurify.sanitize(node.title)}" data-action="toc-edit-title" data-path="${path}" class="flex-grow bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-md px-1 py-0.5 text-sm"><div class="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity"><button data-action="toc-add-child" data-path="${path}" title="하위 항목 추가" class="p-1 rounded hover:bg-slate-200">${Heroicons.render('arrow-turn-down-right', { class: 'w-4 h-4 text-slate-600' })}</button><button data-action="toc-delete" data-path="${path}" title="삭제" class="p-1 rounded hover:bg-red-100">${Heroicons.render('trash', { class: 'w-4 h-4 text-red-500' })}</button></div></div>${childrenHtml}</li>`;
+
+            // ▼▼▼ 아래 li 태그와 input 태그 부분을 수정합니다. ▼▼▼
+            return `<li draggable="true" data-path="${path}" class="my-1 group toc-item ${isSelected ? 'selected' : ''} toc-drag-item">
+                        <div data-action="toc-editor-click" data-path="${path}" class="flex items-center p-2 rounded-md hover:bg-slate-100 cursor-pointer">
+                            ${Heroicons.render(iconName, { class: 'w-4 h-4 mr-2 text-slate-500 flex-shrink-0' })}
+                            <input type="text" value="${DOMPurify.sanitize(node.title)}" data-action="toc-edit-title" data-path="${path}" class="flex-grow bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-md px-1 py-0.5 text-sm">
+                            <div class="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button data-action="toc-add-child" data-path="${path}" title="하위 항목 추가" class="p-1 rounded hover:bg-slate-200">${Heroicons.render('arrow-turn-down-right', { class: 'w-4 h-4 text-slate-600' })}</button>
+                                <button data-action="toc-delete" data-path="${path}" title="삭제" class="p-1 rounded hover:bg-red-100">${Heroicons.render('trash', { class: 'w-4 h-4 text-red-500' })}</button>
+                            </div>
+                        </div>
+                        ${hasChildren ? `<ul class="pl-4 border-l border-slate-200">${node.children.map((child, index) => renderNode(child, `${path}.${index}`)).join('')}</ul>` : ''}
+                    </li>`;
         };
         const editableToc = this.data.editableToc;
         if (!editableToc || !editableToc.children) return '<div>목차를 불러올 수 없습니다.</div>';
         const tocHtml = `<ul id="toc-editor-list" class="space-y-1">${editableToc.children.map((child, index) => renderNode(child, String(index))).join('')}</ul>`;
+            
         return `<div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">목차 관리</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100">${Heroicons.render('x-mark', { class: 'w-5 h-5 text-slate-500' })}</button></div><div class="max-h-[60vh] overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50 mb-4">${tocHtml}</div><div class="text-right"><button data-action="toc-add-root-item" class="btn btn-secondary">${Heroicons.render('plus', { class: 'w-4 h-4 mr-2' })}최상위 항목 추가</button></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="button" data-action="save-toc" class="btn">변경사항 저장</button></div>`;
     },
 
@@ -1436,6 +1488,8 @@ const View = {
                 }
             });
             this.toastEl.innerHTML = this.renderToasts();
+            // Inside the View.render function, find the line with this.renderToasts()
+            this.modalEl.querySelector('.modal-container')?.insertAdjacentHTML('beforeend', this.renderTocContextMenu()); // Add this line
             const contextMenuContainer = document.getElementById('context-menu-root') || (() => {
                 const el = document.createElement('div');
                 el.id = 'context-menu-root';
@@ -1458,6 +1512,33 @@ const View = {
                          <div class="content-view" id="content-view"> ${this.renderCurrentView()} </div>
                          ${this.renderFooter()} 
                      </main>`;
+        },
+        // Inside the View object
+        renderTocContextMenu() {
+            const { isOpen, x, y, path } = state.tocContextMenu;
+            if (!isOpen) return '';
+
+            const isFolder = Utils.getNodeByPath(ModalManager.data.editableToc, path)?.children;
+
+            const menuItems = [
+                { action: 'toc-context-new-item', label: 'New File', icon: 'document-plus' },
+                { action: 'toc-context-new-folder', label: 'New Folder', icon: 'folder-plus' },
+                { type: 'separator' },
+                { action: 'toc-context-rename', label: 'Rename', icon: 'pencil-square' },
+                { action: 'toc-context-delete', label: 'Delete', icon: 'trash' },
+            ];
+            
+            const itemsHtml = menuItems.map(item => {
+                if (item.type === 'separator') return '<hr>';
+                return `
+                    <button data-action="${item.action}" data-path="${path}">
+                        ${Heroicons.render(item.icon, { class: 'w-4 h-4' })}
+                        <span>${item.label}</span>
+                    </button>
+                `;
+            }).join('');
+
+            return `<div id="toc-context-menu" style="left: ${x}px; top: ${y}px;">${itemsHtml}</div>`;
         },
         updateSaveStatusIndicator() {
             const container = document.getElementById('save-status-container');
@@ -2204,10 +2285,10 @@ const View = {
 
             // 4. 메뉴 HTML을 생성하여 컨테이너에 삽입합니다. (처음에는 숨겨진 상태로)
             contextMenuContainer.innerHTML = `
-                <div id="context-menu" class="fixed z-[2500] w-56 mt-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" 
-                    style="visibility: hidden; top: ${y}px; left: ${x}px;">
-                    <div class="py-1" role="menu" aria-orientation="vertical">${itemsHtml}</div>
-                </div>`;
+            <div id="context-menu" class="fixed z-[2500] mt-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" 
+                style="visibility: hidden; top: ${y}px; left: ${x}px; transform: translate(-50%, -100%); transform-origin: bottom center;">
+                <div class="py-1" role="menu" aria-orientation="vertical">${itemsHtml}</div>
+            </div>`;;
 
             // 5. 생성된 메뉴 요소의 크기를 측정하고 화면 경계를 벗어나는지 확인합니다.
             const menuEl = document.getElementById('context-menu');
@@ -2483,7 +2564,23 @@ const View = {
                     }
                 }, 50); // 50ms 지연으로 안정성 확보
             },
-           
+           openTocContextMenu(event, path) {
+                // 다중 선택 그룹에 포함되지 않은 항목을 우클릭/롱프레스 한 경우,
+                // 기존 선택을 모두 해제하고 해당 항목만 새로 선택합니다.
+                if (ModalManager.data.selectedTocPaths && !ModalManager.data.selectedTocPaths.has(path)) {
+                    ModalManager.data.selectedTocPaths.clear();
+                    ModalManager.data.selectedTocPaths.add(path);
+                    ModalManager.data.lastSelectedTocPath = path;
+                }
+
+                state.tocContextMenu = {
+                    isOpen: true,
+                    x: event.clientX,
+                    y: event.clientY,
+                    path: path,
+                };
+                View.render();
+            },
             handleImagePaste(e) {
                 // 이미지 탭이 활성화된 상태가 아니면 아무것도 하지 않음
                 if (state.currentView !== 'workspace' || state.workspaceMode !== 'image') {
@@ -2546,14 +2643,13 @@ const View = {
                     const action = trigger.dataset.action;
                     const handler = this.ACTION_HANDLERS[action];
                     if (handler) {
-                        e.preventDefault(); // 이벤트 기본 동작 방지 (터치 후 클릭 중복 방지 포함)
+                        e.preventDefault();
                         handler(trigger, e);
                     }
                 };
+                document.body.addEventListener('click', handleAction.bind(this));
+                document.body.addEventListener('touchend', handleAction.bind(this));
 
-                // 클릭과 터치 종료 이벤트에 공통 핸들러 등록
-                document.body.addEventListener('click', handleAction);
-                document.body.addEventListener('touchend', handleAction);
 
                 document.body.addEventListener('submit', e => {
                     const form = e.target.closest('form[data-action]');
@@ -2612,28 +2708,21 @@ const View = {
                     }
                 }
             });
-                document.body.addEventListener('mouseup', e => {
-                    // 모달이 열려있거나 컨텍스트 메뉴 내부를 클릭했다면 아무 작업도 하지 않음
-                    if (ModalManager.isOpen || e.target.closest('#context-menu')) {
-                        return;
-                    }
-
+                
+                // Controller.bindGlobalEventListeners 함수 내부에 추가
+                document.addEventListener('selectionchange', Utils.debounce(e => {
                     const selection = window.getSelection();
-                    const selectedText = selection.toString().trim();
                     const viewPanel = document.querySelector('#workspace-main-content .prose-readable');
-
-                    if (state.currentView === 'workspace' && state.workspaceMode === 'view' && selectedText && viewPanel && selection.rangeCount > 0 && viewPanel.contains(selection.getRangeAt(0).commonAncestorContainer)) {
-                        state.contextMenu = {
-                            isOpen: true,
-                            x: e.pageX,
-                            y: e.pageY,
-                            selectedText: selectedText
-                        };
-                    } else {
+                    const shouldShowMenu = !selection.isCollapsed && state.currentView === 'workspace' && state.workspaceMode === 'view' && viewPanel && selection.rangeCount > 0 && viewPanel.contains(selection.getRangeAt(0).commonAncestorContainer);
+                    if (shouldShowMenu) {
+                        const range = selection.getRangeAt(0);
+                        const rect = range.getBoundingClientRect();
+                        state.contextMenu = { isOpen: true, x: rect.left + rect.width / 2, y: rect.top, selectedText: selection.toString().trim() };
+                    } else if (state.contextMenu.isOpen) {
                         state.contextMenu.isOpen = false;
                     }
                     View.render();
-                });
+                }, 100));
                 document.addEventListener('paste', e => this.handleImagePaste(e));
                     const contentView = document.getElementById('content-view');
                     if (contentView) {
@@ -2643,17 +2732,57 @@ const View = {
                     // 2. 메뉴 닫기: 문서 전체의 'mousedown' 이벤트를 감지합니다.
                     //    사용자가 메뉴 바깥의 아무 곳이나 클릭(터치)하면 메뉴가 닫힙니다.
                     //    캡처링 단계(true)에서 실행하여 다른 이벤트보다 먼저 안정적으로 처리합니다.
-                    document.body.addEventListener('mousedown', e => {
-                    // 클릭된 대상이 컨텍스트 메뉴 자신이 아닐 경우에만 메뉴를 닫습니다.
-                    if (!e.target.closest('#context-menu')) {
-                        if (state.contextMenu.isOpen) {
-                            state.contextMenu.isOpen = false;
-                            View.render();
+                document.body.addEventListener('mousedown', (e => {
+                    if (state.tocContextMenu.isOpen && !e.target.closest('#toc-context-menu')) {
+                        e.preventDefault();
+                        state.tocContextMenu.isOpen = false;
+                        View.render();
+                    }
+                    if (state.contextMenu.isOpen && !e.target.closest('#context-menu')) {
+                        state.contextMenu.isOpen = false;
+                        View.render();
+                    }
+                }).bind(this), true);
+                document.body.addEventListener('contextmenu', (e => {
+                    const targetItem = e.target.closest('.modal-container #toc-editor-list .toc-item');
+                    if (targetItem) {
+                        e.preventDefault();
+                        this.openTocContextMenu(e, targetItem.dataset.path);
+                    }
+                }).bind(this));
+
+                document.body.addEventListener('touchstart', (e => {
+                    const targetItem = e.target.closest('.modal-container #toc-editor-list .toc-item');
+                    if (targetItem) {
+                        this.touchStartX = e.touches[0].clientX;
+                        this.touchStartY = e.touches[0].clientY;
+                        this.touchTimer = setTimeout(() => {
+                            this.openTocContextMenu(e.touches[0], targetItem.dataset.path);
+                            this.touchTimer = null;
+                        }, 500);
+                    }
+                }).bind(this));
+
+                document.body.addEventListener('touchmove', (e => {
+                    if (this.touchTimer) {
+                        const moveX = Math.abs(this.touchStartX - e.touches[0].clientX);
+                        const moveY = Math.abs(this.touchStartY - e.touches[0].clientY);
+                        if (moveX > 10 || moveY > 10) {
+                            clearTimeout(this.touchTimer);
+                            this.touchTimer = null;
                         }
                     }
-                }, true);
+                }).bind(this));
 
+                document.body.addEventListener('touchend', (e => {
+                    if (this.touchTimer) {
+                        clearTimeout(this.touchTimer);
+                        this.touchTimer = null;
+                    }
+                }).bind(this));
             },
+
+            
             bindDynamicEventListeners() {
                 if (ModalManager.type === 'manageToc') {
                     const list = document.getElementById('toc-editor-list');
@@ -4148,6 +4277,41 @@ Micro-interactions are the small, often unnoticed animations and design elements
                         Controller.processImageFile(file);
                     }
                 },
+                // Controller.ACTION_HANDLERS 객체 내부
+                'toc-editor-click': (el, e) => {
+                    const path = el.dataset.path;
+                    const { shiftKey, ctrlKey, metaKey } = e;
+                    const tocData = ModalManager.data;
+                    const flatToc = Utils.getFlatToc(tocData.editableToc);
+
+                    if (shiftKey && tocData.lastSelectedTocPath) {
+                        const lastIdx = flatToc.findIndex(item => item.path === tocData.lastSelectedTocPath);
+                        const currentIdx = flatToc.findIndex(item => item.path === path);
+                        if (lastIdx !== -1 && currentIdx !== -1) {
+                            const start = Math.min(lastIdx, currentIdx);
+                            const end = Math.max(lastIdx, currentIdx);
+                            if (!ctrlKey && !metaKey) {
+                                tocData.selectedTocPaths.clear();
+                            }
+                            for (let i = start; i <= end; i++) {
+                                tocData.selectedTocPaths.add(flatToc[i].path);
+                            }
+                        }
+                    } else if (ctrlKey || metaKey) {
+                        if (tocData.selectedTocPaths.has(path)) {
+                            tocData.selectedTocPaths.delete(path);
+                        } else {
+                            tocData.selectedTocPaths.add(path);
+                        }
+                    } else {
+                        tocData.selectedTocPaths.clear();
+                        tocData.selectedTocPaths.add(path);
+                    }
+                    
+                    tocData.lastSelectedTocPath = path;
+                    // 전체 UI가 아닌 모달만 다시 렌더링합니다.
+                    ModalManager.render();
+                },
                 'sort-projects': (select) => {
                     state.currentSortOrder = select.value;
                     View.render();
@@ -4545,7 +4709,9 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     View.render();
                 },
                 'manage-toc': () => ModalManager.open('manageToc', {
-                    editableToc: JSON.parse(JSON.stringify(state.activeProject.toc))
+                    editableToc: JSON.parse(JSON.stringify(state.activeProject.toc)),
+                    selectedTocPaths: new Set(),
+                    lastSelectedTocPath: null
                 }),
                 'toc-add-child': (el) => {
                     const parentNode = Utils.getNodeByPath(ModalManager.data.editableToc, el.dataset.path);
