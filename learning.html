@@ -479,7 +479,11 @@ html.dark .quiz-result-score {
         .tooltip { position: relative; display: inline-block; }
         .tooltip .tooltip-text { visibility: hidden; width: 250px; background-color: #334155; color: #fff; text-align: left; border-radius: 6px; padding: 8px; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -125px; opacity: 0; transition: opacity 0.3s; font-size: 0.75rem; line-height: 1.5; }
         .tooltip:hover .tooltip-text { visibility: visible; opacity: 1; }
-        
+        .app-tooltip.show {
+            opacity: 1;
+            pointer-events: auto;
+            transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+        }
         @media (max-width: 1024px) {
             .sidebar { position: fixed; transform: translateX(-100%); }
             .sidebar.open { transform: translateX(0); box-shadow: 0 0 40px rgba(0,0,0,0.1); }
@@ -884,26 +888,37 @@ html.dark .quiz-result-score {
     background-color: var(--bg-hover); color: var(--accent-primary);
 }
 
-/* --- ▼▼▼ [수정] JS 기반 전용 툴팁 스타일 ▼▼▼ --- */
+/* ▼▼▼ 새로운 코드 ▼▼▼ */
 .app-tooltip {
     position: fixed;
     background-color: #334155;
     color: white;
-    padding: 0.4rem 0.7rem;
+    padding: 0.5rem 0.8rem; /* 패딩 살짝 증가 */
     border-radius: var(--radius-md);
     font-size: 0.8rem;
     font-weight: 500;
-    white-space: pre-line; /* 이 부분을 수정 */
-    max-width: 300px;
-    overflow-y: auto;
-    /* white-space: nowrap;  기존 코드를 주석 처리하거나 삭제 */
+    white-space: pre-line;
+    max-width: 350px; /* 최대 너비 증가 */
     z-index: 9999;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.2s ease-in-out;
+    text-align: left; /* [추가] 텍스트 좌측 정렬 */
 }
-.app-tooltip.show {
-    opacity: 1;
+.app-tooltip code {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: #a5b4fc;
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    font-size: 0.9em;
+}
+.app-tooltip ul {
+    list-style-type: none;
+    padding: 0;
+    margin: 0;
+}
+.app-tooltip li:not(:last-child) {
+    margin-bottom: 0.5rem;
 }
 /* --- ▲▲▲ [수정 완료] ▲▲▲ --- */
 
@@ -1454,38 +1469,7 @@ const ModalManager = {
         Controller.bindDynamicEventListeners();
     },
     
-     renderPromptVariablesModal() {
-        const { title, variables } = this.data;
-
-        const fieldsHtml = variables.map(variable => `
-            <div class="mb-4">
-                <label for="variable-${variable}" class="block text-sm font-medium text-slate-700 mb-1">
-                    <code class="text-sm bg-slate-200 text-indigo-700 rounded-md px-1.5 py-0.5 font-mono">${`{{${variable}}}`}</code>
-                </label>
-                <textarea id="variable-${variable}" name="${variable}" rows="2" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"></textarea>
-            </div>
-        `).join('');
-
-        return `
-            <form data-action="submit-prompt-variables">
-                <div class="p-6">
-                    <div class="flex justify-between items-start">
-                        <h3 class="text-xl font-semibold text-slate-900 mb-2">${title || '프롬프트 변수 입력'}</h3>
-                        <button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100">${Heroicons.render('x-mark', { class: 'w-5 h-5 text-slate-500' })}</button>
-                    </div>
-                    <p class="text-sm text-slate-500 mb-4">프롬프트 생성을 위해 추가 변수 값을 입력해주세요.</p>
-                    <div class="max-h-[50vh] overflow-y-auto pr-2">
-                        ${fieldsHtml}
-                    </div>
-                </div>
-                <div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
-                    <button type="button" data-action="close-modal" class="btn btn-secondary">취소</button>
-                    <button type="submit" class="btn">${Heroicons.render('paper-airplane', { class: 'w-4 h-4 mr-2' })} 프롬프트 복사</button>
-                </div>
-            </form>
-        `;
-    },
-
+     
     renderNewProjectModal() {
         const {
             activeTab = 'blank', isLoading = false, loadingMessage = '', error = ''
@@ -1612,20 +1596,26 @@ const ModalManager = {
                 const fieldHtml = f.type === 'textarea' ?
                     `<textarea id="setting-${f.id}" data-setting-key="${f.id}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm h-24 font-mono text-xs">${fieldValue}</textarea>` :
                     `<input type="${f.type}" id="setting-${f.id}" data-setting-key="${f.id}" value="${DOMPurify.sanitize(fieldValue)}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm">`;
+
+                // [수정] 버튼 대신 툴팁을 사용하는 아이콘으로 변경
+                const helpIconHtml = f.hasVariables ? `
+                    <span class="cursor-help" data-tooltip="${View.renderTooltipContent(f.variableType)}">
+                        ${Heroicons.render('information-circle', { class: 'w-4 h-4 text-slate-400 hover:text-slate-600' })}
+                    </span>
+                ` : '';
+
                 return `
                     <div class="mb-4">
                         <div class="flex justify-between items-center">
                             <label for="setting-${f.id}" class="block text-sm font-medium text-slate-700">${f.label}</label>
-                            ${f.hasVariables ? `
-                                <button type="button" data-action="open-prompt-variables" data-type="${f.variableType}" class="text-xs text-indigo-600 hover:underline">템플릿 변수 보기</button>
-                            ` : ''}
+                            ${helpIconHtml}
                         </div>
                         ${fieldHtml}
                     </div>
                 `;
             };
 
-            // 글쓰기 프롬프트 관련 필드 정의
+            // 필드 정의는 유지, variableType 추가
             const writingFields = [
                 { id: 'writingGenre', label: '글쓰기 - 장르', type: 'text' },
                 { id: 'writingAudience', label: '글쓰기 - 목표 독자', type: 'text' },
@@ -1634,38 +1624,29 @@ const ModalManager = {
                 { id: 'writingReferences', label: '글쓰기 - 자료', type: 'textarea' },
                 { id: 'writingPrompt', label: '글쓰기 프롬프트 - 전체 템플릿', type: 'textarea', hasVariables: true, variableType: 'writing' }
             ];
-
-            // 퀴즈 프롬프트 관련 필드 정의
             const quizFields = [
                 { id: 'quizQuestionCount', label: '퀴즈 - 생성 개수', type: 'number' },
-                { id: 'quizTaskDescription', label: '퀴즈 프롬프트 - 과업 설명 (Task)', type: 'textarea' },
-                { id: 'quizOutputFormatInstruction', label: '퀴즈 프롬프트 - 출력 형식 (Output)', type: 'textarea' },
+                { id: 'quizTaskDescription', label: '퀴즈 프롬프트 - 과업 설명', type: 'textarea' },
+                { id: 'quizOutputFormatInstruction', label: '퀴즈 프롬프트 - 출력 형식', type: 'textarea' },
                 { id: 'quizPromptTemplate', label: '퀴즈 프롬프트 - 전체 템플릿', type: 'textarea', hasVariables: true, variableType: 'quiz' }
             ];
 
-            // 최종 HTML 구조 생성
+            // 최종 HTML 구조는 동일
             return `
                 <div class="space-y-6">
                     <div class="p-4 border border-slate-200 rounded-lg bg-white shadow-sm">
                         <h4 class="flex items-center text-md font-semibold text-slate-800 mb-2">
-                            ${Heroicons.render('pencil-square', { class: 'w-5 h-5 mr-2 text-indigo-600' })}
-                            글쓰기 프롬프트 설정
+                            ${Heroicons.render('pencil-square', { class: 'w-5 h-5 mr-2 text-indigo-600' })} 글쓰기 프롬프트 설정
                         </h4>
                         <p class="text-sm text-slate-500 mb-4">AI 원고 생성, 요약, 번역 등 글쓰기 관련 기능에 사용될 기본 프롬프트를 설정합니다.</p>
-                        <div class="border-t border-slate-200 pt-4">
-                            ${writingFields.map(renderField).join('')}
-                        </div>
+                        <div class="border-t border-slate-200 pt-4">${writingFields.map(renderField).join('')}</div>
                     </div>
-
                     <div class="p-4 border border-slate-200 rounded-lg bg-white shadow-sm">
                         <h4 class="flex items-center text-md font-semibold text-slate-800 mb-2">
-                            ${Heroicons.render('light-bulb', { class: 'w-5 h-5 mr-2 text-amber-500' })}
-                            퀴즈 생성 프롬프트 설정
+                            ${Heroicons.render('light-bulb', { class: 'w-5 h-5 mr-2 text-amber-500' })} 퀴즈 생성 프롬프트 설정
                         </h4>
                         <p class="text-sm text-slate-500 mb-4">학습 모드에서 사용될 AI 퀴즈 문제 생성 프롬프트를 설정합니다.</p>
-                        <div class="border-t border-slate-200 pt-4">
-                            ${quizFields.map(renderField).join('')}
-                        </div>
+                        <div class="border-t border-slate-200 pt-4">${quizFields.map(renderField).join('')}</div>
                     </div>
                 </div>
             `;
@@ -2084,6 +2065,31 @@ const View = {
         renderSidebar() {
             if (state.activeProjectId && state.activeProject) return this.renderProjectSidebar();
             return this.renderLibrarySidebar();
+        },
+        renderTooltipContent(type) {
+            let variables = [];
+            if (type === 'writing') {
+                variables = [
+                    { name: 'bookTitle', desc: '프로젝트의 전체 제목' },
+                    { name: 'chapterTitle', desc: '현재 챕터(노트)의 제목' },
+                    { name: 'manuscript', desc: '현재 챕터의 "원고" 텍스트' },
+                    { name: 'notes', desc: '현재 챕터의 "메모" 텍스트' },
+                    { name: 'fullToc', desc: '프로젝트의 전체 목차 구조' },
+                    { name: 'selected_text', desc: '(컨텍스트 메뉴 전용) 선택된 텍스트' },
+                ];
+            } else if (type === 'quiz') {
+                variables = [
+                    { name: 'text', desc: '퀴즈 문제 출제 기반이 되는 원고' },
+                    { name: 'questionCount', desc: '퀴즈 생성 개수 설정값' },
+                ];
+            }
+
+            const itemsHtml = variables.map(v => 
+                `<li><code>{{${v.name}}}</code><br>${v.desc}</li>`
+            ).join('');
+            
+            // HTML 속성 값으로 사용될 것이므로, 큰따옴표를 이스케이프 처리합니다.
+            return `<ul>${itemsHtml}</ul>`.replace(/"/g, '&quot;');
         },
         renderLibrarySidebar() {
             const {
@@ -3162,6 +3168,46 @@ renderQuizResultView() {
                 e.preventDefault();
                 e.returnValue = ''; // Chrome에서 경고창을 띄우기 위해 필요
             },
+            // ▼▼▼ 새로운 코드 (이 두 함수 전체를 Controller 객체 내부에 추가) ▼▼▼
+            showTooltip(target) {
+                if (window.innerWidth <= 1024) return; // 모바일에선 비활성화
+                const tooltipEl = document.getElementById('app-tooltip');
+                const tooltipText = target.dataset.tooltip;
+                if (!tooltipEl || !tooltipText) return;
+
+                tooltipEl.innerHTML = tooltipText;
+
+                const targetRect = target.getBoundingClientRect();
+                const tooltipRect = tooltipEl.getBoundingClientRect();
+
+                // 기본 위치: 타겟 요소의 왼쪽에 수직 중앙 정렬
+                let top = targetRect.top + (targetRect.height / 2) - (tooltipRect.height / 2);
+                let left = targetRect.left - tooltipRect.width - 12; // 12px 간격
+
+                // 화면 왼쪽 경계 침범 시: 타겟 오른쪽에 표시
+                if (left < 10) {
+                    left = targetRect.right + 12;
+                }
+                // 화면 위쪽 경계 침범 시: 아래로 조정
+                if (top < 10) {
+                    top = 10;
+                }
+                // 화면 아래쪽 경계 침범 시: 위로 조정
+                if (top + tooltipRect.height > window.innerHeight - 10) {
+                    top = window.innerHeight - tooltipRect.height - 10;
+                }
+
+                tooltipEl.style.top = `${top}px`;
+                tooltipEl.style.left = `${left}px`;
+                tooltipEl.classList.add('show');
+            },
+
+            hideTooltip() {
+                const tooltipEl = document.getElementById('app-tooltip');
+                if (tooltipEl) {
+                    tooltipEl.classList.remove('show');
+                }
+            },
             updateUnloadWarning() {
                 if (state.saveStatus === 'saving') {
                     window.addEventListener('beforeunload', this.unsavedChangesHandler);
@@ -3330,43 +3376,7 @@ renderQuizResultView() {
                         if (handler) handler(trigger, e);
                     }
                 });
-                document.body.addEventListener('mouseover', e => {
-                    const target = e.target.closest('[data-tooltip]');
-                    if (!target) return;
-
-                    // 모바일 뷰에서는 JS 툴팁을 사용하지 않음
-                    if (window.innerWidth <= 1024) return;
-
-                    const tooltipEl = document.getElementById('app-tooltip');
-                    const tooltipText = target.dataset.tooltip;
-                    
-                    if (tooltipEl && tooltipText) {
-                        tooltipEl.textContent = tooltipText;
-                        
-                        const targetRect = target.getBoundingClientRect();
-                        tooltipEl.style.display = 'block'; // 위치 계산을 위해 잠시 표시
-                        
-                        const tooltipRect = tooltipEl.getBoundingClientRect();
-                        
-                        // 툴팁 위치 계산 (버튼 왼쪽에 수직 중앙 정렬)
-                        const top = targetRect.top + (targetRect.height / 2) - (tooltipRect.height / 2);
-                        const left = targetRect.left - tooltipRect.width - 10; // 10px 간격
-
-                        tooltipEl.style.top = `${top}px`;
-                        tooltipEl.style.left = `${left}px`;
-                        
-                        tooltipEl.classList.add('show');
-                    }
-                });
-                document.body.addEventListener('mouseout', e => {
-                    const target = e.target.closest('[data-tooltip]');
-                    if (!target) return;
-
-                    const tooltipEl = document.getElementById('app-tooltip');
-                    if (tooltipEl) {
-                        tooltipEl.classList.remove('show');
-                    }
-                });
+                
                 document.body.addEventListener('input', Utils.debounce(async e => {
                     if (e.target.matches('#search-input')) {
                         this.handleSearch(e.target.value);
@@ -3384,6 +3394,16 @@ renderQuizResultView() {
                         ModalManager.close();
                     }
                 });
+                // ▼▼▼ 새로운 코드 ▼▼▼
+                document.body.addEventListener('mouseenter', e => {
+                    const target = e.target.closest('[data-tooltip]');
+                    if (target) Controller.showTooltip(target);
+                }, true); // 캡처링 단계에서 이벤트를 감지하여 안정성 확보
+
+                document.body.addEventListener('mouseleave', e => {
+                    const target = e.target.closest('[data-tooltip]');
+                    if (target) Controller.hideTooltip();
+                }, true);
                 document.addEventListener('katex-loaded', () => {
                     state.isKaTeXLoaded = true;
                     this.applyPostRenderEffects();
@@ -4493,36 +4513,41 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     throw new Error("유효하지 않은 목차 JSON 형식입니다. 최상위 객체에 'title'과 'children' 속성이 필요합니다.");
                 }
                 const projectId = Utils.generateId('proj');
-                const finalToc = {
-                    title: tocData.title,
-                    children: tocData.children
+                const finalToc = JSON.parse(JSON.stringify(tocData)); // 원본 데이터 수정을 방지하기 위해 깊은 복사
+
+                // [핵심 수정] 모든 노드를 순회하며 고유 contentId를 할당하는 재귀 함수
+                const assignContentIds = (node) => {
+                    if (!node.contentId) { // 기존에 ID가 없을 경우에만 새로 할당
+                        node.contentId = Utils.generateId('content');
+                    }
+                    if (node.children && node.children.length > 0) {
+                        node.children.forEach(assignContentIds);
+                    }
                 };
+
+                assignContentIds(finalToc); // TOC 전체에 contentId 할당
                 Utils.normalizeTocNode(finalToc);
+
                 const project = {
                     id: projectId,
                     name: finalToc.title,
                     createdAt: new Date().toISOString(),
                     updatedAt: new Date().toISOString(),
                     toc: finalToc,
-                    settings: {
-                        ...CONFIG.DEFAULT_PROJECT_SETTINGS
-                    }
+                    settings: { ...CONFIG.DEFAULT_PROJECT_SETTINGS }
                 };
-                const contents = Utils.getAllNodePaths(finalToc).map(({
-                    path,
-                    node
-                }) => ({
-                    id: `${projectId}_${path}`,
+
+                // [핵심 수정] path 기반이 아닌, 각 노드의 contentId를 기반으로 콘텐츠 객체 생성
+                const contents = Utils.getFlatToc(finalToc).map(({ node }) => ({
+                    id: `${projectId}_${node.contentId}`,
                     manuscript: '',
                     notes: node.description || '',
                     translation: '',
                     questions: [],
                     status: 'empty'
                 }));
-                return {
-                    project,
-                    contents
-                };
+                
+                return { project, contents };
             },
             copyToClipboard(text, id = null) { // [수정] id를 인자로 받도록 변경
                 const textArea = document.createElement("textarea");
