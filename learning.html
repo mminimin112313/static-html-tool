@@ -280,7 +280,11 @@ html.dark .quiz-result-score {
        body {
             font-family: 'Inter', 'Noto Sans KR', sans-serif;
             background-color: var(--bg-secondary); color: var(--text-primary);
-            display: flex; height: 100dvh; height: -webkit-fill-available;
+            display: flex; 
+            /* ▼▼▼ [핵심 수정] height 속성을 min-height로 변경합니다 ▼▼▼ */
+            min-height: 100dvh; 
+            min-height: -webkit-fill-available;
+            /* ▲▲▲ [수정 완료] ▲▲▲ */
             overflow: hidden; /* body 자체의 스크롤을 완전히 막습니다. */
         }
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -959,7 +963,6 @@ html.dark .quiz-result-score {
         font-size: 0.875rem;
         font-weight: 500;
         color: var(--text-secondary);
-        /* ▼▼▼ [추가] 텍스트가 줄바꿈되지 않도록 설정 ▼▼▼ */
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -981,8 +984,8 @@ html.dark .quiz-result-score {
         z-index: 101;
         
         /* [수정] 탭 형태 및 크기 조정 */
-        width: 40px;
-        height: 48px;
+        width: 20px;
+        height: 40px;
         border-radius: 8px 0 0 8px; /* 왼쪽 모서리만 둥글게 */
 
         background-color: var(--accent-primary);
@@ -3308,7 +3311,16 @@ renderQuizResultView() {
                 e.preventDefault();
                 e.returnValue = ''; // Chrome에서 경고창을 띄우기 위해 필요
             },
-            
+            ensureAllNodesHaveContentId(node) {
+                if (!node) return;
+                if (!node.contentId) {
+                    console.warn('Missing contentId found in TOC node. Assigning a new one.', node);
+                    node.contentId = Utils.generateId('content');
+                }
+                if (node.children && Array.isArray(node.children)) {
+                    node.children.forEach(this.ensureAllNodesHaveContentId);
+                }
+            },
             showTooltip(target) {
                 if (window.innerWidth <= 1024) return; // 모바일에선 비활성화
                 const tooltipEl = document.getElementById('app-tooltip');
@@ -5082,8 +5094,18 @@ Micro-interactions are the small, often unnoticed animations and design elements
             },
             handleTocTitleEdit(input) {
                 const node = Utils.getNodeByPath(ModalManager.data.editableToc, input.dataset.path);
-                if (node) node.title = input.value;
+                if (node) {
+                    // ▼▼▼ [디버깅 코드 추가] ▼▼▼
+                    console.log(`--- [2. 제목 수정 감지] ---
+Path: ${input.dataset.path}
+기존 제목: "${node.title}"
+새 제목: "${input.value}"`);
+                    // ▲▲▲ [디버깅 코드 추가] ▲▲▲
+                    node.title = input.value;
+                }
             },
+            // learning.html 파일의 Controller 객체 내부
+
             async saveToc() {
                 state.isLoading = true;
                 ModalManager.close();
@@ -5093,19 +5115,18 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     const originalToc = state.activeProject.toc;
                     const modifiedToc = ModalManager.data.editableToc;
 
-                    const getIds = (node) => {
-                        // 1. 노드 자체가 유효하지 않으면 빈 Set을 반환하여 오류를 방지합니다.
-                        if (!node) { 
-                            console.warn("TOC tree has a broken (undefined) node, skipping.");
-                            return new Set();
-                        }
+                    this.ensureAllNodesHaveContentId(modifiedToc);
 
+                    // ▼▼▼ [디버깅 코드 추가] ▼▼▼
+                    console.groupCollapsed("--- [3. 목차 저장 실행] 상세 디버그 정보 ---");
+                    console.log("저장 전 원본 TOC:", JSON.parse(JSON.stringify(originalToc)));
+                    console.log("저장할 수정된 TOC:", JSON.parse(JSON.stringify(modifiedToc)));
+                    
+                    const getIds = (node) => {
+                        if (!node) return new Set();
                         let ids = new Set([node.contentId]);
                         if (node.children) {
-                            // 2. 자식 배열에서 undefined 값을 걸러내어 데이터 구조를 복구합니다.
                             const validChildren = node.children.filter(Boolean);
-                            
-                            // 3. 유효한 자식 노드에 대해서만 재귀 호출을 실행합니다.
                             validChildren.forEach(child => {
                                 getIds(child).forEach(id => ids.add(id));
                             });
@@ -5115,10 +5136,17 @@ Micro-interactions are the small, often unnoticed animations and design elements
 
                     const oldContentIds = getIds(originalToc);
                     const newContentIds = getIds(modifiedToc);
-                    
+
+                    console.log("원본 Content ID 목록:", oldContentIds);
+                    console.log("수정된 Content ID 목록:", newContentIds);
+
                     const deletedContentIds = [...oldContentIds].filter(id => id && !newContentIds.has(id));
                     const addedContentIds = [...newContentIds].filter(id => id && !oldContentIds.has(id));
 
+                    console.warn("⚠️ 삭제될 Content ID 목록:", deletedContentIds);
+                    console.info("✨ 추가될 Content ID 목록:", addedContentIds);
+                    console.groupEnd();
+                    // ▲▲▲ [디버깅 코드 추가] ▲▲▲
 
                     const promises = [];
                     for (const contentId of addedContentIds) {
@@ -5129,10 +5157,10 @@ Micro-interactions are the small, often unnoticed animations and design elements
                             translation: '',
                             questions: [],
                             status: 'empty',
-                            history: [] // 히스토리 배열도 초기화
+                            history: []
                         };
                         promises.push(DB.put(CONFIG.STORES.CONTENTS, newContent));
-                        state.activeContentsMap.set(newContent.id, newContent); // 메모리 내 캐시에도 추가
+                        state.activeContentsMap.set(newContent.id, newContent);
                     }
                     for (const contentId of deletedContentIds) {
                         const fullContentId = `${projectId}_${contentId}`;
@@ -5140,7 +5168,6 @@ Micro-interactions are the small, often unnoticed animations and design elements
                         state.activeContentsMap.delete(fullContentId);
                     }
 
-                    // 현재 선택된 챕터가 삭제되었는지 확인
                     const activeNode = state.activeChapterPath ? Utils.getNodeByPath(originalToc, state.activeChapterPath) : null;
                     if (activeNode && deletedContentIds.includes(activeNode.contentId)) {
                         state.activeChapterPath = null;
@@ -5734,6 +5761,7 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     // 1. 현재 활성화된 프로젝트 객체의 정보를 업데이트합니다.
                     Object.assign(state.activeProject.settings, settingsToSave);
                     state.activeProject.name = name;
+                    state.activeProject.toc.title = name;
                     state.activeProject.categoryId = categoryId;
                     state.activeProject.tags = projectTags;
                     state.activeProject.settings.customPrompts = (data.customPrompts || []).filter(p => p.name && p.template);
@@ -6028,11 +6056,19 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     state.currentView = 'workspace';
                     View.render();
                 },
-                'manage-toc': () => ModalManager.open('manageToc', {
-                    editableToc: JSON.parse(JSON.stringify(state.activeProject.toc)),
-                    selectedTocPaths: new Set(),
-                    lastSelectedTocPath: null
-                }),
+                'manage-toc': () => {
+                    // ▼▼▼ [디버깅 코드 추가] ▼▼▼
+                    const tocCopy = JSON.parse(JSON.stringify(state.activeProject.toc));
+                    console.log("--- [1. 목차 관리 시작] ---");
+                    console.log("모달을 위해 복사된 초기 TOC 데이터:", tocCopy);
+                    // ▲▲▲ [디버깅 코드 추가] ▲▲▲
+
+                    ModalManager.open('manageToc', {
+                        editableToc: tocCopy, // 복사된 데이터를 모달로 전달
+                        selectedTocPaths: new Set(),
+                        lastSelectedTocPath: null
+                    });
+                },
                  'toc-add-child': (el) => {
                     const parentNode = Utils.getNodeByPath(ModalManager.data.editableToc, el.dataset.path);
                     if (parentNode) {
