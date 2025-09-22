@@ -1531,7 +1531,38 @@ const ModalManager = {
                 </div>
             </div>`;
     },
-     
+    renderPromptVariablesModal() {
+        const { title, variables, isLoading = false, loadingMessage = '' } = this.data;
+        if (isLoading) {
+            return `<div class="p-8">${View.renderSpinner(loadingMessage)}</div>`;
+        }
+        
+        const variablesHtml = variables.map(v => `
+            <div class="mb-4">
+                <label for="var-${v}" class="block text-sm font-medium text-slate-700">{{${v}}}</label>
+                <input type="text" id="var-${v}" name="${v}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm" placeholder="변수에 들어갈 값 입력">
+            </div>
+        `).join('');
+
+        return `
+            <form data-action="submit-prompt-variables">
+                <div class="p-6">
+                    <div class="flex justify-between items-start">
+                        <h3 class="text-xl font-semibold text-slate-900 mb-4">${DOMPurify.sanitize(title)}</h3>
+                        <button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100">${Heroicons.render('x-mark', { class: 'w-5 h-5 text-slate-500' })}</button>
+                    </div>
+                    <p class="text-sm text-slate-600 mb-4">프롬프트에 필요한 추가 변수 값을 입력해주세요.</p>
+                    <div class="max-h-[60vh] overflow-y-auto pr-2">
+                        ${variablesHtml}
+                    </div>
+                </div>
+                <div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
+                    <button type="button" data-action="close-modal" class="btn btn-secondary">취소</button>
+                    <button type="submit" class="btn">복사</button>
+                </div>
+            </form>
+        `;
+    },
     renderNewProjectModal() {
         const {
             activeTab = 'blank', isLoading = false, loadingMessage = '', error = ''
@@ -3352,7 +3383,7 @@ renderQuizResultView() {
                 ];
 
                 // 2. 템플릿에서 모든 {{...}} 변수를 추출
-                const allVarsInTemplate = [...template.matchAll(/{{\s*([\w_]+)\s*}}/g)].map(match => match[1]);
+                const allVarsInTemplate = [...template.matchAll(/{{\s*([^}]+?)\s*}}/g)].map(match => match[1]);
                 const uniqueVars = [...new Set(allVarsInTemplate)];
 
                 // 3. 사용자가 직접 입력해야 하는 변수 필터링
@@ -3379,6 +3410,36 @@ renderQuizResultView() {
                     this.copyToClipboard(finalPrompt);
                 }
             },
+
+            // ▼▼▼ [추가] 시스템 변수의 현재 값을 객체로 반환하는 헬퍼 함수입니다. ▼▼▼
+            getSystemVariableValues() {
+                if (!state.activeProject) return {};
+                
+                const { settings, toc } = state.activeProject;
+                const chapterNode = state.activeChapterPath ? Utils.getNodeByPath(toc, state.activeChapterPath) : null;
+                const pathParts = state.activeChapterPath ? state.activeChapterPath.split('.').map(Number) : [];
+                const partNode = toc.children?.[pathParts[0]];
+                
+                return {
+                    'selected_text': state.contextMenu.selectedText || '',
+                    'bookTitle': toc.title || '',
+                    'projectGenre': settings.writingGenre || '',
+                    'projectAgeGroup': settings.writingAgeGroup || '',
+                    'projectAudience': settings.writingAudience || '',
+                    'references': settings.writingReferences || '',
+                    'partTitle': partNode?.title || '',
+                    'partDescription': partNode?.description || '',
+                    'chapterTitle': chapterNode?.title || '',
+                    'chapterDescription': state.activeChapterContent?.notes || chapterNode?.description || '',
+                    'fullToc': Utils.generateTocText(toc, 0, '', state.activeChapterPath),
+                    'partToc': partNode ? Utils.generateTocText(partNode, 0, '', pathParts.slice(1).join('.')) : '',
+                    'projectStyleExample': settings.writingStyle || '',
+                    'manuscript': state.activeChapterContent?.manuscript || '',
+                    'translation': state.activeChapterContent?.translation || '',
+                    'notes': state.activeChapterContent?.notes || '',
+                };
+            },
+            
 
             // ▼▼▼ [추가] 시스템 변수의 현재 값을 객체로 반환하는 헬퍼 함수입니다. ▼▼▼
             getSystemVariableValues() {
@@ -3682,23 +3743,171 @@ renderQuizResultView() {
             },
             initializeConfig() {
                 CONFIG.DEFAULT_ACTIONS = [
-                    {
-                        id: 'default-fact-check',
-                        name: "✔️ 자료 검증",
-                        icon: 'check-badge',
-                        template: `당신은 사실 확인 전문가입니다. 다음 텍스트('{{manuscript}}')의 내용 중 사실 관계가 틀리거나 확인이 필요한 부분을 찾아 지적하고, 가능하다면 정확한 정보를 제시해주세요.`
-                    },
-                    {
-                        id: 'default-tone-unify',
-                        name: "🎨 문체 통일",
-                        icon: 'sliders',
-                        template: `당신은 전문 편집자입니다. 다음 텍스트('{{manuscript}}')를 이 프로젝트의 기본 스타일인 '{{projectStyleExample}}'에 맞춰 전체적으로 문체를 수정하고 다듬어주세요.`
-                    },
+                   { id: 'default-fact-check',
+        name: "✔️ 자료 검증",
+        icon: 'check-badge',
+        template: `
+<prompt id="default-fact-check">
+    <metaPrompt>
+        <purpose>
+            문서 내용 중 사실 관계가 틀리거나 확인이 필요한 부분을 찾아내고, 정확한 정보와 근거를 제시받는다.
+        </purpose>
+        <promptDesignFramework>
+            <objectiveDefinition id="1">
+                <finalDeliverable id="1.1">
+                    {{검증_목표}}에 대한 사실 관계 오류 지적 및 정확한 정보와 근거가 포함된 검증 보고서
+                </finalDeliverable>
+                <coreTask id="1.2">
+                    검증, 분석, 지적, 교정
+                </coreTask>
+                <successCriteria id="1.3">
+                    1. 지적된 오류가 원문의 내용과 일치하는가?
+                    2. 제시된 교정 정보가 사실에 부합하고 신뢰할 수 있는가?
+                    3. 객관적이고 중립적인 어조를 유지하는가?
+                </successCriteria>
+            </objectiveDefinition>
+            <personaAssignment id="2">
+                <expertPersona id="2.1">
+                    당신은 최고 수준의 사실 확인 전문가이자 교정 편집자입니다. 당신은 주어진 문서에서 사실적 오류, 논리적 모순, 오해의 소지가 있는 부분을 정확하게 찾아내고, 공신력 있는 출처를 기반으로 정확한 정보를 제시합니다. 모든 지적은 명확하고 간결해야 합니다.
+                </expertPersona>
+                <audience id="2.2">
+                    작품의 신뢰성을 높이려는 작가 또는 편집자
+                </audience>
+                <toneAndStyle id="2.3">
+                    어조: 전문적, 객관적 / 스타일: 간결한 보고서 형식
+                </toneAndStyle>
+            </personaAssignment>
+            <contextAndFormat id="3">
+                <essentialContext id="3.1">
+                    <![CDATA[
+                    - 검증 대상 텍스트: {{manuscript}}
+                    - 검증할 목표: {{검증_목표}}
+                    ]]>
+                </essentialContext>
+                <outputFormat id="3.2">
+                    <![CDATA[
+                    ### 사실 검증 결과
+                    
+                    - **검증 목표**: {{검증_목표}}
+                    - **지적 사항**: (첫 번째 오류 지적. 원문 내용 인용 후 정확한 정보 제시)
+                    - **수정 제안**: (수정문을 코드블럭에 넣어서 그대로 붙여넣을 수 있도록 해준다.)
+
+                    결과를 명확한 근거와 함께 항목별로 정리해주세요.
+                    ]]>
+                </outputFormat>
+            </contextAndFormat>
+        </promptDesignFramework>
+    </metaPrompt>
+</prompt>
+`
+    },
+    {
+        id: 'default-tone-unify',
+        name: "🎨 문체 통일",
+        icon: 'sliders',
+        template: `
+<prompt id="default-tone-unify">
+    <metaPrompt>
+        <purpose>
+            문서의 전체 문체를 일관성 있게 다듬고, 특정 스타일 가이드라인에 맞춘다.
+        </purpose>
+        <promptDesignFramework>
+            <objectiveDefinition id="1">
+                <finalDeliverable id="1.1">
+                    {{새로운_문체}}가 적용된 문서
+                </finalDeliverable>
+                <coreTask id="1.2">
+                    교정, 수정, 문체 통일
+                </coreTask>
+                <successCriteria id="1.3">
+                    1. 수정된 문체와 {{새로운_문체}}의 특징이 일치하는가?
+                    2. 원문의 의미와 내용이 훼손되지 않고 자연스럽게 연결되는가?
+                    3. 문장과 문단 간의 흐름이 매끄러운가?
+                </successCriteria>
+            </objectiveDefinition>
+            <personaAssignment id="2">
+                <expertPersona id="2.1">
+                    당신은 언어의 뉘앙스를 완벽하게 이해하는 전문 편집자입니다. 당신은 주어진 텍스트를 분석하여 문체의 불일치성을 찾아내고, 특정 스타일 가이드({{새로운_문체}})에 맞춰 전체 문서를 매끄럽게 재구성합니다.
+                </expertPersona>
+                <audience id="2.2">
+                    출판 또는 배포 전 최종 검토를 원하는 작가 또는 편집자
+                </audience>
+                <toneAndStyle id="2.3">
+                    어조: {{새로운_문체}}에 따라 유연하게 변경
+                    스타일: {{새로운_문체}}에 따라 유연하게 변경
+                </toneAndStyle>
+            </personaAssignment>
+            <contextAndFormat id="3">
+                <essentialContext id="3.1">
+                    <![CDATA[
+                    - 수정 대상 문서: {{manuscript}}
+                    - 참고할 프로젝트 스타일: {{projectStyleExample}}
+                    - 사용자가 지정한 새로운 문체: {{새로운_문체}}
+                    - 만약 새로운 문체가 지정되지 않았다면, 프로젝트 기본 스타일을 따르시오.
+                    ]]>
+                </essentialContext>
+                <outputFormat id="3.2">
+                    <![CDATA[
+                    수정된 전체 문서를 출력한다.
+                    ]]>
+                </outputFormat>
+            </contextAndFormat>
+        </promptDesignFramework>
+    </metaPrompt>
+</prompt>
+`
+    },
                     {
                         id: 'default-info-add',
                         name: "🧩 정보 추가",
                         icon: 'plus-circle',
-                        template: `당신은 해당 주제의 전문가입니다. 다음 텍스트('{{manuscript}}')의 맥락을 바탕으로, 독자의 이해를 도울 수 있는 관련 배경지식이나 심층 정보를 추가하여 내용을 더 풍부하게 만들어주세요.`
+                        template: `<prompt id="default-info-add">
+    <metaPrompt>
+        <purpose>
+            문서의 맥락을 해치지 않으면서 독자의 이해를 돕는 관련 배경 지식이나 심층 정보를 추가한다.
+        </purpose>
+        <promptDesignFramework>
+            <objectiveDefinition id="1">
+                <finalDeliverable id="1.1">
+                    정보가 추가되어 더 풍부해진 문서
+                </finalDeliverable>
+                <coreTask id="1.2">
+                    정보 통합, 내용 확장, 배경지식 추가
+                </coreTask>
+                <successCriteria id="1.3">
+                    1. 추가된 정보가 기존 맥락과 자연스럽게 연결되는가?
+                    2. 추가된 정보가 독자의 이해를 실제로 돕는가?
+                    3. 내용에 불필요한 부분이 추가되지 않고 원래의 의도가 유지되는가?
+                </successCriteria>
+            </objectiveDefinition>
+            <personaAssignment id="2">
+                <expertPersona id="2.1">
+                    당신은 주어진 주제에 대해 깊은 지식을 가진 학자이자 작가입니다. 당신은 텍스트의 흐름을 방해하지 않으면서, 독자들이 궁금해할 만한 유용한 배경 정보나 심화 내용을 통합하여 문서의 완성도를 높입니다.
+                </expertPersona>
+                <audience id="2.2">
+                    특정 주제에 대해 더 깊이 알고 싶은 독자
+                </audience>
+                <toneAndStyle id="2.3">
+                    어조: 전문적, 정보 제공적 / 스타일: 기존 텍스트의 문체에 맞게 통합
+                </toneAndStyle>
+            </personaAssignment>
+            <contextAndFormat id="3">
+                <essentialContext id="3.1">
+                    <![CDATA[
+                    - 수정 대상 문서: {{manuscript}}
+                    - 추가할 정보: {{추가할_내용}}
+                    ]]>
+                </essentialContext>
+                <outputFormat id="3.2">
+                    <![CDATA[
+                    추가할 내용을 기존 문서에 자연스럽게 통합하여 최종 결과물을 반환한다.
+                    ]]>
+                </outputFormat>
+            </contextAndFormat>
+        </promptDesignFramework>
+    </metaPrompt>
+</prompt>
+                        `
                     },
                     {
                         id: 'default-summarize',
@@ -3710,7 +3919,54 @@ renderQuizResultView() {
                         id: 'default-simplify',
                         name: "💡 알기 쉽게",
                         icon: 'academic-cap',
-                        template: `당신은 복잡한 개념을 쉽게 설명하는 전문 교육자입니다. 다음 텍스트('{{manuscript}}')의 내용을 해당 분야에 대한 사전 지식이 없는 사람도 이해할 수 있도록, 일상적인 언어와 구체적인 예시를 사용하여 최대한 알기 쉽게 설명해주세요.`
+                        template: `
+                        <prompt id="default-simplify">
+    <metaPrompt>
+        <purpose>
+            전문적인 내용을 일반인이 이해하기 쉬운 언어와 형식으로 바꾼다.
+        </purpose>
+        <promptDesignFramework>
+            <objectiveDefinition id="1">
+                <finalDeliverable id="1.1">
+                    '해당 글에 대한 지식을 갈망하는 독자'를 위한 쉬운 설명 자료
+                </finalDeliverable>
+                <coreTask id="1.2">
+                    재구성, 설명, 단순화, 비유
+                </coreTask>
+                <successCriteria id="1.3">
+                    1. 원문의 복잡한 개념이 쉬운 언어로 명확히 전달되는가?
+                    2. 비유나 예시가 독자의 이해를 효과적으로 돕는가?
+                    3. 원문의 핵심적인 정보가 왜곡되지 않았는가?
+                </successCriteria>
+            </objectiveDefinition>
+            <personaAssignment id="2">
+                <expertPersona id="2.1">
+                    당신은 복잡한 개념을 가장 쉽게 설명하는 데 탁월한 능력을 가진 전문 교육자입니다. 당신은 독자의 지식 수준을 파악하고, 그에 맞는 비유, 예시, 그리고 단순한 언어를 사용하여 내용을 전달합니다.
+                </expertPersona>
+                <audience id="2.2">
+                    해당 분야에 대한 배경 지식이 없는 일반 독자 또는 {{대상_독자}}
+                </audience>
+                <toneAndStyle id="2.3">
+                    어조: 친절하고 이해를 돕는 / 스타일: 일상적인 대화체, 비유와 예시 포함
+                </toneAndStyle>
+            </personaAssignment>
+            <contextAndFormat id="3">
+                <essentialContext id="3.1">
+                    <![CDATA[
+                    - 단순화할 원본 텍스트: {{manuscript}}
+                    - 대상 독자: 해당 글에 대한 지식을 갈망하는 독자
+                    ]]>
+                </essentialContext>
+                <outputFormat id="3.2">
+                    <![CDATA[
+                    원본 텍스트를 대상 독자의 관점에서 재구성한 결과물을 반환한다.
+                    ]]>
+                </outputFormat>
+            </contextAndFormat>
+        </promptDesignFramework>
+    </metaPrompt>
+</prompt>
+                        `
                     },
                     {
                         id: 'default-keywords',
@@ -4677,22 +4933,12 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 }
                 document.body.removeChild(textArea);
             },
-            copyPromptForCurrentChapter() {
-                if (!state.activeProject || !state.activeChapterPath) return;
-                const {
-                    settings,
-                    toc
-                } = state.activeProject;
-                const chapterNode = Utils.getNodeByPath(toc, state.activeChapterPath);
-                if (!chapterNode) return;
-                const pathParts = state.activeChapterPath.split('.').map(Number);
-                const partNode = toc.children?.[pathParts[0]];
-                const fullTocText = Utils.generateTocText(toc, 0, '', state.activeChapterPath);
-                const partTocText = partNode ? Utils.generateTocText(partNode, 0, '', pathParts.slice(1).join('.')) : '';
-                const chapterDescription = state.activeChapterContent.notes || chapterNode.description || '';
-                let prompt = settings.writingPrompt || CONFIG.DEFAULT_PROJECT_SETTINGS.writingPrompt;
-                prompt = prompt.replace(/{{bookTitle}}/g, toc.title).replace(/{{projectGenre}}/g, settings.writingGenre).replace(/{{projectAgeGroup}}/g, settings.writingAgeGroup).replace(/{{projectAudience}}/g, settings.writingAudience).replace(/{{references}}/g, settings.writingReferences).replace(/{{partTitle}}/g, partNode?.title).replace(/{{partDescription}}/g, partNode?.description || '').replace(/{{chapterTitle}}/g, chapterNode.title).replace(/{{chapterDescription}}/g, chapterDescription).replace(/{{fullToc}}/g, fullTocText).replace(/{{partToc}}/g, partTocText).replace(/{{projectStyleExample}}/g, settings.writingStyle);
-                this.copyToClipboard(prompt, `copy-writing-prompt-${state.activeChapterPath}`);
+        copyPromptForCurrentChapter() {
+                if (!state.activeProject) return;
+                const template = state.activeProject.settings.writingPrompt || CONFIG.DEFAULT_PROJECT_SETTINGS.writingPrompt;
+                // ▼▼▼ [수정] 변수 처리 로직을 중앙 함수에 위임 ▼▼▼
+                this.processAndCopyPrompt(template, 'AI 글쓰기 프롬프트 실행');
+                // ▲▲▲ [수정 완료] ▲▲▲
             },
             copyTranslationPrompt() {
                 if (!state.activeChapterContent?.manuscript) return this.showToast('번역할 내용이 없습니다.', 'error');
