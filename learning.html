@@ -3318,7 +3318,8 @@ renderQuizResultView() {
                     node.contentId = Utils.generateId('content');
                 }
                 if (node.children && Array.isArray(node.children)) {
-                    node.children.forEach(this.ensureAllNodesHaveContentId);
+                    // [핵심 수정] 화살표 함수를 사용하여 'this' 컨텍스트를 유지합니다.
+                    node.children.forEach(child => this.ensureAllNodesHaveContentId(child));
                 }
             },
             showTooltip(target) {
@@ -4537,9 +4538,9 @@ Micro-interactions are the small, often unnoticed animations and design elements
 
                 if (shouldRender) View.render();
 
-                const contentView = document.getElementById('content-view');
-                if (contentView) {
-                    contentView.scrollTop = 0;
+                const mainScrollContainer = document.querySelector('.main-content');
+                if (mainScrollContainer) {
+                    mainScrollContainer.scrollTop = 0;
                 }
 
                 setTimeout(() => {
@@ -5106,6 +5107,10 @@ Path: ${input.dataset.path}
             },
             // learning.html 파일의 Controller 객체 내부
 
+            // learning.html 파일의 Controller 객체 내부
+
+            // learning.html 파일의 Controller 객체 내부
+
             async saveToc() {
                 state.isLoading = true;
                 ModalManager.close();
@@ -5115,20 +5120,17 @@ Path: ${input.dataset.path}
                     const originalToc = state.activeProject.toc;
                     const modifiedToc = ModalManager.data.editableToc;
 
+                    // 수정된 최종 버전의 함수를 호출합니다.
                     this.ensureAllNodesHaveContentId(modifiedToc);
 
-                    // ▼▼▼ [디버깅 코드 추가] ▼▼▼
-                    console.groupCollapsed("--- [3. 목차 저장 실행] 상세 디버그 정보 ---");
-                    console.log("저장 전 원본 TOC:", JSON.parse(JSON.stringify(originalToc)));
-                    console.log("저장할 수정된 TOC:", JSON.parse(JSON.stringify(modifiedToc)));
-                    
                     const getIds = (node) => {
                         if (!node) return new Set();
                         let ids = new Set([node.contentId]);
                         if (node.children) {
                             const validChildren = node.children.filter(Boolean);
                             validChildren.forEach(child => {
-                                getIds(child).forEach(id => ids.add(id));
+                                const childIds = getIds(child);
+                                childIds.forEach(id => ids.add(id));
                             });
                         }
                         return ids;
@@ -5137,16 +5139,8 @@ Path: ${input.dataset.path}
                     const oldContentIds = getIds(originalToc);
                     const newContentIds = getIds(modifiedToc);
 
-                    console.log("원본 Content ID 목록:", oldContentIds);
-                    console.log("수정된 Content ID 목록:", newContentIds);
-
                     const deletedContentIds = [...oldContentIds].filter(id => id && !newContentIds.has(id));
                     const addedContentIds = [...newContentIds].filter(id => id && !oldContentIds.has(id));
-
-                    console.warn("⚠️ 삭제될 Content ID 목록:", deletedContentIds);
-                    console.info("✨ 추가될 Content ID 목록:", addedContentIds);
-                    console.groupEnd();
-                    // ▲▲▲ [디버깅 코드 추가] ▲▲▲
 
                     const promises = [];
                     for (const contentId of addedContentIds) {
