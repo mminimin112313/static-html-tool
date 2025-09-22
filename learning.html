@@ -971,12 +971,29 @@ html.dark .quiz-result-score {
         color: var(--text-primary);
     }
     .action-rail-toggle-btn {
-        position: fixed; bottom: 20px; right: 20px; z-index: 101;
-        width: 48px; height: 48px; border-radius: 50%;
-        background-color: var(--accent-primary); color: white;
-        display: flex; align-items: center; justify-content: center;
-        box-shadow: var(--shadow-md); border: none; cursor: pointer;
-        transition: transform 0.2s;
+        position: fixed;
+        
+        /* [수정] 우측 중앙으로 위치 변경 */
+        top: 50%;
+        right: 0;
+        transform: translateY(-50%);
+        
+        z-index: 101;
+        
+        /* [수정] 탭 형태 및 크기 조정 */
+        width: 40px;
+        height: 48px;
+        border-radius: 8px 0 0 8px; /* 왼쪽 모서리만 둥글게 */
+
+        background-color: var(--accent-primary);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: -2px 2px 10px rgba(0,0,0,0.1);
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
     }
     .action-rail-toggle-btn:active {
         transform: scale(0.95);
@@ -2829,10 +2846,10 @@ const View = {
 
             // 4. 메뉴 HTML을 생성하여 컨테이너에 삽입합니다. (처음에는 숨겨진 상태로)
             contextMenuContainer.innerHTML = `
-            <div id="context-menu" class="fixed z-[2500] mt-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" 
-                style="visibility: hidden; top: ${y}px; left: ${x}px; transform: translate(-50%, +100%); transform-origin: bottom center;">
+            <div id="context-menu" class="fixed z-[2500] mb-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" 
+                style="visibility: hidden; top: ${y}px; left: ${x}px; transform: translate(-50%, -100%); transform-origin: bottom center;">
                 <div class="py-1" role="menu" aria-orientation="vertical">${itemsHtml}</div>
-            </div>`;;
+            </div>`;
 
             // 5. 생성된 메뉴 요소의 크기를 측정하고 화면 경계를 벗어나는지 확인합니다.
             const menuEl = document.getElementById('context-menu');
@@ -3790,7 +3807,7 @@ renderQuizResultView() {
                     
                     - **검증 목표**: {{검증_목표}}
                     - **지적 사항**: (첫 번째 오류 지적. 원문 내용 인용 후 정확한 정보 제시)
-                    - **수정 제안**: (수정문을 코드블럭에 넣어서 그대로 붙여넣을 수 있도록 해준다.)
+                    - **수정 제안**: (수정할 부분만 특정하여, 그 부분의 수정문을 코드블럭에 넣어서 그대로 붙여넣을 수 있도록 해준다.)
 
                     결과를 명확한 근거와 함께 항목별로 정리해주세요.
                     ]]>
@@ -4302,8 +4319,8 @@ Micro-interactions are the small, often unnoticed animations and design elements
         </constraints>
     </promptDesignFramework>
 </metaPrompt>`,
-                    customPrompts:  CONFIG.DEFAULT_ACTIONS,
-                    contextMenuItems: CONFIG.DEFAULT_CONTEXT_MENU_ITEMS,
+                    customPrompts: [],
+                    contextMenuItems: [],
                 };
             },
             updateTags() {
@@ -5077,9 +5094,21 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     const modifiedToc = ModalManager.data.editableToc;
 
                     const getIds = (node) => {
+                        // 1. 노드 자체가 유효하지 않으면 빈 Set을 반환하여 오류를 방지합니다.
+                        if (!node) { 
+                            console.warn("TOC tree has a broken (undefined) node, skipping.");
+                            return new Set();
+                        }
+
                         let ids = new Set([node.contentId]);
                         if (node.children) {
-                            node.children.forEach(child => getIds(child).forEach(id => ids.add(id)));
+                            // 2. 자식 배열에서 undefined 값을 걸러내어 데이터 구조를 복구합니다.
+                            const validChildren = node.children.filter(Boolean);
+                            
+                            // 3. 유효한 자식 노드에 대해서만 재귀 호출을 실행합니다.
+                            validChildren.forEach(child => {
+                                getIds(child).forEach(id => ids.add(id));
+                            });
                         }
                         return ids;
                     };
@@ -5088,8 +5117,23 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     const newContentIds = getIds(modifiedToc);
                     
                     const deletedContentIds = [...oldContentIds].filter(id => id && !newContentIds.has(id));
+                    const addedContentIds = [...newContentIds].filter(id => id && !oldContentIds.has(id));
+
 
                     const promises = [];
+                    for (const contentId of addedContentIds) {
+                        const newContent = {
+                            id: `${projectId}_${contentId}`,
+                            manuscript: '',
+                            notes: '',
+                            translation: '',
+                            questions: [],
+                            status: 'empty',
+                            history: [] // 히스토리 배열도 초기화
+                        };
+                        promises.push(DB.put(CONFIG.STORES.CONTENTS, newContent));
+                        state.activeContentsMap.set(newContent.id, newContent); // 메모리 내 캐시에도 추가
+                    }
                     for (const contentId of deletedContentIds) {
                         const fullContentId = `${projectId}_${contentId}`;
                         promises.push(DB.delete(CONFIG.STORES.CONTENTS, fullContentId));
@@ -5296,6 +5340,12 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 } = Utils.getParentNodeAndIndexByPath(toc, draggedPath);
                 if (!draggedParent) return;
                 const [draggedNode] = draggedParent.children.splice(draggedIndex, 1);
+                if (!draggedNode) {
+                    console.error("Drag-and-drop failed: Could not retrieve the node to be moved.");
+                    this.showToast('목차 이동에 실패했습니다. 페이지를 새로고침 후 다시 시도해주세요.', 'error');
+                    ModalManager.render(); // 이동 실패 시 목차를 원상 복구하기 위해 다시 렌더링
+                    return; 
+                }
                 if (dropTarget.position === 'inside') {
                     const newParentNode = Utils.getNodeByPath(toc, dropTarget.path);
                     if (newParentNode) {
@@ -5983,24 +6033,26 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     selectedTocPaths: new Set(),
                     lastSelectedTocPath: null
                 }),
-                'toc-add-child': (el) => {
+                 'toc-add-child': (el) => {
                     const parentNode = Utils.getNodeByPath(ModalManager.data.editableToc, el.dataset.path);
-                    parentNode.children.push({
-                        title: "새 항목",
-                        children: []
-                    });
-                    ModalManager.render();
+                    if (parentNode) {
+                        if (!parentNode.children) parentNode.children = [];
+                        // createTocNode 유틸리티를 사용하여 ID가 포함된 노드를 생성합니다.
+                        const newNode = Utils.createTocNode("새 하위 항목");
+                        parentNode.children.push(newNode);
+                        ModalManager.render();
+                    }
                 },
-                'toc-add-root-item': async () => { // 11번
-                    const newTitle = "새 챕터";
-                    state.activeProject.toc.children.push({ title: newTitle, children: [] });
-                    const newPath = `${state.activeProject.toc.children.length - 1}`;
-                    const newContent = { id: `${state.activeProjectId}_${newPath}`, /*...*/ };
-                    await DB.put(CONFIG.STORES.CONTENTS, newContent);
-                    state.activeContentsMap.set(newContent.id, newContent);
-                    state.activeProject.updatedAt = new Date().toISOString();
-                    await DB.put(CONFIG.STORES.PROJECTS, state.activeProject);
-                    await Controller.selectChapter(newPath); // 새로 만든 챕터로 바로 이동
+
+                // ▼▼▼ [수정] 불필요한 DB 조작을 제거하고 모달 내에서만 동작하도록 로직 단순화 ▼▼▼
+                'toc-add-root-item': () => {
+                    const toc = ModalManager.data.editableToc;
+                    if (toc) {
+                         // createTocNode 유틸리티를 사용하여 ID가 포함된 노드를 생성합니다.
+                        const newNode = Utils.createTocNode("새 최상위 항목");
+                        toc.children.push(newNode);
+                        ModalManager.render();
+                    }
                 },
                 'toc-delete': (el) => {
                     const {
