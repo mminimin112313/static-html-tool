@@ -20,7 +20,7 @@
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="document.dispatchEvent(new Event('katex-loaded'))" defer></script>
 
     <style>
-        /* ▼▼▼ [1단계] 나눔고딕, 나눔명조 및 기본 글꼴 웹 폰트 불러오기 ▼▼▼ */
+/* ▼▼▼ [1단계] 나눔고딕, 나눔명조 및 기본 글꼴 웹 폰트 불러오기 ▼▼▼ */
         @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&family=Nanum+Myeongjo:wght@400;700;800&display=swap');
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap');
     
@@ -1003,7 +1003,7 @@ html.dark .quiz-result-score {
 // ===================================================================================
 const CONFIG = {
     DB_NAME: 'ILS_V3_DB',
-    DB_VERSION: 1,
+    DB_VERSION: 3.17,
     STORES: {
         PROJECTS: 'projects',
         CONTENTS: 'contents',
@@ -1018,7 +1018,13 @@ const CONFIG = {
         SUBJECTIVE: 'subjective',
         CASE_BASED: 'case_based'
     },
-    DEFAULT_PROJECT_SETTINGS: {}
+    DEFAULT_PROJECT_SETTINGS: {},
+    HISTORY_MAX_ITEMS: 20, // 저장할 최대 이력 개수
+    HISTORY_AUTOSAVE_DELAY: 5000, // 자동 저장 딜레이 (ms)
+    SNAPSHOT_TYPE: {
+        MANUAL: 'manual',
+        AUTO: 'auto',
+    },
 };
 
 /**
@@ -1433,7 +1439,8 @@ const ModalManager = {
             'manageQuiz': this.renderManageQuizModal,
             'manageToc': this.renderManageTocModal,
             'splitChapter': this.renderSplitChapterModal,
-            'promptVariables': this.renderPromptVariablesModal, 
+            'promptVariables': this.renderPromptVariablesModal,
+            'manageHistory': this.renderManageHistoryModal,
         };
     },
 
@@ -1468,7 +1475,62 @@ const ModalManager = {
         }
         Controller.bindDynamicEventListeners();
     },
-    
+    renderManageHistoryModal() {
+        const history = this.data.history || [];
+        const activeContent = this.data.activeContent;
+        const renderContentSummary = (content) => {
+            const manuscript = content.manuscript?.substring(0, 100).replace(/\n/g, ' ') || 'No manuscript';
+            const notes = content.notes?.substring(0, 50).replace(/\n/g, ' ') || 'No notes';
+            const questions = content.questions?.length > 0 ? `${content.questions.length} questions` : 'No quizzes';
+            return `<div class="text-xs text-slate-500 truncate">
+                        <span class="font-semibold text-slate-700">원고:</span> ${manuscript}... <br>
+                        <span class="font-semibold text-slate-700">메모:</span> ${notes}... <br>
+                        <span class="font-semibold text-slate-700">퀴즈:</span> ${questions}
+                    </div>`;
+        };
+
+        const historyHtml = history.map((h, index) => {
+            const date = new Date(h.timestamp).toLocaleString();
+            const isCurrent = index === 0;
+            const isManual = h.type === CONFIG.SNAPSHOT_TYPE.MANUAL;
+            const typeIcon = isManual ? Heroicons.render('bookmark', { class: 'w-4 h-4 text-indigo-500' }) : Heroicons.render('clock', { class: 'w-4 h-4 text-slate-500' });
+            const typeLabel = isManual ? '수동 스냅샷' : '자동 스냅샷';
+
+            return `
+                <div class="p-3 my-2 border rounded-md bg-slate-50 flex flex-col sm:flex-row justify-between items-start sm:items-center">
+                    <div class="flex-grow min-w-0 pr-4">
+                        <p class="font-semibold text-sm text-slate-800 flex items-center gap-2">
+                            ${typeIcon}
+                            ${isCurrent ? '현재 버전' : `${history.length - 1 - index}번째 이전 이력`}
+                            <span class="text-xs text-slate-500 ml-2">(${typeLabel})</span>
+                        </p>
+                        <p class="text-xs text-slate-500">${date}</p>
+                        ${renderContentSummary(h.content)}
+                    </div>
+                    <div class="flex-shrink-0 mt-2 sm:mt-0 flex gap-2">
+                        <button data-action="compare-history" data-index="${index}" class="btn btn-secondary btn-sm">
+                            ${Heroicons.render('arrows-right-left', { class: 'w-4 h-4' })} 비교
+                        </button>
+                        ${!isCurrent ? `
+                        <button data-action="revert-history" data-index="${index}" class="btn btn-danger btn-sm">
+                            ${Heroicons.render('arrow-path', { class: 'w-4 h-4' })} 되돌리기
+                        </button>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        return `
+            <div class="p-6">
+                <div class="flex justify-between items-start">
+                    <h3 class="text-xl font-semibold text-slate-900 mb-4">챕터 이력 관리</h3>
+                    <button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100">${Heroicons.render('x-mark', { class: 'w-5 h-5 text-slate-500' })}</button>
+                </div>
+                <div class="max-h-[60vh] overflow-y-auto border rounded-lg p-2 bg-white mb-4">
+                    ${history.length > 0 ? historyHtml : '<p class="text-sm text-slate-500 text-center py-4">저장된 이력이 없습니다.</p>'}
+                </div>
+            </div>`;
+    },
      
     renderNewProjectModal() {
         const {
@@ -2181,7 +2243,11 @@ const View = {
         renderMainHeader() {
             const title = this.getHeaderTitle();
             const isProjectListView = state.currentView === 'project_list';
-            const workspaceControls = state.currentView === 'workspace' && state.activeProjectId ? `<button data-action="manage-toc" class="btn btn-secondary btn-sm" title="목차 관리">${Heroicons.render('bars-3-bottom-left', { class: 'w-4 h-4' })}</button><button data-action="open-settings" class="btn btn-secondary btn-sm" title="설정">${Heroicons.render('cog-6-tooth', { class: 'w-4 h-4' })}</button>` : '';
+            const workspaceControls = state.currentView === 'workspace' && state.activeProjectId ?
+            `<button data-action="manage-history" class="btn btn-secondary btn-sm" title="이력 관리">${Heroicons.render('clock', { class: 'w-4 h-4' })}</button>
+            <button data-action="manage-toc" class="btn btn-secondary btn-sm" title="목차 관리">${Heroicons.render('bars-3-bottom-left', { class: 'w-4 h-4' })}</button>
+            <button data-action="open-settings" class="btn btn-secondary btn-sm" title="설정">${Heroicons.render('cog-6-tooth', { class: 'w-4 h-4' })}</button>`
+            : '';
 
             let saveStatusIndicator = '';
             if (state.saveStatus === 'saving') {
@@ -3164,11 +3230,37 @@ renderQuizResultView() {
                     }
                 }
             },
+            saveChapterHistory: async (content, type = CONFIG.SNAPSHOT_TYPE.AUTO, message = '챕터 이력이 자동 저장되었습니다.') => {
+                if (!content || !content.id) return;
+                
+                // history 속성이 없으면 초기화
+                if (!content.history) content.history = [];
+
+                // 현재 내용을 깊은 복사하여 히스토리에 추가
+                const historyItem = {
+                    timestamp: new Date().toISOString(),
+                    type: type, // 스냅샷 유형 추가
+                    content: JSON.parse(JSON.stringify(content))
+                };
+                content.history.unshift(historyItem); // 최신 버전을 맨 앞에 추가
+
+                // 자동 스냅샷만 개수 제한을 적용
+                const autoSnapshots = content.history.filter(h => h.type === CONFIG.SNAPSHOT_TYPE.AUTO);
+                if (autoSnapshots.length > CONFIG.HISTORY_MAX_ITEMS) {
+                    // 가장 오래된 자동 스냅샷을 찾아서 삭제
+                    const oldestAutoSnapshotIndex = content.history.findIndex(h => h.id === autoSnapshots[autoSnapshots.length - 1].id);
+                    content.history.splice(oldestAutoSnapshotIndex, 1);
+                }
+                
+                await DB.put(CONFIG.STORES.CONTENTS, content);
+                Controller.showToast(message, 'info');
+            },
+
             unsavedChangesHandler(e) {
                 e.preventDefault();
                 e.returnValue = ''; // Chrome에서 경고창을 띄우기 위해 필요
             },
-            // ▼▼▼ 새로운 코드 (이 두 함수 전체를 Controller 객체 내부에 추가) ▼▼▼
+            
             showTooltip(target) {
                 if (window.innerWidth <= 1024) return; // 모바일에선 비활성화
                 const tooltipEl = document.getElementById('app-tooltip');
@@ -3228,13 +3320,22 @@ renderQuizResultView() {
                     title: '콘텐츠 생성',
                     actions: CONFIG.DEFAULT_ACTIONS.filter(a => ['default-tone-unify', 'default-info-add', 'default-simplify', 'default-expand'].includes(a.id))
                 };
+                const snapshotGroup = {
+                    title: '버전 관리',
+                    actions: [{
+                        id: 'manual-snapshot',
+                        name: '수동 스냅샷',
+                        icon: 'camera',
+                        template: '수동 스냅샷을 생성합니다.'
+                    }]
+                };
                 const customGroup = {
                     title: '사용자 정의',
                     actions: customActions
                 };
 
                 // 내용이 있는 그룹만 필터링하여 반환합니다.
-                return [analysisGroup, creationGroup, customGroup].filter(g => g.actions.length > 0);
+                return [analysisGroup, creationGroup, snapshotGroup, customGroup].filter(g => g.actions.length > 0);
             },
             async processAndCopyPrompt(template, actionTitle) {
                 if (!template) {
@@ -4190,6 +4291,7 @@ Micro-interactions are the small, often unnoticed animations and design elements
                         // 기존: state.saveStatus = 'idle'; View.render();
                         this.updateSaveStatus('idle'); // 수정
                     }, 2000);
+                    this.saveChapterHistory(content);
                 } 
                 // 설정 모달 관련 로직은 그대로 유지
                 else if (ModalManager.isOpen && ModalManager.type === 'settings' && event.target.dataset.settingKey) {
@@ -5261,6 +5363,66 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     ModalManager.data.activeTab = el.dataset.tab;
                     ModalManager.render();
                 },
+                'manage-history': () => {
+                    if (!state.activeChapterContent) {
+                        return Controller.showToast('이력을 관리할 챕터를 먼저 선택하세요.', 'error');
+                    }
+                    ModalManager.open('manageHistory', {
+                        history: state.activeChapterContent.history || [],
+                        activeContent: state.activeChapterContent
+                    });
+                },
+                'revert-history': async (el) => {
+                    const index = parseInt(el.dataset.index, 10);
+                    const content = state.activeChapterContent;
+                    if (!content || !content.history || !content.history[index]) return;
+
+                    ModalManager.open('confirm', {
+                        title: '버전 되돌리기',
+                        message: `선택한 버전으로 챕터 내용을 되돌리시겠습니까? 현재 내용은 이력으로 저장됩니다.`,
+                        confirmText: '되돌리기',
+                        onConfirm: async () => {
+                            // 현재 상태를 히스토리로 추가
+                            Controller.saveChapterHistory(content);
+
+                            // 선택한 이력 내용으로 현재 콘텐츠를 덮어쓰기
+                            const revertedContent = content.history[index].content;
+                            Object.assign(content, revertedContent);
+                            content.updatedAt = new Date().toISOString(); // 업데이트 시간 갱신
+
+                            // DB에 저장
+                            await DB.put(CONFIG.STORES.CONTENTS, content);
+                            state.activeContentsMap.set(content.id, content);
+
+                            // UI 갱신
+                            ModalManager.close();
+                            Controller.showToast('성공적으로 챕터 내용을 되돌렸습니다.', 'success');
+                            View.render();
+                        }
+                    });
+                },
+                // ▼▼▼ [추가] 이력 비교 기능 핸들러 (UI 없이 콘솔에 출력) ▼▼▼
+                'compare-history': (el) => {
+                    const index = parseInt(el.dataset.index, 10);
+                    const history = state.activeChapterContent.history || [];
+                    if (index < 0 || index >= history.length) return;
+
+                    const currentContent = history[0].content; // 현재 버전은 항상 첫 번째
+                    const prevContent = history[index].content;
+
+                    const diff = {
+                        manuscript: `[--- 이전 ---]\n${prevContent.manuscript}\n\n[--- 현재 ---]\n${currentContent.manuscript}`,
+                        notes: `[--- 이전 ---]\n${prevContent.notes}\n\n[--- 현재 ---]\n${currentContent.notes}`,
+                        translation: `[--- 이전 ---]\n${prevContent.translation}\n\n[--- 현재 ---]\n${currentContent.translation}`
+                    };
+
+                    console.log("--- 챕터 이력 비교 (Diff) ---");
+                    console.log("원고 변경 이력:", diff.manuscript);
+                    console.log("메모 변경 이력:", diff.notes);
+                    console.log("번역문 변경 이력:", diff.translation);
+
+                    Controller.showToast('변경 이력이 콘솔에 출력되었습니다.', 'info');
+                },
                 'save-settings': async (form) => {
                     const data = ModalManager.data;
                     const name = data.name || state.activeProject.name;
@@ -5666,6 +5828,17 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     View.render();
                 },
                 'toggle-action-rail': () => Controller.toggleActionRail(),
+                'manual-snapshot': () => {
+                    if (!state.activeChapterContent) {
+                        Controller.showToast('스냅샷을 만들 챕터가 없습니다.', 'error');
+                        return;
+                    }
+                    const name = prompt('스냅샷 이름을 입력하세요:');
+                    if (name?.trim()) {
+                        Controller.saveChapterHistory(state.activeChapterContent, CONFIG.SNAPSHOT_TYPE.MANUAL, `스냅샷 '${name}'이(가) 생성되었습니다.`);
+                        // Note: `name` is not currently used in the history object, but it's a good practice for future implementations.
+                    }
+                },
                 'handle-reset-confirmation-input': (el) => {
                 const resetButton = document.getElementById('reset-settings-btn');
                 if (resetButton) {
