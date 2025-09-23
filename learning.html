@@ -365,7 +365,8 @@ html.dark .quiz-result-score {
         .content-view { 
             padding: 1.5rem;
             padding-bottom: 200px;
-            /* flex-grow와 overflow-y가 제거되었습니다. */
+            flex-grow: 1; 
+            
         }
         
         .project-card { background-color: var(--bg-primary); border-radius: var(--radius-lg); border: 1px solid var(--border-color); padding: 1.5rem; box-shadow: var(--shadow-sm); transition: box-shadow 0.2s, transform 0.2s; }
@@ -2180,14 +2181,16 @@ const View = {
             if (state.isLoading) return this.renderSpinner("시스템 로딩 중...");
             if (['quiz', 'quizResult'].includes(state.currentView)) return this.renderCurrentView();
 
-            // ▼▼▼ [수정] this.renderFooter() 호출을 추가합니다. ▼▼▼
-            return `<aside class="sidebar ${state.isSidebarOpen ? '' : 'w-0 overflow-hidden !p-0 !border-0'} ${state.isMobileSidebarOpen ? 'open' : ''}" id="sidebar"> ${this.renderSidebar()} </aside>
-                     <div class="sidebar-overlay ${state.isMobileSidebarOpen ? 'show' : ''}" id="sidebar-overlay" data-action="close-sidebar"></div>
-                     <main class="main-content">
-                         ${this.renderMainHeader()}
-                         <div class="content-view" id="content-view"> ${this.renderCurrentView()} </div>
-                         ${this.renderFooter()} 
-                     </main>`;
+            
+            return `
+                    <aside class="sidebar ${state.isSidebarOpen ? '' : 'w-0 overflow-hidden !p-0 !border-0'} ${state.isMobileSidebarOpen ? 'open' : ''}" id="sidebar"> ${this.renderSidebar()} </aside>
+                    <div class="sidebar-overlay ${state.isMobileSidebarOpen ? 'show' : ''}" id="sidebar-overlay" data-action="close-sidebar"></div>
+                    <main class="main-content">
+                        ${this.renderMainHeader()}
+                        <div class="content-view" id="content-view"> ${this.renderCurrentView()} </div>
+                        ${this.renderFooter()} 
+                    </main>`;
+            // ▲▲▲ [수정 완료] ▲▲▲
         },
         // Inside the View object
         renderTocContextMenu() {
@@ -2466,7 +2469,19 @@ const View = {
                     </div>
                     ${workspaceControls}
                 </div>
+                ${this.renderProgressBar()}
             </header>`;
+        },
+        // learning.html 파일의 View 객체 내부에 아래 함수를 새로 추가하세요.
+        renderProgressBar() {
+            const isProgressBarVisible = state.currentView === 'workspace' && state.workspaceMode === 'view';
+            return `
+                <div id="view-progress-bar-container" 
+                    class="absolute bottom-0 left-0 w-full h-[3px] pointer-events-none" 
+                    style="display: ${isProgressBarVisible ? 'block' : 'none'}; transform: translateY(100%);">
+                    <div id="view-progress-bar" class="bg-indigo-500 h-full transition-all duration-150 ease-out" style="width: 0%;"></div>
+                </div>
+            `;
         },
         getHeaderTitle() {
             if (state.currentView === 'workspace' && state.activeProject) return state.activeProject.name;
@@ -3461,6 +3476,22 @@ renderQuizResultView() {
                     View.render();
                 }
             },
+            updateViewProgressBar() {
+                const container = document.querySelector('.main-content');
+                const progressBar = document.getElementById('view-progress-bar');
+                if (!container || !progressBar) return;
+
+                const scrollableHeight = container.scrollHeight - container.clientHeight;
+                const scrollPosition = container.scrollTop;
+
+                let progress = 0;
+                if (scrollableHeight > 0) {
+                    progress = (scrollPosition / scrollableHeight) * 100;
+                }
+
+                // [핵심 수정] transform 대신 width를 직접 업데이트합니다.
+                progressBar.style.width = `${progress}%`;
+            },
            openTocContextMenu(event, path) {
                 // 다중 선택 그룹에 포함되지 않은 항목을 우클릭/롱프레스 한 경우,
                 // 기존 선택을 모두 해제하고 해당 항목만 새로 선택합니다.
@@ -3959,16 +3990,6 @@ renderQuizResultView() {
                     //    사용자가 메뉴 바깥의 아무 곳이나 클릭(터치)하면 메뉴가 닫힙니다.
                     //    캡처링 단계(true)에서 실행하여 다른 이벤트보다 먼저 안정적으로 처리합니다.
                 document.body.addEventListener('mousedown', this.handleMouseDown.bind(this), true);
-
-                const mainContentEl = document.querySelector('.main-content');
-                if (mainContentEl) {
-                    mainContentEl.addEventListener('scroll', () => {
-                        if (state.contextMenu.isOpen) {
-                            state.contextMenu.isOpen = false;
-                            View.renderContextMenu();
-                        }
-                    }, { passive: true });
-                }
 
                 document.body.addEventListener('contextmenu', (e => {
                     const targetItem = e.target.closest('.modal-container #toc-editor-list .toc-item');
@@ -4904,6 +4925,18 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 }
             },
             applyPostRenderEffects() {
+                 const mainContentEl = document.querySelector('.main-content');
+                if (mainContentEl) {
+                    mainContentEl.addEventListener('scroll', () => {
+                        // 컨텍스트 메뉴가 열려있으면 닫습니다.
+                        if (state.contextMenu.isOpen) {
+                            state.contextMenu.isOpen = false;
+                            View.renderContextMenu();
+                        }
+                        // 진행률 표시줄을 업데이트합니다.
+                        this.updateViewProgressBar();
+                    }, { passive: true });
+                }
                 if (state.currentView === 'workspace' && state.workspaceMode === 'view' && state.isKaTeXLoaded && window.renderMathInElement) {
                     const viewPanel = document.querySelector('.prose.prose-readable');
                     if (viewPanel) {
@@ -5817,35 +5850,6 @@ Path: ${input.dataset.path}
                         View.render();
                     }
                 },
-                'open-prompt-variables': (el) => {
-                    const type = el.dataset.type;
-                    let title = '';
-                    let variables = [];
-
-                    if (type === 'writing') {
-                        title = '글쓰기 템플릿 변수';
-                        variables = [
-                            { name: 'bookTitle', desc: '프로젝트의 전체 제목입니다.' },
-                            { name: 'chapterTitle', desc: '현재 작업 중인 챕터(노트)의 제목입니다.' },
-                            { name: 'manuscript', desc: '현재 챕터의 "원고" 텍스트 전체입니다.' },
-                            { name: 'notes', desc: '현재 챕터의 "메모" 텍스트 전체입니다.' },
-                            { name: 'fullToc', desc: '프로젝트의 전체 목차 구조 텍스트입니다.' },
-                            { name: 'projectGenre', desc: '프로젝트 설정에 입력된 장르입니다.' },
-                            { name: 'projectAudience', desc: '프로젝트 설정에 입력된 목표 독자입니다.' },
-                            { name: 'projectStyleExample', desc: '프로젝트 설정에 입력된 스타일 예시입니다.' },
-                        ];
-                    } else if (type === 'quiz') {
-                        title = '퀴즈 템플릿 변수';
-                        variables = [
-                            { name: 'text', desc: '퀴즈 문제를 출제할 기반이 되는 현재 챕터의 "원고" 텍스트입니다.' },
-                            { name: 'questionCount', desc: '프로젝트 설정에 입력된 퀴즈 생성 개수입니다.' },
-                            { name: 'taskDescription', desc: '퀴즈 프롬프트 설정의 "과업 설명" 텍스트입니다.' },
-                            { name: 'outputFormatInstruction', desc: '퀴즈 프롬프트 설정의 "출력 형식" 텍스트입니다.' },
-                        ];
-                    }
-
-                    ModalManager.open('promptVariables', { title, variables });
-                },
                 'search-toc': (el) => { // 1번
                     state.tocSearchQuery = el.value;
                     View.render();
@@ -5900,10 +5904,6 @@ Path: ${input.dataset.path}
                     tocData.lastSelectedTocPath = path;
                     // 전체 UI가 아닌 모달만 다시 렌더링합니다.
                     ModalManager.render();
-                },
-                'sort-projects': (select) => {
-                    state.currentSortOrder = select.value;
-                    View.render();
                 },
                 'new-project': () => ModalManager.open('newProject', {
                     activeTab: 'blank'
@@ -6092,6 +6092,47 @@ Path: ${input.dataset.path}
                     console.log("번역문 변경 이력:", diff.translation);
 
                     Controller.showToast('변경 이력이 콘솔에 출력되었습니다.', 'info');
+                },
+                'open-prompt-variables': (el) => {
+                    const type = el.dataset.type;
+                    let title = '';
+                    let variables = [];
+
+                    if (type === 'writing') {
+                        title = '글쓰기 템플릿 변수';
+                        variables = [
+                            { name: 'bookTitle', desc: '프로젝트의 전체 제목입니다.' },
+                            { name: 'chapterTitle', desc: '현재 작업 중인 챕터(노트)의 제목입니다.' },
+                            { name: 'manuscript', desc: '현재 챕터의 "원고" 텍스트 전체입니다.' },
+                            { name: 'notes', desc: '현재 챕터의 "메모" 텍스트 전체입니다.' },
+                            { name: 'fullToc', desc: '프로젝트의 전체 목차 구조 텍스트입니다.' },
+                            { name: 'projectGenre', desc: '프로젝트 설정에 입력된 장르입니다.' },
+                            { name: 'projectAudience', desc: '프로젝트 설정에 입력된 목표 독자입니다.' },
+                            { name: 'projectStyleExample', desc: '프로젝트 설정에 입력된 스타일 예시입니다.' },
+                        ];
+                    } else if (type === 'quiz') {
+                        title = '퀴즈 템플릿 변수';
+                        variables = [
+                            { name: 'text', desc: '퀴즈 문제를 출제할 기반이 되는 현재 챕터의 "원고" 텍스트입니다.' },
+                            { name: 'questionCount', desc: '프로젝트 설정에 입력된 퀴즈 생성 개수입니다.' },
+                            { name: 'taskDescription', desc: '퀴즈 프롬프트 설정의 "과업 설명" 텍스트입니다.' },
+                            { name: 'outputFormatInstruction', desc: '퀴즈 프롬프트 설정의 "출력 형식" 텍스트입니다.' },
+                        ];
+                    }
+
+                    ModalManager.open('promptVariables', { title, variables });
+                },
+
+                'sort-projects': (select) => {
+                    state.currentSortOrder = select.value;
+                    View.render();
+                },
+                'retry-question': () => {
+                    if (state.quizState) {
+                        // 현재 문제의 답변 상태를 '답변 안 함'(undefined)으로 되돌립니다.
+                        state.quizState.answers[state.quizState.currentIndex] = undefined;
+                        View.render(); // UI를 다시 렌더링하여 문제를 다시 풀 수 있게 합니다.
+                    }
                 },
                 'save-settings': async (form) => {
                     const data = ModalManager.data;
@@ -6390,13 +6431,6 @@ Path: ${input.dataset.path}
                         Controller.finishQuiz();
                     }
                     View.render();
-                },
-                'retry-question': () => {
-                    if (state.quizState) {
-                        // 현재 문제의 답변 상태를 '답변 안 함'(undefined)으로 되돌립니다.
-                        state.quizState.answers[state.quizState.currentIndex] = undefined;
-                        View.render(); // UI를 다시 렌더링하여 문제를 다시 풀 수 있게 합니다.
-                    }
                 },
                 'back-to-workspace': () => {
                     state.quizState = null;
