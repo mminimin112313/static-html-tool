@@ -171,6 +171,24 @@ html.dark .modal-container .hover\:bg-indigo-500\/20:hover {
             cursor: not-allowed;
         }
         /* ▲▲▲ [추가 완료] ▲▲▲ */
+        /* ▼▼▼ [추가] 설정 모달 커스텀 아이템 탭 레이아웃 ▼▼▼ */
+        /* learning.html */
+        .custom-items-layout {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .custom-items-list-wrapper {
+            flex-grow: 1; /* 남는 공간을 모두 차지 */
+            min-height: 0; /* flex 자식 요소의 높이 계산 오류 방지 */
+            overflow-y: auto; /* 내용이 많으면 이 부분만 스크롤 */
+            padding: 0.75rem; /* 12px */
+            margin-top: 1rem;
+            margin-bottom: 1rem;
+            border-radius: 0.5rem; /* 8px */
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+        }
         /* === 퀴즈 UI 스타일 (데이터 기반, 다크모드 지원) V2 === */
 .quiz-container { background-color: var(--bg-secondary); }
 .quiz-header { background-color: var(--bg-primary); border-bottom-color: var(--border-color); }
@@ -356,6 +374,9 @@ html.dark .quiz-result-score {
         .modal-overlay { position: fixed; inset: 0; background-color: rgba(15, 23, 42, 0.6); display: flex; justify-content: center; align-items: center; z-index: 2000; opacity: 0; visibility: hidden; transition: opacity .3s; backdrop-filter: blur(4px); }
         .modal-overlay.show { opacity: 1; visibility: visible; }
         .modal-container { background-color: var(--bg-primary); border-radius: var(--radius-lg); width: 90%; max-width: 600px; box-shadow: var(--shadow-md); z-index: 2001; transform: scale(0.95); transition: transform 0.3s; }
+        .modal-container.modal-container-large {
+            max-width: 1024px; /* 설정 모달에 적합한 넓은 최대 너비 지정 */
+        }
         .modal-overlay.show .modal-container { transform: scale(1); }
 
         #workspace-main-content {
@@ -1523,7 +1544,45 @@ const ModalManager = {
             'manageHistory': this.renderManageHistoryModal,
         };
     },
+    renderSettingsResetTab() {
+            return `
+                <div>
+                    <h2 class="text-xl font-bold text-slate-800">설정 초기화</h2>
+                    <p class="text-sm text-slate-500 mt-1">프로젝트의 모든 설정을 기본값으로 되돌립니다. 이 작업은 되돌릴 수 없습니다.</p>
 
+                    <div class="mt-8 p-6 border-l-4 border-red-400 bg-red-50 rounded-md">
+                        <div class="flex">
+                            <div class="flex-shrink-0">
+                                ${Heroicons.render('exclamation-triangle', { class: 'h-5 w-5 text-red-500' })}
+                            </div>
+                            <div class="ml-3">
+                                <h3 class="text-md font-semibold text-red-800">위험 영역</h3>
+                                <div class="mt-2 text-sm text-red-700">
+                                    <p>이 작업을 계속하면 현재 프로젝트의 모든 프롬프트, 커스텀 버튼, 컨텍스트 메뉴 설정이 영구적으로 삭제되고 시스템 기본값으로 대체됩니다. 일반 설정(이름, 카테고리 등)은 영향을 받지 않습니다.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-6">
+                        <label for="reset-confirmation" class="block text-sm font-medium text-slate-700">계속하려면 "초기화"를 입력하세요.</label>
+                        <input type="text" id="reset-confirmation" 
+                               data-action="handle-reset-confirmation-input"
+                               class="mt-1 block w-full rounded-md border-slate-300 shadow-sm"
+                               autocomplete="off">
+                    </div>
+
+                    <div class="mt-6">
+                        <button id="reset-settings-btn"
+                                type="button"
+                                data-action="confirm-reset-settings"
+                                class="btn btn-danger w-full justify-center" disabled>
+                            이 프로젝트 설정 초기화
+                        </button>
+                    </div>
+                </div>
+            `;
+        },
     open(type, data = {}) {
         if (window.innerWidth <= 1024) Controller.closeSidebar();
         this.isOpen = true;
@@ -1540,21 +1599,22 @@ const ModalManager = {
     },
 
     render() {
-        if (!this.isOpen) {
-            this.el.innerHTML = '';
-            return;
-        }
-        const renderer = this.renderFunctions[this.type];
-        if (typeof renderer === 'function') {
-            
-            const contentHtml = renderer.call(this); 
-            this.el.innerHTML = `<div class="modal-overlay show" data-action="close-modal-overlay"><div class="modal-container">${contentHtml}</div></div>`;
-        }  else {
-            this.el.innerHTML = '';
-            console.error(`Modal type "${this.type}" not found.`);
-        }
-        Controller.bindDynamicEventListeners();
-    },
+    if (!this.isOpen) {
+        this.el.innerHTML = '';
+        return;
+    }
+    const renderer = this.renderFunctions[this.type];
+    if (typeof renderer === 'function') {
+        const contentHtml = renderer.call(this);
+        // [수정] 모달 타입이 'settings'일 경우 넓은 클래스를 추가합니다.
+        const containerClass = this.type === 'settings' ? 'modal-container modal-container-large' : 'modal-container';
+        this.el.innerHTML = `<div class="modal-overlay show" data-action="close-modal-overlay"><div class="${containerClass}">${contentHtml}</div></div>`;
+    } else {
+        this.el.innerHTML = '';
+        console.error(`Modal type "${this.type}" not found.`);
+    }
+    Controller.bindDynamicEventListeners();
+},
     renderManageHistoryModal() {
         const history = this.data.history || [];
         const activeContent = this.data.activeContent;
@@ -1691,37 +1751,57 @@ const ModalManager = {
     },
 
     renderSettingsModal() {
-        const activeTab = this.data.activeTab || 'general';
-        const tabButton = (id, label) => `<button type="button" data-action="switch-settings-tab" data-tab="${id}" class="px-4 py-2 text-sm font-medium rounded-md ${activeTab === id ? 'bg-indigo-600 text-white' : 'text-slate-500 hover:bg-slate-100'}">${label}</button>`;
+            const activeTab = this.data.activeTab || 'general';
+            
+            // 왼쪽 네비게이션 메뉴 아이템을 렌더링하는 헬퍼 함수
+            const navItem = (id, icon, label) => `
+                <button type="button" data-action="switch-settings-tab" data-tab="${id}" 
+                        class="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md ${activeTab === id ? 'bg-slate-200 text-slate-800 font-semibold' : 'text-slate-600 hover:bg-slate-100'}">
+                    ${Heroicons.render(icon, { class: 'w-5 h-5' })}
+                    <span>${label}</span>
+                </button>`;
 
-        const renderTabContent = () => {
-            switch (activeTab) {
-                case 'general':
-                    return this.renderSettingsGeneralTab();
-                case 'prompts':
-                    return this.renderSettingsPromptsTab();
-                case 'customButtons':
-                    return this.renderSettingsCustomItemsTab('prompt');
-                case 'contextMenus':
-                    return this.renderSettingsCustomItemsTab('contextMenu');
-                default:
-                    return '';
-            }
-        };
-
-        return `<form data-action="save-settings">
-            <div class="p-6">
-                <div class="flex justify-between items-start">
-                    <h3 class="text-xl font-semibold text-slate-900 mb-4">
-                        프로젝트 설정
-                        </h3>
-                        <button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100">
-                            ${Heroicons.render('x-mark', { class: 'w-5 h-5 text-slate-500' })}
-                        </button>
+            // 오른쪽 컨텐츠 영역을 렌더링하는 헬퍼 함수
+            const renderTabContent = () => {
+                switch (activeTab) {
+                    case 'general':       return this.renderSettingsGeneralTab();
+                    case 'prompts':       return this.renderSettingsPromptsTab();
+                    case 'customButtons': return this.renderSettingsCustomItemsTab('prompt');
+                    case 'contextMenus':  return this.renderSettingsCustomItemsTab('contextMenu');
+                    case 'reset':         return this.renderSettingsResetTab(); // 초기화 탭 추가
+                    default:              return '';
+                }
+            };
+            
+            // 최종 모달 HTML 구조
+            return `
+            <form data-action="save-settings" class="flex h-[80vh] min-h-[600px]">
+                <div class="w-1/4 min-w-[200px] bg-slate-50 p-4 border-r border-slate-200 flex flex-col">
+                    <h3 class="text-lg font-bold text-slate-900 mb-1">설정</h3>
+                    <p class="text-xs text-slate-500 mb-6">프로젝트 '${DOMPurify.sanitize(state.activeProject.name)}'</p>
+                    <nav class="space-y-1">
+                        ${navItem('general', 'cog-6-tooth', '일반')}
+                        ${navItem('prompts', 'document-text', '기본 프롬프트')}
+                        ${navItem('customButtons', 'squares-plus', '커스텀 버튼')}
+                        ${navItem('contextMenus', 'command-line', '컨텍스트 메뉴')}
+                        ${navItem('reset', 'arrow-path', '초기화')}
+                    </nav>
+                    <div class="mt-auto">
+                        <button type="button" data-action="close-modal" class="btn btn-secondary w-full">닫기</button>
+                    </div>
                 </div>
-                <div class="p-1 mb-4 inline-flex space-x-1 bg-slate-100 rounded-lg">${tabButton('general', '일반')}${tabButton('prompts', '기본 프롬프트')}${tabButton('customButtons', '커스텀 버튼')}${tabButton('contextMenus', '컨텍스트 메뉴')}</div><div class="max-h-[60vh] overflow-y-auto pr-2 pt-4">${renderTabContent()}</div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="submit" class="btn">저장</button></div></form>`;
-    },
 
+                <div class="w-3/4 flex flex-col">
+                    <div class="flex-grow p-8 overflow-y-auto">
+                        ${renderTabContent()}
+                    </div>
+                    <div class="bg-slate-50 px-8 py-4 border-t border-slate-200 flex justify-end">
+                        <button type="submit" class="btn">변경사항 저장</button>
+                    </div>
+                </div>
+            </form>`;
+        },
+    
     renderSettingsGeneralTab() {
         const categoryOptions = state.categories.map(c => `<option value="${c.id}" ${c.id === this.data.categoryId ? 'selected' : ''}>${c.name}</option>`).join('');
         const tagPills = (this.data.projectTags || []).map(tag => `<span class="inline-flex items-center gap-x-0.5 rounded-md bg-indigo-50 px-2 py-1 text-xs font-medium text-indigo-700">${tag}<button type="button" data-action="remove-tag" data-tag="${tag}" class="group relative -mr-1 h-3.5 w-3.5 rounded-sm hover:bg-indigo-500/20">${Heroicons.render('x-mark', { class: 'h-3.5 w-3.5 text-indigo-600 hover:text-indigo-700' })}</button></span>`).join('');
@@ -1826,73 +1906,77 @@ const ModalManager = {
         },
 
     renderSettingsCustomItemsTab(type) {
-        const isPrompt = type === 'prompt';
-        const title = isPrompt ? '커스텀 버튼' : '컨텍스트 메뉴';
-        const items = (isPrompt ? this.data.customPrompts : this.data.contextMenuItems) || [];
-        const addAction = isPrompt ? 'add-custom-prompt' : 'add-custom-context-menu';
-        const removeAction = isPrompt ? 'remove-custom-prompt' : 'remove-custom-context-menu';
-        const nameId = `new-${type}-name`;
-        const templateId = `new-${type}-template`;
-         const helpText = isPrompt ?
-            `<ul class="list-disc list-inside space-y-1"><li><code class="bg-slate-200 px-1 rounded">{{bookTitle}}</code>, <code class="bg-slate-200 px-1 rounded">{{chapterTitle}}</code>, <code class="bg-slate-200 px-1 rounded">{{manuscript}}</code> 등 모든 변수 사용 가능</li></ul>` :
-            `<ul class="list-disc list-inside space-y-1"><li><code class="bg-slate-200 px-1 rounded">{{selected_text}}</code>: 사용자가 선택한 텍스트로 치환됩니다.</li><li>이제 <code class="bg-slate-200 px-1 rounded">{{chapterTitle}}</code> 등 모든 변수도 함께 사용 가능합니다.</li></ul>`;
+    const isPrompt = type === 'prompt';
+    const title = isPrompt ? '커스텀 버튼' : '컨텍스트 메뉴';
+    const items = (isPrompt ? this.data.customPrompts : this.data.contextMenuItems) || [];
+    const addAction = isPrompt ? 'add-custom-prompt' : 'add-custom-context-menu';
+    const removeAction = isPrompt ? 'remove-custom-prompt' : 'remove-custom-context-menu';
+    const nameId = `new-${type}-name`;
+    const templateId = `new-${type}-template`;
+    const helpText = isPrompt ?
+        `<ul class="list-disc list-inside space-y-1"><li><code class="bg-slate-200 px-1 rounded">{{bookTitle}}</code>, <code class="bg-slate-200 px-1 rounded">{{chapterTitle}}</code>, <code class="bg-slate-200 px-1 rounded">{{manuscript}}</code> 등 모든 변수 사용 가능</li></ul>` :
+        `<ul class="list-disc list-inside space-y-1"><li><code class="bg-slate-200 px-1 rounded">{{selected_text}}</code>: 사용자가 선택한 텍스트로 치환됩니다.</li><li>이제 <code class="bg-slate-200 px-1 rounded">{{chapterTitle}}</code> 등 모든 변수도 함께 사용 가능합니다.</li></ul>`;
 
-        // ▼▼▼ [추가] 사용 가능한 모든 시스템 변수 목록을 정의합니다. ▼▼▼
-        const availableVarsTooltip = `
-            사용 가능한 시스템 변수 목록:\n
-            - {{bookTitle}}: 전체 프로젝트 제목
-            - {{chapterTitle}}: 현재 챕터 제목
-            - {{manuscript}}: 현재 챕터 원고
-            - {{translation}}: 현재 챕터 번역문
-            - {{notes}}: 현재 챕터 메모
-            - {{selected_text}}: 선택된 텍스트 (컨텍스트 메뉴 전용)
-            - {{fullToc}}: 전체 목차 구조
-            - {{projectGenre}}: 프로젝트 장르 설정
-            - ... 외 다수
-        `.trim().replace(/\n\s+/g, '\n');
+    const availableVarsTooltip = `
+        사용 가능한 시스템 변수 목록:\n
+        - {{bookTitle}}: 전체 프로젝트 제목
+        - {{chapterTitle}}: 현재 챕터 제목
+        - {{manuscript}}: 현재 챕터 원고
+        - {{translation}}: 현재 챕터 번역문
+        - {{notes}}: 현재 챕터 메모
+        - {{selected_text}}: 선택된 텍스트 (컨텍스트 메뉴 전용)
+        - {{fullToc}}: 전체 목차 구조
+        - {{projectGenre}}: 프로젝트 장르 설정
+        - ... 외 다수
+    `.trim().replace(/\n\s+/g, '\n');
 
-        const existingItemsHtml = items.map(item => `
-                    <div class="p-3 border rounded-lg flex justify-between items-center bg-white">
-                        <div class="flex-1 min-w-0">
-                            <p class="text-sm font-semibold text-slate-800 truncate">${item.name}</p>
-                            <p class="text-xs text-slate-500 truncate mt-1 font-mono">${item.template}</p>
-                        </div>
-                        <button type="button" data-action="${removeAction}" data-id="${item.id}" class="p-2 rounded-full hover:bg-red-100 text-red-500 ml-4">
-                            ${Heroicons.render('trash', { class: 'w-4 h-4' })}
-                        </button>
+    const existingItemsHtml = items.map(item => `
+                <div class="p-3 border rounded-lg flex justify-between items-center bg-white">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-semibold text-slate-800 truncate">${item.name}</p>
+                        <p class="text-xs text-slate-500 truncate mt-1 font-mono">${item.template}</p>
                     </div>
-                `).join('');
-
-        return `<div class="space-y-4">
-            <div class="p-4 border border-slate-300 rounded-lg bg-slate-50">
-                <h4 class="text-md font-semibold text-slate-800 mb-3">새 ${title} 추가</h4>
-                <div class="space-y-3">
-                    <div>
-                        <label for="${nameId}" class="block text-xs font-medium text-slate-600">이름</label>
-                        <input type="text" id="${nameId}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm text-sm" placeholder="${title} 이름">
-                    </div>
-                    <div>
-                        <div class="flex items-center justify-between">
-                             <label for="${templateId}" class="block text-xs font-medium text-slate-600">프롬프트 템플릿</label>
-                             <span data-tooltip="${availableVarsTooltip}" class="cursor-help">
-                                ${Heroicons.render('information-circle', { class: 'w-4 h-4 text-slate-400' })}
-                             </span>
-                        </div>
-                        <textarea id="${templateId}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm h-24 font-mono text-xs" placeholder="프롬프트 템플릿 입력..."></textarea>
-                    </div>
+                    <button type="button" data-action="${removeAction}" data-id="${item.id}" class="p-2 rounded-full hover:bg-red-100 text-red-500 ml-4">
+                        ${Heroicons.render('trash', { class: 'w-4 h-4' })}
+                    </button>
                 </div>
-                <button type="button" data-action="${addAction}" class="btn w-full justify-center mt-4">${Heroicons.render('plus', { class: 'w-4 h-4 mr-2' })} 목록에 추가</button>
-            </div>
+            `).join('');
+
+    return `<div class="custom-items-layout">
+        
+        <div class="p-4 border border-slate-300 rounded-lg bg-slate-50 flex-shrink-0">
+            <h4 class="text-md font-semibold text-slate-800 mb-3">새 ${title} 추가</h4>
             <div class="space-y-3">
-                <h4 class="text-md font-semibold text-slate-800">기존 ${title} 목록 (${items.length}개)</h4>
+                <div>
+                    <label for="${nameId}" class="block text-xs font-medium text-slate-600">이름</label>
+                    <input type="text" id="${nameId}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm text-sm" placeholder="${title} 이름">
+                </div>
+                <div>
+                    <div class="flex items-center justify-between">
+                         <label for="${templateId}" class="block text-xs font-medium text-slate-600">프롬프트 템플릿</label>
+                         <span data-tooltip="${availableVarsTooltip}" class="cursor-help">
+                            ${Heroicons.render('information-circle', { class: 'w-4 h-4 text-slate-400' })}
+                         </span>
+                    </div>
+                    <textarea id="${templateId}" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm h-24 font-mono text-xs" placeholder="프롬프트 템플릿 입력..."></textarea>
+                </div>
+            </div>
+            <button type="button" data-action="${addAction}" class="btn w-full justify-center mt-4">${Heroicons.render('plus', { class: 'w-4 h-4 mr-2' })} 목록에 추가</button>
+        </div>
+
+        <div class="custom-items-list-wrapper">
+            <h4 class="text-md font-semibold text-slate-800 mb-2">기존 ${title} 목록 (${items.length}개)</h4>
+            <div class="space-y-2">
                 ${items.length > 0 ? existingItemsHtml : `<p class="text-sm text-slate-500 text-center py-4">추가된 항목이 없습니다.</p>`}
             </div>
-            <div class="mt-4 text-xs text-slate-500 p-3 bg-slate-100 rounded-md">
-                <p class="font-semibold mb-1">참고:</p>
-                ${helpText}
-            </div>
-        </div>`;
-    },
+        </div>
+
+        <div class="text-xs text-slate-500 p-3 bg-slate-100 rounded-md flex-shrink-0">
+            <p class="font-semibold mb-1">참고:</p>
+            ${helpText}
+        </div>
+    </div>`;
+},
     renderApiKeyModal() {
         return `<form data-action="submit-api-key"><div class="p-6"><div class="flex items-start"><div class="mx-auto flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 sm:mx-0 sm:h-10 sm:w-10">${Heroicons.render('key', { style: 'solid', class: 'h-6 w-6 text-indigo-600' })}</div><div class="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left"><h3 class="text-lg leading-6 font-medium text-gray-900">Google AI API 키 입력</h3><div class="mt-2"><p class="text-sm text-gray-500">퀴즈 생성을 위해 Google AI Studio에서 발급받은 API 키를 입력해주세요.</p><input type="password" id="api-key-input" class="mt-2 block w-full rounded-md border-slate-300" placeholder="API 키를 여기에 붙여넣으세요"></div></div></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="submit" class="btn">확인</button></div></form>`;
     },
@@ -3885,7 +3969,7 @@ renderQuizResultView() {
                         }
                     }, { passive: true });
                 }
-                
+
                 document.body.addEventListener('contextmenu', (e => {
                     const targetItem = e.target.closest('.modal-container #toc-editor-list .toc-item');
                     if (targetItem) {
@@ -4700,7 +4784,7 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     state.activeProjectId = id;
                     state.activeProject = project;
                     state.currentView = 'workspace';
-                    
+                    document.title = `${project.name} | 통합 학습 및 저작 시스템 v3.17`;
                     // 마지막 챕터나 첫 챕터를 선택하는 로직은 URL 네비게이션 함수에서 처리하도록 합니다.
                     // 이 함수는 순수하게 프로젝트를 여는 책임만 가집니다.
 
@@ -4711,6 +4795,7 @@ Micro-interactions are the small, often unnoticed animations and design elements
                     state.currentView = 'dashboard';
                     state.activeProjectId = null;
                 } finally {
+                    // 브라우저 탭의 제목을 프로젝트 이름으로 업데이트합니다.
                     state.isLoading = false;
                     // shouldRender가 true일 때만 렌더링하도록 조건 추가
                     if (shouldRender) {
@@ -5860,6 +5945,57 @@ Path: ${input.dataset.path}
                     Controller.saveScrollPosition();
                     state.workspaceMode = el.dataset.mode;
                     View.render();
+                },
+                // ▼▼▼ [신규 핸들러 1] "초기화" 입력 감지 ▼▼▼
+                'handle-reset-confirmation-input': (el) => {
+                    const resetButton = document.getElementById('reset-settings-btn');
+                    if (resetButton) {
+                        // 입력값이 "초기화"와 정확히 일치할 때만 버튼 활성화
+                        resetButton.disabled = el.value !== '초기화';
+                    }
+                },
+
+                // ▼▼▼ [신규 핸들러 2] 초기화 실행 (이중 확인) ▼▼▼
+                'confirm-reset-settings': () => {
+                    ModalManager.open('confirm', {
+                        title: '최종 확인',
+                        message: '정말로 현재 프로젝트의 모든 설정을 기본값으로 되돌리시겠습니까? 저장된 프롬프트와 메뉴 등이 모두 사라집니다.',
+                        confirmText: '네, 초기화합니다',
+                        onConfirm: async () => {
+                            try {
+                                const project = state.activeProject;
+                                if (!project) throw new Error('활성 프로젝트가 없습니다.');
+
+                                // 기본 설정을 깊은 복사하여 새 객체로 만듭니다.
+                                const defaultSettings = JSON.parse(JSON.stringify(CONFIG.DEFAULT_PROJECT_SETTINGS));
+                                
+                                // 기본 프롬프트와 컨텍스트 메뉴는 ID를 새로 생성하여 할당합니다.
+                                defaultSettings.customPrompts = CONFIG.DEFAULT_ACTIONS.map(p => ({...p, id: Utils.generateId('cp')}));
+                                defaultSettings.contextMenuItems = CONFIG.DEFAULT_CONTEXT_MENU_ITEMS.map(m => ({...m, id: Utils.generateId('cmi')}));
+                                
+                                project.settings = defaultSettings;
+                                project.updatedAt = new Date().toISOString();
+
+                                const projectInList = state.projects.find(p => p.id === project.id);
+                                if (projectInList) {
+                                    projectInList.settings = project.settings;
+                                    projectInList.updatedAt = project.updatedAt;
+                                }
+
+                                await DB.put(CONFIG.STORES.PROJECTS, project);
+                                
+                                ModalManager.close(); // 확인 모달 닫기
+                                Controller.showToast('프로젝트 설정이 기본값으로 초기화되었습니다.', 'success');
+
+                                // 설정 모달을 다시 열어 초기화된 상태를 보여줍니다.
+                                Controller.ACTION_HANDLERS['open-settings']();
+
+                            } catch (error) {
+                                console.error("설정 초기화 실패:", error);
+                                Controller.showToast(`오류 발생: ${error.message}`, 'error');
+                            }
+                        }
+                    });
                 },
                 'select-chapter': (el) => {
                     const projectId = state.activeProjectId;
