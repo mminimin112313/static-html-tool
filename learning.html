@@ -1257,7 +1257,10 @@ const DB = {
     init() {
         return new Promise((resolve, reject) => {
             const request = indexedDB.open(CONFIG.DB_NAME, CONFIG.DB_VERSION);
-            request.onerror = (e) => reject("IndexedDB error: " + e.target.error);
+            request.onerror = (e) => {
+                console.error("IndexedDB error:", e.target.error);
+                reject("데이터베이스 초기화 실패. 웹 브라우저의 로컬 파일(file://) 보안 정책으로 인해 발생할 수 있습니다. 정상적인 사용을 위해서는 로컬 웹 서버(예: Live Server)를 통해 접속하거나, 크롬 개발자 도구의 'LocalOverides' 기능을 사용해 보세요.");
+            };
             request.onsuccess = (e) => {
                 this.db = e.target.result;
                 resolve(this.db);
@@ -3082,24 +3085,7 @@ renderQuizResultView() {
 
         const Controller = {
             async init() {
-                if ('serviceWorker' in navigator) {
-                    window.addEventListener('load', () => {
-                        // 1. 위에서 정의한 서비스 워커 코드 문자열로 Blob 객체를 생성합니다.
-                        const blob = new Blob([this.swCode], { type: 'application/javascript' });
-                        
-                        // 2. Blob 객체를 가리키는 임시 URL을 생성합니다.
-                        const swUrl = URL.createObjectURL(blob);
-
-                        // 3. 생성된 임시 URL을 사용해 서비스 워커를 등록합니다.
-                        navigator.serviceWorker.register(swUrl)
-                            .then(registration => {
-                                console.log('In-line ServiceWorker registration successful with scope: ', registration.scope);
-                            })
-                            .catch(err => {
-                                console.log('ServiceWorker registration failed: ', err);
-                            });
-                    });
-                }
+                
                 if (navigator.storage && navigator.storage.persist) {
                     try {
                         const isPersisted = await navigator.storage.persisted();
@@ -3147,62 +3133,7 @@ renderQuizResultView() {
                 View.render();
             },
 
-            swCode: `
-                const CACHE_VERSION = 'v3.17.0';
-                const CACHE_NAME = \`ils-cache-\${CACHE_VERSION}\`;
-                const APP_SHELL_URLS = [
-                    '/', 
-                    'https://cdn.tailwindcss.com',
-                    'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js',
-                    'https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js',
-                    'https://cdn.jsdelivr.net/npm/marked/marked.min.js',
-                    'https://unpkg.com/turndown/dist/turndown.js',
-                    'https://cdn.jsdelivr.net/npm/morphdom@2.7.0/dist/morphdom-umd.min.js',
-                    'https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js',
-                    'https://cdn.jsdelivr.net/npm/feather-icons@4.29.2/dist/feather.min.js',
-                    'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css',
-                    'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js',
-                    'https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js'
-                ];
-
-                self.addEventListener('install', event => {
-                    event.waitUntil(
-                        caches.open(CACHE_NAME).then(cache => cache.addAll(APP_SHELL_URLS))
-                    );
-                });
-
-                self.addEventListener('activate', event => {
-                    event.waitUntil(
-                        caches.keys().then(cacheNames => {
-                            return Promise.all(
-                                cacheNames.map(cacheName => {
-                                    if (cacheName !== CACHE_NAME) {
-                                        return caches.delete(cacheName);
-                                    }
-                                })
-                            );
-                        })
-                    );
-                    return self.clients.claim();
-                });
-
-                self.addEventListener('fetch', event => {
-                    event.respondWith(
-                        caches.match(event.request).then(response => {
-                            return response || fetch(event.request).then(networkResponse => {
-                                const responseToCache = networkResponse.clone();
-                                caches.open(CACHE_NAME).then(cache => {
-                                    // event.request.url.startsWith('http') 체크로 chrome-extension:// 요청 캐싱 방지
-                                    if(event.request.method === 'GET' && event.request.url.startsWith('http')) {
-                                        cache.put(event.request, responseToCache);
-                                    }
-                                });
-                                return networkResponse;
-                            });
-                        })
-                    );
-                });
-            `,
+            
 
             updateSaveStatus(status) {
                 state.saveStatus = status;
