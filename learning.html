@@ -1289,17 +1289,28 @@ const DB = {
             req.onerror = () => reject(req.error);
         });
     },
+    // DB.put 메서드 수정
     async put(storeName, data) {
         return new Promise((resolve, reject) => {
             const req = this.db.transaction(storeName, 'readwrite').objectStore(storeName).put(data);
-            req.onsuccess = () => resolve(req.result);
+            req.onsuccess = () => {
+                // [수정] 성공 시 변경 사실을 방송합니다.
+                SyncManager.broadcastUpdate({ storeName, key: data.id });
+                resolve(req.result);
+            };
             req.onerror = () => reject(req.error);
         });
     },
+
+    // DB.delete 메서드 수정
     async delete(storeName, key) {
         return new Promise((resolve, reject) => {
             const req = this.db.transaction(storeName, 'readwrite').objectStore(storeName).delete(key);
-            req.onsuccess = () => resolve(true);
+            req.onsuccess = () => {
+                // [수정] 성공 시 변경 사실을 방송합니다.
+                SyncManager.broadcastUpdate({ storeName, key });
+                resolve(true);
+            };
             req.onerror = () => reject(req.error);
         });
     },
@@ -1449,6 +1460,46 @@ const Utils = {
             // .replace(/\.0$/, '')는 '2.0k'를 '2k'로 만들어줍니다.
             return thousands.toFixed(1).replace(/\.0$/, '') + 'k';
     },
+};
+
+const SyncManager = {
+    channel: null,
+    tabId: Utils.generateId('tab'), // 각 탭을 식별하기 위한 고유 ID
+    reloadHandler: null,
+
+    init(handler) {
+        // BroadcastChannel을 지원하는지 확인
+        if ('BroadcastChannel' in window) {
+            this.reloadHandler = handler;
+            this.channel = new BroadcastChannel('ILS_SYNC_CHANNEL');
+            this.channel.onmessage = (event) => {
+                // 자신이 보낸 메시지는 무시하여 무한 루프 방지
+                if (event.data.sourceTabId === this.tabId) {
+                    return;
+                }
+                
+                console.log(`[SyncManager] 다른 탭(${event.data.sourceTabId})으로부터 상태 변경 알림 수신`, event.data);
+                
+                // 등록된 핸들러(데이터 새로고침 및 UI 렌더링)를 실행
+                if (typeof this.reloadHandler === 'function') {
+                    this.reloadHandler(event.data.payload);
+                }
+            };
+            console.log(`[SyncManager] 채널에 참여했습니다. (탭 ID: ${this.tabId})`);
+        } else {
+            console.warn('이 브라우저는 BroadcastChannel API를 지원하지 않아 탭 간 실시간 동기화가 비활성화됩니다.');
+        }
+    },
+
+    broadcastUpdate(payload = {}) {
+        // 채널이 열려있으면 메시지를 방송
+        if (this.channel) {
+            this.channel.postMessage({
+                sourceTabId: this.tabId,
+                payload: payload
+            });
+        }
+    }
 };
 
 const ModalManager = {
@@ -3111,6 +3162,7 @@ renderQuizResultView() {
                     console.error(error);
                     // 사용자에게 아이콘 로딩 실패를 알리는 UI를 표시할 수도 있습니다.
                 });
+                SyncManager.init(this.reloadDataAndRender.bind(this));
                 const savedTheme = localStorage.getItem('appTheme') || 'light';
                 state.theme = savedTheme;
                 document.documentElement.classList.toggle('dark', savedTheme === 'dark');
@@ -3181,6 +3233,86 @@ renderQuizResultView() {
                     }
                 }, 50); // 50ms 지연으로 안정성 확보
             },
+            // [추가] 렌더링 후 폼 요소의 값을 강제로 동기화하는 함수
+        syncFormElements() {
+            if (state.currentView !== 'workspace' || !state.activeChapterContent) {
+                return;
+            }
+            const content = state.activeChapterContent;
+            const elementsToSync = {
+                'manuscript': content.manuscript || '',
+                'notes': content.notes || '',
+                'translation': content.translation || ''
+            };
+
+            for (const [id, value] of Object.entries(elementsToSync)) {
+                const textarea = document.getElementById(id);
+                // textarea가 화면에 존재하고, 메모리의 값과 화면의 값이 다를 경우에만 갱신
+                if (textarea && textarea.value !== value) {
+                    console.log(`[Sync] '${id}' 요소의 값을 동기화합니다.`);
+                    textarea.value = value;
+                }
+            }
+        },
+            // [추가] 다른 탭의 변경사항을 반영하기 위한 데이터 새로고침 및 UI 렌더링 함수
+        async reloadDataAndRender(payload) {
+            console.log('[Controller] 데이터 새로고침 및 UI 렌더링을 시작합니다.', payload);
+            
+            // 1. 라이브러리 기본 정보(프로젝트, 카테고리 등)를 다시 불러옵니다.
+            const [projects, categories, userProfile] = await Promise.all([
+                DB.getAll(CONFIG.STORES.PROJECTS),
+                DB.getAll(CONFIG.STORES.CATEGORIES),
+                DB.get(CONFIG.STORES.USER_PROFILE, 'main')
+            ]);
+
+            state.projects = projects;
+            state.categories = categories.sort((a, b) => a.name.localeCompare(b.name));
+            state.userProfile = userProfile || state.userProfile;
+            this.updateTags();
+            this.buildSearchIndex();
+
+            // 2. 현재 프로젝트를 보고 있는 경우, 해당 프로젝트의 최신 정보도 갱신합니다.
+            if (state.activeProjectId) {
+                const updatedProject = await DB.get(CONFIG.STORES.PROJECTS, state.activeProjectId);
+                
+                // 만약 다른 탭에서 현재 프로젝트가 삭제되었다면, 대시보드로 이동합니다.
+                if (!updatedProject) {
+                    this.showToast('현재 작업 중인 프로젝트가 다른 탭에서 삭제되었습니다.', 'error');
+                    state.activeProjectId = null;
+                    state.activeProject = null;
+                    state.currentView = 'dashboard';
+                } else {
+                    // 프로젝트 정보와 콘텐츠 맵을 최신 상태로 업데이트합니다.
+                    state.activeProject = updatedProject;
+                    
+                    const allNodes = Utils.getFlatToc(updatedProject.toc);
+                    const contents = await Promise.all(
+                        allNodes.map(nodeInfo => DB.get(CONFIG.STORES.CONTENTS, `${state.activeProjectId}_${nodeInfo.node.contentId}`))
+                    );
+                    
+                    state.activeContentsMap.clear();
+                    contents.forEach(c => {
+                        if (c) state.activeContentsMap.set(c.id, c);
+                    });
+
+                    // 현재 열려있는 챕터의 내용도 최신화합니다.
+                    if (state.activeChapterPath) {
+                        const node = Utils.getNodeByPath(updatedProject.toc, state.activeChapterPath);
+                        if (node && node.contentId) {
+                            state.activeChapterContent = state.activeContentsMap.get(`${state.activeProjectId}_${node.contentId}`);
+                        } else {
+                            // 챕터가 삭제된 경우
+                            state.activeChapterPath = null;
+                            state.activeChapterContent = null;
+                        }
+                    }
+                }
+            }
+
+            // 3. 모든 상태 업데이트 후 UI를 다시 렌더링합니다.
+            View.render();
+            this.syncFormElements(); 
+        },
            openTocContextMenu(event, path) {
                 // 다중 선택 그룹에 포함되지 않은 항목을 우클릭/롱프레스 한 경우,
                 // 기존 선택을 모두 해제하고 해당 항목만 새로 선택합니다.
@@ -4472,7 +4604,11 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 state.quizState = null;
                 state.viewPanelDisplayMode = 'auto';
 
-                if (shouldRender) View.render();
+                if (shouldRender) {
+                    View.render();
+                    // 렌더링이 완료된 후, textarea 값을 확실하게 설정합니다.
+                    setTimeout(() => this.syncFormElements(), 0);
+                }
                 const translationTextarea = document.getElementById('translation');
                 if (translationTextarea) {
                     translationTextarea.value = state.activeChapterContent?.translation || '';
