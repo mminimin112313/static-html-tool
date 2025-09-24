@@ -1545,6 +1545,77 @@ const ModalManager = {
             'manageHistory': this.renderManageHistoryModal,
         };
     },
+    // ModalManager 객체 내부에 아래 5개 함수를 추가/교체하세요.
+
+    // [신규] 목차 리스트와 하단 컨트롤 영역의 HTML만 생성하는 헬퍼 함수
+    renderTocModalContent() {
+        // 헬퍼 함수: 재귀적으로 각 목차 노드를 HTML로 렌더링
+        const renderNode = (node, path) => {
+            const hasChildren = node.children && node.children.length > 0;
+            const isSelected = this.data.selectedTocPaths.has(path);
+            const iconName = hasChildren ? 'folder' : 'document-text';
+            const selectedClasses = isSelected ? 'bg-indigo-100 border-indigo-300' : 'hover:bg-slate-100';
+            const itemClasses = `toc-item my-1 group toc-drag-item ${isSelected ? 'selected' : ''}`;
+
+            return `<li draggable="true" data-path="${path}" class="${itemClasses}">
+                        <div data-action="toc-editor-click" data-path="${path}" class="flex items-center p-1.5 border border-transparent rounded-md cursor-pointer ${selectedClasses}">
+                            ${Heroicons.render(iconName, { class: 'w-4 h-4 mr-2 text-slate-500 flex-shrink-0' })}
+                            <input type="text" value="${DOMPurify.sanitize(node.title)}" data-path="${path}"
+                                   class="flex-grow bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-sm px-1 py-0.5 text-sm"
+                                   readonly>
+                            <div class="flex items-center space-x-1 ml-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                                <button data-action="toc-add-child" data-path="${path}" title="하위 항목 추가" class="p-1 rounded hover:bg-slate-200">${Heroicons.render('plus', { class: 'w-4 h-4 text-slate-600' })}</button>
+                            </div>
+                        </div>
+                        ${hasChildren ? `<ul class="pl-4 border-l border-slate-200">${node.children.map((child, index) => renderNode(child, `${path}.${index}`)).join('')}</ul>` : ''}
+                    </li>`;
+        };
+
+        const editableToc = this.data.editableToc;
+        if (!editableToc || !editableToc.children) return '<div>목차를 불러올 수 없습니다.</div>';
+        const tocHtml = `<ul id="toc-editor-list" class="space-y-1">${editableToc.children.map((child, index) => renderNode(child, String(index))).join('')}</ul>`;
+        const selectedCount = this.data.selectedTocPaths.size;
+
+        const footerControls = `
+            <div class="flex-shrink-0 pt-4 border-t flex justify-between items-center">
+                <span class="text-sm text-slate-500">${selectedCount > 0 ? `${selectedCount}개 항목 선택됨` : '항목을 클릭하거나 드래그하세요.'}</span>
+                <div>
+                    <button data-action="toc-add-root-item" class="btn btn-secondary mr-2">${Heroicons.render('plus', { class: 'w-4 h-4 mr-2' })}최상위 항목 추가</button>
+                    <button data-action="toc-context-delete" class="btn btn-danger" ${selectedCount === 0 ? 'disabled' : ''}>${Heroicons.render('trash', { class: 'w-4 h-4 mr-2' })}선택 항목 삭제</button>
+                </div>
+            </div>`;
+        
+        return `<div class="flex-grow min-h-0 overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50 mb-4" id="toc-scroll-container">
+                    ${tocHtml}
+                </div>
+                ${footerControls}`;
+    },
+
+    // [신규] 스크롤 점프 현상을 막기 위한 부분 업데이트 함수
+    updateTocView() {
+        const target = document.getElementById('toc-modal-content');
+        if (target) {
+            // safeMorphdom을 사용해 변경된 부분만 지능적으로 업데이트
+            safeMorphdom(target, this.renderTocModalContent());
+        }
+    },
+    
+    // [수정] renderManageTocModal: 부분 렌더링을 위한 컨테이너 ID 추가
+    renderManageTocModal() {
+        return `<div class="p-6 flex flex-col h-[80vh]">
+                    <div class="flex-shrink-0 flex justify-between items-start mb-4">
+                        <h3 class="text-xl font-semibold text-slate-900">목차 관리</h3>
+                        <button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100">${Heroicons.render('x-mark', { class: 'w-5 h-5 text-slate-500' })}</button>
+                    </div>
+                    <div id="toc-modal-content" class="flex-grow min-h-0 flex flex-col">
+                        ${this.renderTocModalContent()}
+                    </div>
+                </div>
+                <div class="flex-shrink-0 bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg border-t">
+                    <button type="button" data-action="close-modal" class="btn btn-secondary">취소</button>
+                    <button type="button" data-action="save-toc" class="btn">변경사항 저장</button>
+                </div>`;
+    },
     renderSettingsResetTab() {
             return `
                 <div>
@@ -2068,32 +2139,7 @@ const ModalManager = {
             </div>`;
         },
 
-    renderManageTocModal() {
-        const renderNode = (node, path) => {
-            const hasChildren = node.children && node.children.length > 0;
-            const isSelected = this.data.selectedTocPaths.has(path); // 수정: ModalManager의 데이터 사용
-            const iconName = hasChildren ? 'folder' : 'document-text';
-
-            // ▼▼▼ 아래 li 태그와 input 태그 부분을 수정합니다. ▼▼▼
-            return `<li draggable="true" data-path="${path}" class="my-1 group toc-item ${isSelected ? 'selected' : ''} toc-drag-item">
-                        <div data-action="toc-editor-click" data-path="${path}" class="flex items-center p-2 rounded-md hover:bg-slate-100 cursor-pointer">
-                            ${Heroicons.render(iconName, { class: 'w-4 h-4 mr-2 text-slate-500 flex-shrink-0' })}
-                            <input type="text" value="${DOMPurify.sanitize(node.title)}" data-action="toc-edit-title" data-path="${path}" class="flex-grow bg-transparent focus:bg-white focus:ring-1 focus:ring-indigo-500 rounded-md px-1 py-0.5 text-sm">
-                            <div class="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button data-action="toc-add-child" data-path="${path}" title="하위 항목 추가" class="p-1 rounded hover:bg-slate-200">${Heroicons.render('arrow-turn-down-right', { class: 'w-4 h-4 text-slate-600' })}</button>
-                                <button data-action="toc-delete" data-path="${path}" title="삭제" class="p-1 rounded hover:bg-red-100">${Heroicons.render('trash', { class: 'w-4 h-4 text-red-500' })}</button>
-                            </div>
-                        </div>
-                        ${hasChildren ? `<ul class="pl-4 border-l border-slate-200">${node.children.map((child, index) => renderNode(child, `${path}.${index}`)).join('')}</ul>` : ''}
-                    </li>`;
-        };
-        const editableToc = this.data.editableToc;
-        if (!editableToc || !editableToc.children) return '<div>목차를 불러올 수 없습니다.</div>';
-        const tocHtml = `<ul id="toc-editor-list" class="space-y-1">${editableToc.children.map((child, index) => renderNode(child, String(index))).join('')}</ul>`;
-            
-        return `<div class="p-6"><div class="flex justify-between items-start"><h3 class="text-xl font-semibold text-slate-900 mb-4">목차 관리</h3><button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100">${Heroicons.render('x-mark', { class: 'w-5 h-5 text-slate-500' })}</button></div><div class="max-h-[60vh] overflow-y-auto pr-2 border rounded-lg p-2 bg-slate-50 mb-4">${tocHtml}</div><div class="text-right"><button data-action="toc-add-root-item" class="btn btn-secondary">${Heroicons.render('plus', { class: 'w-4 h-4 mr-2' })}최상위 항목 추가</button></div></div><div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg"><button type="button" data-action="close-modal" class="btn btn-secondary">취소</button><button type="button" data-action="save-toc" class="btn">변경사항 저장</button></div>`;
-    },
-
+    
     renderSplitChapterModal() {
         const chapterNode = Utils.getNodeByPath(state.activeProject.toc, state.activeChapterPath);
         const {
@@ -5419,90 +5465,76 @@ Path: ${input.dataset.path}
 
             // learning.html 파일의 Controller 객체 내부
 
-             async saveToc() {
-                const modalInputs = document.querySelectorAll('#toc-editor-list input[data-action="toc-edit-title"]');
-                modalInputs.forEach(input => {
-                    const path = input.dataset.path;
-                    const currentUITitle = input.value;
-                    const nodeInData = Utils.getNodeByPath(ModalManager.data.editableToc, path);
-                    
-                    if (nodeInData && nodeInData.title !== currentUITitle) {
-                        nodeInData.title = currentUITitle;
-                    }
-                });
-
-                // ▼▼▼ [핵심 수정] 이 부분을 추가하고 순서를 변경하세요. ▼▼▼
-                // 1. 모달을 닫기 전에, 수정된 목차 데이터를 안전한 지역 변수에 먼저 복사합니다.
+            async saveToc() {
+                // [핵심 수정] 모달이 닫히기 전에, 수정된 목차 데이터를 안전한 지역 변수에 먼저 깊은 복사합니다.
+                // 이것이 경쟁 조건 버그를 해결하는 가장 중요한 부분입니다.
                 const tocToSave = JSON.parse(JSON.stringify(ModalManager.data.editableToc));
 
                 state.isLoading = true;
-                ModalManager.close();
-                View.render();
+                ModalManager.close(); // 이제 안전하게 모달을 닫을 수 있습니다.
+                View.render(); // 로딩 상태를 즉시 UI에 반영
+                
                 try {
                     const projectId = state.activeProjectId;
                     const originalToc = state.activeProject.toc;
-                    // 2. 이전에 복사해 둔 안전한 데이터를 사용합니다. (버그의 원인이었던 코드 수정)
-                    const modifiedToc = tocToSave;
 
-                    // 수정된 최종 버전의 함수를 호출합니다.
-                    this.ensureAllNodesHaveContentId(modifiedToc);
-
+                    // 새로 추가되거나 삭제된 노드를 추적하기 위해 contentId 집합을 사용합니다.
                     const getIds = (node) => {
-                        if (!node) return new Set();
+                        if (!node || !node.contentId) return new Set();
                         let ids = new Set([node.contentId]);
                         if (node.children) {
-                            const validChildren = node.children.filter(Boolean);
-                            validChildren.forEach(child => {
-                                const childIds = getIds(child);
-                                childIds.forEach(id => ids.add(id));
-                            });
+                            node.children.forEach(child => getIds(child).forEach(id => ids.add(id)));
                         }
                         return ids;
                     };
 
                     const oldContentIds = getIds(originalToc);
-                    const newContentIds = getIds(modifiedToc);
+                    const newContentIds = getIds(tocToSave);
 
-                    const deletedContentIds = [...oldContentIds].filter(id => id && !newContentIds.has(id));
-                    const addedContentIds = [...newContentIds].filter(id => id && !oldContentIds.has(id));
+                    const deletedContentIds = [...oldContentIds].filter(id => !newContentIds.has(id));
+                    const addedContentIds = [...newContentIds].filter(id => !oldContentIds.has(id));
 
+                    // DB 작업을 위한 프로미스 배열
                     const promises = [];
+
+                    // 새로 추가된 콘텐츠 생성
                     for (const contentId of addedContentIds) {
                         const newContent = {
                             id: `${projectId}_${contentId}`,
-                            manuscript: '',
-                            notes: '',
-                            translation: '',
-                            questions: [],
-                            status: 'empty',
-                            history: []
+                            manuscript: '', notes: '', translation: '', questions: [], status: 'empty',
                         };
                         promises.push(DB.put(CONFIG.STORES.CONTENTS, newContent));
                         state.activeContentsMap.set(newContent.id, newContent);
                     }
+
+                    // 삭제된 콘텐츠 제거
                     for (const contentId of deletedContentIds) {
                         const fullContentId = `${projectId}_${contentId}`;
                         promises.push(DB.delete(CONFIG.STORES.CONTENTS, fullContentId));
                         state.activeContentsMap.delete(fullContentId);
                     }
 
+                    // 현재 열려있던 챕터가 삭제되었는지 확인
                     const activeNode = state.activeChapterPath ? Utils.getNodeByPath(originalToc, state.activeChapterPath) : null;
                     if (activeNode && deletedContentIds.includes(activeNode.contentId)) {
                         state.activeChapterPath = null;
                         state.activeChapterContent = null;
                     }
                     
-                    state.activeProject.toc = modifiedToc;
+                    // 프로젝트의 목차를 새 버전으로 업데이트
+                    state.activeProject.toc = tocToSave;
                     state.activeProject.updatedAt = new Date().toISOString();
                     promises.push(DB.put(CONFIG.STORES.PROJECTS, state.activeProject));
                     
                     await Promise.all(promises);
                     this.showToast('목차가 성공적으로 업데이트되었습니다.', 'success');
+
                 } catch (error) {
                     console.error("Failed to save TOC:", error);
                     this.showToast(`목차 저장 실패: ${error.message}`, 'error');
                 } finally {
                     state.isLoading = false;
+                    // 최종 상태를 반영하여 다시 렌더링
                     View.render();
                 }
             },
@@ -5850,39 +5882,103 @@ Path: ${input.dataset.path}
                     }
                 },
                 // Controller.ACTION_HANDLERS 객체 내부
+                 // [수정] 이름 변경 로직을 분리하고, 다중/범위 선택 기능을 강화합니다.
                 'toc-editor-click': (el, e) => {
                     const path = el.dataset.path;
                     const { shiftKey, ctrlKey, metaKey } = e;
                     const tocData = ModalManager.data;
                     const flatToc = Utils.getFlatToc(tocData.editableToc);
 
+                    // 이름 변경을 위한 더블클릭 감지
+                    if (e.detail === 2) { // e.detail은 클릭 횟수를 나타냅니다.
+                        Controller.ACTION_HANDLERS['toc-context-rename'](el);
+                        return;
+                    }
+                    
+                    // Shift 키를 이용한 범위 선택
                     if (shiftKey && tocData.lastSelectedTocPath) {
                         const lastIdx = flatToc.findIndex(item => item.path === tocData.lastSelectedTocPath);
                         const currentIdx = flatToc.findIndex(item => item.path === path);
                         if (lastIdx !== -1 && currentIdx !== -1) {
                             const start = Math.min(lastIdx, currentIdx);
                             const end = Math.max(lastIdx, currentIdx);
-                            if (!ctrlKey && !metaKey) {
-                                tocData.selectedTocPaths.clear();
-                            }
+                            if (!ctrlKey && !metaKey) tocData.selectedTocPaths.clear();
                             for (let i = start; i <= end; i++) {
                                 tocData.selectedTocPaths.add(flatToc[i].path);
                             }
                         }
+                    // Ctrl/Cmd 키를 이용한 다중 선택
                     } else if (ctrlKey || metaKey) {
-                        if (tocData.selectedTocPaths.has(path)) {
-                            tocData.selectedTocPaths.delete(path);
-                        } else {
-                            tocData.selectedTocPaths.add(path);
-                        }
+                        tocData.selectedTocPaths.has(path) ? tocData.selectedTocPaths.delete(path) : tocData.selectedTocPaths.add(path);
+                    // 일반 단일 선택
                     } else {
                         tocData.selectedTocPaths.clear();
                         tocData.selectedTocPaths.add(path);
                     }
                     
                     tocData.lastSelectedTocPath = path;
-                    // 전체 UI가 아닌 모달만 다시 렌더링합니다.
                     ModalManager.render();
+                },
+
+                // [신규] 이름 변경 핸들러: input 필드를 편집 가능하게 만듭니다.
+                'toc-context-rename': (el) => {
+                    const path = el.dataset.path || ModalManager.data.selectedTocPaths.values().next().value;
+                    if (!path) return;
+                    
+                    const input = document.querySelector(`.modal-container input[data-path="${path}"]`);
+                    if (input) {
+                        input.readOnly = false;
+                        input.focus();
+                        input.select();
+                        
+                        const handleRenameEnd = () => {
+                            input.readOnly = true;
+                            const node = Utils.getNodeByPath(ModalManager.data.editableToc, path);
+                            if(node) node.title = input.value;
+                            input.removeEventListener('blur', handleRenameEnd);
+                            input.removeEventListener('keydown', handleKeydown);
+                            ModalManager.render();
+                        };
+                        const handleKeydown = (e) => {
+                            if (e.key === 'Enter') handleRenameEnd();
+                            if (e.key === 'Escape') {
+                                input.value = Utils.getNodeByPath(ModalManager.data.editableToc, path).title;
+                                handleRenameEnd();
+                            }
+                        };
+                        input.addEventListener('blur', handleRenameEnd);
+                        input.addEventListener('keydown', handleKeydown);
+                    }
+                },
+
+                // [신규] 다중 삭제 핸들러: 선택된 모든 항목을 한 번에 삭제합니다.
+                'toc-context-delete': () => {
+                    const selectedPaths = ModalManager.data.selectedTocPaths;
+                    if (selectedPaths.size === 0) return;
+
+                    ModalManager.open('confirm', {
+                        title: `${selectedPaths.size}개 항목 삭제`,
+                        message: `선택한 ${selectedPaths.size}개의 항목과 모든 하위 항목을 영구적으로 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`,
+                        confirmText: '삭제',
+                        onConfirm: () => {
+                            const toc = ModalManager.data.editableToc;
+                            // 깊은 순서대로 정렬하여 하위 노드부터 안전하게 삭제
+                            const sortedPaths = [...selectedPaths].sort((a, b) => b.length - a.length);
+
+                            sortedPaths.forEach(path => {
+                                const { parent, index } = Utils.getParentNodeAndIndexByPath(toc, path);
+                                if (parent && parent.children && parent.children[index]) {
+                                    // 다른 선택 항목의 하위 항목이 아닌 경우에만 삭제
+                                    const isSubpath = sortedPaths.some(p => path.startsWith(p + '.') && p !== path);
+                                    if (!isSubpath) {
+                                        parent.children.splice(index, 1);
+                                    }
+                                }
+                            });
+                            selectedPaths.clear();
+                            ModalManager.render();
+                        }
+                    });
                 },
                 'new-project': () => ModalManager.open('newProject', {
                     activeTab: 'blank'
@@ -6206,6 +6302,16 @@ Path: ${input.dataset.path}
 
                     // 파일 읽기 시작
                     reader.readAsDataURL(file);
+                },
+                'export-project': (el) => {
+                    // 버튼의 data-id 속성 또는 현재 활성화된 프로젝트의 ID를 가져옵니다.
+                    const projectId = el.dataset.id || state.activeProjectId;
+                    if (projectId) {
+                        // 기존에 존재하던 내보내기 함수를 호출합니다.
+                        Controller.exportProject(projectId);
+                    } else {
+                        Controller.showToast('내보낼 프로젝트를 식별할 수 없습니다.', 'error');
+                    }
                 },
                 'remove-custom-prompt': (el) => {
                     const idToRemove = el.dataset.id;
