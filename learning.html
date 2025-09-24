@@ -1060,6 +1060,31 @@ const CONFIG = {
         SUBJECTIVE: 'subjective',
         CASE_BASED: 'case_based'
     },
+    // Enumerations for common view names to avoid magic strings scattered throughout the code.  
+    VIEW_NAMES: {
+        DASHBOARD: 'dashboard',
+        PROJECT_LIST: 'project_list',
+        WORKSPACE: 'workspace',
+        QUIZ: 'quiz',
+        QUIZ_RESULT: 'quizResult'
+    },
+    // Enumerations for save status indicators.
+    SAVE_STATUS: {
+        IDLE: 'idle',
+        SAVING: 'saving',
+        SAVED: 'saved'
+    },
+    // Centralized action names to avoid magic strings scattered in HTML and JS.
+    ACTIONS: {
+        OPEN_PROJECT: 'open-project',
+        EXPORT_PROJECT: 'export-project',
+        DELETE_PROJECT_CONFIRM: 'delete-project-confirm',
+        SAVE_TOC: 'save-toc',
+        ADD_ROOT_CHAPTER: 'toc-add-root-item',
+        DELETE_CHAPTER: 'toc-delete',
+        EDIT_CHAPTER_TITLE: 'toc-edit-title'
+        // Extend this list as needed for other actions
+    },
     DEFAULT_PROJECT_SETTINGS: {},
     HISTORY_MAX_ITEMS: 20, // 저장할 최대 이력 개수
     HISTORY_AUTOSAVE_DELAY: 5000, // 자동 저장 딜레이 (ms)
@@ -1273,6 +1298,62 @@ const state = {
     },
 };
 
+// -----------------------------------------------------------------------------------
+// State listeners and subscription API
+//
+// To decouple the rendering logic from the logic that mutates state, we provide a
+// simple publish/subscribe mechanism. Components can register listeners that will
+// be invoked whenever the state changes via `setState`. This ensures a single
+// centralized location for state updates and allows for future extensibility
+// (e.g., logging, undo stack, etc.).
+const stateListeners = [];
+
+/**
+ * Subscribe to state updates. The provided callback will be called with the
+ * updated state whenever `setState` is invoked.
+ *
+ * @param {Function} listener - A callback function receiving the new state.
+ */
+function addStateListener(listener) {
+    if (typeof listener === 'function') {
+        stateListeners.push(listener);
+    }
+}
+
+/**
+ * Unsubscribe a previously registered state listener.
+ *
+ * @param {Function} listener - The previously registered callback.
+ */
+function removeStateListener(listener) {
+    const idx = stateListeners.indexOf(listener);
+    if (idx !== -1) stateListeners.splice(idx, 1);
+}
+
+// Centralized state update helper. It merges the provided updates into the global state
+// and triggers a re-render. This reduces scattered direct assignments and keeps state
+// transitions predictable. Over time, existing code should be refactored to use
+// this helper instead of directly mutating the `state` object followed by
+// explicit calls to View.render().
+function setState(updates) {
+    // Only accept objects for updates; ignore falsy or non-object values.
+    if (!updates || typeof updates !== 'object') return;
+    // Create a new state object by shallow merging the current state and updates.
+    // This encourages immutability: components should treat the state as if it were
+    // immutable, even though the underlying object is updated in place for simplicity.
+    const newState = { ...state, ...updates };
+    Object.assign(state, newState);
+    // Notify all subscribers of the new state. Each listener decides how to react
+    // (e.g., re-rendering a view). This decouples state updates from view logic.
+    for (const listener of stateListeners) {
+        try {
+            listener(state);
+        } catch (err) {
+            console.error('State listener error:', err);
+        }
+    }
+}
+
 let fuse = null;
 
 const DB = {
@@ -1339,10 +1420,34 @@ const DB = {
     },
     async getProjectContents(projectId) {
         return new Promise((resolve, reject) => {
-            const range = IDBKeyRange.bound(`${projectId}_`, `${projectId}_\uffff`);
-            const req = this.db.transaction(CONFIG.STORES.CONTENTS).objectStore(CONFIG.STORES.CONTENTS).getAll(range);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
+            try {
+                const tx = this.db.transaction(CONFIG.STORES.CONTENTS);
+                const store = tx.objectStore(CONFIG.STORES.CONTENTS);
+                const index = store.index('project_fk_idx');
+                const req = index.getAll(projectId);
+                req.onsuccess = () => {
+                    const result = req.result;
+                    // If no contents were found via the projectId index, fall back to scanning
+                    // by the ID prefix. This supports older imports that do not include the
+                    // projectId property on their content records.
+                    if (result && result.length > 0) {
+                        resolve(result);
+                    } else {
+                        // Use IDBKeyRange to fetch all keys with the `${projectId}_` prefix
+                        const range = IDBKeyRange.bound(`${projectId}_`, `${projectId}_\uffff`);
+                        const altReq = this.db.transaction(CONFIG.STORES.CONTENTS).objectStore(CONFIG.STORES.CONTENTS).getAll(range);
+                        altReq.onsuccess = () => resolve(altReq.result);
+                        altReq.onerror = () => reject(altReq.error);
+                    }
+                };
+                req.onerror = () => reject(req.error);
+            } catch (error) {
+                // Fallback to full scan if index is not available
+                const range = IDBKeyRange.bound(`${projectId}_`, `${projectId}_\uffff`);
+                const req = this.db.transaction(CONFIG.STORES.CONTENTS).objectStore(CONFIG.STORES.CONTENTS).getAll(range);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            }
         });
     },
     async deleteProjectAndContents(projectId) {
@@ -1543,6 +1648,8 @@ const ModalManager = {
             'splitChapter': this.renderSplitChapterModal,
             'promptVariables': this.renderPromptVariablesModal,
             'manageHistory': this.renderManageHistoryModal,
+            // Generic input prompt modal registration. This key maps to a modal used for collecting user input.
+            'inputPrompt': this.renderInputPromptModal,
         };
     },
     // ModalManager 객체 내부에 아래 5개 함수를 추가/교체하세요.
@@ -1774,6 +1881,56 @@ const ModalManager = {
                 </div>
             </form>
         `;
+    },
+
+    /**
+     * Render a generic input prompt modal.
+     * This modal consists of a title, optional description, an input box and customizable confirm button label.
+     * The confirm button reuses the existing 'confirm-action' handler to trigger the provided onConfirm callback.
+     */
+    renderInputPromptModal() {
+        const { title = '입력', message = '', placeholder = '', confirmText = '확인' } = this.data;
+        return `
+            <form data-action="input-prompt-form">
+                <div class="p-6">
+                    <div class="flex justify-between items-start">
+                        <h3 class="text-xl font-semibold text-slate-900 mb-4">${DOMPurify.sanitize(title)}</h3>
+                        <button type="button" data-action="close-modal" class="p-1 rounded-full hover:bg-slate-100">${Heroicons.render('x-mark', { class: 'w-5 h-5 text-slate-500' })}</button>
+                    </div>
+                    ${message ? `<p class="text-sm text-slate-600 mb-4">${DOMPurify.sanitize(message)}</p>` : ''}
+                    <input type="text" id="input-prompt-value" class="mt-1 block w-full rounded-md border-slate-300 shadow-sm" placeholder="${DOMPurify.sanitize(placeholder)}" autofocus>
+                </div>
+                <div class="bg-slate-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
+                    <button type="button" data-action="close-modal" class="btn btn-secondary">취소</button>
+                    <button type="button" data-action="confirm-action" class="btn">${DOMPurify.sanitize(confirmText)}</button>
+                </div>
+            </form>
+        `;
+    },
+
+    /**
+     * Display an input prompt and return a promise that resolves with the trimmed user input.
+     * The provided options configure the modal content. If the user cancels, the promise resolves with an empty string.
+     *
+     * @param {Object} options
+     * @param {String} options.title - Title for the modal.
+     * @param {String} options.message - Optional description.
+     * @param {String} options.placeholder - Placeholder text for the input.
+     * @param {String} options.confirmText - Label for the confirm button.
+     */
+    async showInputPrompt({ title = '입력', message = '', placeholder = '', confirmText = '확인' } = {}) {
+        return new Promise(resolve => {
+            this.open('inputPrompt', {
+                title,
+                message,
+                placeholder,
+                confirmText,
+                onConfirm: () => {
+                    const inputEl = document.getElementById('input-prompt-value');
+                    resolve(inputEl ? inputEl.value.trim() : '');
+                }
+            });
+        });
     },
     renderNewProjectModal() {
         const {
@@ -2159,6 +2316,38 @@ const View = {
         appContainerEl: document.getElementById('app-container'),
         modalEl: document.getElementById('modal-root'),
         toastEl: document.getElementById('toast-root'),
+        // Group UI fragments into reusable components. Each component takes
+        // state or props as input and returns HTML. This helps keep rendering
+        // logic modular and easier to maintain. In the future these can be
+        // extracted into separate files or functions.
+        components: {
+            /**
+             * Render a single project card.
+             * @param {Object} p - The project to render.
+             * @returns {string} HTML for a project card.
+             */
+            projectCard(p) {
+                const category = p.categoryId ? state.categories.find(c => c.id === p.categoryId) : null;
+                const noteCount = p.toc && p.toc.children ? Utils.getAllNodePaths(p.toc).length : 0;
+                return `<div class="project-card flex flex-col">
+                    <div class="project-card-content flex-grow" data-action="open-project" data-id="${p.id}">
+                        <p class="text-sm text-indigo-600 font-semibold">${category ? category.name : '미분류'}</p>
+                        <h3 class="mt-1 text-lg leading-tight font-bold text-black">${p.name}</h3>
+                        <div class="mt-2 flex flex-wrap gap-2">
+                            ${(p.tags || []).map(tag => `<span class="inline-block bg-slate-200 text-slate-600 text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full">#${tag}</span>`).join('')}
+                        </div>
+                    </div>
+                    <div class="border-t mt-4 pt-4 flex justify-between items-center">
+                        <p class="text-sm text-slate-500">${noteCount}개의 노트</p>
+                        <div class="flex space-x-2">
+                            <button data-action="export-project" data-id="${p.id}" title="내보내기" class="p-2 text-slate-500 hover:bg-slate-200 rounded-full">${Heroicons.render('arrow-down-tray', { class: 'w-4 h-4' })}</button>
+                            <button data-action="delete-project-confirm" data-id="${p.id}" title="삭제" class="p-2 text-slate-500 hover:bg-red-100 rounded-full">${Heroicons.render('trash', { class: 'w-4 h-4 text-red-500' })}</button>
+                        </div>
+                    </div>
+                </div>`;
+            }
+        },
+
         render() {
             const appHtml = this.renderAppLayout();
             safeMorphdom(this.appContainerEl, `<div>${appHtml}</div>`, {
@@ -2488,9 +2677,9 @@ const View = {
             const title = this.getHeaderTitle();
             const isProjectListView = state.currentView === 'project_list';
             const workspaceControls = state.currentView === 'workspace' && state.activeProjectId ?
-            `<button data-action="manage-history" class="btn btn-secondary btn-sm" title="이력 관리">${Heroicons.render('clock', { class: 'w-4 h-4' })}</button>
-            <button data-action="manage-toc" class="btn btn-secondary btn-sm" title="목차 관리">${Heroicons.render('bars-3-bottom-left', { class: 'w-4 h-4' })}</button>
-            <button data-action="open-settings" class="btn btn-secondary btn-sm" title="설정">${Heroicons.render('cog-6-tooth', { class: 'w-4 h-4' })}</button>`
+            `<button data-action="manage-history" class="btn btn-secondary btn-sm" title="이력 관리" aria-label="이력 관리">${Heroicons.render('clock', { class: 'w-4 h-4' })}</button>
+            <button data-action="manage-toc" class="btn btn-secondary btn-sm" title="목차 관리" aria-label="목차 관리">${Heroicons.render('bars-3-bottom-left', { class: 'w-4 h-4' })}</button>
+            <button data-action="open-settings" class="btn btn-secondary btn-sm" title="설정" aria-label="설정">${Heroicons.render('cog-6-tooth', { class: 'w-4 h-4' })}</button>`
             : '';
 
             let saveStatusIndicator = '';
@@ -2505,7 +2694,7 @@ const View = {
                 class: 'w-6 h-6'
             });
             return `<header class="main-header">
-                <button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar">${sidebarIcon}</button>
+                <button id="sidebar-toggle" class="mr-4" data-action="toggle-sidebar" aria-label="사이드바 토글">${sidebarIcon}</button>
                 <h1 class="header-title">${title}</h1>
                 <div class="flex items-center gap-4">
                     <div id="save-status-container">${saveStatusIndicator}</div>
@@ -2641,9 +2830,9 @@ const View = {
             return `<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">${filtered.map(p => this.getProjectCardHTML(p)).join('')}</div>`;
         },
         getProjectCardHTML(p) {
-            const category = p.categoryId ? state.categories.find(c => c.id === p.categoryId) : null;
-            const noteCount = p.toc && p.toc.children ? Utils.getAllNodePaths(p.toc).length : 0;
-            return `<div class="project-card flex flex-col"><div class="project-card-content flex-grow" data-action="open-project" data-id="${p.id}"><p class="text-sm text-indigo-600 font-semibold">${category ? category.name : '미분류'}</p><h3 class="mt-1 text-lg leading-tight font-bold text-black">${p.name}</h3><div class="mt-2 flex flex-wrap gap-2">${(p.tags || []).map(tag => `<span class="inline-block bg-slate-200 text-slate-600 text-xs font-medium mr-2 px-2.5 py-0.5 rounded-full">#${tag}</span>`).join('')}</div></div><div class="border-t mt-4 pt-4 flex justify-between items-center"><p class="text-sm text-slate-500">${noteCount}개의 노트</p><div class="flex space-x-2"><button data-action="export-project" data-id="${p.id}" title="내보내기" class="p-2 text-slate-500 hover:bg-slate-200 rounded-full">${Heroicons.render('arrow-down-tray', { class: 'w-4 h-4' })}</button><button data-action="delete-project-confirm" data-id="${p.id}" title="삭제" class="p-2 text-slate-500 hover:bg-red-100 rounded-full">${Heroicons.render('trash', { class: 'w-4 h-4 text-red-500' })}</button></div></div></div>`;
+            // Delegate rendering to the projectCard component. Keeping a thin wrapper
+            // allows backward compatibility while paving the way for component-based UI.
+            return this.components.projectCard(p);
         },
         renderWorkspace() {
             if (!state.activeProject) return this.renderSpinner("프로젝트 로딩 중...");
@@ -3054,8 +3243,8 @@ const View = {
 
             // 4. 메뉴 HTML을 생성하여 컨테이너에 삽입합니다. (처음에는 숨겨진 상태로)
             contextMenuContainer.innerHTML = `
-            <div id="context-menu" class="fixed z-[2500] mb-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none" 
-                style="visibility: hidden; top: ${y}px; left: ${x}px; transform: translate(-50%, -100%); transform-origin: bottom center;">
+            <div id="context-menu" class="fixed z-[2500] mb-2 rounded-md shadow-lg bg-white ring-1 ring-black ring-opacity-5 focus:outline-none"
+                style="visibility: hidden; top: ${y}px; left: ${x}px;">
                 <div class="py-1" role="menu" aria-orientation="vertical">${itemsHtml}</div>
             </div>`;
 
@@ -3366,10 +3555,11 @@ renderQuizResultView() {
                         viewPanel.contains(selection.getRangeAt(0).commonAncestorContainer)
                     ) {
                         // 이벤트가 발생한 좌표에 커스텀 메뉴를 엽니다.
+                        // 사용자의 뷰포트 좌표(clientX, clientY)를 저장합니다. 페이지 스크롤에 영향을 받지 않도록 함.
                         state.contextMenu = {
                             isOpen: true,
-                            x: e.pageX,
-                            y: e.pageY,
+                            x: e.clientX,
+                            y: e.clientY,
                             selectedText: selectedText
                         };
                         View.render();
@@ -4688,19 +4878,16 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 });
             },
             handleSearch(query) {
-                state.searchQuery = query; // 검색어를 state에 저장하는 로직 추가
-                if (query.trim() === '') {
-                    state.searchResults = null;
-                } else {
-                    state.searchResults = fuse.search(query).map(result => result.item);
-                }
-                state.currentView = 'project_list';
-                state.currentFilter = {
-                    type: 'all',
-                    id: null
-                };
-                // searchInput.value를 직접 제어할 필요가 없어졌습니다.
-                View.render();
+                // Use the global setState helper to update multiple pieces of state consistently.
+                const trimmedQuery = query.trim();
+                const searchResults = trimmedQuery === '' ? null : fuse.search(query).map(result => result.item);
+                setState({
+                    searchQuery: query,
+                    searchResults,
+                    currentView: CONFIG.VIEW_NAMES.PROJECT_LIST,
+                    currentFilter: { type: 'all', id: null }
+                });
+                // searchInput.value is automatically updated via re-render
             },
             handleNavFilter(target) {
                 if (!target) return;
@@ -4708,20 +4895,21 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 const id = target.dataset.id || null;
                 if (type === 'category' && state.categories.length === 0) return;
                 if (type === 'tag' && state.tags.length === 0) return;
-                state.currentFilter = {
-                    type,
-                    id
-                };
-                state.searchResults = null;
+                // Reset search results and update current filter and view using setState.
+                const newView = (type === 'dashboard') ? CONFIG.VIEW_NAMES.DASHBOARD : CONFIG.VIEW_NAMES.PROJECT_LIST;
                 const searchInput = document.getElementById('search-input');
                 if (searchInput) searchInput.value = '';
-                state.currentView = (type === 'dashboard') ? 'dashboard' : 'project_list';
+                // Expand sidebar groups when no specific id is provided.
                 if (type === 'category' && !id) {
                     state.sidebarCollapseState.categories = false;
                 } else if (type === 'tag' && !id) {
                     state.sidebarCollapseState.tags = false;
                 }
-                View.render();
+                setState({
+                    currentFilter: { type, id },
+                    searchResults: null,
+                    currentView: newView
+                });
                 if (window.innerWidth <= 1024) this.closeSidebar();
             },
             getFilteredAndSortedProjects() {
@@ -4787,7 +4975,19 @@ Micro-interactions are the small, often unnoticed animations and design elements
                                         oldContent.id = newContentId;
                                         await DB.put(CONFIG.STORES.CONTENTS, oldContent);
                                     } else {
-                                        const newEmptyContent = { id: newContentId, manuscript: '', notes: '', translation: '', questions: [], status: 'empty' };
+                                    const nodeId = node.contentId;
+                                    const newEmptyContent = {
+                                        id: newContentId,
+                                        projectId: id,
+                                        nodeId: nodeId,
+                                        manuscript: '',
+                                        translation: '',
+                                        notes: '',
+                                        imageDataUrl: null,
+                                        questions: [],
+                                        historyMetadata: { snapshotCount: 0, lastSnapshotAt: null },
+                                        status: 'empty'
+                                    };
                                         await DB.put(CONFIG.STORES.CONTENTS, newEmptyContent);
                                     }
                                 };
@@ -4821,7 +5021,20 @@ Micro-interactions are the small, often unnoticed animations and design elements
                             state.activeContentsMap.set(c.id, c);
                         } else {
                             console.warn(`콘텐츠를 찾을 수 없어 새로 생성합니다: ${contentId}`);
-                            const newContent = { id: contentId, manuscript: '', notes: '', translation: '', questions: [], status: 'empty' };
+                            // Extract the nodeId (contentId part) from the composite id
+                            const nodeId = nodeInfo.node.contentId || contentId.split('_').slice(1).join('_');
+                            const newContent = {
+                                id: contentId,
+                                projectId: id,
+                                nodeId: nodeId,
+                                manuscript: '',
+                                translation: '',
+                                notes: '',
+                                imageDataUrl: null,
+                                questions: [],
+                                historyMetadata: { snapshotCount: 0, lastSnapshotAt: null },
+                                status: 'empty'
+                            };
                             state.activeContentsMap.set(contentId, newContent);
                             DB.put(CONFIG.STORES.CONTENTS, newContent);
                         }
@@ -5189,11 +5402,15 @@ Micro-interactions are the small, often unnoticed animations and design elements
                         }
                     }
                     return {
-                        id: `${projectId}_${node.contentId}`, // 수정: 노드의 고유 contentId를 사용합니다.
+                        id: `${projectId}_${node.contentId}`, // Use the node's contentId to build the composite key
+                        projectId: projectId,
+                        nodeId: node.contentId,
                         manuscript,
-                        notes: '',
                         translation: '',
+                        notes: '',
+                        imageDataUrl: null,
                         questions: [],
+                        historyMetadata: { snapshotCount: 0, lastSnapshotAt: null },
                         status: manuscript.trim() ? 'manuscript-done' : 'empty'
                     };
                 }))).filter(Boolean);
@@ -5227,20 +5444,40 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 Utils.normalizeTocNode(newProject.toc);
                 // ▲▲▲ [수정 완료] ▲▲▲
 
+                // We'll generate a list of all nodes and map original contents by their
+                // exported `path` value, which is actually the node's contentId. The
+                // current Utils.getAllNodePaths() returns numeric index paths (e.g. "0",
+                // "1.2"), so using that to look up the imported content will fail. We
+                // instead match on the node's contentId directly.
                 const allNodes = Utils.getAllNodePaths(newProject.toc);
-                const contentMap = new Map(data.contents.map(c => [c.path, c]));
+                // Build a lookup map keyed by the contentId (stored in `path` property in
+                // exported JSON) to the original content object.
+                const contentMap = new Map(
+                    (data.contents || []).map(c => [c.path, c])
+                );
 
                 const newContents = allNodes.map(nodeInfo => {
-                    const originalContent = contentMap.get(nodeInfo.path) || {};
-                    const { path, ...rest } = originalContent;
-                    
-                    // ▼▼▼ [수정] contentId 기반으로 새로운 ID를 생성합니다. ▼▼▼
+                    // The exported JSON stores the original content's `contentId` in the
+                    // `path` field. Use the node's contentId to find the corresponding
+                    // imported content.
+                    const originalContent = contentMap.get(nodeInfo.node.contentId) || {};
+                    const { path: _ignoredPath, ...rest } = originalContent;
+                    // Always associate the content with the new project via projectId.
+                    // Any existing projectId from the import is ignored.  Use empty
+                    // defaults and override them with imported fields via the spread.
                     return {
                         id: `${newId}_${nodeInfo.node.contentId}`,
-                        manuscript: '', notes: '', translation: '', questions: [], status: 'empty',
-                        ...rest
+                        projectId: newId,
+                        nodeId: nodeInfo.node.contentId,
+                        manuscript: '',
+                        translation: '',
+                        notes: '',
+                        imageDataUrl: null,
+                        questions: [],
+                        historyMetadata: { snapshotCount: 0, lastSnapshotAt: null },
+                        status: 'empty',
+                        ...rest,
                     };
-                    // ▲▲▲ [수정 완료] ▲▲▲
                 });
 
                 return { project: newProject, contents: newContents };
@@ -5277,10 +5514,14 @@ Micro-interactions are the small, often unnoticed animations and design elements
                 // [핵심 수정] path 기반이 아닌, 각 노드의 contentId를 기반으로 콘텐츠 객체 생성
                 const contents = Utils.getFlatToc(finalToc).map(({ node }) => ({
                     id: `${projectId}_${node.contentId}`,
+                    projectId: projectId,
+                    nodeId: node.contentId,
                     manuscript: '',
-                    notes: node.description || '',
                     translation: '',
+                    notes: node.description || '',
+                    imageDataUrl: null,
                     questions: [],
+                    historyMetadata: { snapshotCount: 0, lastSnapshotAt: null },
                     status: 'empty'
                 }));
                 
@@ -5501,7 +5742,15 @@ Path: ${input.dataset.path}
                     for (const contentId of addedContentIds) {
                         const newContent = {
                             id: `${projectId}_${contentId}`,
-                            manuscript: '', notes: '', translation: '', questions: [], status: 'empty',
+                            projectId: projectId,
+                            nodeId: contentId,
+                            manuscript: '',
+                            translation: '',
+                            notes: '',
+                            imageDataUrl: null,
+                            questions: [],
+                            historyMetadata: { snapshotCount: 0, lastSnapshotAt: null },
+                            status: 'empty',
                         };
                         promises.push(DB.put(CONFIG.STORES.CONTENTS, newContent));
                         state.activeContentsMap.set(newContent.id, newContent);
@@ -5603,21 +5852,25 @@ Path: ${input.dataset.path}
                         const start = subChaptersData[i].start_paragraph - 1;
                         const end = (i < subChaptersData.length - 1) ? subChaptersData[i + 1].start_paragraph - 1 : paragraphs.length;
                         const content = paragraphs.slice(start, end).join('\n\n');
-                        const newChildNode = {
-                            title: subChaptersData[i].sub_chapter_title,
-                            children: []
-                        };
+                        // Create a new TOC node with its own contentId via helper
+                        const newChildNode = Utils.createTocNode(subChaptersData[i].sub_chapter_title);
                         parentNode.children.push(newChildNode);
                         const newChildPath = `${parentPath}.${initialChildCount + i}`;
 
+                        // Build the new content record based on the node's contentId
                         const newContent = {
-                            id: `${projectId}_${newChildPath}`,
+                            id: `${projectId}_${newChildNode.contentId}`,
+                            projectId: projectId,
+                            nodeId: newChildNode.contentId,
                             manuscript: '',
-                            notes: `Original content from '${parentNode.title}'.`,
                             translation: '',
+                            notes: `Original content from '${parentNode.title}'.`,
+                            imageDataUrl: null,
                             questions: [],
+                            historyMetadata: { snapshotCount: 0, lastSnapshotAt: null },
                             status: 'manuscript-done'
                         };
+                        // Place the split content into the correct field
                         newContent[sourceType] = content;
 
                         state.activeContentsMap.set(newContent.id, newContent);
@@ -5653,16 +5906,29 @@ Path: ${input.dataset.path}
             },
             toggleSidebar() {
                 if (window.innerWidth <= 1024) {
-                    state.isMobileSidebarOpen = !state.isMobileSidebarOpen;
+                    setState({ isMobileSidebarOpen: !state.isMobileSidebarOpen });
                 } else {
-                    state.isSidebarOpen = !state.isSidebarOpen;
+                    setState({ isSidebarOpen: !state.isSidebarOpen });
                 }
-                View.render();
             },
             closeSidebar() {
                 if (state.isMobileSidebarOpen) {
-                    state.isMobileSidebarOpen = false;
-                    View.render();
+                    setState({ isMobileSidebarOpen: false });
+                }
+            },
+
+            /**
+             * Centralized error handling helper. Use this function to log errors and show a user-facing message.
+             * This encourages consistent error reporting across the app. You can call this from any catch block.
+             * @param {Error} error - The error object caught from a try/catch.
+             * @param {string} userMessage - A message to display to the user via toast.
+             */
+            handleError(error, userMessage) {
+                if (error) {
+                    console.error(error);
+                }
+                if (typeof userMessage === 'string' && userMessage.trim()) {
+                    this.showToast(userMessage, 'error');
                 }
             },
             handleTocDragStart(e) {
@@ -5849,11 +6115,17 @@ Path: ${input.dataset.path}
                 'next-chapter': () => Controller.navigateChapter(1),
                 'filter': (el) => Controller.handleNavFilter(el),
                 'new-category': async () => {
-                    const name = prompt('새 카테고리 이름을 입력하세요:');
-                    if (name?.trim()) {
+                    // Request a new category name via a custom modal prompt rather than using the native browser prompt.
+                    const name = await ModalManager.showInputPrompt({
+                        title: '새 카테고리 추가',
+                        message: '추가할 카테고리의 이름을 입력하세요.',
+                        placeholder: '카테고리 이름',
+                        confirmText: '추가'
+                    });
+                    if (name) {
                         const newCategory = {
                             id: Utils.generateId('cat'),
-                            name: name.trim()
+                            name
                         };
                         await DB.put(CONFIG.STORES.CATEGORIES, newCategory);
                         state.categories.push(newCategory);
@@ -6628,15 +6900,20 @@ Path: ${input.dataset.path}
                     View.render();
                 },
                 'toggle-action-rail': () => Controller.toggleActionRail(),
-                'manual-snapshot': () => {
+                'manual-snapshot': async () => {
                     if (!state.activeChapterContent) {
                         Controller.showToast('스냅샷을 만들 챕터가 없습니다.', 'error');
                         return;
                     }
-                    const name = prompt('스냅샷 이름을 입력하세요:');
-                    if (name?.trim()) {
+                    // Ask the user for a snapshot name using a custom modal prompt.
+                    const name = await ModalManager.showInputPrompt({
+                        title: '스냅샷 생성',
+                        message: '새 스냅샷의 이름을 입력하세요.',
+                        placeholder: '스냅샷 이름',
+                        confirmText: '생성'
+                    });
+                    if (name) {
                         Controller.saveChapterHistory(state.activeChapterContent, CONFIG.SNAPSHOT_TYPE.MANUAL, `스냅샷 '${name}'이(가) 생성되었습니다.`);
-                        // Note: `name` is not currently used in the history object, but it's a good practice for future implementations.
                     }
                 },
                 'handle-reset-confirmation-input': (el) => {
@@ -6742,6 +7019,9 @@ Path: ${input.dataset.path}
             },
         };
 
+        // Register the view to react to state changes. Whenever setState is called,
+        // View.render() will be invoked automatically.
+        addStateListener(() => View.render());
         Controller.init();
     </script>
  
