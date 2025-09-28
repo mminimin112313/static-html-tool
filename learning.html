@@ -14,7 +14,12 @@
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@7.0.0/dist/fuse.min.js"></script>
 
     <script src="https://cdn.jsdelivr.net/npm/feather-icons@4.29.2/dist/feather.min.js"></script>
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.0.8/purify.min.js"></script>
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/14.1.0/markdown-it.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it-footnote/4.0.0/markdown-it-footnote.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it-mark/4.0.0/markdown-it-mark.min.js"></script>
+    <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" defer></script>
     <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" onload="document.dispatchEvent(new Event('katex-loaded'))" defer></script>
@@ -654,7 +659,64 @@ html.dark .quiz-result-score {
     font-weight: 700;
     background-color: var(--bg-tertiary); /* [수정] */
 }
-        
+       
+/* --- 하이라이트 (==text==) --- */
+.prose-readable mark {
+    background-color: rgba(250, 204, 21, 0.4); /* Tailwind yellow-300 with opacity */
+    padding: 0.1em 0.3em;
+    border-radius: 4px;
+    color: var(--text-primary);
+}
+html.dark .prose-readable mark {
+    background-color: rgba(234, 179, 8, 0.4); /* Tailwind yellow-500 with opacity */
+}
+
+/* --- 각주 (Footnotes) --- */
+/* 본문의 각주 참조 링크 ([^1]) */
+.prose-readable a.footnote-ref {
+    display: inline-block;
+    background-color: var(--bg-tertiary);
+    color: var(--accent-primary);
+    border-radius: 4px;
+    padding: 0 0.3em;
+    margin: 0 0.1em;
+    font-weight: 500;
+    text-decoration: none;
+    border: none;
+    line-height: 1;
+}
+.prose-readable a.footnote-ref:hover {
+    background-color: var(--accent-primary);
+    color: white;
+}
+
+/* 하단의 각주 목록 전체 */
+.prose-readable .footnote-list {
+    margin-top: 3em;
+    padding-top: 1.5em;
+    border-top: 1px solid var(--border-color);
+    font-size: 0.9em;
+    color: var(--text-secondary);
+}
+
+/* 각주 목록의 각 항목 */
+.prose-readable .footnote-item {
+    line-height: 1.6;
+}
+.prose-readable .footnote-item:not(:last-child) {
+    margin-bottom: 0.8em;
+}
+
+/* 각주 항목 내부의 '되돌아가기' 화살표 */
+.prose-readable .footnote-backref {
+    margin-left: 0.5em;
+    font-family: sans-serif;
+    text-decoration: none;
+    color: var(--text-tertiary);
+}
+.prose-readable .footnote-backref:hover {
+    color: var(--accent-primary);
+}
         
         /* === 푸터(Footer) 전체 스타일 (모바일 가로 스크롤 적용) === */
 
@@ -1107,6 +1169,16 @@ const CONFIG = {
         AUTO: 'auto',
     },
 };
+
+const md = window.markdownit({
+  html: true,        // 소스 내 HTML 태그 허용
+  xhtmlOut: false,   // <br /> 대신 <br> 사용
+  breaks: true,      // 단락 내 개행을 <br> 태그로 변환
+  linkify: true,     // URL 같은 텍스트를 자동으로 링크로 변환
+  typographer: true, // 스마트 인용 부호 등 타이포그래피 개선
+})
+.use(window.markdownitFootnote) // 각주 플러그인 활성화
+.use(window.markdownitMark);    // 하이라이트(==...==) 플러그인 활성화
 
 /**
  * ▼▼▼ [수정] Heroicons 렌더링 및 캐싱 유틸리티 (비동기 로딩 방식 적용) ▼▼▼
@@ -3168,7 +3240,7 @@ const View = {
 
             const processContent = (textContent) => {
                 const boldProcessed = Utils.customBoldParser(textContent);
-                const markdownProcessed = marked.parse(boldProcessed);
+                const markdownProcessed = md.render(boldProcessed);   // 수정된 코드
                 return DOMPurify.sanitize(markdownProcessed, allowedTagsConfig);
             };
 
