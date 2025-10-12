@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Logify Ultimate v2 | Hierarchies & Tags</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
+    <style>
+        /*
+            DESIGN SYSTEM DEFINITION (v2.5 - "Expanded")
+            --------------------------------
+            * Added hierarchical views and tags.
+        */
+
+        :root {
+            --spacing-1: 4px; --spacing-2: 8px; --spacing-3: 16px; --spacing-4: 24px;
+            --color-primary: #007AFF; --color-primary-dark: #0056b3; --color-primary-light: #e6f2ff;
+            --color-background: #F7F7F9; --color-surface: #FFFFFF;
+            --color-text-primary: #1C1C1E; --color-text-secondary: #8A8A8E;
+            --color-border: #E5E5EA; --color-danger: #FF3B30;
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            --border-radius: 12px;
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            font-family: 'IBM Plex Sans KR', sans-serif;
+            background-color: var(--color-background);
+            color: var(--color-text-primary);
+            margin: 0;
+            padding-bottom: 80px;
+        }
+        .container { max-width: 720px; margin: 0 auto; padding: var(--spacing-4); }
+
+        /* === HEADER & SEARCH BAR === */
+        #main-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-3) var(--spacing-4); background-color: rgba(255, 255, 255, 0.8); backdrop-filter: blur(10px); border-bottom: 1px solid var(--color-border); position: sticky; top: 0; z-index: 100; }
+        #main-header .logo { font-size: 22px; font-weight: 600; }
+        #main-header .controls, #main-header .icon-tray { display: flex; align-items: center; gap: var(--spacing-3); }
+        #main-header .icon-button { background: none; border: none; cursor: pointer; padding: var(--spacing-2); border-radius: 50%; display: flex; }
+        #main-header .icon-button:hover { background-color: var(--color-border); }
+        #main-header .icon-button svg { width: 20px; height: 20px; stroke: var(--color-text-secondary); }
+        #search-bar { display: none; width: 100%; align-items: center; gap: var(--spacing-3); }
+        #search-input { width: 100%; border: none; background: transparent; font-size: 16px; outline: none; }
+        .cancel-search-btn { font-size: 14px; color: var(--color-primary); cursor: pointer; white-space: nowrap; }
+        
+        /* === TIMELINE === */
+        #timeline-container { position: relative; display: grid; gap: var(--spacing-4); }
+        .timeline-item { display: grid; grid-template-columns: 50px 1fr; gap: var(--spacing-3); position: relative; }
+        .timeline-timestamp { font-size: 12px; font-weight: 500; color: var(--color-text-secondary); text-align: right; padding-top: 4px; }
+        .timeline-connector { position: absolute; top: 4px; left: 58px; bottom: -20px; width: 2px; background-color: var(--color-border); }
+        .timeline-item:last-child .timeline-connector { display: none; }
+        .timeline-content { background-color: var(--color-surface); border-radius: var(--border-radius); box-shadow: var(--shadow-md); padding: var(--spacing-3); }
+        .log-header { font-size: 17px; font-weight: 600; margin-bottom: var(--spacing-2); }
+        .log-body { font-size: 14px; color: var(--color-text-secondary); }
+        .log-tags { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+        .log-tag { background-color: var(--color-primary-light); color: var(--color-primary-dark); padding: 2px 8px; font-size: 12px; font-weight: 500; border-radius: 12px; }
+        .journal-entry p { margin: 0; white-space: pre-wrap; }
+
+        /* === COMMAND BAR === */
+        #command-bar-wrapper { position: fixed; bottom: 0; left: 0; right: 0; background-color: var(--color-surface); box-shadow: 0 -4px 15px rgba(0,0,0,0.08); z-index: 1000; }
+        #suggestion-box button { display: block; width: 100%; padding: 12px var(--spacing-4); background: none; border: none; border-bottom: 1px solid var(--color-border); text-align: left; cursor: pointer; font-size: 16px; }
+        #suggestion-box button:hover { background-color: #f0f0f0; }
+        #command-bar-input { width: 100%; border: none; padding: var(--spacing-4); font-size: 16px; font-family: inherit; outline: none; }
+        #dynamic-form-container { padding: 0 var(--spacing-4) var(--spacing-4); display: grid; gap: var(--spacing-3); }
+        .form-actions { display: flex; gap: var(--spacing-2); justify-content: flex-end; }
+        
+        /* === PANEL & MODAL === */
+        .backdrop { position: fixed; inset: 0; background-color: rgba(0,0,0,0.4); z-index: 1999; opacity: 0; visibility: hidden; transition: opacity 0.3s; }
+        .backdrop.visible { opacity: 1; visibility: visible; }
+        #insights-panel { position: fixed; top: 0; right: 0; bottom: 0; width: 320px; max-width: 90%; background-color: var(--color-surface); box-shadow: -5px 0 20px rgba(0,0,0,0.1); z-index: 2000; padding: var(--spacing-4); transform: translateX(100%); transition: transform 0.3s ease-in-out; }
+        #insights-panel.visible { transform: translateX(0); }
+        #settings-modal { position: fixed; inset: 0; z-index: 2000; background-color: var(--color-background); transform: translateY(100%); transition: transform 0.4s ease-in-out; overflow-y: auto; }
+        #settings-modal.visible { transform: translateY(0); }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-3) var(--spacing-4); border-bottom: 1px solid var(--color-border); background-color: var(--color-surface); }
+        .modal-content { padding: var(--spacing-4); }
+
+        /* === GENERIC & FORM COMPONENTS === */
+        h2 { font-size: 20px; margin: 0 0 var(--spacing-3) 0; }
+        .button { padding: var(--spacing-2) var(--spacing-3); border-radius: 8px; border: none; font-weight: 500; cursor: pointer; transition: background-color 0.2s; }
+        .button.primary { background-color: var(--color-primary); color: white; }
+        .button.primary:hover { background-color: var(--color-primary-dark); }
+        .button.secondary { background-color: var(--color-border); color: var(--color-text-primary); }
+        .button.secondary:hover { background-color: #dcdce0; }
+        .button.danger { background-color: var(--color-danger); color: white; }
+        .form-group { margin-bottom: var(--spacing-3); }
+        .form-group label { font-size: 14px; color: var(--color-text-secondary); margin-bottom: var(--spacing-2); display: block; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: var(--spacing-2) var(--spacing-3); border-radius: 8px; border: 1px solid var(--color-border); font-family: inherit; font-size: 16px; }
+        .field-row { display: flex; gap: var(--spacing-2); align-items: center; margin-bottom: var(--spacing-2); }
+        .def-item { background-color: var(--color-surface); padding: var(--spacing-3); border-radius: var(--border-radius); margin-bottom: var(--spacing-2); }
+        .def-item-header { display: flex; justify-content: space-between; align-items: center; }
+        .def-item-tags { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
+    </style>
+</head>
+<body>
+    <header id="main-header">
+        <div id="header-main-content" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+            <div class="logo">Logify</div>
+            <div class="controls">
+                <input type="date" id="date-picker">
+                <div class="icon-tray">
+                    <button class="icon-button" id="search-btn" title="검색"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="m21 21-5.197-5.197m0 0A7.5 7.5 0 1 0 5.196 5.196a7.5 7.5 0 0 0 10.607 10.607Z" /></svg></button>
+                    <button class="icon-button" id="insights-btn" title="인사이트"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z" /></svg></button>
+                    <button class="icon-button" id="settings-btn" title="관찰 대상 관리"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75" /></svg></button>
+                </div>
+            </div>
+        </div>
+        <div id="search-bar">
+            <input type="text" id="search-input" placeholder="타임라인에서 검색... (#태그명 으로 검색)">
+            <button class="cancel-search-btn">취소</button>
+        </div>
+    </header>
+
+    <main class="container" id="main-content"><div id="timeline-container"></div></main>
+
+    <footer id="command-bar-wrapper">
+        <div id="suggestion-box"></div><div id="dynamic-form-container"></div>
+        <input type="text" id="command-bar-input" placeholder="+ 지금 무엇을 기록할까요?">
+    </footer>
+    
+    <div id="panel-backdrop" class="backdrop"></div>
+    <aside id="insights-panel"></aside>
+    <section id="settings-modal"></section>
+
+    <script>
+    const state = { definitions: [], currentDate: dayjs().format('YYYY-MM-DD'), allEntries: [] };
+    let db;
+    const DB_NAME = 'LogifyUltimateDB_v4_Hierarchical', DB_VERSION = 1;
+
+    const $ = selector => document.querySelector(selector);
+    const elements = {
+        mainHeader: $('#main-header'), headerMainContent: $('#header-main-content'),
+        searchBar: $('#search-bar'), searchInput: $('#search-input'), cancelSearchBtn: $('.cancel-search-btn'),
+        datePicker: $('#date-picker'), timelineContainer: $('#timeline-container'),
+        commandBarWrapper: $('#command-bar-wrapper'), commandBarInput: $('#command-bar-input'),
+        suggestionBox: $('#suggestion-box'), dynamicFormContainer: $('#dynamic-form-container'),
+        searchBtn: $('#search-btn'), insightsBtn: $('#insights-btn'), settingsBtn: $('#settings-btn'),
+        panelBackdrop: $('#panel-backdrop'), insightsPanel: $('#insights-panel'), settingsModal: $('#settings-modal'),
+    };
+    
+    const sanitizeForId = (str) => str.replace(/[^a-zA-Z0-9-_]/g, '_');
+    
+    const dbUtils = {
+        init: () => new Promise(resolve => {
+            const req = indexedDB.open(DB_NAME, DB_VERSION);
+            req.onupgradeneeded = e => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains('definitions')) db.createObjectStore('definitions', { keyPath: 'id', autoIncrement: true });
+                if (!db.objectStoreNames.contains('entries')) db.createObjectStore('entries', { keyPath: 'date' });
+            };
+            req.onsuccess = e => { db = e.target.result; resolve(db); };
+        }),
+        save: (store, data) => new Promise(res => db.transaction(store, 'readwrite').objectStore(store).put(data).onsuccess = e => res(e.target.result)),
+        getAll: (store) => new Promise(res => db.transaction(store, 'readonly').objectStore(store).getAll().onsuccess = e => res(e.target.result)),
+        get: (store, key) => new Promise(res => db.transaction(store, 'readonly').objectStore(store).get(key).onsuccess = e => res(e.target.result)),
+        delete: (store, key) => new Promise(res => db.transaction(store, 'readwrite').objectStore(store).delete(key).onsuccess = e => res(e.target.result)),
+    };
+
+    const ui = {
+        renderTimeline: (entries) => {
+            elements.timelineContainer.innerHTML = '';
+            if (!entries || entries.length === 0) {
+                elements.timelineContainer.innerHTML = '<p>표시할 기록이 없습니다.</p>';
+                return;
+            }
+            const sorted = [...entries].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            sorted.forEach(entry => {
+                const item = document.createElement('div');
+                item.className = 'timeline-item';
+                let contentHtml = '';
+                if (entry.type === 'log') {
+                    const def = state.definitions.find(d => d.id === entry.definitionId);
+                    const body = Object.entries(entry.values).map(([k, v]) => `<span><strong>${k}:</strong> ${v||'-'}</span>`).join(' / ');
+                    const tagsHtml = def && def.tags && def.tags.length > 0
+                        ? `<div class="log-tags">${def.tags.map(tag => `<span class="log-tag">${tag}</span>`).join('')}</div>`
+                        : '';
+                    contentHtml = `<div class="log-header">${def ? def.name : '알 수 없음'}</div><div class="log-body">${body}</div>${tagsHtml}`;
+                } else {
+                    contentHtml = `<div class="journal-entry"><p>${entry.content}</p></div>`;
+                }
+                item.innerHTML = `<div class="timeline-timestamp">${dayjs(entry.timestamp).format('HH:mm')}</div><div class="timeline-content">${contentHtml}</div><div class="timeline-connector"></div>`;
+                elements.timelineContainer.appendChild(item);
+            });
+        },
+        toggleSearchMode: (active) => {
+            elements.headerMainContent.style.display = active ? 'none' : 'flex';
+            elements.searchBar.style.display = active ? 'flex' : 'none';
+            if (active) elements.searchInput.focus();
+            else { elements.searchInput.value = ''; ui.renderTimeline(state.allEntries); }
+        },
+        togglePanel: (show) => {
+            if (show) ui.renderInsightsPanel();
+            elements.panelBackdrop.classList.toggle('visible', show);
+            elements.insightsPanel.classList.toggle('visible', show);
+        },
+        renderInsightsPanel: () => {
+             const logs = state.allEntries.filter(e => e.type === 'log');
+             const total = logs.length;
+             let mostFrequent = '없음';
+             if (total > 0) {
+                const counts = logs.reduce((acc, log) => {
+                    const name = state.definitions.find(d => d.id === log.definitionId)?.name || 'N/A';
+                    acc[name] = (acc[name] || 0) + 1;
+                    return acc;
+                }, {});
+                if (Object.keys(counts).length > 0) {
+                    mostFrequent = Object.keys(counts).reduce((a, b) => counts[a] > counts[b] ? a : b);
+                }
+             }
+             elements.insightsPanel.innerHTML = `<h2>${dayjs(state.currentDate).format('M월 D일')} 요약</h2><div class="summary-card"><div class="summary-item"><span>총 기록 수</span><strong>${total}개</strong></div><div class="summary-item"><span>가장 잦은 활동</span><strong>${mostFrequent}</strong></div></div>`;
+        },
+        toggleSettingsModal: (show, definitionToEdit = null) => {
+            if (show) {
+                if (definitionToEdit || definitionToEdit === 'new') {
+                     ui.renderDefinitionForm(definitionToEdit);
+                } else {
+                    ui.renderSettingsList();
+                }
+            }
+            elements.settingsModal.classList.toggle('visible', show);
+        },
+        renderSettingsList: () => {
+            const buildTree = (definitions) => {
+                const tree = [];
+                const map = {};
+                definitions.forEach(def => {
+                    map[def.id] = { ...def, children: [] };
+                });
+                definitions.forEach(def => {
+                    if (def.parentId && map[def.parentId]) {
+                        map[def.parentId].children.push(map[def.id]);
+                    } else {
+                        tree.push(map[def.id]);
+                    }
+                });
+                return tree;
+            };
+
+            const renderNode = (node, level) => {
+                const tagsHtml = node.tags && node.tags.length > 0
+                    ? `<div class="def-item-tags log-tags">${node.tags.map(tag => `<span class="log-tag">${tag}</span>`).join('')}</div>`
+                    : '';
+                const fieldsSummary = node.fields.map(f => `${f.fieldName}(${f.fieldType})`).join(', ');
+
+                let html = `
+                    <div class="def-item" style="margin-left: ${level * 20}px;">
+                        <div class="def-item-header">
+                            <strong>${node.name}</strong>
+                            <div>
+                                <button class="button secondary" data-action="edit-def" data-id="${node.id}">수정</button>
+                                <button class="button danger" data-action="delete-def" data-id="${node.id}" style="margin-left: 8px;">삭제</button>
+                            </div>
+                        </div>
+                        <p style="font-size: 14px; color: var(--color-text-secondary); margin-top: 8px; margin-bottom: 0;">${fieldsSummary}</p>
+                        ${tagsHtml}
+                    </div>
+                `;
+                if (node.children.length > 0) {
+                    html += node.children.map(child => renderNode(child, level + 1)).join('');
+                }
+                return html;
+            };
+
+            const tree = buildTree(state.definitions);
+            const listHtml = tree.map(node => renderNode(node, 0)).join('');
+            
+            elements.settingsModal.innerHTML = `<div class="modal-header"><h2>관찰 대상 관리</h2><button class="button" data-action="close-settings">닫기</button></div><div class="modal-content">${listHtml}<button class="button primary" data-action="add-def" style="margin-top: 16px;">+ 새 관찰 대상 추가</button></div>`;
+        },
+        renderDefinitionForm: (definition) => {
+            const isNew = definition === 'new';
+            const currentId = isNew ? null : definition.id;
+            const name = isNew ? '' : definition.name;
+            const fields = isNew ? [{fieldName: '', fieldType: 'Text'}] : definition.fields;
+            const parentId = isNew ? 0 : (definition.parentId || 0);
+            const tags = isNew ? [] : (definition.tags || []);
+
+            let fieldsHtml = fields.map((field, index) => `
+                <div class="field-row" data-index="${index}">
+                    <input type="text" class="field-name-input" placeholder="필드 이름" value="${field.fieldName}" style="flex-grow: 1;">
+                    <select class="field-type-select">
+                        <option value="Text" ${field.fieldType === 'Text' ? 'selected' : ''}>텍스트</option>
+                        <option value="Number" ${field.fieldType === 'Number' ? 'selected' : ''}>숫자</option>
+                    </select>
+                    <button class="button danger" data-action="remove-field">X</button>
+                </div>
+            `).join('');
+            
+            const parentOptions = state.definitions
+                .filter(def => def.id !== currentId) // Prevent self-parenting
+                .map(def => `<option value="${def.id}" ${def.id === parentId ? 'selected' : ''}>${def.name}</option>`)
+                .join('');
+
+            elements.settingsModal.innerHTML = `
+                <div class="modal-header"><h2>${isNew ? '새 대상 정의' : '대상 수정'}</h2></div>
+                <div class="modal-content">
+                    <div class="form-group"><label>대상 이름</label><input type="text" id="def-name-input" value="${name}"></div>
+                    <div class="form-group"><label>부모 대상</label>
+                        <select id="def-parent-select"><option value="0">-- 없음 --</option>${parentOptions}</select>
+                    </div>
+                    <div class="form-group"><label>태그</label>
+                        <input type="text" id="def-tags-input" value="${tags.join(', ')}" placeholder="쉼표로 구분하여 입력">
+                    </div>
+                    <div class="form-group"><label>데이터 필드</label><div id="def-fields-container">${fieldsHtml}</div></div>
+                    <button class="button secondary" data-action="add-field">+ 필드 추가</button>
+                    <hr style="margin: 24px 0; border: none; border-top: 1px solid var(--color-border);">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <button class="button secondary" data-action="back-to-list">← 목록으로</button>
+                        <button class="button primary" data-action="save-def" data-id="${isNew ? '' : definition.id}">저장</button>
+                    </div>
+                </div>
+            `;
+        },
+        showSuggestions: (query) => {
+            const filtered = state.definitions.filter(def => def.name.toLowerCase().includes(query.toLowerCase()));
+            let html = '<button data-type="journal">✍️ 일기 쓰기</button>';
+            html += filtered.map(def => `<button data-type="log" data-id="${def.id}">📝 ${def.name}</button>`).join('');
+            elements.suggestionBox.innerHTML = html;
+        },
+        clearSuggestions: () => { elements.suggestionBox.innerHTML = ''; },
+        showDynamicForm: (type, id = null) => {
+            ui.clearSuggestions();
+            elements.commandBarInput.style.display = 'none';
+            let formHtml = '';
+            if (type === 'journal') {
+                formHtml = `<div class="form-group"><label>일기 내용</label><textarea id="journal-content" rows="4"></textarea></div>`;
+            } else {
+                const def = state.definitions.find(d => d.id === id);
+                formHtml += `<h2>${def.name} 기록</h2>`;
+                def.fields.forEach(field => {
+                    const fieldId = sanitizeForId(field.fieldName);
+                    formHtml += `<div class="form-group"><label>${field.fieldName}</label><input type="${field.fieldType === 'Number' ? 'number' : 'text'}" id="log-field-${fieldId}"></div>`;
+                });
+            }
+            const actionsHtml = `<div class="form-actions"><button type="button" class="button secondary" data-action="cancel-entry">취소</button><button type="button" class="button primary" data-action="save-entry" data-type="${type}" data-id="${id}">저장</button></div>`;
+            elements.dynamicFormContainer.innerHTML = formHtml + actionsHtml;
+        },
+        resetCommandBar: () => {
+            elements.dynamicFormContainer.innerHTML = '';
+            elements.commandBarInput.style.display = 'block';
+            elements.commandBarInput.value = '';
+            elements.commandBarInput.blur();
+        }
+    };
+    
+    const logic = {
+        loadDataForDate: async (date) => {
+            state.currentDate = date;
+            const data = await dbUtils.get('entries', date);
+            state.allEntries = data ? data.entries : [];
+            ui.renderTimeline(state.allEntries);
+        },
+        saveEntry: async (type, definitionId) => {
+            const newEntry = { id: Date.now(), type, timestamp: new Date().toISOString() };
+            if (type === 'journal') {
+                newEntry.content = $('#journal-content').value;
+            } else {
+                newEntry.definitionId = definitionId;
+                newEntry.values = {};
+                const def = state.definitions.find(d => d.id === definitionId);
+                def.fields.forEach(field => {
+                    const input = $(`#log-field-${sanitizeForId(field.fieldName)}`);
+                    newEntry.values[field.fieldName] = input.value;
+                });
+            }
+            state.allEntries.push(newEntry);
+            await dbUtils.save('entries', { date: state.currentDate, entries: state.allEntries });
+            ui.renderTimeline(state.allEntries);
+        },
+        filterTimeline: (query) => {
+            const lowerQuery = query.toLowerCase().trim();
+            if (!lowerQuery) {
+                ui.renderTimeline(state.allEntries);
+                return;
+            }
+            
+            const isTagQuery = lowerQuery.startsWith('#');
+            const pureQuery = isTagQuery ? lowerQuery.substring(1) : lowerQuery;
+
+            const filtered = state.allEntries.filter(entry => {
+                if (entry.type === 'journal' && !isTagQuery) {
+                    return entry.content.toLowerCase().includes(pureQuery);
+                }
+                if (entry.type === 'log') {
+                    const def = state.definitions.find(d => d.id === entry.definitionId);
+                    if (!def) return false;
+                    
+                    if (isTagQuery) {
+                        return def.tags && def.tags.some(tag => tag.toLowerCase().includes(pureQuery));
+                    } else {
+                        const nameMatch = def.name.toLowerCase().includes(pureQuery);
+                        const valueMatch = Object.values(entry.values).some(val => val.toLowerCase().includes(pureQuery));
+                        return nameMatch || valueMatch;
+                    }
+                }
+                return false;
+            });
+            ui.renderTimeline(filtered);
+        },
+        saveDefinition: async (id) => {
+            const name = $('#def-name-input').value.trim();
+            if (!name) return alert('대상 이름은 필수입니다.');
+
+            const parentId = parseInt($('#def-parent-select').value) || 0;
+            const tags = $('#def-tags-input').value.split(',')
+                .map(tag => tag.trim()).filter(tag => tag);
+
+            const fields = [];
+            document.querySelectorAll('#def-fields-container .field-row').forEach(row => {
+                const fieldName = row.querySelector('.field-name-input').value.trim();
+                const fieldType = row.querySelector('.field-type-select').value;
+                if (fieldName) fields.push({ fieldName, fieldType });
+            });
+            const definitionData = { name, fields, parentId, tags };
+            if (id) definitionData.id = parseInt(id);
+
+            await dbUtils.save('definitions', definitionData);
+            state.definitions = await dbUtils.getAll('definitions');
+            ui.renderSettingsList();
+        },
+        deleteDefinition: async (id) => {
+            if (confirm('정말로 이 대상을 삭제하시겠습니까? 관련된 모든 기록은 유지되지만, 연결은 끊어집니다.')) {
+                await dbUtils.delete('definitions', id);
+                // Also update children to have no parent
+                const children = state.definitions.filter(d => d.parentId === id);
+                for (const child of children) {
+                    child.parentId = 0;
+                    await dbUtils.save('definitions', child);
+                }
+                state.definitions = await dbUtils.getAll('definitions');
+                ui.renderSettingsList();
+            }
+        }
+    };
+
+    const handlers = {
+        handleDateChange: async (e) => await logic.loadDataForDate(e.target.value),
+        handleSettingsModalClick: (e) => {
+            const action = e.target.dataset.action;
+            const id = e.target.dataset.id ? parseInt(e.target.dataset.id) : null;
+            if (action === 'close-settings') ui.toggleSettingsModal(false);
+            else if (action === 'back-to-list') ui.renderSettingsList();
+            else if (action === 'add-def') ui.renderDefinitionForm('new');
+            else if (action === 'edit-def') ui.renderDefinitionForm(state.definitions.find(d => d.id === id));
+            else if (action === 'delete-def') logic.deleteDefinition(id);
+            else if (action === 'save-def') logic.saveDefinition(id);
+            else if (action === 'add-field') {
+                const container = $('#def-fields-container');
+                const newField = document.createElement('div');
+                newField.className = 'field-row';
+                newField.innerHTML = `<input type="text" class="field-name-input" placeholder="필드 이름" style="flex-grow: 1;"><select class="field-type-select"><option value="Text">텍스트</option><option value="Number">숫자</option></select><button class="button danger" data-action="remove-field">X</button>`;
+                container.appendChild(newField);
+            }
+            else if (action === 'remove-field') e.target.closest('.field-row').remove();
+        },
+        handleCommandBarFocus: () => { ui.showSuggestions(''); },
+        handleCommandBarInput: (e) => { ui.showSuggestions(e.target.value); },
+        handleSuggestionClick: (e) => {
+            const button = e.target.closest('button');
+            if (button) ui.showDynamicForm(button.dataset.type, button.dataset.id ? parseInt(button.dataset.id) : null);
+        },
+        handleFormActionClick: async (e) => {
+             const action = e.target.dataset.action;
+             if (action === 'cancel-entry') ui.resetCommandBar();
+             else if (action === 'save-entry') {
+                await logic.saveEntry(e.target.dataset.type, e.target.dataset.id ? parseInt(e.target.dataset.id) : null);
+                ui.resetCommandBar();
+             }
+        },
+        handleDocumentClick: (e) => {
+            if (!elements.commandBarWrapper.contains(e.target) && e.target.id !== 'command-bar-input') {
+                ui.clearSuggestions();
+            }
+        },
+        init: async () => {
+            await dbUtils.init();
+            state.definitions = await dbUtils.getAll('definitions');
+            if (state.definitions.length === 0) {
+                 const projId = await dbUtils.save('definitions', { name: '개인 프로젝트', fields: [{ fieldName: '상태', fieldType: 'Text'}], tags: ['프로젝트'] });
+                 await dbUtils.save('definitions', { name: 'Logify v2 개발', parentId: projId, fields: [{ fieldName: '진행률(%)', fieldType: 'Number'}], tags: ['개발', '중요'] });
+                 state.definitions = await dbUtils.getAll('definitions');
+            }
+            await logic.loadDataForDate(state.currentDate);
+
+            elements.datePicker.value = state.currentDate;
+            elements.datePicker.addEventListener('change', handlers.handleDateChange);
+            elements.searchBtn.addEventListener('click', () => ui.toggleSearchMode(true));
+            elements.cancelSearchBtn.addEventListener('click', () => ui.toggleSearchMode(false));
+            elements.searchInput.addEventListener('input', (e) => logic.filterTimeline(e.target.value));
+            elements.insightsBtn.addEventListener('click', () => ui.togglePanel(true));
+            elements.panelBackdrop.addEventListener('click', () => ui.togglePanel(false));
+            elements.settingsBtn.addEventListener('click', () => ui.toggleSettingsModal(true));
+            elements.settingsModal.addEventListener('click', handlers.handleSettingsModalClick);
+            elements.commandBarInput.addEventListener('focus', handlers.handleCommandBarFocus);
+            elements.commandBarInput.addEventListener('input', handlers.handleCommandBarInput);
+            elements.suggestionBox.addEventListener('click', handlers.handleSuggestionClick);
+            elements.dynamicFormContainer.addEventListener('click', handlers.handleFormActionClick);
+            document.addEventListener('click', handlers.handleDocumentClick);
+        }
+    };
+    
+    handlers.init();
+    </script>
+</body>
+</html>
