@@ -604,17 +604,23 @@
             }
         },
         showSettingsModal: (config = {}) => {
-            const fields = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
-            const inputsHtml = fields.map(f => `<div><label class="text-sm font-medium text-slate-600 mb-1.5 block">${f}</label><input type="text" id="fb-conf-${f}" value="${config[f] || ''}" class="w-full h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500"></div>`).join('');
-            
             const modalContent = `<div class="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col scale-95 opacity-0 transition-all" id="settings-modal-content">
                     <div class="p-5 border-b flex justify-between items-center">
                         <h2 class="text-lg font-bold">Firebase 설정</h2>
                         <button class="button w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-200" data-action="close-modal" data-modal-id="settings-modal"><i data-lucide="x" class="w-5 h-5"></i></button>
                     </div>
                     <div class="p-5 space-y-4 overflow-y-auto">
-                        <div class="text-sm p-3 bg-blue-50 text-blue-800 rounded-lg">Firebase 프로젝트 설정에서 복사한 <code>firebaseConfig</code> 객체의 값을 여기에 붙여넣으세요.</div>
-                        ${inputsHtml}
+                        <div class="text-sm p-3 bg-blue-50 text-blue-800 rounded-lg">
+                            <p class="mb-2">Firebase 콘솔에서 복사한 <code>firebaseConfig</code> 객체 전체를 아래에 붙여넣으세요.</p>
+                            <p class="font-mono text-xs bg-slate-200 p-2 rounded">
+                                예시:<br>
+                                const firebaseConfig = { <br>
+                                &nbsp;&nbsp;apiKey: "...", <br>
+                                &nbsp;&nbsp;... <br>
+                                };
+                            </p>
+                        </div>
+                        <textarea id="fb-config-textarea" class="w-full h-48 p-3 font-mono text-sm bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" placeholder="여기에 firebaseConfig 객체 코드를 붙여넣으세요..."></textarea>
                     </div>
                     <div class="p-4 border-t flex justify-end">
                         <button class="button font-semibold bg-blue-600 text-white px-5 py-2.5 rounded-lg" data-action="save-settings">저장 및 새로고침</button>
@@ -1499,16 +1505,30 @@
             const id = target.dataset.id ? parseInt(target.dataset.id) : null;
             if (action === 'close-modal') ui.closeModal(target.dataset.modalId);
             else if (action === 'save-settings') {
-                const fields = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
-                const config = {};
-                fields.forEach(f => { config[f] = $(`#fb-conf-${f}`).value.trim(); });
-                
-                if (configManager.isValid(config)) {
-                    configManager.save(config);
-                    alert("설정이 저장되었습니다. 페이지를 새로고침합니다.");
-                    window.location.reload();
-                } else {
-                    alert("모든 설정 값을 올바르게 입력해야 합니다.");
+                const rawText = $('#fb-config-textarea').value;
+                try {
+                    // "const firebaseConfig = " 같은 부분을 제거하고 순수 객체 부분만 추출
+                    const objectStr = rawText.substring(rawText.indexOf('{'), rawText.lastIndexOf('}') + 1);
+                    if (!objectStr) throw new Error("객체 형식을 찾을 수 없습니다.");
+                    
+                    // JSON5와 유사한 형식(마지막 쉼표 등)도 파싱하기 위해 Function 생성자 사용
+                    const config = new Function(`return ${objectStr}`)();
+
+                    // storageBucket 주소 자동 보정
+                    if (config.storageBucket && config.storageBucket.includes('firebasestorage')) {
+                        config.storageBucket = config.storageBucket.replace('.firebasestorage.app', '.appspot.com');
+                    }
+                    
+                    if (configManager.isValid(config)) {
+                        configManager.save(config);
+                        alert("설정이 저장되었습니다. 페이지를 새로고침합니다.");
+                        window.location.reload();
+                    } else {
+                        alert("입력된 설정 값이 유효하지 않습니다. 모든 필수 키가 포함되었는지 확인하세요.");
+                    }
+                } catch (error) {
+                    console.error("Firebase config parsing error:", error);
+                    alert("설정 값을 파싱하는 데 실패했습니다. 올바른 형식의 객체를 붙여넣었는지 확인하십시오.");
                 }
             }
             else if (action === 'save-def') logic.saveDefinition(id);
@@ -1764,8 +1784,23 @@
             }
         },
         init: async () => {
+            const $ = selector => document.querySelector(selector);
+            // [수정] DOM 로드 후 요소를 찾도록 elements 객체 정의를 이 위치로 이동
+            const elements = {
+                mainHeader: $('#main-header'), headerMainContent: $('#header-main-content'),
+                searchBar: $('#search-bar'), searchInput: $('#search-input'), cancelSearchBtn: $('.cancel-search-btn'),
+                datePicker: $('#date-picker'), mainContent: $('#main-content'),
+                commandBarWrapper: $('#command-bar-wrapper'), commandBarInput: $('#command-bar-input'),
+                suggestionBox: $('#suggestion-box'), dynamicFormContainer: $('#dynamic-form-container'),
+                searchBtn: $('#search-btn'), actionRail: $('#action-rail'), modalContainer: $('#modal-container'),
+                settingsBtn: $('#settings-btn'), logoutBtn: $('#logout-btn'),
+                appOverlay: $('#app-overlay'), loginContainer: $('#login-container'), loginBtn: $('#login-btn'),
+                loaderContainer: $('#loader-container'),
+            };
+
             ui.refreshIcons(); // 초기 아이콘 렌더링
             
+            // [수정] localStorage에서 설정을 불러오는 로직 복원
             const config = configManager.load();
             if (config && configManager.isValid(config)) {
                 state.firebaseConfig = config;
@@ -1773,39 +1808,38 @@
             } else {
                 ui.showSettingsModal();
                 elements.loaderContainer.classList.add('hidden');
-                elements.loginContainer.classList.add('hidden'); // 설정이 없으면 로그인도 숨김
-                elements.appOverlay.classList.remove('hidden');
+                elements.loginContainer.classList.add('hidden');
+                elements.appOverlay.classList.remove('hidden', 'opacity-0');
             }
 
             if (state.isFirebaseReady) {
-                firebase.onAuthStateChanged(fbAuth, logic.handleAuthStateChanged);
+                firebase.onAuthStateChanged(fbAuth, (user) => logic.handleAuthStateChanged(user, elements));
             }
 
             ui.initializeActionRail();
             
             elements.datePicker.addEventListener('change', handlers.handleDateChange);
-            elements.searchBtn.addEventListener('click', () => ui.toggleSearchMode(true));
-            elements.cancelSearchBtn.addEventListener('click', () => ui.toggleSearchMode(false));
+            elements.searchBtn.addEventListener('click', () => ui.toggleSearchMode(true, elements));
+            elements.cancelSearchBtn.addEventListener('click', () => ui.toggleSearchMode(false, elements));
             elements.searchInput.addEventListener('input', (e) => logic.searchGlobal(e.target.value));
             elements.actionRail.addEventListener('click', handlers.handleActionRailClick);
             elements.mainContent.addEventListener('click', handlers.handleMainContentClick);
             elements.mainContent.addEventListener('input', handlers.handleMainContentInput);
             window.addEventListener('scroll', handlers.handleScroll);
-            elements.modalContainer.addEventListener('click', handlers.handleModalClicks);
+            elements.modalContainer.addEventListener('click', (e) => handlers.handleModalClicks(e, elements));
             elements.modalContainer.addEventListener('click', handlers.handleWidgetFormClicks);
             elements.commandBarInput.addEventListener('focus', handlers.handleCommandBarFocus);
             elements.commandBarInput.addEventListener('input', handlers.handleCommandBarInput);
             elements.suggestionBox.addEventListener('click', handlers.handleSuggestionClick);
             elements.dynamicFormContainer.addEventListener('click', handlers.handleFormActionClick);
-            document.addEventListener('click', handlers.handleDocumentClick);
+            document.addEventListener('click', (e) => handlers.handleDocumentClick(e, elements));
             window.addEventListener('hashchange', logic.handleRouteChange);
             
-            // -- [새로운 이벤트 리스너] --
             elements.settingsBtn.addEventListener('click', handlers.handleSettings);
             elements.loginBtn.addEventListener('click', logic.signInWithGoogle);
             elements.logoutBtn.addEventListener('click', handlers.handleLogout);
 
-            logic.handleRouteChange(); // 해시 변경 감지를 초기에도 한 번 실행
+            logic.handleRouteChange();
         }
     };
     
