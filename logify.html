@@ -248,14 +248,36 @@
             let contentHtml = '';
             if (entry.type === 'log' && def) {
                 const body = Object.entries(entry.values).map(([k, v]) => {
-                    let displayValue = (v === null || v === undefined || v === '') ? '<span class="text-slate-400">-</span>' : v;
-                    if (typeof v === 'boolean') { displayValue = v ? '<span class="text-green-600 font-semibold">완료</span>' : '<span class="text-slate-500">미완료</span>'; }
-                    return `<div class="flex flex-col sm:flex-row sm:items-center"><strong class="font-medium text-slate-600 w-24 flex-shrink-0">${k}</strong> <span class="text-slate-800">${displayValue}</span></div>`;
+                    let displayValue;
+                    if (typeof v === 'string' && v.startsWith('data:image/')) {
+                        displayValue = `<img src="${v}" alt="${k}" class="mt-2 rounded-lg max-w-full h-auto shadow-md">`;
+                    } else if (v === null || v === undefined || v === '') {
+                        displayValue = '<span class="text-slate-400">-</span>';
+                    } else if (typeof v === 'boolean') {
+                        displayValue = v ? '<span class="text-green-600 font-semibold">완료</span>' : '<span class="text-slate-500">미완료</span>';
+                    } else {
+                        displayValue = v;
+                    }
+                    return `<div class="flex flex-col"><strong class="font-medium text-slate-600">${k}</strong> <div class="text-slate-800">${displayValue}</div></div>`;
                 }).join('');
-                const tagsHtml = def.tags?.length > 0 ? `<div class="log-tags mt-3 flex flex-wrap gap-2">${def.tags.map(tag => `<span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded-full">#${tag}</span>`).join('')}</div>` : '';
-                // [수정] div 대신 a 태그를 사용하고 href를 지정합니다.
-                const headerHtml = `<a href="#def/${def.id}" class="log-header text-lg font-semibold text-slate-800 mb-3 block hover:text-blue-600 transition-colors">${def.name}</a>`;
-                contentHtml = `<div class="text-sm font-medium text-slate-400 mb-1">${dayjs(entry.timestamp).format('HH:mm A')}</div>${headerHtml}<div class="log-body space-y-1.5 text-sm">${body}</div>${tagsHtml}`;
+
+                const tagsHtml = def.tags?.length > 0 ? `<div class="flex flex-wrap gap-2">${def.tags.map(tag => `<span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded-full">#${tag}</span>`).join('')}</div>` : '';
+                
+                const targetHtml = `<a href="#def/${def.id}" class="bg-slate-200 text-slate-800 text-xs font-bold px-2.5 py-1 rounded-full hover:bg-slate-300 transition-colors">${def.name}</a>`;
+
+                contentHtml = `
+                    <div class="flex gap-4">
+                        <div class="w-14 flex-shrink-0 text-center text-sm font-semibold text-slate-500 pt-0.5">
+                            ${dayjs(entry.timestamp).format('HH:mm')}
+                        </div>
+                        <div class="flex-grow min-w-0 border-l border-slate-200 pl-4">
+                            <div class="log-body space-y-1.5 text-sm">${body}</div>
+                            <div class="log-footer flex flex-wrap items-center gap-3 mt-3">
+                                ${targetHtml}
+                                ${tagsHtml}
+                            </div>
+                        </div>
+                    </div>`;
             } else if (entry.type === 'journal') {
                 contentHtml = `<div class="text-sm font-medium text-slate-400 mb-2">${dayjs(entry.timestamp).format('HH:mm A')}</div><div class="journal-entry prose prose-sm prose-slate max-w-none">${entry.content}</div>`;
             } else contentHtml = `<p class="text-red-500">데이터를 표시할 수 없습니다.</p>`;
@@ -294,7 +316,7 @@
                 <div class="flex flex-col sm:flex-row gap-4 justify-between items-center mb-4 pb-4 border-b border-slate-200">
                      <div class="relative flex-grow w-full sm:w-auto">
                         <i data-lucide="search" class="w-5 h-5 text-slate-400 absolute top-1/2 left-4 -translate-y-1/2"></i>
-                        <input type="search" id="workspace-search-input" placeholder="이름 또는 #태그로 검색..." value="${state.workspace.searchQuery}" class="w-full h-11 pl-12 pr-4 bg-white rounded-xl border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition shadow-sm">
+                        <input type="search" id="workspace-search-input" placeholder="전체 검색... (tag:태그명 으로 필터링)" value="${state.workspace.searchQuery}" class="w-full h-11 pl-12 pr-4 bg-white rounded-xl border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition shadow-sm">
                     </div>
                     <div class="flex items-center gap-2 flex-shrink-0">
                         <div class="flex items-center bg-slate-200 rounded-lg p-1">
@@ -574,6 +596,7 @@
                         case 'Checkbox':
                             fieldInputHtml = `<div class="flex items-center gap-2 mt-2 h-11"><input type="checkbox" id="${fieldId}" class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" ${value ? 'checked' : ''}><label for="${fieldId}" class="text-sm font-medium text-slate-700">${field.fieldName}</label></div>`; break;
                         case 'Textarea': fieldInputHtml = `<textarea id="${fieldId}" rows="3" class="form-input">${value || ''}</textarea>`; break;
+                        case 'Image': fieldInputHtml = `<input type="file" id="${fieldId}" accept="image/*" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"/>`; break;
                         default: fieldInputHtml = `<input type="text" id="${fieldId}" value="${value || ''}" class="form-input">`; break;
                     }
                     if (field.fieldType === 'Checkbox') formHtml += `<div class="form-group">${fieldInputHtml}</div>`;
@@ -669,14 +692,9 @@
             const isNew = widget === null;
             const w = widget || { id: Date.now(), title: '', chartType: '', defId: '', fieldName: '', w: 4, h: 3 };
 
-            const chartTypes = [
-                { id: 'bar', name: '막대 차트', icon: 'bar-chart-3', fields: ['Number'] },
-                { id: 'line', name: '선 차트', icon: 'line-chart', fields: ['Number'] },
-                { id: 'radar', name: '레이더 차트', icon: 'radar', fields: ['Number'] },
-                { id: 'heatmap', name: '히트맵', icon: 'grid-3x3', fields: ['Checkbox'] },
-                { id: 'list', name: '텍스트 목록', icon: 'list', fields: ['Text', 'Textarea'] }
-            ];
-
+            // 이 부분을 교체합니다.
+            const chartTypes = ui.widgetManager.getAvailableWidgets();
+            
             const modalContent = `<div class="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col scale-95 opacity-0 transition-all" id="widget-modal-content">
                 <div class="p-5 border-b border-slate-200 flex justify-between items-center">
                     <h2 class="text-lg font-bold">${isNew ? '새 위젯 추가' : '위젯 수정'}</h2>
@@ -716,9 +734,172 @@
                     if(btn) handlers.handleWidgetFormClicks({ target: btn });
                 }
             }, 10);
-        }
+        },
+        widgetManager: {
+            registry: {
+                'bar': {
+                    name: '막대 차트', icon: 'bar-chart-3', fields: ['Number'],
+                    render: (widget, containerEl, entries, chartInstances) => {
+                        const canvas = document.createElement('canvas');
+                        containerEl.appendChild(canvas);
+                        const labels = entries.slice(-30).map(e => dayjs(e.timestamp).format('MM/DD'));
+                        const data = entries.slice(-30).map(e => parseFloat(e.values[widget.fieldName]) || 0);
+                        const chart = new Chart(canvas.getContext('2d'), {
+                            type: 'bar',
+                            data: {
+                                labels,
+                                datasets: [{
+                                    label: widget.fieldName, data,
+                                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                                    borderColor: 'rgba(59, 130, 246, 1)',
+                                    borderWidth: 2,
+                                }]
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                        });
+                        chartInstances.set(widget.id, chart);
+                    }
+                },
+                'line': {
+                    name: '선 차트', icon: 'line-chart', fields: ['Number'],
+                    render: (widget, containerEl, entries, chartInstances) => {
+                        const canvas = document.createElement('canvas');
+                        containerEl.appendChild(canvas);
+                        const labels = entries.slice(-30).map(e => dayjs(e.timestamp).format('MM/DD'));
+                        const data = entries.slice(-30).map(e => parseFloat(e.values[widget.fieldName]) || 0);
+                        const chart = new Chart(canvas.getContext('2d'), {
+                            type: 'line',
+                            data: {
+                                labels,
+                                datasets: [{
+                                    label: widget.fieldName, data,
+                                    backgroundColor: 'transparent',
+                                    borderColor: 'rgba(59, 130, 246, 1)',
+                                    borderWidth: 2,
+                                    tension: 0.2,
+                                }]
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                        });
+                        chartInstances.set(widget.id, chart);
+                    }
+                },
+                'radar': {
+                    name: '레이더 차트', icon: 'radar', fields: ['Number'],
+                    render: (widget, containerEl, entries, chartInstances) => {
+                        const canvas = document.createElement('canvas');
+                        containerEl.appendChild(canvas);
+                        const labels = entries.slice(-30).map(e => dayjs(e.timestamp).format('MM/DD'));
+                        const data = entries.slice(-30).map(e => parseFloat(e.values[widget.fieldName]) || 0);
+                        const chart = new Chart(canvas.getContext('2d'), {
+                            type: 'radar',
+                            data: {
+                                labels,
+                                datasets: [{
+                                    label: widget.fieldName, data,
+                                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                                    borderColor: 'rgba(59, 130, 246, 1)',
+                                    borderWidth: 2,
+                                }]
+                            },
+                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+                        });
+                        chartInstances.set(widget.id, chart);
+                    }
+                },
+                'heatmap': {
+                    name: '히트맵', icon: 'grid-3x3', fields: ['Checkbox'],
+                    render: (widget, containerEl, entries) => {
+                        // 1. 표시할 월 결정 (위젯 상태 또는 현재 날짜)
+                        if (!widget.displayMonth) {
+                            widget.displayMonth = dayjs().format('YYYY-MM-DD');
+                        }
+                        const displayMonth = dayjs(widget.displayMonth);
+
+                        // 2. 데이터 집계
+                        const dataByDay = entries.reduce((acc, e) => {
+                            const date = dayjs(e.timestamp).format('YYYY-MM-DD');
+                            if (e.values[widget.fieldName]) acc[date] = (acc[date] || 0) + 1;
+                            return acc;
+                        }, {});
+
+                        // 3. 네비게이션 날짜 계산
+                        const prevMonth = displayMonth.subtract(1, 'month').format('YYYY-MM-DD');
+                        const nextMonth = displayMonth.add(1, 'month').format('YYYY-MM-DD');
+
+                        // 4. 캘린더 그리드 계산
+                        const startOfMonth = displayMonth.startOf('month');
+                        const endOfMonth = displayMonth.endOf('month');
+                        const startDay = startOfMonth.day(); // 0:일, 6:토
+                        const daysInMonth = endOfMonth.date();
+                        
+                        let gridHtml = '';
+                        // 앞쪽 빈 칸 채우기
+                        for (let i = 0; i < startDay; i++) {
+                            gridHtml += `<div></div>`;
+                        }
+                        // 날짜 채우기
+                        for (let i = 1; i <= daysInMonth; i++) {
+                            const date = startOfMonth.date(i);
+                            const count = dataByDay[date.format('YYYY-MM-DD')] || 0;
+                            let colorClass = 'bg-slate-100';
+                            if (count > 0) colorClass = 'bg-blue-200';
+                            if (count > 2) colorClass = 'bg-blue-400';
+                            if (count > 5) colorClass = 'bg-blue-600';
+                            gridHtml += `<div class="${colorClass} rounded-sm" title="${date.format('YYYY-MM-DD')}: ${count}"></div>`;
+                        }
+
+                        // 5. 최종 HTML 구조 생성
+                        containerEl.innerHTML = `
+                            <div class="flex flex-col h-full">
+                                <div class="flex justify-between items-center mb-2 flex-shrink-0">
+                                    <button class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-200" data-action="navigate-heatmap" data-widget-id="${widget.id}" data-date="${prevMonth}">
+                                        <i data-lucide="chevron-left" class="w-4 h-4 text-slate-500"></i>
+                                    </button>
+                                    <span class="text-sm font-semibold text-slate-700">${displayMonth.format('YYYY년 M월')}</span>
+                                    <button class="w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-200" data-action="navigate-heatmap" data-widget-id="${widget.id}" data-date="${nextMonth}">
+                                        <i data-lucide="chevron-right" class="w-4 h-4 text-slate-500"></i>
+                                    </button>
+                                </div>
+                                <div class="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-1 flex-shrink-0">
+                                    ${['일', '월', '화', '수', '목', '금', '토'].map(d => `<div>${d}</div>`).join('')}
+                                </div>
+                                <div class="grid grid-cols-7 gap-1 flex-grow">
+                                    ${gridHtml}
+                                </div>
+                            </div>
+                        `;
+                        // 6. 아이콘 렌더링
+                        ui.refreshIcons();
+                    }
+                },
+                'list': {
+                    name: '텍스트 목록', icon: 'list', fields: ['Text', 'Textarea'],
+                    render: (widget, containerEl, entries) => {
+                        let listHtml = '<ul class="space-y-2 overflow-y-auto h-full text-sm pr-2">';
+                        entries.slice(-10).reverse().forEach(e => {
+                            listHtml += `<li class="p-2 bg-slate-50 rounded-md"><strong class="text-slate-500 font-normal">${dayjs(e.timestamp).format('MM/DD')}</strong>: ${e.values[widget.fieldName]}</li>`;
+                        });
+                        listHtml += '</ul>';
+                        containerEl.innerHTML = listHtml;
+                    }
+                }
+            },
+            getAvailableWidgets: function() {
+                return Object.entries(this.registry).map(([id, config]) => ({ id, ...config }));
+            },
+            render: function(widget, containerEl, entries, chartInstances) {
+                const widgetType = this.registry[widget.chartType];
+                if (widgetType && typeof widgetType.render === 'function') {
+                    widgetType.render(widget, containerEl, entries, chartInstances);
+                } else {
+                    containerEl.innerHTML = `<div class="flex items-center justify-center h-full text-red-500 text-sm">오류: '${widget.chartType}' 위젯 타입을 렌더링할 수 없습니다.</div>`;
+                }
+            }
+        },
     };
-    
+
+
     // =================================================================================
     // LOGIC MODULE
     // =================================================================================
@@ -781,9 +962,7 @@
                             break;
                         }
                     }
-                    if (!found) {
-                        throw new Error(`수정할 원본 항목(ID: ${entryId})을 데이터베이스에서 찾을 수 없습니다.`);
-                    }
+                    if (!found) throw new Error(`수정할 원본 항목(ID: ${entryId})을 데이터베이스에서 찾을 수 없습니다.`);
                 } else {
                     entryDate = dayjs().format('YYYY-MM-DD');
                     dayEntries = (await dbUtils.get('entries', entryDate))?.entries || [];
@@ -795,24 +974,32 @@
                     newEntryData.content = quill.root.innerHTML;
                     newEntryData.definitionId = null; 
                 } else if (type === 'log') {
-                    if (definitionId === null || typeof definitionId !== 'number') {
-                        throw new Error(`유효하지 않은 대상 ID입니다.`);
-                    }
+                    if (definitionId === null || typeof definitionId !== 'number') throw new Error(`유효하지 않은 대상 ID입니다.`);
                     const def = state.definitions.find(d => d.id === definitionId);
                     if (!def) throw new Error(`ID ${definitionId}에 해당하는 대상을 찾을 수 없습니다.`);
                     
                     newEntryData.definitionId = definitionId;
                     newEntryData.values = {};
-
-                    // [핵심 변경] forEach 루프에 'index' 매개변수를 추가합니다.
-                    def.fields.forEach((field, index) => {
-                        // [핵심 변경] 폼 생성 시 사용했던 것과 동일한 규칙으로 ID 선택자를 생성하여
-                        // 해당 필드에 정확히 대응하는 입력 요소를 선택합니다.
+                    
+                    const valuePromises = def.fields.map(async (field, index) => {
                         const input = $(`#log-field-${definitionId}-${index}`);
+                        let value;
                         if (input) {
-                            newEntryData.values[field.fieldName] = input.type === 'checkbox' ? input.checked : input.value;
+                            if (field.fieldType === 'Image' && input.files[0]) {
+                                value = await logic.processAndEncodeImage(input.files[0]);
+                            } else {
+                                value = input.type === 'checkbox' ? input.checked : input.value;
+                            }
+                            return [field.fieldName, value];
                         }
+                        return [field.fieldName, undefined];
                     });
+
+                    const resolvedValues = await Promise.all(valuePromises);
+                    resolvedValues.forEach(([fieldName, value]) => {
+                        if (value !== undefined) newEntryData.values[fieldName] = value;
+                    });
+
                 } else {
                     throw new Error(`알 수 없는 저장 타입: ${type}`);
                 }
@@ -842,6 +1029,38 @@
                 alert(`저장에 실패했습니다: ${error.message}`);
             }
         },
+        
+        processAndEncodeImage: (file) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.readAsDataURL(file);
+            reader.onerror = reject;
+            reader.onload = () => {
+                const img = new Image();
+                img.src = reader.result;
+                img.onerror = reject;
+                img.onload = () => {
+                    const { width, height } = img;
+                    const minDimension = Math.min(width, height);
+
+                    if (minDimension <= 700) {
+                        return resolve(img.src); // 리사이징 불필요
+                    }
+
+                    let newWidth, newHeight;
+                    const scaleFactor = 720 / minDimension;
+                    newWidth = width * scaleFactor;
+                    newHeight = height * scaleFactor;
+
+                    const canvas = document.createElement('canvas');
+                    canvas.width = newWidth;
+                    canvas.height = newHeight;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, newWidth, newHeight);
+                    
+                    resolve(canvas.toDataURL(file.type, 0.9)); // 퀄리티 90%로 압축
+                };
+            };
+        }),
         loadAndRenderDays: async (startDate, targetCount) => {
             if (state.isLoadingMore) return; 
             state.isLoadingMore = true;
@@ -885,26 +1104,52 @@
         },
         searchGlobal: async (query) => {
             const lowerQuery = query.toLowerCase().trim();
-            if (!lowerQuery) { ui.renderMainContent(); return; }
-            const results = [], isTagQuery = lowerQuery.startsWith('#'), pureQuery = isTagQuery ? lowerQuery.substring(1) : lowerQuery;
+            if (!lowerQuery) {
+                ui.renderMainContent();
+                return;
+            }
+
+            const results = [];
+            const isTagQuery = lowerQuery.startsWith('tag:');
+            const pureQuery = isTagQuery ? lowerQuery.substring(4).trim() : lowerQuery;
+
             const allEntries = await dbUtils.getAll('entries');
-            allEntries.forEach(dayData => {
-                dayData.entries.forEach(entry => {
+
+            for (const dayData of allEntries) {
+                for (const entry of dayData.entries) {
                     let isMatch = false;
-                    if (entry.type === 'journal' && !isTagQuery) {
-                        const tempDiv = document.createElement('div');
-                        tempDiv.innerHTML = entry.content;
-                        if (tempDiv.textContent.toLowerCase().includes(pureQuery)) isMatch = true;
-                    } else if (entry.type === 'log') {
-                        const def = state.definitions.find(d => d.id === entry.definitionId);
-                        if (def) {
-                            if (isTagQuery) { if (def.tags?.some(tag => tag.toLowerCase().includes(pureQuery))) isMatch = true; }
-                            else { if (def.name.toLowerCase().includes(pureQuery) || Object.values(entry.values).some(val => String(val).toLowerCase().includes(pureQuery))) isMatch = true; }
+                    const def = entry.type === 'log' ? state.definitions.find(d => d.id === entry.definitionId) : null;
+
+                    if (isTagQuery) {
+                        // 'tag:' 구문으로 검색 시
+                        if (def && def.tags?.some(tag => tag.toLowerCase().includes(pureQuery))) {
+                            isMatch = true;
+                        }
+                    } else {
+                        // 일반 검색 시
+                        if (entry.type === 'journal') {
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = entry.content;
+                            if (tempDiv.textContent.toLowerCase().includes(pureQuery)) {
+                                isMatch = true;
+                            }
+                        } else if (entry.type === 'log' && def) {
+                            // 1. 대상 이름 검색
+                            if (def.name.toLowerCase().includes(pureQuery)) isMatch = true;
+                            // 2. 태그 검색
+                            else if (def.tags?.some(tag => tag.toLowerCase().includes(pureQuery))) isMatch = true;
+                            // 3. 필드 이름(변수명) 검색 추가
+                            else if (Object.keys(entry.values).some(key => key.toLowerCase().includes(pureQuery))) isMatch = true;
+                            // 4. 값 검색
+                            else if (Object.values(entry.values).some(val => String(val).toLowerCase().includes(pureQuery))) isMatch = true;
                         }
                     }
-                    if (isMatch) results.push({ ...entry, date: dayData.date });
-                });
-            });
+
+                    if (isMatch) {
+                        results.push({ ...entry, date: dayData.date });
+                    }
+                }
+            }
             ui.renderSearchResults(results);
         },
         saveDefinition: async (id) => {
@@ -1009,61 +1254,7 @@
                 return;
             }
 
-            switch(widget.chartType) {
-                case 'bar': case 'line': case 'radar': {
-                    const canvas = document.createElement('canvas');
-                    containerEl.appendChild(canvas);
-                    const labels = entries.slice(-30).map(e => dayjs(e.timestamp).format('MM/DD'));
-                    const data = entries.slice(-30).map(e => parseFloat(e.values[widget.fieldName]) || 0);
-                    const chart = new Chart(canvas.getContext('2d'), {
-                        type: widget.chartType === 'radar' ? 'radar' : 'bar',
-                        data: {
-                            labels,
-                            datasets: [{
-                                label: widget.fieldName, data,
-                                backgroundColor: widget.chartType === 'line' ? 'transparent' : 'rgba(59, 130, 246, 0.5)',
-                                borderColor: 'rgba(59, 130, 246, 1)',
-                                borderWidth: 2,
-                                tension: widget.chartType === 'line' ? 0.2 : 0,
-                                type: widget.chartType === 'line' ? 'line' : undefined,
-                            }]
-                        },
-                        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-                    });
-                    state.chartInstances.set(widget.id, chart);
-                    break;
-                }
-                case 'heatmap': {
-                     const dataByDay = entries.reduce((acc, e) => {
-                        const date = dayjs(e.timestamp).format('YYYY-MM-DD');
-                        if (e.values[widget.fieldName]) acc[date] = (acc[date] || 0) + 1;
-                        return acc;
-                    }, {});
-                    const today = dayjs();
-                    let heatmapHtml = '<div class="grid grid-cols-7 gap-1 flex-grow">';
-                    for (let i = 83; i >= 0; i--) {
-                        const date = today.subtract(i, 'day');
-                        const count = dataByDay[date.format('YYYY-MM-DD')] || 0;
-                        let colorClass = 'bg-slate-100';
-                        if(count > 0) colorClass = 'bg-blue-200';
-                        if(count > 2) colorClass = 'bg-blue-400';
-                        if(count > 5) colorClass = 'bg-blue-600';
-                        heatmapHtml += `<div class="${colorClass} rounded-sm" title="${date.format('YYYY-MM-DD')}: ${count}"></div>`;
-                    }
-                    heatmapHtml += '</div>';
-                    containerEl.innerHTML = heatmapHtml;
-                    break;
-                }
-                case 'list': {
-                    let listHtml = '<ul class="space-y-2 overflow-y-auto h-full text-sm pr-2">';
-                    entries.slice(-10).reverse().forEach(e => {
-                        listHtml += `<li class="p-2 bg-slate-50 rounded-md"><strong class="text-slate-500 font-normal">${dayjs(e.timestamp).format('MM/DD')}</strong>: ${e.values[widget.fieldName]}</li>`;
-                    });
-                    listHtml += '</ul>';
-                    containerEl.innerHTML = listHtml;
-                    break;
-                }
-            }
+            ui.widgetManager.render(widget, containerEl, entries, state.chartInstances);
         }
     };
 
@@ -1083,7 +1274,16 @@
                 const container = $('#def-fields-container');
                 const newField = document.createElement('div');
                 newField.className = 'field-row flex gap-3 items-center';
-                newField.innerHTML = `<input type="text" class="field-name-input flex-grow h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" placeholder="필드 이름"><select class="field-type-select h-11 px-3 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500"><option value="Text">텍스트</option><option value="Number">숫자</option><option value="Date">날짜</option><option value="Checkbox">체크박스</option><option value="Textarea">장문 텍스트</option></select><button class="button w-11 h-11 flex-shrink-0 flex items-center justify-center bg-slate-100 text-slate-500 rounded-lg hover:bg-red-100 hover:text-red-600" data-action="remove-field"><i data-lucide="x" class="w-4 h-4"></i></button>`;
+                newField.innerHTML = `<input type="text" class="field-name-input flex-grow h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" placeholder="필드 이름">
+<select class="field-type-select h-11 px-3 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
+    <option value="Text">텍스트</option>
+    <option value="Number">숫자</option>
+    <option value="Date">날짜</option>
+    <option value="Checkbox">체크박스</option>
+    <option value="Textarea">장문 텍스트</option>
+    <option value="Image">이미지</option>
+</select>
+<button class="button w-11 h-11 flex-shrink-0 flex items-center justify-center bg-slate-100 text-slate-500 rounded-lg hover:bg-red-100 hover:text-red-600" data-action="remove-field"><i data-lucide="x" class="w-4 h-4"></i></button>`;
                 container.appendChild(newField);
                 ui.refreshIcons();
             } else if (action === 'remove-field') target.closest('.field-row').remove();
@@ -1178,60 +1378,115 @@
                 window.location.hash = button.dataset.viewId;
             }
         },
+        handleTimelineActions: async (action, target, id) => {
+            if (!id) return;
+            if (action === 'edit-entry') {
+                let entryToEdit;
+                const allEntries = await dbUtils.getAll('entries');
+                for (const day of allEntries) {
+                    const found = day.entries.find(e => e.id === id);
+                    if (found) { entryToEdit = found; break; }
+                }
+                if (entryToEdit) ui.showDynamicForm(entryToEdit.type, entryToEdit.definitionId, entryToEdit);
+                else console.error(`Error: Entry with id ${id} not found.`);
+            } else if (action === 'delete-entry') {
+                logic.deleteEntry(id);
+            }
+        },
+        handleDashboardActions: (action, target, id) => {
+            switch (action) {
+                case 'add-widget':
+                    ui.renderWidgetForm();
+                    break;
+                case 'edit-widget':
+                    ui.renderWidgetForm(state.dashboard.widgets.find(w => w.id === id));
+                    break;
+                case 'delete-widget':
+                    logic.deleteWidget(id);
+                    break;
+                case 'navigate-heatmap':
+                    const widgetId = parseInt(target.closest('[data-widget-id]').dataset.widgetId);
+                    const date = target.closest('[data-date]').dataset.date;
+                    const widget = state.dashboard.widgets.find(w => w.id === widgetId);
+                    if (widget) {
+                        widget.displayMonth = date;
+                        const widgetEl = target.closest('.widget');
+                        if (widgetEl) {
+                            const contentEl = widgetEl.querySelector('.widget-content');
+                            if (contentEl) logic.renderWidgetContent(widget, contentEl);
+                        }
+                    }
+                    break;
+            }
+        },
+        handleWorkspaceActions: (action, target, id) => {
+            switch (action) {
+                case 'set-workspace-view':
+                    state.workspace.viewMode = target.dataset.view;
+                    ui.renderWorkspaceContent();
+                    break;
+                case 'add-def':
+                    ui.renderDefinitionForm('new');
+                    break;
+                case 'edit-def':
+                    ui.renderDefinitionForm(state.definitions.find(d => d.id === id));
+                    break;
+                case 'delete-def':
+                    logic.deleteDefinition(id);
+                    break;
+                case 'toggle-node':
+                    if (state.workspace.expandedNodes.has(id)) state.workspace.expandedNodes.delete(id);
+                    else state.workspace.expandedNodes.add(id);
+                    ui.renderWorkspaceTree();
+                    ui.refreshIcons();
+                    break;
+            }
+        },
+        handleCalendarActions: (action, target) => {
+            switch (action) {
+                case 'prev-month':
+                    state.calendarDate = dayjs(state.calendarDate).subtract(1, 'month').format('YYYY-MM-DD');
+                    ui.renderCalendar(state.calendarDate);
+                    break;
+                case 'next-month':
+                    state.calendarDate = dayjs(state.calendarDate).add(1, 'month').format('YYYY-MM-DD');
+                    ui.renderCalendar(state.calendarDate);
+                    break;
+            }
+        },
         handleMainContentClick: async (e) => {
             const target = e.target.closest('[data-action]');
             if (!target) return;
-            const action = target.dataset.action, id = target.dataset.id ? parseInt(target.dataset.id) : null, date = target.dataset.date;
-            
-            // [리팩토링] 모든 뷰 전환 로직을 해시 변경으로 통합합니다.
-            // 이로써 타임라인을 포함한 모든 뷰에서 일관되게 동작합니다.
-            if (action === 'view-definition-dashboard') {
-                window.location.hash = `def/${id}`;
-                return;
-            }
-            if (action === 'back-to-workspace') {
-                window.location.hash = 'workspace';
-                return;
-            }
-            if (action === 'select-date' && date) {
-                state.currentDate = date; 
-                window.location.hash = 'timeline'; // 날짜 선택 후 타임라인으로 이동
+
+            const action = target.dataset.action;
+            const id = target.dataset.id ? parseInt(target.dataset.id) : null;
+
+            // 1. 뷰 전환 액션 우선 처리 (Hash 변경)
+            const viewChangeActions = {
+                'view-definition-dashboard': () => window.location.hash = `def/${id}`,
+                'back-to-workspace': () => window.location.hash = 'workspace',
+                'select-date': () => {
+                    state.currentDate = target.dataset.date;
+                    window.location.hash = 'timeline';
+                }
+            };
+            if (viewChangeActions[action]) {
+                viewChangeActions[action]();
                 return;
             }
 
-            // 뷰 전환이 아닌 다른 액션들은 기존 로직을 유지합니다.
-            if (state.currentView === 'calendar') {
-                if (action === 'prev-month') { state.calendarDate = dayjs(state.calendarDate).subtract(1, 'month').format('YYYY-MM-DD'); ui.renderCalendar(state.calendarDate); }
-                else if (action === 'next-month') { state.calendarDate = dayjs(state.calendarDate).add(1, 'month').format('YYYY-MM-DD'); ui.renderCalendar(state.calendarDate); }
-                return;
-            }
-            if (state.currentView === 'workspace') {
-                 if (action === 'set-workspace-view') { state.workspace.viewMode = target.dataset.view; ui.renderWorkspaceContent(); }
-                 else if (action === 'add-def') ui.renderDefinitionForm('new');
-                 else if (action === 'edit-def') ui.renderDefinitionForm(state.definitions.find(d => d.id === id));
-                 else if (action === 'delete-def') logic.deleteDefinition(id);
-                 else if (action === 'toggle-node') {
-                    if (state.workspace.expandedNodes.has(id)) state.workspace.expandedNodes.delete(id);
-                    else state.workspace.expandedNodes.add(id);
-                    ui.renderWorkspaceTree(); ui.refreshIcons();
-                } return;
-            }
-            if(state.currentView === 'dashboard' || state.currentView === 'definition-dashboard') {
-                if(action === 'add-widget') ui.renderWidgetForm();
-                if(action === 'edit-widget') ui.renderWidgetForm(state.dashboard.widgets.find(w => w.id === id));
-                if(action === 'delete-widget') logic.deleteWidget(id);
-                return;
-            }
-            if (id) {
-                if (action === 'edit-entry') {
-                    let entryToEdit; const allEntries = await dbUtils.getAll('entries');
-                    for (const day of allEntries) {
-                        const found = day.entries.find(e => e.id === id);
-                        if (found) { entryToEdit = found; break; }
-                    }
-                    if (entryToEdit) ui.showDynamicForm(entryToEdit.type, entryToEdit.definitionId, entryToEdit);
-                    else console.error(`Error: Entry with id ${id} not found.`);
-                } else if (action === 'delete-entry') logic.deleteEntry(id);
+            // 2. 현재 뷰에 따른 액션 핸들러 매핑 및 호출
+            const actionHandlers = {
+                'timeline': () => handlers.handleTimelineActions(action, target, id),
+                'dashboard': () => handlers.handleDashboardActions(action, target, id),
+                'definition-dashboard': () => handlers.handleDashboardActions(action, target, id),
+                'workspace': () => handlers.handleWorkspaceActions(action, target, id),
+                'calendar': () => handlers.handleCalendarActions(action, target)
+            };
+
+            const handler = actionHandlers[state.currentView];
+            if (handler) {
+                handler();
             }
         },
         handleMainContentInput: (e) => {
