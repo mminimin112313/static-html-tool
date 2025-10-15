@@ -96,7 +96,7 @@
             <div id="search-bar" class="hidden w-full items-center gap-4 h-16">
                 <div class="relative w-full">
                     <i data-lucide="search" class="w-5 h-5 text-slate-400 absolute top-1/2 left-4 -translate-y-1/2"></i>
-                    <input type="text" id="search-input" placeholder="타임라인에서 검색... (#태그명 으로 검색)" class="w-full h-11 pl-12 pr-4 bg-slate-100 rounded-xl border-transparent focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-white transition">
+                    <input type="text" id="search-input" placeholder="검색... (#태그명 으로 검색)" class="w-full h-11 pl-12 pr-4 bg-slate-100 rounded-xl border-transparent focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-white transition">
                 </div>
                 <button class="cancel-search-btn text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors flex-shrink-0">취소</button>
             </div>
@@ -119,7 +119,12 @@
     </footer>
     
     <div id="modal-container"></div>
-
+ <div id="image-modal-overlay" class="fixed inset-0 z-[3000] bg-black/80 backdrop-blur-sm hidden items-center justify-center p-4" data-action="close-image-modal">
+        <img id="zoomed-image" src="" alt="Zoomed image" class="max-w-[90vw] max-h-[90vh] object-contain rounded-lg shadow-2xl">
+        <button class="absolute top-4 right-4 text-white w-10 h-10 flex items-center justify-center rounded-full bg-white/20 hover:bg-white/30 transition-colors" data-action="close-image-modal">
+            <i data-lucide="x" class="w-6 h-6"></i>
+        </button>
+    </div>
    <script>
     // =================================================================================
     // STATE & CONFIGURATION 
@@ -129,6 +134,7 @@
         definitions: [],
         currentDate: dayjs().format('YYYY-MM-DD'),
         currentView: 'timeline',
+        previousView: 'timeline', 
         activeDefinitionId: null, 
         lastLoadedDate: null, 
         loadedEntries: new Map(),
@@ -136,7 +142,7 @@
         isLoadingMore: false,
         workspace: {
             selectedDefId: null, searchQuery: '',
-            expandedNodes: new Set(), viewMode: 'list',
+            expandedNodes: new Set(), viewMode: 'tree',
         },
         dashboard: { widgets: [] },
         chartInstances: new Map(),
@@ -151,6 +157,13 @@
         isFirebaseReady: false, // Firebase 초기화 완료 여부
         firestoreUnsubscribes: [], // 실시간 리스너 구독 해제 함수 배열
     };
+    console.log(`[DEBUG] logic.handleAuthStateChanged: definitions ${state.definitions.length}개 로드 완료.`);
+                
+    // [추가] 워크스페이스 트리 뷰의 모든 노드를 기본적으로 확장 상태로 설정합니다.
+    state.workspace.expandedNodes = new Set(state.definitions.map(d => d.id));
+    console.log("[DEBUG] logic.handleAuthStateChanged: 워크스페이스의 모든 노드를 기본 확장으로 설정.");
+
+    console.log("[DEBUG] logic.handleAuthStateChanged: dashboard 설정 로드 시작.");
     let db;
     let quill; 
     let fbApp;
@@ -381,22 +394,28 @@ const firebaseUtils = {
             </div>`;
             let contentHtml = '';
             if (entry.type === 'log' && def) {
-                const body = Object.entries(entry.values).map(([k, v]) => {
-                    let displayValue;
-                    if (typeof v === 'string' && v.startsWith('data:image/')) {
-                        displayValue = `<img src="${v}" alt="${k}" class="mt-2 rounded-lg max-w-full h-auto shadow-md">`;
-                    } else if (v === null || v === undefined || v === '') {
-                        displayValue = '<span class="text-slate-400">-</span>';
-                    } else if (typeof v === 'boolean') {
-                        displayValue = v ? '<span class="text-green-600 font-semibold">완료</span>' : '<span class="text-slate-500">미완료</span>';
+                const textValues = [], imageValues = [];
+                Object.entries(entry.values).forEach(([key, value]) => {
+                    if (typeof value === 'string' && value.startsWith('data:image/')) {
+                        imageValues.push({ key, value });
                     } else {
-                        displayValue = v;
+                        textValues.push({ key, value });
                     }
-                    return `<div class="flex flex-col"><strong class="font-medium text-slate-600">${k}</strong> <div class="text-slate-800">${displayValue}</div></div>`;
+                });
+
+                const textBody = textValues.map(({ key, value }) => {
+                    let displayValue;
+                    if (value === null || value === undefined || value === '') displayValue = '<span class="text-slate-400">-</span>';
+                    else if (typeof value === 'boolean') displayValue = value ? '<span class="text-green-600 font-semibold">완료</span>' : '<span class="text-slate-500">미완료</span>';
+                    else displayValue = value;
+                    return `<div><strong class="font-medium text-slate-600">${key}:</strong> <span class="text-slate-800">${displayValue}</span></div>`;
                 }).join('');
 
+                const imageBody = imageValues.map(({ key, value }) => 
+                    `<img src="${value}" alt="${key}" class="mt-2 rounded-lg w-4/5 mx-auto h-auto shadow-md cursor-pointer transition-transform hover:scale-105" data-action="zoom-image">`
+                ).join('');
+
                 const tagsHtml = def.tags?.length > 0 ? `<div class="flex flex-wrap gap-2">${def.tags.map(tag => `<span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded-full">#${tag}</span>`).join('')}</div>` : '';
-                
                 const targetHtml = `<a href="#def/${def.id}" class="bg-slate-200 text-slate-800 text-xs font-bold px-2.5 py-1 rounded-full hover:bg-slate-300 transition-colors">${def.name}</a>`;
 
                 contentHtml = `
@@ -405,8 +424,9 @@ const firebaseUtils = {
                             ${dayjs(entry.timestamp).format('HH:mm')}
                         </div>
                         <div class="flex-grow min-w-0 border-l border-slate-200 pl-4">
-                            <div class="log-body space-y-1.5 text-sm">${body}</div>
-                            <div class="log-footer flex flex-wrap items-center gap-3 mt-3">
+                            <div class="log-body space-y-1.5 text-sm">${textBody}</div>
+                            <div class="log-images mt-3 space-y-2">${imageBody}</div>
+                            <div class="log-footer flex flex-wrap items-center gap-3 mt-4">
                                 ${targetHtml}
                                 ${tagsHtml}
                             </div>
@@ -442,8 +462,15 @@ const firebaseUtils = {
             elements.headerMainContent.classList.toggle('hidden', active);
             elements.searchBar.classList.toggle('hidden', !active);
             elements.searchBar.classList.toggle('flex', active);
-            if (active) elements.searchInput.focus();
-            else { elements.searchInput.value = ''; state.currentView = 'timeline'; ui.renderMainContent(); }
+            if (active) {
+                state.previousView = state.currentView; // [핵심 수정] 현재 뷰를 저장
+                elements.searchInput.focus();
+            } else { 
+                elements.searchInput.value = ''; 
+                // [핵심 수정] 이전에 저장된 뷰로 복귀
+                state.currentView = state.previousView || 'timeline'; 
+                ui.renderMainContent(); 
+            }
         },
         renderWorkspace: () => {
             elements.mainContent.innerHTML = `
@@ -518,8 +545,8 @@ const firebaseUtils = {
             elements.mainContent.innerHTML = `
                 <div class="flex justify-between items-center mb-4 pb-4 border-b">
                     <div>
-                        <button class="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-blue-600" data-action="back-to-workspace">
-                            <i data-lucide="arrow-left"></i> 워크스페이스로 돌아가기
+                        <button class="flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-blue-600" data-action="go-back">
+                            <i data-lucide="arrow-left"></i> 이전으로 돌아가기
                         </button>
                         <h1 class="text-2xl font-bold mt-1">${definition.name} 대시보드</h1>
                     </div>
@@ -683,9 +710,23 @@ const firebaseUtils = {
         renderDefinitionForm: (definition) => {
             const isNew = definition === 'new';
             const defData = isNew ? { name: '', fields: [{fieldName: '', fieldType: 'Text'}], parentId: 0, tags: [] } : definition;
-            let fieldsHtml = defData.fields.map((field) => `
-                <div class="field-row flex gap-3 items-center">
-                    <input type="text" class="field-name-input flex-grow h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" value="${field.fieldName}" placeholder="필드 이름">
+            let fieldsHtml = defData.fields.map((field) => {
+                let defaultValueInputHtml = '';
+                const dv = field.defaultValue;
+
+                switch(field.fieldType) {
+                    case 'Checkbox':
+                        defaultValueInputHtml = `<label class="flex items-center gap-2 text-sm"><input type="checkbox" class="field-default-value-input h-4 w-4 rounded" ${dv ? 'checked' : ''}> 기본 체크</label>`;
+                        break;
+                    case 'Date':
+                        defaultValueInputHtml = `<input type="date" class="field-default-value-input flex-grow h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" value="${dv || ''}" placeholder="기본값">`;
+                        break;
+                    default:
+                        defaultValueInputHtml = `<input type="text" class="field-default-value-input flex-grow h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" value="${dv || ''}" placeholder="기본값">`;
+                }
+
+                return `<div class="field-row grid grid-cols-3 gap-3 items-center">
+                    <input type="text" class="field-name-input h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" value="${field.fieldName}" placeholder="필드 이름">
                     <select class="field-type-select h-11 px-3 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
                         <option value="Text" ${field.fieldType === 'Text' ? 'selected' : ''}>텍스트</option>
                         <option value="Number" ${field.fieldType === 'Number' ? 'selected' : ''}>숫자</option>
@@ -693,8 +734,12 @@ const firebaseUtils = {
                         <option value="Checkbox" ${field.fieldType === 'Checkbox' ? 'selected' : ''}>체크박스</option>
                         <option value="Textarea" ${field.fieldType === 'Textarea' ? 'selected' : ''}>장문 텍스트</option>
                     </select>
-                    <button class="button w-11 h-11 flex-shrink-0 flex items-center justify-center bg-slate-100 text-slate-500 rounded-lg hover:bg-red-100 hover:text-red-600" data-action="remove-field"><i data-lucide="x" class="w-4 h-4"></i></button>
-                </div>`).join('');
+                    <div class="flex gap-2 items-center">
+                        ${defaultValueInputHtml}
+                        <button class="button w-11 h-11 flex-shrink-0 flex items-center justify-center bg-slate-100 text-slate-500 rounded-lg hover:bg-red-100 hover:text-red-600" data-action="remove-field"><i data-lucide="x" class="w-4 h-4"></i></button>
+                    </div>
+                </div>`;
+            }).join('');
             const parentOptions = state.definitions.filter(def => def.id !== defData.id).map(def => `<option value="${def.id}" ${def.id === defData.parentId ? 'selected' : ''}>${def.name}</option>`).join('');
             const modalContent = `<div class="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col scale-95 opacity-0 transition-all duration-300" id="definition-modal-content">
                     <div class="p-4 sm:p-5 border-b border-slate-200 flex justify-between items-center flex-shrink-0">
@@ -718,15 +763,68 @@ const firebaseUtils = {
             setTimeout(() => $('#definition-modal-content').classList.add('scale-100', 'opacity-100'), 10);
         },
         showSuggestions: (query) => {
+            // [핵심 로직] 오늘 기록된 로그 횟수를 계산합니다.
+            const todayStr = dayjs().format('YYYY-MM-DD');
+            const todaysEntries = state.loadedEntries.get(todayStr) || [];
+            const logCountsToday = todaysEntries.reduce((acc, entry) => {
+                if (entry.type === 'log' && entry.definitionId) {
+                    acc[entry.definitionId] = (acc[entry.definitionId] || 0) + 1;
+                }
+                return acc;
+            }, {});
+
             const lowerQuery = query.toLowerCase();
             const filtered = state.definitions.filter(def => def.name.toLowerCase().includes(lowerQuery));
+
+            // [핵심 로직] 정렬: 오늘 기록되지 않은 항목을 위로, 그 다음 이름순으로 정렬합니다.
+            filtered.sort((a, b) => {
+                const countA = logCountsToday[a.id] || 0;
+                const countB = logCountsToday[b.id] || 0;
+                if (countA > 0 && countB === 0) return 1;  // a는 기록됨, b는 안됨 -> b가 먼저
+                if (countA === 0 && countB > 0) return -1; // a는 안됨, b는 기록됨 -> a가 먼저
+                return a.name.localeCompare(b.name); // 둘 다 기록됐거나 안됐으면 이름순
+            });
+
             let html = `<button class="flex items-center gap-3 w-full text-left px-4 py-2.5 text-base hover:bg-slate-100 transition-colors" data-type="journal"><i data-lucide="book-pen" class="w-5 h-5 text-slate-500"></i><span class="font-medium">일기 쓰기</span></button>`;
-            html += filtered.map(def => `<button class="flex items-center gap-3 w-full text-left px-4 py-2.5 text-base hover:bg-slate-100 transition-colors" data-type="log" data-id="${def.id}"><i data-lucide="pencil-ruler" class="w-5 h-5 text-slate-500"></i>${def.name}</button>`).join('');
+            
+            html += filtered.map(def => {
+                const count = logCountsToday[def.id] || 0;
+                const isLoggedToday = count > 0;
+                
+                // [스타일 변경] 기록된 항목은 회색 텍스트로 처리
+                const textClass = isLoggedToday ? 'text-slate-400' : 'text-slate-800';
+                
+                // [카운트 표시] 기록 횟수를 작은 배지로 표시
+                const countBadge = isLoggedToday ? `<span class="ml-auto text-xs font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">${count}회</span>` : '';
+
+                return `<button class="flex items-center gap-3 w-full text-left px-4 py-2.5 text-base hover:bg-slate-100 transition-colors" data-type="log" data-id="${def.id}">
+                            <i data-lucide="pencil-ruler" class="w-5 h-5 ${textClass}"></i>
+                            <span class="font-medium ${textClass}">${def.name}</span>
+                            ${countBadge}
+                        </button>`;
+            }).join('');
+            
             elements.suggestionBox.innerHTML = html;
             ui.refreshIcons();
         },
         clearSuggestions: () => { elements.suggestionBox.innerHTML = ''; },
-
+        showImageModal: (src) => {
+            const overlay = $('#image-modal-overlay');
+            const img = $('#zoomed-image');
+            if (overlay && img) {
+                img.src = src;
+                overlay.classList.remove('hidden');
+                overlay.classList.add('flex');
+            }
+        },
+        closeImageModal: () => {
+            const overlay = $('#image-modal-overlay');
+            if (overlay) {
+                overlay.classList.add('hidden');
+                overlay.classList.remove('flex');
+                $('#zoomed-image').src = '';
+            }
+        },
         showDynamicForm: (type, id = null, existingEntry = null) => {
             ui.clearSuggestions();
             elements.commandBarInput.style.display = 'none';
@@ -751,7 +849,7 @@ const firebaseUtils = {
                 def.fields.forEach((field, index) => {
 
                     const fieldId = `log-field-${def.id}-${index}`;
-                    const value = existingEntry ? existingEntry.values[field.fieldName] : '';
+                    const value = existingEntry ? existingEntry.values[field.fieldName] : (field.defaultValue !== undefined ? field.defaultValue : '');
                     let fieldInputHtml = '';
                     switch (field.fieldType) {
                         case 'Number': fieldInputHtml = `<input type="number" id="${fieldId}" value="${value || ''}" class="form-input">`; break;
@@ -1363,14 +1461,15 @@ const firebaseUtils = {
                                 isMatch = true;
                             }
                         } else if (entry.type === 'log' && def) {
-                            // 1. 대상 이름 검색
-                            if (def.name.toLowerCase().includes(pureQuery)) isMatch = true;
-                            // 2. 태그 검색
-                            else if (def.tags?.some(tag => tag.toLowerCase().includes(pureQuery))) isMatch = true;
-                            // 3. 필드 이름(변수명) 검색 추가
-                            else if (Object.keys(entry.values).some(key => key.toLowerCase().includes(pureQuery))) isMatch = true;
-                            // 4. 값 검색
-                            else if (Object.values(entry.values).some(val => String(val).toLowerCase().includes(pureQuery))) isMatch = true;
+                            // [수정] 대상명, 태그, 변수명(키), 내용(값)을 모두 포괄하여 검색
+                            if (
+                                def.name.toLowerCase().includes(pureQuery) ||
+                                def.tags?.some(tag => tag.toLowerCase().includes(pureQuery)) ||
+                                Object.keys(entry.values).some(key => key.toLowerCase().includes(pureQuery)) ||
+                                Object.values(entry.values).some(val => String(val).toLowerCase().includes(pureQuery))
+                            ) {
+                                isMatch = true;
+                            }
                         }
                     }
 
@@ -1390,7 +1489,11 @@ const firebaseUtils = {
             document.querySelectorAll('#def-fields-container .field-row').forEach(row => {
                 const fieldName = row.querySelector('.field-name-input').value.trim();
                 const fieldType = row.querySelector('.field-type-select').value;
-                if (fieldName) fields.push({ fieldName, fieldType });
+                if (fieldName) {
+                    const defaultValueInput = row.querySelector('.field-default-value-input');
+                    const defaultValue = defaultValueInput.type === 'checkbox' ? defaultValueInput.checked : defaultValueInput.value;
+                    fields.push({ fieldName, fieldType, defaultValue });
+                }
             });
             const definitionData = { name, fields, parentId, tags };
             if (id) {
@@ -1575,6 +1678,7 @@ const firebaseUtils = {
             const action = target.dataset.action;
             const id = target.dataset.id ? parseInt(target.dataset.id) : null;
             if (action === 'close-modal') ui.closeModal(target.dataset.modalId);
+            else if (action === 'close-image-modal') ui.closeImageModal();
             else if (action === 'save-settings') {
                 const rawText = $('#fb-config-textarea').value;
                 try {
@@ -1609,8 +1713,8 @@ const firebaseUtils = {
             else if (action === 'add-field') {
                 const container = $('#def-fields-container');
                 const newField = document.createElement('div');
-                newField.className = 'field-row flex gap-3 items-center';
-                newField.innerHTML = `<input type="text" class="field-name-input flex-grow h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" placeholder="필드 이름">
+                newField.className = 'field-row grid grid-cols-3 gap-3 items-center';
+                newField.innerHTML = `<input type="text" class="field-name-input h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" placeholder="필드 이름">
 <select class="field-type-select h-11 px-3 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
     <option value="Text">텍스트</option>
     <option value="Number">숫자</option>
@@ -1619,7 +1723,10 @@ const firebaseUtils = {
     <option value="Textarea">장문 텍스트</option>
     <option value="Image">이미지</option>
 </select>
-<button class="button w-11 h-11 flex-shrink-0 flex items-center justify-center bg-slate-100 text-slate-500 rounded-lg hover:bg-red-100 hover:text-red-600" data-action="remove-field"><i data-lucide="x" class="w-4 h-4"></i></button>`;
+<div class="flex gap-2 items-center">
+    <input type="text" class="field-default-value-input flex-grow h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" placeholder="기본값">
+    <button class="button w-11 h-11 flex-shrink-0 flex items-center justify-center bg-slate-100 text-slate-500 rounded-lg hover:bg-red-100 hover:text-red-600" data-action="remove-field"><i data-lucide="x" class="w-4 h-4"></i></button>
+</div>`;
                 container.appendChild(newField);
                 ui.refreshIcons();
             } else if (action === 'remove-field') target.closest('.field-row').remove();
@@ -1825,9 +1932,13 @@ const firebaseUtils = {
             const id = target.dataset.id ? parseInt(target.dataset.id) : null;
 
             // 1. 뷰 전환 액션 우선 처리
+            if (action === 'zoom-image') {
+                ui.showImageModal(target.src);
+                return;
+            }
             const viewChangeActions = {
                 'view-definition-dashboard': () => window.location.hash = `def/${id}`,
-                'back-to-workspace': () => window.location.hash = 'workspace',
+                'go-back': () => history.back(), // [수정] history.back()을 사용합니다.
                 'select-date': () => {
                     state.currentDate = target.dataset.date;
                     window.location.hash = 'timeline';
@@ -1865,6 +1976,7 @@ const firebaseUtils = {
             
             // [핵심 수정] 모달 이벤트 리스너를 최상단으로 이동시켜, 함수가 조기 종료되어도 모달은 항상 작동하도록 보장합니다.
             elements.modalContainer.addEventListener('click', handlers.handleModalClicks);
+            $('#image-modal-overlay').addEventListener('click', handlers.handleModalClicks);
             elements.modalContainer.addEventListener('click', handlers.handleWidgetFormClicks);
 
             // 1. 설정 로드 및 유효성 검사
