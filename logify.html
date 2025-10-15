@@ -100,8 +100,7 @@
     // [수정] 기존 state 객체를 아래 내용으로 교체하십시오.
     const state = {
         definitions: [],
-        currentDate: dayjs().format('YYYY-MM-DD'), // 타임라인의 시작점 (오늘)
-        // calendarDate: dayjs().format('YYYY-MM-DD'), // 이 라인 삭제
+        currentDate: dayjs().format('YYYY-MM-DD'),
         currentView: 'timeline',
         activeDefinitionId: null, 
         lastLoadedDate: null, 
@@ -114,14 +113,22 @@
         },
         dashboard: { widgets: [] },
         chartInstances: new Map(),
-        calendar: { // 아래 객체 추가
+        calendar: {
             viewMonth: dayjs().format('YYYY-MM-DD'),
             selectionStart: null,
             selectionEnd: null,
-        }
+        },
+        // --- [추가된 Firebase 상태] ---
+        user: null, // 현재 로그인된 사용자 정보
+        firebaseConfig: null, // Firebase 설정 객체
+        isFirebaseReady: false, // Firebase 초기화 완료 여부
+        firestoreUnsubscribes: [], // 실시간 리스너 구독 해제 함수 배열
     };
     let db;
     let quill; 
+    let fbApp;
+    let fbAuth;
+    let fbDb;
 
     const DB_NAME = 'LogifyRebornDB_v1_2_5', DB_VERSION = 1;
 
@@ -140,43 +147,117 @@
         commandBarWrapper: $('#command-bar-wrapper'), commandBarInput: $('#command-bar-input'),
         suggestionBox: $('#suggestion-box'), dynamicFormContainer: $('#dynamic-form-container'),
         searchBtn: $('#search-btn'), actionRail: $('#action-rail'), modalContainer: $('#modal-container'),
+        settingsBtn: $('#settings-btn'), logoutBtn: $('#logout-btn'),
+        appOverlay: $('#app-overlay'), loginContainer: $('#login-container'), loginBtn: $('#login-btn'),
+        loaderContainer: $('#loader-container'),
     };
     
     // =================================================================================
     // UTILITIES & DATABASE 
     // =================================================================================
-    const dbUtils = {
-        init: () => new Promise(resolve => {
-            const req = indexedDB.open(DB_NAME, DB_VERSION);
-            req.onupgradeneeded = e => {
-                const db = e.target.result;
-                if (!db.objectStoreNames.contains('definitions')) db.createObjectStore('definitions', { keyPath: 'id', autoIncrement: true });
-                if (!db.objectStoreNames.contains('entries')) db.createObjectStore('entries', { keyPath: 'date' });
-                if (!db.objectStoreNames.contains('dashboard')) db.createObjectStore('dashboard', { keyPath: 'id' });
-            };
-            req.onsuccess = e => { db = e.target.result; resolve(db); };
-            req.onerror = e => console.error("DB Error:", e.target.error);
-        }),
-        save: (store, data) => new Promise((resolve, reject) => {
-            const tx = db.transaction(store, 'readwrite');
-            tx.objectStore(store).put(data).onsuccess = e => resolve(e.target.result);
-            tx.onerror = e => reject(e.target.error);
-        }),
-        getAll: (store) => new Promise((resolve, reject) => {
-            const tx = db.transaction(store, 'readonly');
-            tx.objectStore(store).getAll().onsuccess = e => resolve(e.target.result);
-            tx.onerror = e => reject(e.target.error);
-        }),
-        get: (store, key) => new Promise((resolve, reject) => {
-            const tx = db.transaction(store, 'readonly');
-            tx.objectStore(store).get(key).onsuccess = e => resolve(e.target.result);
-            tx.onerror = e => reject(e.target.error);
-        }),
-        delete: (store, key) => new Promise((resolve, reject) => {
-            const tx = db.transaction(store, 'readwrite');
-            tx.objectStore(store).delete(key).onsuccess = e => resolve(e.target.result);
-            tx.onerror = e => reject(e.target.error);
-        }),
+    const configManager = {
+        save: (config) => {
+            try {
+                localStorage.setItem('firebaseConfig', JSON.stringify(config));
+                return true;
+            } catch (e) {
+                console.error("Error saving config to localStorage", e);
+                return false;
+            }
+        },
+        load: () => {
+            try {
+                const configStr = localStorage.getItem('firebaseConfig');
+                return configStr ? JSON.parse(configStr) : null;
+            } catch (e) {
+                console.error("Error loading config from localStorage", e);
+                return null;
+            }
+        },
+        isValid: (config) => {
+            const requiredKeys = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+            return config && requiredKeys.every(key => config[key] && typeof config[key] === 'string' && config[key].trim() !== '');
+        }
+    };
+
+    const firebaseUtils = {
+        init: (config) => {
+            try {
+                if (fbApp) return; // 이미 초기화되었다면 중복 실행 방지
+                fbApp = firebase.initializeApp(config);
+                fbAuth = firebase.getAuth(fbApp);
+                fbDb = firebase.getFirestore(fbApp);
+                state.isFirebaseReady = true;
+                console.log("Firebase initialized successfully.");
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                alert("Firebase 설정이 올바르지 않습니다. 설정을 확인해주세요.");
+                state.isFirebaseReady = false;
+                ui.showSettingsModal();
+            }
+        },
+        // 컬렉션 경로를 생성하는 헬퍼 함수
+        _getCollectionPath: (store) => {
+            if (!state.user) throw new Error("Authentication required.");
+            return `users/${state.user.uid}/${store}`;
+        },
+
+        save: (store, data) => {
+            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath(store), data.id.toString());
+            return firebase.setDoc(docRef, data, { merge: true });
+        },
+        saveEntry: async (entry) => {
+            const date = dayjs(entry.timestamp).format('YYYY-MM-DD');
+            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath('entries'), date);
+            // Firestore 트랜잭션을 사용하여 데이터 무결성 보장 (읽기-수정-쓰기)
+            return firebase.runTransaction(fbDb, async (transaction) => {
+                const docSnap = await transaction.get(docRef);
+                if (!docSnap.exists()) {
+                    transaction.set(docRef, { entries: [entry] });
+                } else {
+                    const existingEntries = docSnap.data().entries || [];
+                    const entryIndex = existingEntries.findIndex(e => e.id === entry.id);
+                    if (entryIndex > -1) {
+                        // 수정
+                        existingEntries[entryIndex] = entry;
+                    } else {
+                        // 추가
+                        existingEntries.push(entry);
+                    }
+                    transaction.update(docRef, { entries: existingEntries });
+                }
+            });
+        },
+        get: (store, key) => {
+            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath(store), key.toString());
+            return firebase.getDoc(docRef).then(docSnap => docSnap.exists() ? docSnap.data() : null);
+        },
+        getAll: async (store) => {
+            const collRef = firebase.collection(fbDb, firebaseUtils._getCollectionPath(store));
+            const snapshot = await firebase.getDocs(collRef);
+            return snapshot.docs.map(doc => doc.data());
+        },
+        delete: (store, key) => {
+            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath(store), key.toString());
+            return firebase.deleteDoc(docRef);
+        },
+        deleteEntry: async (id, timestamp) => {
+            const date = dayjs(timestamp).format('YYYY-MM-DD');
+            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath('entries'), date);
+             return firebase.runTransaction(fbDb, async (transaction) => {
+                const docSnap = await transaction.get(docRef);
+                if (!docSnap.exists()) return;
+                
+                const existingEntries = docSnap.data().entries || [];
+                const updatedEntries = existingEntries.filter(e => e.id !== id);
+                
+                if (updatedEntries.length === 0) {
+                    transaction.delete(docRef); // 항목이 없으면 문서 자체를 삭제
+                } else {
+                    transaction.update(docRef, { entries: updatedEntries });
+                }
+            });
+        }
     };
 
     // =================================================================================
@@ -521,6 +602,26 @@
                 modal.classList.remove('opacity-100');
                 setTimeout(() => modal.remove(), 300);
             }
+        },
+        showSettingsModal: (config = {}) => {
+            const fields = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+            const inputsHtml = fields.map(f => `<div><label class="text-sm font-medium text-slate-600 mb-1.5 block">${f}</label><input type="text" id="fb-conf-${f}" value="${config[f] || ''}" class="w-full h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500"></div>`).join('');
+            
+            const modalContent = `<div class="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col scale-95 opacity-0 transition-all" id="settings-modal-content">
+                    <div class="p-5 border-b flex justify-between items-center">
+                        <h2 class="text-lg font-bold">Firebase 설정</h2>
+                        <button class="button w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-200" data-action="close-modal" data-modal-id="settings-modal"><i data-lucide="x" class="w-5 h-5"></i></button>
+                    </div>
+                    <div class="p-5 space-y-4 overflow-y-auto">
+                        <div class="text-sm p-3 bg-blue-50 text-blue-800 rounded-lg">Firebase 프로젝트 설정에서 복사한 <code>firebaseConfig</code> 객체의 값을 여기에 붙여넣으세요.</div>
+                        ${inputsHtml}
+                    </div>
+                    <div class="p-4 border-t flex justify-end">
+                        <button class="button font-semibold bg-blue-600 text-white px-5 py-2.5 rounded-lg" data-action="save-settings">저장 및 새로고침</button>
+                    </div>
+                </div>`;
+            ui.showModal('settings-modal', modalContent);
+            setTimeout(() => $('#settings-modal-content').classList.add('scale-100', 'opacity-100'), 10);
         },
         renderDefinitionForm: (definition) => {
             const isNew = definition === 'new';
@@ -937,18 +1038,55 @@
     // =================================================================================
     const logic = {
         loadDataForDate: async (date) => {
-            state.currentDate = date; // 시작 날짜 설정 (주로 오늘)
+            state.currentDate = date;
             elements.datePicker.value = date;
-            state.loadedEntries.clear(); 
+
+            // 기존 리스너 모두 구독 해제
+            state.firestoreUnsubscribes.forEach(unsub => unsub());
+            state.firestoreUnsubscribes = [];
+            state.loadedEntries.clear();
             state.visibleTimelineDates = [];
-            
+
             const container = $('#timeline-container');
             if (container) container.innerHTML = '<div id="timeline-loader" class="text-center p-8 text-slate-500">기록을 불러오는 중...</div>';
             
-            await logic.loadAndRenderDays(dayjs(date), 5); 
+            // Firestore 실시간 리스너 설정 (비용과 실시간성 절충)
+            // 최근 7일치 데이터에 대해서만 실시간 리스너를 설정
+            const collRef = firebase.collection(fbDb, `users/${state.user.uid}/entries`);
+            const q = firebase.query(collRef, firebase.where(firebase.documentId(), ">=", dayjs().subtract(7, 'day').format('YYYY-MM-DD')));
+            
+            const unsubscribe = firebase.onSnapshot(q, (querySnapshot) => {
+                let changed = false;
+                querySnapshot.docChanges().forEach((change) => {
+                    changed = true;
+                    const docData = change.doc.data();
+                    if (change.type === "removed" || docData.entries.length === 0) {
+                        state.loadedEntries.delete(change.doc.id);
+                    } else {
+                        state.loadedEntries.set(change.doc.id, docData.entries);
+                    }
+                });
 
-            const loader = $('#timeline-loader');
-            if(loader) loader.remove();
+                if (changed && state.currentView === 'timeline') {
+                    // 변경사항이 있을 때만 타임라인 다시 렌더링
+                    const allDaysData = Array.from(state.loadedEntries.entries()).map(([date, entries]) => ({date, entries}));
+                    allDaysData.sort((a, b) => new Date(b.date) - new Date(a.date));
+                    
+                    if ($('#timeline-container')) {
+                        $('#timeline-container').innerHTML = ''; // 컨테이너 비우기
+                        ui.renderMoreEntries(allDaysData);
+                    }
+                }
+                 if ($('#timeline-loader')) $('#timeline-loader').remove();
+
+            }, (error) => {
+                console.error("Firestore listener error:", error);
+            });
+            
+            state.firestoreUnsubscribes.push(unsubscribe); // 구독 해제 함수 저장
+            
+            // 7일 이전의 데이터는 스크롤 시점에 수동으로 로드 (loadAndRenderDays에서 처리)
+            await logic.loadAndRenderDays(dayjs(date).subtract(7, 'day'), 5);
         },
         handleRouteChange: () => {
             const hash = window.location.hash || '#timeline'; // 기본 뷰는 타임라인
@@ -1013,33 +1151,17 @@
         saveEntry: async (type, definitionId, entryId = null) => {
             try {
                 const isUpdate = entryId !== null;
-                let entryDate;
-                let dayEntries;
+                const newEntryData = {
+                    id: isUpdate ? entryId : Date.now(),
+                    type: type,
+                    timestamp: new Date().toISOString(),
+                };
 
-                if (isUpdate) {
-                    let found = false;
-                    const allDays = await dbUtils.getAll('entries');
-                    for (const day of allDays) {
-                        if (day.entries.some(e => e.id === entryId)) {
-                            entryDate = day.date;
-                            dayEntries = day.entries;
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found) throw new Error(`수정할 원본 항목(ID: ${entryId})을 데이터베이스에서 찾을 수 없습니다.`);
-                } else {
-                    entryDate = dayjs().format('YYYY-MM-DD');
-                    dayEntries = (await dbUtils.get('entries', entryDate))?.entries || [];
-                }
-
-                const newEntryData = {};
                 if (type === 'journal') {
                     if (!quill) throw new Error("Quill editor가 초기화되지 않았습니다.");
                     newEntryData.content = quill.root.innerHTML;
                     newEntryData.definitionId = null; 
                 } else if (type === 'log') {
-                    if (definitionId === null || typeof definitionId !== 'number') throw new Error(`유효하지 않은 대상 ID입니다.`);
                     const def = state.definitions.find(d => d.id === definitionId);
                     if (!def) throw new Error(`ID ${definitionId}에 해당하는 대상을 찾을 수 없습니다.`);
                     
@@ -1064,30 +1186,17 @@
                     resolvedValues.forEach(([fieldName, value]) => {
                         if (value !== undefined) newEntryData.values[fieldName] = value;
                     });
-
-                } else {
-                    throw new Error(`알 수 없는 저장 타입: ${type}`);
                 }
 
-                if (isUpdate) {
-                    const entryIndex = dayEntries.findIndex(e => e.id === entryId);
-                    const originalEntry = dayEntries[entryIndex];
-                    Object.assign(originalEntry, newEntryData);
-                } else {
-                    const finalEntry = {
-                        id: Date.now(),
-                        type: type,
-                        timestamp: new Date().toISOString(),
-                        ...newEntryData
-                    };
-                    dayEntries.push(finalEntry);
-                }
-
-                await dbUtils.save('entries', { date: entryDate, entries: dayEntries });
+                await firebaseUtils.saveEntry(newEntryData);
                 
-                state.loadedEntries.delete(entryDate);
+                state.loadedEntries.delete(dayjs(newEntryData.timestamp).format('YYYY-MM-DD'));
                 ui.resetCommandBar();
-                ui.renderMainContent();
+                if(state.currentView === 'timeline') {
+                    // 실시간 리스너가 업데이트하므로 수동 렌더링 최소화
+                } else {
+                    ui.renderMainContent();
+                }
 
             } catch (error) {
                 console.error("저장 실패:", error);
@@ -1249,17 +1358,72 @@
         },
         deleteEntry: async (id) => {
             if (!confirm('이 기록을 정말로 삭제하시겠습니까?')) return;
-            let entryDateToDelete = null;
-            const allEntries = await dbUtils.getAll('entries');
-            for (const day of allEntries) {
-                if (day.entries.some(e => e.id === id)) { entryDateToDelete = day.date; break; }
+            
+            // 삭제할 항목의 타임스탬프 찾기
+            let entryTimestamp = null;
+            for (const entries of state.loadedEntries.values()) {
+                const found = entries.find(e => e.id === id);
+                if (found) {
+                    entryTimestamp = found.timestamp;
+                    break;
+                }
             }
-            if (!entryDateToDelete) { alert("오류: 삭제할 항목을 찾을 수 없습니다."); return; }
-            let dayEntries = (await dbUtils.get('entries', entryDateToDelete))?.entries || [];
-            dayEntries = dayEntries.filter(entry => entry.id !== id);
-            await dbUtils.save('entries', { date: entryDateToDelete, entries: dayEntries });
-            state.loadedEntries.delete(entryDateToDelete);
-            ui.renderMainContent();
+            if (!entryTimestamp) { alert("오류: 삭제할 항목을 찾을 수 없습니다."); return; }
+
+            await firebaseUtils.deleteEntry(id, entryTimestamp);
+            // 실시간 리스너가 UI를 자동으로 업데이트합니다.
+        },
+        handleAuthStateChanged: async (user) => {
+            if (user) {
+                // 로그인 성공
+                state.user = { uid: user.uid, displayName: user.displayName, email: user.email };
+                elements.loginContainer.classList.add('hidden');
+                elements.loaderContainer.classList.remove('hidden');
+                elements.logoutBtn.classList.remove('hidden');
+
+                // 데이터베이스에서 definitions 및 dashboard 로드
+                state.definitions = await firebaseUtils.getAll('definitions') || [];
+                const dashboardConfig = await firebaseUtils.get('dashboard', 'main');
+                if (dashboardConfig) state.dashboard = dashboardConfig;
+
+                // 기본 definition 데이터가 없으면 생성
+                if (state.definitions.length === 0) {
+                    const projDef = { id: 1, name: '개인 프로젝트', fields: [{ fieldName: '상태', fieldType: 'Text'}], tags: ['프로젝트'], parentId: 0 };
+                    const logifyDef = { id: 2, name: 'Logify Reborn 개발', parentId: 1, fields: [{ fieldName: '진행률(%)', fieldType: 'Number'},{fieldName:'완료', fieldType:'Checkbox'}], tags: ['개발', '중요'] };
+                    await firebaseUtils.save('definitions', projDef);
+                    await firebaseUtils.save('definitions', logifyDef);
+                    state.definitions = [projDef, logifyDef];
+                }
+                
+                await logic.loadDataForDate(state.currentDate);
+                elements.appOverlay.classList.add('opacity-0');
+                setTimeout(() => elements.appOverlay.classList.add('hidden'), 300);
+            } else {
+                // 로그아웃 상태
+                state.user = null;
+                elements.loaderContainer.classList.add('hidden');
+                elements.loginContainer.classList.remove('hidden');
+                elements.appOverlay.classList.remove('hidden', 'opacity-0');
+                elements.logoutBtn.classList.add('hidden');
+                
+                // 메모리 정리
+                state.firestoreUnsubscribes.forEach(unsub => unsub());
+                state.firestoreUnsubscribes = [];
+                state.loadedEntries.clear();
+            }
+        },
+
+        signInWithGoogle: () => {
+            if (!state.isFirebaseReady) { alert("Firebase가 준비되지 않았습니다. 설정을 확인하세요."); return; }
+            const provider = new firebase.GoogleAuthProvider();
+            firebase.signInWithPopup(fbAuth, provider).catch(error => {
+                console.error("Google 로그인 실패:", error);
+                alert("로그인에 실패했습니다. 다시 시도해주세요.");
+            });
+        },
+
+        signOut: () => {
+            if (fbAuth) firebase.signOut(fbAuth);
         },
         getLogCountsForMonth: async (date) => {
             const monthStart = dayjs(date).startOf('month').format('YYYY-MM-DD');
@@ -1334,6 +1498,19 @@
             const action = target.dataset.action;
             const id = target.dataset.id ? parseInt(target.dataset.id) : null;
             if (action === 'close-modal') ui.closeModal(target.dataset.modalId);
+            else if (action === 'save-settings') {
+                const fields = ['apiKey', 'authDomain', 'projectId', 'storageBucket', 'messagingSenderId', 'appId'];
+                const config = {};
+                fields.forEach(f => { config[f] = $(`#fb-conf-${f}`).value.trim(); });
+                
+                if (configManager.isValid(config)) {
+                    configManager.save(config);
+                    alert("설정이 저장되었습니다. 페이지를 새로고침합니다.");
+                    window.location.reload();
+                } else {
+                    alert("모든 설정 값을 올바르게 입력해야 합니다.");
+                }
+            }
             else if (action === 'save-def') logic.saveDefinition(id);
             else if (action === 'add-field') {
                 const container = $('#def-fields-container');
@@ -1388,6 +1565,15 @@
                         if(widget.fieldName) fieldSelect.value = widget.fieldName;
                     }
                 }
+            }
+        },
+        handleSettings: () => {
+            const config = configManager.load();
+            ui.showSettingsModal(config);
+        },
+        handleLogout: () => {
+            if (confirm('로그아웃 하시겠습니까?')) {
+                logic.signOut();
             }
         },
         handleScroll: () => {
@@ -1578,18 +1764,25 @@
             }
         },
         init: async () => {
-            await dbUtils.init();
-            state.definitions = await dbUtils.getAll('definitions');
-            const dashboardConfig = await dbUtils.get('dashboard', 'main');
-            if(dashboardConfig) state.dashboard = dashboardConfig;
-
-            if (state.definitions.length === 0) {
-                const projId = await dbUtils.save('definitions', { name: '개인 프로젝트', fields: [{ fieldName: '상태', fieldType: 'Text'}], tags: ['프로젝트'], parentId: 0 });
-                await dbUtils.save('definitions', { name: 'Logify Reborn 개발', parentId: projId, fields: [{ fieldName: '진행률(%)', fieldType: 'Number'},{fieldName:'완료', fieldType:'Checkbox'}], tags: ['개발', '중요'] });
-                state.definitions = await dbUtils.getAll('definitions');
+            ui.refreshIcons(); // 초기 아이콘 렌더링
+            
+            const config = configManager.load();
+            if (config && configManager.isValid(config)) {
+                state.firebaseConfig = config;
+                firebaseUtils.init(config);
+            } else {
+                ui.showSettingsModal();
+                elements.loaderContainer.classList.add('hidden');
+                elements.loginContainer.classList.add('hidden'); // 설정이 없으면 로그인도 숨김
+                elements.appOverlay.classList.remove('hidden');
             }
+
+            if (state.isFirebaseReady) {
+                firebase.onAuthStateChanged(fbAuth, logic.handleAuthStateChanged);
+            }
+
             ui.initializeActionRail();
-            ui.renderMainContent();
+            
             elements.datePicker.addEventListener('change', handlers.handleDateChange);
             elements.searchBtn.addEventListener('click', () => ui.toggleSearchMode(true));
             elements.cancelSearchBtn.addEventListener('click', () => ui.toggleSearchMode(false));
@@ -1606,7 +1799,13 @@
             elements.dynamicFormContainer.addEventListener('click', handlers.handleFormActionClick);
             document.addEventListener('click', handlers.handleDocumentClick);
             window.addEventListener('hashchange', logic.handleRouteChange);
-            logic.handleRouteChange();
+            
+            // -- [새로운 이벤트 리스너] --
+            elements.settingsBtn.addEventListener('click', handlers.handleSettings);
+            elements.loginBtn.addEventListener('click', logic.signInWithGoogle);
+            elements.logoutBtn.addEventListener('click', handlers.handleLogout);
+
+            logic.handleRouteChange(); // 해시 변경 감지를 초기에도 한 번 실행
         }
     };
     
