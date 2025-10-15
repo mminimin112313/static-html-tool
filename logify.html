@@ -211,53 +211,50 @@
         }
     };
 
-    const firebaseUtils = {
+const firebaseUtils = {
         init: (config) => {
             try {
                 console.log("[DEBUG] firebaseUtils.init: 초기화 시도 중...");
                 if (fbApp) {
                     console.log("[DEBUG] firebaseUtils.init: 이미 초기화되어 있어 중복 실행을 방지합니다.");
-                    return; 
+                    return;
                 }
                 fbApp = firebase.initializeApp(config);
-                fbAuth = firebase.getAuth(fbApp);
-                fbDb = firebase.getFirestore(fbApp);
+                // [수정] v9 모듈러 구문(getAuth, getFirestore)을 v8 호환성 구문으로 변경
+                fbAuth = firebase.auth();
+                fbDb = firebase.firestore();
                 state.isFirebaseReady = true;
                 console.log("[DEBUG] firebaseUtils.init: Firebase 초기화 성공.");
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
                 alert("Firebase 설정이 올바르지 않습니다. 설정을 확인해주세요.");
                 state.isFirebaseReady = false;
-                 console.log("[DEBUG] firebaseUtils.init: Firebase 초기화 실패. 설정 모달을 표시합니다.");
+                console.log("[DEBUG] firebaseUtils.init: Firebase 초기화 실패. 설정 모달을 표시합니다.");
                 ui.showSettingsModal();
             }
         },
-        // 컬렉션 경로를 생성하는 헬퍼 함수
         _getCollectionPath: (store) => {
             if (!state.user) throw new Error("Authentication required.");
             return `users/${state.user.uid}/${store}`;
         },
-
+        // [수정] 모든 함수 호출을 fbDb 객체를 통해 시작하고, v8 스타일 메서드 체이닝 방식으로 변경
         save: (store, data) => {
-            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath(store), data.id.toString());
-            return firebase.setDoc(docRef, data, { merge: true });
+            const docRef = fbDb.collection(firebaseUtils._getCollectionPath(store)).doc(data.id.toString());
+            return docRef.set(data, { merge: true });
         },
         saveEntry: async (entry) => {
             const date = dayjs(entry.timestamp).format('YYYY-MM-DD');
-            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath('entries'), date);
-            // Firestore 트랜잭션을 사용하여 데이터 무결성 보장 (읽기-수정-쓰기)
-            return firebase.runTransaction(fbDb, async (transaction) => {
+            const docRef = fbDb.collection(firebaseUtils._getCollectionPath('entries')).doc(date);
+            return fbDb.runTransaction(async (transaction) => {
                 const docSnap = await transaction.get(docRef);
-                if (!docSnap.exists()) {
+                if (!docSnap.exists) {
                     transaction.set(docRef, { entries: [entry] });
                 } else {
                     const existingEntries = docSnap.data().entries || [];
                     const entryIndex = existingEntries.findIndex(e => e.id === entry.id);
                     if (entryIndex > -1) {
-                        // 수정
                         existingEntries[entryIndex] = entry;
                     } else {
-                        // 추가
                         existingEntries.push(entry);
                     }
                     transaction.update(docRef, { entries: existingEntries });
@@ -265,37 +262,47 @@
             });
         },
         get: (store, key) => {
-            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath(store), key.toString());
-            return firebase.getDoc(docRef).then(docSnap => docSnap.exists() ? docSnap.data() : null);
+            const docRef = fbDb.collection(firebaseUtils._getCollectionPath(store)).doc(key.toString());
+            return docRef.get().then(docSnap => docSnap.exists ? docSnap.data() : null);
         },
         getAll: async (store) => {
-            const collRef = firebase.collection(fbDb, firebaseUtils._getCollectionPath(store));
-            const snapshot = await firebase.getDocs(collRef);
+            const collRef = fbDb.collection(firebaseUtils._getCollectionPath(store));
+            const snapshot = await collRef.get();
             return snapshot.docs.map(doc => doc.data());
         },
         delete: (store, key) => {
-            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath(store), key.toString());
-            return firebase.deleteDoc(docRef);
+            const docRef = fbDb.collection(firebaseUtils._getCollectionPath(store)).doc(key.toString());
+            return docRef.delete();
         },
         deleteEntry: async (id, timestamp) => {
             const date = dayjs(timestamp).format('YYYY-MM-DD');
-            const docRef = firebase.doc(fbDb, firebaseUtils._getCollectionPath('entries'), date);
-             return firebase.runTransaction(fbDb, async (transaction) => {
+            const docRef = fbDb.collection(firebaseUtils._getCollectionPath('entries')).doc(date);
+            return fbDb.runTransaction(async (transaction) => {
                 const docSnap = await transaction.get(docRef);
-                if (!docSnap.exists()) return;
+                if (!docSnap.exists) return;
                 
                 const existingEntries = docSnap.data().entries || [];
                 const updatedEntries = existingEntries.filter(e => e.id !== id);
                 
                 if (updatedEntries.length === 0) {
-                    transaction.delete(docRef); // 항목이 없으면 문서 자체를 삭제
+                    transaction.delete(docRef);
                 } else {
                     transaction.update(docRef, { entries: updatedEntries });
                 }
             });
+        },
+        // --- [이 아래에 새 함수를 추가합니다] ---
+        getEntriesByDateRange: async (startDate, endDate) => {
+            if (!state.user) return [];
+            const collRef = fbDb.collection(firebaseUtils._getCollectionPath('entries'));
+            const q = collRef
+                .where(firebase.firestore.FieldPath.documentId(), '>=', startDate)
+                .where(firebase.firestore.FieldPath.documentId(), '<=', endDate);
+            
+            const snapshot = await q.get();
+            return snapshot.docs.map(doc => ({ date: doc.id, ...doc.data() }));
         }
     };
-
     // =================================================================================
     // UI RENDERING MODULE
     // =================================================================================
@@ -559,7 +566,7 @@
             }
 
             // 3. 피드 렌더링 로직
-            const allDbEntries = await dbUtils.getAll('entries');
+            const allDbEntries = await firebaseUtils.getAll('entries');
             const allLogs = allDbEntries.flatMap(day => day.entries)
                                      .filter(entry => entry.definitionId === defId)
                                      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -1103,10 +1110,10 @@
             
             // Firestore 실시간 리스너 설정 (비용과 실시간성 절충)
             // 최근 7일치 데이터에 대해서만 실시간 리스너를 설정
-            const collRef = firebase.collection(fbDb, `users/${state.user.uid}/entries`);
-            const q = firebase.query(collRef, firebase.where(firebase.documentId(), ">=", dayjs().subtract(7, 'day').format('YYYY-MM-DD')));
+            const collRef = fbDb.collection(`users/${state.user.uid}/entries`);
+            const q = collRef.where(firebase.firestore.FieldPath.documentId(), ">=", dayjs().subtract(7, 'day').format('YYYY-MM-DD'));
             
-            const unsubscribe = firebase.onSnapshot(q, (querySnapshot) => {
+            const unsubscribe = q.onSnapshot((querySnapshot) => {
                 let changed = false;
                 querySnapshot.docChanges().forEach((change) => {
                     changed = true;
@@ -1293,38 +1300,32 @@
             if (state.isLoadingMore) return; 
             state.isLoadingMore = true;
 
-            const newDaysData = [];
-            let currentDate = dayjs(startDate);
-            let daysScanned = 0;
+            // [핵심 변경] 시작 날짜로부터 30일 이전까지의 데이터를 한 번에 쿼리
+            const queryStartDate = dayjs(startDate).subtract(30, 'day').format('YYYY-MM-DD');
+            const queryEndDate = dayjs(startDate).format('YYYY-MM-DD');
 
-            // [핵심 변경] targetCount 만큼 '데이터가 있는 날'을 찾을 때까지 또는 최대 1년치 스캔
-            while (newDaysData.length < targetCount && daysScanned < 365) {
-                const dateStr = currentDate.format('YYYY-MM-DD');
-                
-                if (!state.loadedEntries.has(dateStr)) {
-                    const data = await dbUtils.get('entries', dateStr);
-                    const entries = data ? data.entries : [];
-                    state.loadedEntries.set(dateStr, entries); // 스캔한 날은 다시 로드하지 않도록 저장
-                    
-                    if (entries.length > 0) {
-                        newDaysData.push({ date: dateStr, entries });
-                    }
-                }
-                
-                currentDate = currentDate.subtract(1, 'day');
-                daysScanned++;
-            }
+            const daysData = await firebaseUtils.getEntriesByDateRange(queryStartDate, queryEndDate);
+            
+            // 아직 로드되지 않은 새로운 데이터만 필터링
+            const newDaysData = daysData
+                .filter(day => day.entries.length > 0 && !state.loadedEntries.has(day.date))
+                .map(day => {
+                    state.loadedEntries.set(day.date, day.entries); // 중복 로드 방지
+                    return { date: day.date, entries: day.entries };
+                });
 
-            state.lastLoadedDate = currentDate.format('YYYY-MM-DD'); // 다음 로딩 시작 지점 저장
+            // 다음 로딩 시작 지점을 30일 이전으로 설정
+            state.lastLoadedDate = queryStartDate; 
 
             if (newDaysData.length > 0) {
-                // 찾은 데이터를 날짜 내림차순(최신순)으로 정렬하여 렌더링
                 newDaysData.sort((a, b) => new Date(b.date) - new Date(a.date));
                 ui.renderMoreEntries(newDaysData);
                 state.visibleTimelineDates.push(...newDaysData.map(d => d.date));
             } else {
-                 if ($('#timeline-container').children.length === 0) {
-                     $('#timeline-container').innerHTML = '<div class="text-center p-8 text-slate-500">표시할 기록이 없습니다.</div>';
+                 const container = $('#timeline-container');
+                 // 타임라인이 비어있고, 더 이상 로드할 데이터가 없을 때만 메시지 표시
+                 if (state.currentView === 'timeline' && container && container.children.length === 0 && dayjs().diff(queryStartDate, 'year') > 5) {
+                     container.innerHTML = '<div class="text-center p-8 text-slate-500">표시할 기록이 없습니다.</div>';
                  }
             }
 
@@ -1341,7 +1342,7 @@
             const isTagQuery = lowerQuery.startsWith('tag:');
             const pureQuery = isTagQuery ? lowerQuery.substring(4).trim() : lowerQuery;
 
-            const allEntries = await dbUtils.getAll('entries');
+            const allEntries = await firebaseUtils.getAll('entries');
 
             for (const dayData of allEntries) {
                 for (const entry of dayData.entries) {
@@ -1392,40 +1393,45 @@
                 if (fieldName) fields.push({ fieldName, fieldType });
             });
             const definitionData = { name, fields, parentId, tags };
-            if (id) definitionData.id = parseInt(id);
-            await dbUtils.save('definitions', definitionData);
-            state.definitions = await dbUtils.getAll('definitions');
+            if (id) {
+                definitionData.id = parseInt(id);
+            } else {
+                // [핵심 수정] 새 대상인 경우, 현재 시간을 기반으로 고유 ID를 생성합니다.
+                definitionData.id = Date.now();
+            }
+            await firebaseUtils.save('definitions', definitionData);
+            state.definitions = await firebaseUtils.getAll('definitions');
             ui.closeModal('definition-modal');
             if(state.currentView === 'workspace') ui.renderWorkspace();
         },
         deleteDefinition: async (id) => {
             if (confirm('정말로 이 대상을 삭제하시겠습니까?\n연결된 기록은 유지되지만, 이름 등은 표시되지 않을 수 있습니다.')) {
-                await dbUtils.delete('definitions', id);
+                await firebaseUtils.delete('definitions', id);
                 const children = state.definitions.filter(d => d.parentId === id);
                 for (const child of children) {
                     child.parentId = 0;
-                    await dbUtils.save('definitions', child);
+                    await firebaseUtils.save('definitions', child);
                 }
-                state.definitions = await dbUtils.getAll('definitions');
+                state.definitions = await firebaseUtils.getAll('definitions');
                 if (state.currentView === 'workspace') ui.renderWorkspace();
             }
         },
-        deleteEntry: async (id) => {
-            if (!confirm('이 기록을 정말로 삭제하시겠습니까?')) return;
-            
-            // 삭제할 항목의 타임스탬프 찾기
-            let entryTimestamp = null;
-            for (const entries of state.loadedEntries.values()) {
-                const found = entries.find(e => e.id === id);
-                if (found) {
-                    entryTimestamp = found.timestamp;
-                    break;
+        deleteEntry: async (id, timestamp) => {
+            const date = dayjs(timestamp).format('YYYY-MM-DD');
+            const docRef = fbDb.collection(firebaseUtils._getCollectionPath('entries')).doc(date);
+            return fbDb.runTransaction(async (transaction) => {
+                const docSnap = await transaction.get(docRef);
+                if (!docSnap.exists) return;
+                
+                const existingEntries = docSnap.data().entries || [];
+                const updatedEntries = existingEntries.filter(e => e.id !== id);
+                
+                if (updatedEntries.length === 0) {
+                    transaction.delete(docRef);
+                } else {
+                    transaction.update(docRef, { entries: updatedEntries });
                 }
-            }
-            if (!entryTimestamp) { alert("오류: 삭제할 항목을 찾을 수 없습니다."); return; }
-
-            await firebaseUtils.deleteEntry(id, entryTimestamp);
-            // 실시간 리스너가 UI를 자동으로 업데이트합니다.
+            });
         },
         handleAuthStateChanged: async (user) => {
             console.log("[DEBUG] logic.handleAuthStateChanged: 인증 상태 변경 감지.");
@@ -1483,8 +1489,8 @@
         signInWithGoogle: () => {
              console.log("[DEBUG] logic.signInWithGoogle: Google 로그인 시도.");
             if (!state.isFirebaseReady) { alert("Firebase가 준비되지 않았습니다. 설정을 확인하세요."); return; }
-            const provider = new firebase.GoogleAuthProvider();
-            firebase.signInWithPopup(fbAuth, provider).catch(error => {
+            const provider = new firebase.auth.GoogleAuthProvider();
+            fbAuth.signInWithPopup(provider).catch(error => {
                 console.error("Google 로그인 실패:", error);
                 alert("로그인에 실패했습니다. 다시 시도해주세요.");
             });
@@ -1492,15 +1498,17 @@
 
         signOut: () => {
             console.log("[DEBUG] logic.signOut: 로그아웃 시도.");
-            if (fbAuth) firebase.signOut(fbAuth);
+            if (fbAuth) fbAuth.signOut();
         },
         getLogCountsForMonth: async (date) => {
             const monthStart = dayjs(date).startOf('month').format('YYYY-MM-DD');
             const monthEnd = dayjs(date).endOf('month').format('YYYY-MM-DD');
-            const allData = await dbUtils.getAll('entries');
+            
+            const monthData = await firebaseUtils.getEntriesByDateRange(monthStart, monthEnd);
+
             const counts = {};
-            allData.forEach(dayData => {
-                if (dayData.date >= monthStart && dayData.date <= monthEnd && dayData.entries?.length > 0) {
+            monthData.forEach(dayData => {
+                if (dayData.entries?.length > 0) {
                     counts[dayData.date] = dayData.entries.length;
                 }
             });
@@ -1525,7 +1533,7 @@
             
             // [수정] 현재 활성화된 definition ID를 키로 사용하거나, 없으면 'main'을 사용
             const dbKey = state.activeDefinitionId || 'main';
-            await dbUtils.save('dashboard', {id: dbKey, widgets: state.dashboard.widgets});
+            await firebaseUtils.save('dashboard', {id: dbKey, widgets: state.dashboard.widgets});
 
             ui.closeModal('widget-modal');
             ui.renderMainContent();
@@ -1534,13 +1542,13 @@
             if(confirm('이 위젯을 삭제하시겠습니까?')){
                 state.dashboard.widgets = state.dashboard.widgets.filter(w => w.id !== id);
                 const dbKey = state.activeDefinitionId || 'main';
-                await dbUtils.save('dashboard', {id: dbKey, widgets: state.dashboard.widgets});
+                await firebaseUtils.save('dashboard', {id: dbKey, widgets: state.dashboard.widgets});
 
                 ui.renderMainContent();
             }
         },
         renderWidgetContent: async (widget, containerEl) => {
-            const entries = (await dbUtils.getAll('entries')).flatMap(d => d.entries)
+            const entries = (await firebaseUtils.getAll('entries')).flatMap(d => d.entries)
                 .filter(e => e.definitionId === widget.defId && widget.fieldName in e.values)
                 .sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
 
@@ -1720,7 +1728,7 @@
             if (!id) return;
             if (action === 'edit-entry') {
                 let entryToEdit;
-                const allEntries = await dbUtils.getAll('entries');
+                const allEntries = await firebaseUtils.getAll('entries');
                 for (const day of allEntries) {
                     const found = day.entries.find(e => e.id === id);
                     if (found) { entryToEdit = found; break; }
@@ -1881,7 +1889,7 @@
 
             if (state.isFirebaseReady) {
                 console.log("[DEBUG] handlers.init: Firebase 준비 완료. 인증 상태 변경 리스너를 설정합니다.");
-                firebase.onAuthStateChanged(fbAuth, logic.handleAuthStateChanged);
+                fbAuth.onAuthStateChanged(logic.handleAuthStateChanged);
             } else {
                  console.log("[DEBUG] handlers.init: Firebase 준비 실패. 초기화를 중단합니다.");
                  return;
