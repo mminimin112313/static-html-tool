@@ -15,7 +15,11 @@
     
     <!-- Day.js for date handling -->
     <script src="https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js"></script>
-
+    <script src="https://cdn.jsdelivr.net/npm/dayjs@1/plugin/isBetween.js"></script>
+    <script>
+    // isBetween 플러그인을 dayjs에 등록합니다.
+    dayjs.extend(window.dayjs_plugin_isBetween);
+    </script>
     <!-- Quill Editor for rich text -->
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
@@ -25,6 +29,7 @@
 
     <!-- Chart.js CDN -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/showdown/2.1.0/showdown.min.js"></script>
 
      <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-auth-compat.js"></script>
@@ -61,7 +66,7 @@
         }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-800 pb-28 md:pb-24">
+<body class="bg-slate-50 text-slate-800">
 
     <div id="app-overlay" class="fixed inset-0 z-[5000] bg-white flex items-center justify-center transition-opacity duration-300">
         <div id="loader-container" class="hidden">
@@ -116,7 +121,7 @@
     </div>
 
     <footer id="command-bar-wrapper" class="fixed bottom-0 left-0 right-0 z-[1000]">
-        <div class="max-w-3xl mx-auto p-2 sm:p-3">
+        <div class="max-w-3xl mx-auto p-2 sm:p-3 pb-6 sm:pb-4">
             <div class="bg-white/80 backdrop-blur-xl rounded-xl shadow-2xl shadow-slate-400/20 ring-1 ring-slate-900/5 flex flex-col">
                 <div id="suggestion-box"></div>
                 <div id="dynamic-form-container" class="p-4 grid gap-4"></div>
@@ -175,6 +180,7 @@
     let fbApp;
     let fbAuth;
     let fbDb;
+    let showdownConverter;
 
     const DB_NAME = 'LogifyRebornDB_v1_2_5', DB_VERSION = 1;
 
@@ -732,7 +738,12 @@ const firebaseUtils = {
                                     ${hasChildren ? `<i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform ${isExpanded ? '' : '-rotate-90'}"></i>` : '<div class="w-4 h-4"></div>'}
                                 </div>
                                 <span class="font-medium text-sm text-slate-800 cursor-pointer hover:text-blue-600 transition-colors flex items-center" data-action="view-definition-dashboard" data-id="${node.id}">
-                                    ${node.icon ? `<span class="mr-2 text-lg">${node.icon}</span>` : ''}${node.name}
+                                    ${node.icon ? `<span class="mr-2 text-lg">${node.icon}</span>` : ''}
+                                    <span>${node.name}</span>
+                                    ${(() => {
+                                        const count = logic.getDescendantCount(node.id);
+                                        return count > 0 ? `<span class="ml-2 text-xs bg-slate-200 text-slate-600 font-medium w-5 h-5 flex items-center justify-center rounded-full">${count}</span>` : '';
+                                    })()}
                                 </span>
                             </div>
                             <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -746,7 +757,28 @@ const firebaseUtils = {
             const query = state.workspace.searchQuery.toLowerCase().trim();
             const filteredDefs = query ? state.definitions.filter(def => def.name.toLowerCase().includes(query) || (def.tags?.some(t => t.toLowerCase().includes(query)))) : state.definitions;
             if(filteredDefs.length === 0) { container.innerHTML = '<p class="text-slate-500 text-center py-8">일치하는 대상이 없습니다.</p>'; return; }
-            const treeHtml = query ? filteredDefs.map(node => renderNode({...node, children: []})).join('') : buildTree(state.definitions).map(renderNode).join('');
+            const getFilteredTree = () => {
+                if (!query) return buildTree(state.definitions);
+                const matchingIds = new Set(filteredDefs.map(d => d.id));
+                const visibleIds = new Set(matchingIds);
+
+                // 모든 매칭된 노드의 부모들을 찾아서 visibleIds에 추가
+                matchingIds.forEach(id => {
+                    let current = state.definitions.find(d => d.id === id);
+                    while (current && current.parentId) {
+                        visibleIds.add(current.parentId);
+                        current = state.definitions.find(d => d.id === current.parentId);
+                    }
+                });
+                
+                // 검색 시 모든 노드를 확장하여 결과를 쉽게 찾도록 함
+                visibleIds.forEach(id => state.workspace.expandedNodes.add(id));
+
+                const visibleDefs = state.definitions.filter(d => visibleIds.has(d.id));
+                const tree = buildTree(visibleDefs);
+                return tree;
+            };
+            const treeHtml = getFilteredTree().map(renderNode).join('');
             container.innerHTML = `<ul class="space-y-0.5">${treeHtml}</ul>`;
         },
         showModal: (id, content) => {
@@ -769,43 +801,50 @@ const firebaseUtils = {
         },
         showSettingsModal: (config = {}) => {
             console.log("[DEBUG] ui.showSettingsModal: Firebase 설정 모달 표시.");
-            const modalContent = `<div class="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col scale-95 opacity-0 transition-all" id="settings-modal-content">
-                    <div class="p-5 border-b flex justify-between items-center">
-                        <h2 class="text-lg font-bold">설정</h2>
-                        <button class="button w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-200" data-action="close-modal" data-modal-id="settings-modal"><i data-lucide="x" class="w-5 h-5"></i></button>
-                    </div>
-                    <div class="p-5 space-y-6 overflow-y-auto">
-                        <div>
-                            <h3 class="text-base font-semibold mb-3">Firebase 설정</h3>
-                            <div class="text-sm p-3 bg-blue-50 text-blue-800 rounded-lg mb-2">
-                                <p class="mb-2">Firebase 콘솔에서 복사한 <code>firebaseConfig</code> 객체 전체를 아래에 붙여넣으세요.</p>
-                                <p class="font-mono text-xs bg-slate-200 p-2 rounded">
-                                    예시:<br>
-                                    const firebaseConfig = { <br>
-                                    &nbsp;&nbsp;apiKey: "...", &nbsp;&nbsp;... <br>
-                                    };
-                                </p>
-                            </div>
-                            <textarea id="fb-config-textarea" class="w-full h-48 p-3 font-mono text-sm bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" placeholder="여기에 firebaseConfig 객체 코드를 붙여넣으세요..."></textarea>
-                             <div class="mt-2 flex justify-end">
-                                <button class="button font-semibold bg-blue-600 text-white px-4 py-2 rounded-lg" data-action="save-settings">저장 및 새로고침</button>
-                            </div>
-                        </div>
-                        <div>
-                            <h3 class="text-base font-semibold mb-3">데이터 관리</h3>
-                            <div class="bg-white p-4 rounded-lg border border-slate-200 flex justify-between items-center">
-                                <div>
-                                    <p class="font-medium text-slate-800">전체 데이터 내보내기</p>
-                                    <p class="text-sm text-slate-500 mt-1">모든 '대상'과 '기록'을 하나의 JSON 파일로 백업합니다.</p>
-                                </div>
-                                <button class="button font-semibold bg-slate-600 text-white px-4 py-2 rounded-lg flex items-center gap-2" data-action="export-data">
-                                    <i data-lucide="download" class="w-4 h-4"></i>
-                                    <span>내보내기</span>
-                                </button>
-                            </div>
+            const modalContent = `<div class="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col scale-95 opacity-0 transition-all" id="widget-modal-content">
+                <div class="p-5 border-b border-slate-200 flex justify-between items-center">
+                    <h2 class="text-lg font-bold">${isNew ? '새 위젯 추가' : '위젯 수정'}</h2>
+                    <button class="button w-9 h-9 flex items-center justify-center rounded-full hover:bg-slate-200" data-action="close-modal" data-modal-id="widget-modal"><i data-lucide="x" class="w-5 h-5"></i></button>
+                </div>
+                <div class="p-5 space-y-4 overflow-y-auto">
+                    <div><label class="text-sm font-medium mb-1.5 block">1. 위젯 제목</label><input type="text" id="widget-title" value="${w.title}" class="form-input" placeholder="예: 주간 운동 횟수"></div>
+                    <div><label class="text-sm font-medium mb-1.5 block">2. 위젯 타입</label>
+                        <div class="grid grid-cols-3 sm:grid-cols-5 gap-2">${chartTypes.map(ct => `
+                            <button data-action="select-chart-type" data-type="${ct.id}" data-fields='${JSON.stringify(ct.fields)}' class="p-3 border rounded-lg flex flex-col items-center gap-2 ${w.chartType === ct.id ? 'bg-blue-100 border-blue-500' : 'bg-white hover:border-slate-400'}">
+                                <i data-lucide="${ct.icon}" class="w-6 h-6 ${w.chartType === ct.id ? 'text-blue-600': ''}"></i><span class="text-xs font-semibold">${ct.name}</span></button>`).join('')}
                         </div>
                     </div>
-                </div>`;
+                    
+                    <div id="widget-data-source" class="space-y-4 hidden"><label class="text-sm font-medium mb-1.5 block">3. 데이터 선택</label>
+                        <div class="grid grid-cols-2 gap-4">
+                            <select id="widget-def-select" class="form-input"></select>
+                            <select id="widget-field-select" class="form-input"></select>
+                        </div>
+                    </div>
+                    <div id="widget-markdown-source" class="space-y-2 hidden">
+                        <label class="text-sm font-medium block">3. 마크다운 콘텐츠</label>
+                        <textarea id="widget-content-textarea" class="w-full h-40 p-3 font-mono text-sm bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">${w.content || ''}</textarea>
+                    </div>
+
+                    <div><label class="text-sm font-medium mb-1.5 block">4. 데이터 범위</label>
+                        <select id="widget-data-range" class="form-input">
+                            <option value="last30" ${w.dataRange === 'last30' ? 'selected' : ''}>최근 30개</option>
+                            <option value="thisWeek" ${w.dataRange === 'thisWeek' ? 'selected' : ''}>이번 주</option>
+                            <option value="thisMonth" ${w.dataRange === 'thisMonth' ? 'selected' : ''}>이번 달</option>
+                            <option value="all" ${w.dataRange === 'all' ? 'selected' : ''}>전체 기간</option>
+                        </select>
+                    </div>
+                     <div><label class="text-sm font-medium mb-1.5 block">5. 크기 (12컬럼 기준)</label>
+                        <div class="grid grid-cols-2 gap-4">
+                           <div><label class="text-xs">너비</label><input type="number" id="widget-w" value="${w.w}" min="2" max="12" class="form-input"></div>
+                           <div><label class="text-xs">높이</label><input type="number" id="widget-h" value="${w.h}" min="2" max="6" class="form-input"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-4 border-t flex justify-end">
+                    <button class="button bg-blue-600 text-white font-semibold px-5 py-2.5 rounded-lg" data-action="save-widget" data-id="${w.id}">저장</button>
+                </div>
+            </div>`.replaceAll('class="form-input"', 'class="w-full h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500"');
             ui.showModal('settings-modal', modalContent);
             setTimeout(() => $('#settings-modal-content').classList.add('scale-100', 'opacity-100'), 10);
         },
@@ -976,7 +1015,7 @@ const firebaseUtils = {
             let formHtml = '';
         
             if (type === 'journal') {
-   
+                
                 elements.dynamicFormContainer.className = 'p-4 flex flex-col gap-4';
 
                 formHtml = `<div class="form-group flex-grow min-h-0 flex flex-col">
@@ -1009,6 +1048,7 @@ const firebaseUtils = {
                     else formHtml += `<div class="form-group"><label class="text-sm font-medium text-slate-600 mb-1.5 block">${field.fieldName}</label>${fieldInputHtml}</div>`;
                 });
             }
+            
             const entryIdAttr = existingEntry ? `data-entry-id="${existingEntry.id}"` : '';
             // 버튼 컨테이너는 flex-shrink-0을 통해 높이가 줄어들지 않도록 방어합니다.
             const actionsHtml = `<div class="flex-shrink-0 flex gap-2 justify-end mt-4"><button type="button" class="button font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 px-4 py-2 rounded-lg" data-action="cancel-entry">취소</button><button type="button" class="button font-semibold bg-blue-600 text-white hover:bg-blue-700 px-4 py-2 rounded-lg shadow-sm" data-action="save-entry" data-type="${type}" data-id="${id}" ${entryIdAttr}>저장</button></div>`;
@@ -1018,6 +1058,16 @@ const firebaseUtils = {
                 quill = new Quill('#journal-editor', { theme: 'snow', modules: { toolbar: [ [{ 'header': [1, 2, false] }], ['bold', 'italic', 'underline'], [{ 'list': 'ordered'}, { 'list': 'bullet' }], ['clean'] ] } });
                 if (existingEntry?.content) quill.root.innerHTML = existingEntry.content;
             }
+            setTimeout(() => {
+                if (type === 'journal' && quill) {
+                    quill.focus();
+                } else {
+                    const firstInput = elements.dynamicFormContainer.querySelector('input:not([type="file"]), textarea, select');
+                    if (firstInput) {
+                        firstInput.focus();
+                    }
+                }
+            }, 100);
         },
         resetCommandBar: () => {
             elements.dynamicFormContainer.innerHTML = '';
@@ -1123,8 +1173,7 @@ const firebaseUtils = {
         },
         renderWidgetForm: (widget = null) => {
             const isNew = widget === null;
-            const w = widget || { id: Date.now(), title: '', chartType: '', defId: '', fieldName: '', w: 4, h: 3, dataRange: 'last30' };
-
+            const w = widget || { id: Date.now(), title: '', chartType: '', defId: '', fieldName: '', w: 4, h: 3, dataRange: 'last30', content: '', aggregationType: 'none' };
             const chartTypes = ui.widgetManager.getAvailableWidgets();
             
             const modalContent = `<div class="bg-slate-50 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col scale-95 opacity-0 transition-all" id="widget-modal-content">
@@ -1140,11 +1189,25 @@ const firebaseUtils = {
                                 <i data-lucide="${ct.icon}" class="w-6 h-6 ${w.chartType === ct.id ? 'text-blue-600': ''}"></i><span class="text-xs font-semibold">${ct.name}</span></button>`).join('')}
                         </div>
                     </div>
-                    <div id="widget-data-source" class="hidden"><label class="text-sm font-medium mb-1.5 block">3. 데이터 선택</label>
+                    
+                    <div id="widget-data-source" class="space-y-4 hidden"><label class="text-sm font-medium mb-1.5 block">3. 데이터 선택</label>
                         <div class="grid grid-cols-2 gap-4">
                             <select id="widget-def-select" class="form-input"></select>
                             <select id="widget-field-select" class="form-input"></select>
                         </div>
+                    </div>
+                    <div id="widget-markdown-source" class="space-y-2 hidden">
+                        <label class="text-sm font-medium block">3. 마크다운 콘텐츠</label>
+                        <textarea id="widget-content-textarea" class="w-full h-40 p-3 font-mono text-sm bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">${w.content || ''}</textarea>
+                    </div>
+                    <div id="widget-aggregation-source" class="space-y-2 hidden">
+                        <label class="text-sm font-medium block">3.5. 집계 방식</label>
+                        <select id="widget-aggregation-type" class="form-input">
+                            <option value="none" ${w.aggregationType === 'none' ? 'selected' : ''}>집계 없음 (원본)</option>
+                            <option value="daily" ${w.aggregationType === 'daily' ? 'selected' : ''}>일별 합계</option>
+                            <option value="weekly" ${w.aggregationType === 'weekly' ? 'selected' : ''}>주별 합계</option>
+                            <option value="monthly" ${w.aggregationType === 'monthly' ? 'selected' : ''}>월별 합계</option>
+                        </select>
                     </div>
                     <div><label class="text-sm font-medium mb-1.5 block">4. 데이터 범위</label>
                         <select id="widget-data-range" class="form-input">
@@ -1171,7 +1234,11 @@ const firebaseUtils = {
                 $('#widget-modal-content').classList.add('scale-100', 'opacity-100');
                 if (w.chartType) {
                     const btn = $(`[data-action="select-chart-type"][data-type="${w.chartType}"]`);
-                    if(btn) handlers.handleWidgetFormClicks({ target: btn });
+                    // [수정] 버튼이 존재할 경우에만 클릭 이벤트를 시뮬레이션합니다.
+                    if (btn) {
+                        const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true });
+                        btn.dispatchEvent(clickEvent); // 실제 이벤트 객체를 전달합니다.
+                    }
                 }
             }, 10);
         },
@@ -1182,21 +1249,17 @@ const firebaseUtils = {
                     render: (widget, containerEl, entries, chartInstances) => {
                         const canvas = document.createElement('canvas');
                         containerEl.appendChild(canvas);
-                        const labels = entries.map(e => dayjs(e.timestamp).format('MM/DD'));
+                        // [수정] 라벨 생성 로직
+                        const getLabel = (ts, aggType) => {
+                            const d = dayjs(ts);
+                            if(aggType === 'weekly') return `${d.format('MM/DD')} (주)`;
+                            if(aggType === 'daily') return d.format('MM/DD');
+                            if(aggType === 'monthly') return d.format('YYYY-MM');
+                            return d.format('MM/DD HH:mm');
+                        };
+                        const labels = entries.map(e => getLabel(e.timestamp, widget.aggregationType));
                         const data = entries.map(e => parseFloat(e.values[widget.fieldName]) || 0);
-                        const chart = new Chart(canvas.getContext('2d'), {
-                            type: 'bar',
-                            data: {
-                                labels,
-                                datasets: [{
-                                    label: widget.fieldName, data,
-                                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                                    borderColor: 'rgba(59, 130, 246, 1)',
-                                    borderWidth: 2,
-                                }]
-                            },
-                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-                        });
+                        const chart = new Chart(canvas.getContext('2d'), { type: 'bar', data: { labels, datasets: [{ label: widget.fieldName, data, backgroundColor: 'rgba(59, 130, 246, 0.5)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 2 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
                         chartInstances.set(widget.id, chart);
                     }
                 },
@@ -1205,22 +1268,17 @@ const firebaseUtils = {
                     render: (widget, containerEl, entries, chartInstances) => {
                         const canvas = document.createElement('canvas');
                         containerEl.appendChild(canvas);
-                        const labels = entries.map(e => dayjs(e.timestamp).format('MM/DD'));
+                        // [수정] 라벨 생성 로직
+                        const getLabel = (ts, aggType) => {
+                            const d = dayjs(ts);
+                            if(aggType === 'weekly') return `${d.format('MM/DD')} (주)`;
+                            if(aggType === 'daily') return d.format('MM/DD');
+                            if(aggType === 'monthly') return d.format('YYYY-MM');
+                            return d.format('MM/DD HH:mm');
+                        };
+                        const labels = entries.map(e => getLabel(e.timestamp, widget.aggregationType));
                         const data = entries.map(e => parseFloat(e.values[widget.fieldName]) || 0);
-                        const chart = new Chart(canvas.getContext('2d'), {
-                            type: 'line',
-                            data: {
-                                labels,
-                                datasets: [{
-                                    label: widget.fieldName, data,
-                                    backgroundColor: 'transparent',
-                                    borderColor: 'rgba(59, 130, 246, 1)',
-                                    borderWidth: 2,
-                                    tension: 0.2,
-                                }]
-                            },
-                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-                        });
+                        const chart = new Chart(canvas.getContext('2d'), { type: 'line', data: { labels, datasets: [{ label: widget.fieldName, data, backgroundColor: 'transparent', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 2, tension: 0.2 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
                         chartInstances.set(widget.id, chart);
                     }
                 },
@@ -1229,21 +1287,17 @@ const firebaseUtils = {
                     render: (widget, containerEl, entries, chartInstances) => {
                         const canvas = document.createElement('canvas');
                         containerEl.appendChild(canvas);
-                        const labels = entries.map(e => dayjs(e.timestamp).format('MM/DD'));
+                        // [수정] 라벨 생성 로직
+                        const getLabel = (ts, aggType) => {
+                            const d = dayjs(ts);
+                            if(aggType === 'weekly') return `${d.format('MM/DD')} (주)`;
+                            if(aggType === 'daily') return d.format('MM/DD');
+                            if(aggType === 'monthly') return d.format('YYYY-MM');
+                            return d.format('MM/DD HH:mm');
+                        };
+                        const labels = entries.map(e => getLabel(e.timestamp, widget.aggregationType));
                         const data = entries.map(e => parseFloat(e.values[widget.fieldName]) || 0);
-                        const chart = new Chart(canvas.getContext('2d'), {
-                            type: 'radar',
-                            data: {
-                                labels,
-                                datasets: [{
-                                    label: widget.fieldName, data,
-                                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
-                                    borderColor: 'rgba(59, 130, 246, 1)',
-                                    borderWidth: 2,
-                                }]
-                            },
-                            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-                        });
+                        const chart = new Chart(canvas.getContext('2d'), { type: 'radar', data: { labels, datasets: [{ label: widget.fieldName, data, backgroundColor: 'rgba(59, 130, 246, 0.5)', borderColor: 'rgba(59, 130, 246, 1)', borderWidth: 2 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
                         chartInstances.set(widget.id, chart);
                     }
                 },
@@ -1322,6 +1376,19 @@ const firebaseUtils = {
                         });
                         listHtml += '</ul>';
                         containerEl.innerHTML = listHtml;
+                    }
+                },
+                'markdown': {
+                    name: '마크다운', icon: 'file-text', fields: [],
+                    render: (widget, containerEl) => {
+                        const content = widget.content || '*수정 버튼을 눌러 내용을 입력하세요.*';
+                        // [수정] showdownConverter 사용 확인
+                        if (typeof showdownConverter !== 'undefined') {
+                            containerEl.innerHTML = `<div class="prose prose-sm max-w-none h-full overflow-y-auto">${showdownConverter.makeHtml(content)}</div>`;
+                        } else {
+                            // 라이브러리가 로드되지 않았을 경우를 대비한 대체 텍스트
+                             containerEl.innerHTML = `<div class="text-red-500">마크다운 라이브러리를 로드할 수 없습니다.</div>`;
+                        }
                     }
                 }
             },
@@ -1429,6 +1496,14 @@ const firebaseUtils = {
                 await firebaseUtils.delete('trash', id);
                 ui.renderTrash();
             }
+        },
+        getDescendantCount: (parentId) => {
+            const children = state.definitions.filter(d => d.parentId === parentId);
+            let count = children.length;
+            children.forEach(child => {
+                count += logic.getDescendantCount(child.id);
+            });
+            return count;
         },
         getBreadcrumbPath: (defId) => {
             const path = [];
@@ -1972,19 +2047,41 @@ const firebaseUtils = {
             return counts;
         },
         saveWidget: async (id) => {
+            const chartType = document.querySelector('[data-action="select-chart-type"][class*="bg-blue-100"]')?.dataset.type;
+            const title = $('#widget-title').value.trim();
+
+            if (!title || !chartType) {
+                return alert('위젯 제목과 타입을 모두 선택해야 합니다.');
+            }
+            
             const widget = {
                 id: parseInt(id),
-                title: $('#widget-title').value.trim(),
-                chartType: document.querySelector('[data-action="select-chart-type"][class*="bg-blue-100"]')?.dataset.type,
-                defId: parseInt($('#widget-def-select').value),
-                fieldName: $('#widget-field-select').value,
-                dataRange: $('#widget-data-range').value, // 데이터 범위 값 추가
+                title: title,
+                chartType: chartType,
                 w: parseInt($('#widget-w').value),
                 h: parseInt($('#widget-h').value),
             };
-            if(!widget.title || !widget.chartType || !widget.defId || !widget.fieldName){
-                return alert('모든 필드를 채워주세요.');
+
+            if (chartType === 'markdown') {
+                widget.content = $('#widget-content-textarea').value;
+            } else {
+                widget.defId = parseInt($('#widget-def-select').value);
+                widget.fieldName = $('#widget-field-select').value;
+                widget.dataRange = $('#widget-data-range').value;
+                
+                // [추가] 집계 방식 저장 로직
+                const numberBasedCharts = ['bar', 'line', 'radar'];
+                if (numberBasedCharts.includes(chartType)) {
+                    widget.aggregationType = $('#widget-aggregation-type').value;
+                } else {
+                    widget.aggregationType = 'none';
+                }
+
+                if (!widget.defId || !widget.fieldName) {
+                    return alert('데이터 소스(대상 및 필드)를 선택해야 합니다.');
+                }
             }
+            
             const widgetIndex = state.dashboard.widgets.findIndex(w => w.id === widget.id);
             if(widgetIndex > -1) state.dashboard.widgets[widgetIndex] = widget;
             else state.dashboard.widgets.push(widget);
@@ -2004,42 +2101,94 @@ const firebaseUtils = {
                 ui.renderMainContent();
             }
         },
-        renderWidgetContent: async (widget, containerEl) => {
-            const allEntries = (await firebaseUtils.getAll('entries')).flatMap(d => d.entries)
-                .filter(e => e.definitionId === widget.defId && widget.fieldName in e.values)
-                .sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+        _aggregateEntries: (entries, fieldName, aggregationType) => {
+            if (!aggregationType || aggregationType === 'none') return entries;
 
-            let entries;
-            const now = dayjs();
-            switch (widget.dataRange) {
-                case 'thisWeek':
-                    const startOfWeek = now.startOf('week');
-                    const endOfWeek = now.endOf('week');
-                    entries = allEntries.filter(e => dayjs(e.timestamp).isBetween(startOfWeek, endOfWeek, null, '[]'));
-                    break;
-                case 'thisMonth':
-                    const startOfMonth = now.startOf('month');
-                    const endOfMonth = now.endOf('month');
-                    entries = allEntries.filter(e => dayjs(e.timestamp).isBetween(startOfMonth, endOfMonth, null, '[]'));
-                    break;
-                case 'all':
-                    entries = allEntries;
-                    break;
-                case 'last30':
-                default:
-                    entries = allEntries.slice(-30);
-                    break;
+            const aggregated = new Map();
+            const getPeriodKey = (timestamp, type) => {
+                if (type === 'weekly') return dayjs(timestamp).startOf('week').format('YYYY-MM-DD');
+                if (type === 'daily') return dayjs(timestamp).format('YYYY-MM-DD');
+                if (type === 'monthly') return dayjs(timestamp).format('YYYY-MM');
+                return timestamp;
+            };
+
+            entries.forEach(entry => {
+                const value = parseFloat(entry.values[fieldName]);
+                if (isNaN(value)) return;
+                const key = getPeriodKey(entry.timestamp, aggregationType);
+                if (!aggregated.has(key)) {
+                    const ts = (type) => {
+                        if(type==='weekly') return dayjs(key).toISOString();
+                        if(type==='monthly') return dayjs(key).startOf('month').toISOString();
+                        return dayjs(key).startOf('day').toISOString();
+                    }
+                    aggregated.set(key, {
+                        timestamp: ts(aggregationType),
+                        values: { [fieldName]: 0 },
+                    });
+                }
+                aggregated.get(key).values[fieldName] += value;
+            });
+
+            return Array.from(aggregated.values()).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        },
+        renderWidgetContent: async (widget, containerEl) => {
+            if (widget.chartType === 'markdown') {
+                ui.widgetManager.render(widget, containerEl, [], state.chartInstances);
+                return;
+            }
+
+            // [수정] 모든 엔트리를 우선 필터링하여 기반 데이터셋 생성
+            const baseEntries = (await firebaseUtils.getAll('entries')).flatMap(d => d.entries)
+                .filter(e => e.definitionId === widget.defId && widget.fieldName in e.values);
+
+            let processedEntries; // 최종적으로 렌더링될 데이터
+
+            // [수정] 히트맵 타입에 대한 별도 데이터 처리 로직 추가
+            if (widget.chartType === 'heatmap') {
+                if (!widget.displayMonth) {
+                    widget.displayMonth = dayjs().format('YYYY-MM-DD');
+                }
+                const displayMonth = dayjs(widget.displayMonth);
+                const startOfMonth = displayMonth.startOf('month');
+                const endOfMonth = displayMonth.endOf('month');
+
+                processedEntries = baseEntries.filter(e =>
+                    dayjs(e.timestamp).isBetween(startOfMonth, endOfMonth, null, '[]')
+                );
+            } else {
+                // 히트맵 외 다른 모든 위젯에 대한 기존 데이터 처리 로직
+                baseEntries.sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                
+                let entries;
+                const now = dayjs();
+                switch (widget.dataRange) {
+                    case 'thisWeek':
+                        entries = baseEntries.filter(e => dayjs(e.timestamp).isBetween(now.startOf('week'), now.endOf('week'), null, '[]'));
+                        break;
+                    case 'thisMonth':
+                        entries = baseEntries.filter(e => dayjs(e.timestamp).isBetween(now.startOf('month'), now.endOf('month'), null, '[]'));
+                        break;
+                    case 'all': entries = baseEntries; break;
+                    case 'last30': default: entries = baseEntries.slice(-30); break;
+                }
+
+                processedEntries = entries;
+                const numberBasedCharts = ['bar', 'line', 'radar'];
+                if (numberBasedCharts.includes(widget.chartType)) {
+                    processedEntries = logic._aggregateEntries(entries, widget.fieldName, widget.aggregationType);
+                }
             }
 
             if(state.chartInstances.has(widget.id)) state.chartInstances.get(widget.id).destroy();
             
             containerEl.innerHTML = '';
-            if(entries.length === 0){
+            if(processedEntries.length === 0){
                 containerEl.innerHTML = '<div class="flex items-center justify-center h-full text-slate-400 text-sm">데이터가 없습니다.</div>';
                 return;
             }
 
-            ui.widgetManager.render(widget, containerEl, entries, state.chartInstances);
+            ui.widgetManager.render(widget, containerEl, processedEntries, state.chartInstances);
         }
     };
 
@@ -2113,33 +2262,50 @@ const firebaseUtils = {
             if(target){
                 document.querySelectorAll('[data-action="select-chart-type"]').forEach(btn => btn.classList.remove('bg-blue-100', 'border-blue-500'));
                 target.classList.add('bg-blue-100', 'border-blue-500');
-                const allowedFields = JSON.parse(target.dataset.fields);
-                const sourceDiv = $('#widget-data-source');
-                const defSelect = $('#widget-def-select');
-                const fieldSelect = $('#widget-field-select');
                 
-                defSelect.innerHTML = '<option value="">관찰 대상 선택</option>' + state.definitions.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
-                fieldSelect.innerHTML = '<option value="">필드 선택</option>';
-                sourceDiv.classList.remove('hidden');
+                const selectedType = target.dataset.type;
+                const dataSourceDiv = $('#widget-data-source');
+                const markdownSourceDiv = $('#widget-markdown-source');
+                const dataRangeDiv = $('#widget-data-range').parentElement;
+                const aggregationSourceDiv = $('#widget-aggregation-source');
 
-                defSelect.onchange = () => {
-                    const defId = parseInt(defSelect.value);
-                    const def = state.definitions.find(d => d.id === defId);
-                    if (def) {
-                        fieldSelect.innerHTML = '<option value="">필드 선택</option>' + def.fields
-                            .filter(f => allowedFields.includes(f.fieldType))
-                            .map(f => `<option value="${f.fieldName}">${f.fieldName}</option>`).join('');
-                    }
-                };
+                // [수정] 각 위젯 타입에 따라 필요한 UI 요소만 표시하도록 로직 개선
+                const usesDataSource = !['markdown'].includes(selectedType);
+                const usesDataRange = !['markdown', 'heatmap'].includes(selectedType);
+                const usesAggregation = ['bar', 'line', 'radar'].includes(selectedType);
 
-                const widgetModal = target.closest('#widget-modal-content');
-                if(widgetModal){
-                    const currentWidgetId = widgetModal.querySelector('[data-action="save-widget"]').dataset.id;
-                    const widget = state.dashboard.widgets.find(w => w.id == currentWidgetId);
-                    if(widget && widget.defId) {
-                        defSelect.value = widget.defId;
-                        defSelect.onchange();
-                        if(widget.fieldName) fieldSelect.value = widget.fieldName;
+                dataSourceDiv.classList.toggle('hidden', !usesDataSource);
+                markdownSourceDiv.classList.toggle('hidden', selectedType !== 'markdown');
+                dataRangeDiv.classList.toggle('hidden', !usesDataRange);
+                aggregationSourceDiv.classList.toggle('hidden', !usesAggregation);
+
+                if (usesDataSource) {
+                    const allowedFields = JSON.parse(target.dataset.fields);
+                    const defSelect = $('#widget-def-select');
+                    const fieldSelect = $('#widget-field-select');
+                    
+                    defSelect.innerHTML = '<option value="">관찰 대상 선택</option>' + state.definitions.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+                    fieldSelect.innerHTML = '<option value="">필드 선택</option>';
+
+                    defSelect.onchange = () => {
+                        const defId = parseInt(defSelect.value);
+                        const def = state.definitions.find(d => d.id === defId);
+                        if (def) {
+                            fieldSelect.innerHTML = '<option value="">필드 선택</option>' + def.fields
+                                .filter(f => allowedFields.includes(f.fieldType))
+                                .map(f => `<option value="${f.fieldName}">${f.fieldName}</option>`).join('');
+                        }
+                    };
+
+                    const widgetModal = target.closest('#widget-modal-content');
+                    if(widgetModal){
+                        const currentWidgetId = widgetModal.querySelector('[data-action="save-widget"]').dataset.id;
+                        const widget = state.dashboard.widgets.find(w => w.id == currentWidgetId);
+                        if(widget && widget.defId) {
+                            defSelect.value = widget.defId;
+                            defSelect.onchange();
+                            if(widget.fieldName) fieldSelect.value = widget.fieldName;
+                        }
                     }
                 }
             }
@@ -2260,6 +2426,7 @@ const firebaseUtils = {
                     ui.renderWidgetForm();
                     break;
                 case 'edit-widget':
+                    // [수정] 모든 위젯은 이 로직을 통해 수정 폼을 엽니다.
                     ui.renderWidgetForm(state.dashboard.widgets.find(w => w.id === id));
                     break;
                 case 'delete-widget':
@@ -2395,6 +2562,7 @@ const firebaseUtils = {
             }
         },
         init: async () => {
+            showdownConverter = new showdown.Converter();
             console.log("[DEBUG] handlers.init: 초기화 시작.");
 
             ui.refreshIcons(); // 초기 아이콘 렌더링
