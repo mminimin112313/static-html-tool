@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>블로그 포스팅 주제 생성기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="w-full max-w-2xl mx-auto bg-white rounded-2xl shadow-lg p-8 md:p-12">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">AI 기반 블로그 주제 생성기</h1>
+            <p class="text-gray-500 mt-2">버튼을 클릭하여 전문 분야에 대한 5가지 블로그 포스팅 아이디어를 얻어보세요.</p>
+        </header>
+
+        <main>
+            <div class="flex justify-center mb-8">
+                <button id="generate-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-lg shadow-md transition-all duration-300 transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-opacity-50">
+                    새로운 주제 5개 생성 ✨
+                </button>
+            </div>
+
+            <div id="results-container" class="bg-gray-50 p-6 rounded-lg border border-gray-200 min-h-[280px]">
+                <ol id="results-list" class="list-decimal list-inside space-y-4 text-gray-700">
+                    <li class="text-gray-400">버튼을 눌러 주제 생성을 시작하세요...</li>
+                </ol>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- 데이터 관리 (JSON 형식) ---
+        // 주제(업무) 목록: 카테고리와 이름으로 구조화 (대폭 확장됨)
+        const topics = [
+    // 부동산 등기
+    { category: "부동산 등기", name: "아파트 매매 소유권이전등기" },
+    { category: "부동산 등기", name: "토지 매매 소유권이전등기" },
+    { category: "부동산 등기", name: "상가 매매 소유권이전등기" },
+    { category: "부동산 등기", name: "증여 소유권이전등기" },
+    { category: "부동산 등기", name: "부담부증여 소유권이전등기" },
+    { category: "부동산 등기", name: "상속 소유권이전등기" },
+    { category: "부동산 등기", name: "협의분할에 의한 상속등기" },
+    { category: "부동산 등기", name: "법정상속지분 상속등기" },
+    { category: "부동산 등기", name: "유증으로 인한 소유권이전등기" },
+    { category: "부동산 등기", name: "이혼 재산분할 소유권이전등기" },
+    { category: "부동산 등기", name: "공유물분할 소유권이전등기" },
+    { category: "부동산 등기", name: "명의신탁해지 소유권이전등기" },
+    { category: "부동산 등기", name: "진정명의회복 소유권이전등기" },
+    { category: "부동산 등기", name: "소유권보존등기 (신축 건물)" },
+    { category: "부동산 등기", name: "미등기부동산 소유권보존등기" },
+    { category: "부동산 등기", name: "근저당권 설정등기" },
+    { category: "부동산 등기", name: "근저당권 이전등기" },
+    { category: "부동산 등기", name: "근저당권 말소등기" },
+    { category: "부동산 등기", name: "전세권 설정등기" },
+    { category: "부동산 등기", name: "전세권 이전등기" },
+    { category: "부동산 등기", name: "전세권 말소등기" },
+    { category: "부동산 등기", name: "임차권등기명령 신청" },
+    { category: "부동산 등기", name: "주택임차권등기" },
+    { category: "부동산 등기", name: "상가임차권등기" },
+    { category: "부동산 등기", name: "지상권 설정등기" },
+    { category: "부동산 등기", name: "지역권 설정등기" },
+    { category: "부동산 등기", name: "소유권이전청구권 가등기" },
+    { category: "부동산 등기", name: "담보가등기" },
+    { category: "부동산 등기", name: "가등기에 기한 본등기" },
+    { category: "부동산 등기", name: "신탁등기 (부동산 담보신탁, 관리신탁)" },
+    { category: "부동산 등기", name: "신탁말소등기" },
+    { category: "부동산 등기", name: "가압류 및 가처분 말소등기" },
+    { category: "부동산 등기", name: "토지거래허가 신청 및 등기" },
+    { category: "부동산 등기", name: "농지취득자격증명 발급 및 등기" },
+    { category: "부동산 등기", name: "공장재단 및 광업재단 등기" },
+
+    // 법인 등기
+    { category: "법인 등기", name: "주식회사 설립등기" },
+    { category: "법인 등기", name: "1인법인 설립등기" },
+    { category: "법인 등기", name: "유한회사 설립등기" },
+    { category: "법인 등기", name: "유한책임회사 설립등기" },
+    { category: "법인 등기", name: "대표이사 변경등기" },
+    { category: "법인 등기", name: "사내이사 변경등기" },
+    { category: "법인 등기", name: "사외이사 변경등기" },
+    { category: "법인 등기", name: "감사 변경등기" },
+    { category: "법인 등기", name: "대표이사 주소변경등기" },
+    { category: "법인 등기", name: "본점이전등기 (관내이전)" },
+    { category: "법인 등기", name: "본점이전등기 (관외이전)" },
+    { category: "법인 등기", name: "지점설치등기" },
+    { category: "법인 등기", name: "지점이전등기" },
+    { category: "법인 등기", name: "지점폐지등기" },
+    { category: "법인 등기", name: "상호변경등기" },
+    { category: "법인 등기", name: "사업목적변경등기" },
+    { category: "법인 등기", name: "공고방법변경등기" },
+    { category: "법인 등기", name: "유상증자 등기 (제3자배정, 주주배정)" },
+    { category: "법인 등기", name: "무상증자 등기" },
+    { category: "법인 등기", name: "자본감소(감자) 변경등기" },
+    { category: "법인 등기", name: "주식매수선택권(스톡옵션) 부여 등기" },
+    { category: "법인 등기", name: "전환사채(CB) 발행등기" },
+    { category: "법인 등기", name: "신주인수권부사채(BW) 발행등기" },
+    { category: "법인 등기", name: "회사합병 등기" },
+    { category: "법인 등기", name: "회사분할 등기" },
+    { category: "법인 등기", name: "분할합병 등기" },
+    { category: "법인 등기", name: "조직변경 등기" },
+    { category: "법인 등기", name: "법인해산 및 청산인 선임 등기" },
+    { category: "법인 등기", name: "청산종결 등기" },
+    { category: "법인 등기", name: "휴면회사 계속등기" },
+    { category: "법인 등기", name: "외국회사 국내영업소 설치등기" },
+
+    // 소송/집행
+    { category: "소송/집행", name: "소장 작성 (대여금, 보증금, 공사대금 등)" },
+    { category: "소송/집행", name: "답변서 작성" },
+    { category: "소송/집행", name: "준비서면 작성" },
+    { category: "소송/집행", name: "고소장 및 고발장 작성" },
+    { category: "소송/집행", name: "내용증명 작성 및 발송" },
+    { category: "소송/집행", name: "지급명령신청 (독촉절차)" },
+    { category: "소송/집행", name: "지급명령에 대한 이의신청" },
+    { category: "소송/집행", name: "부동산 가압류 신청" },
+    { category: "소송/집행", name: "채권 가압류 신청" },
+    { category: "소송/집행", name: "유체동산 가압류 신청" },
+    { category: "소송/집행", name: "부동산처분금지 가처분 신청" },
+    { category: "소송/집행", name: "점유이전금지 가처분 신청" },
+    { category: "소송/집행", name: "공사중지 가처분 신청" },
+    { category: "소송/집행", name: "부동산 강제경매 신청" },
+    { category: "소송/집행", name: "부동산 임의경매 신청" },
+    { category: "소송/집행", name: "채권압류 및 추심명령 신청" },
+    { category: "소송/집행", name: "채권압류 및 전부명령 신청" },
+    { category: "소송/집행", name: "유체동산 강제집행(압류) 신청" },
+    { category: "소송/집행", name: "자동차 인도명령 및 강제집행" },
+    { category: "소송/집행", name: "재산명시신청" },
+    { category: "소송/집행", name: "재산조회신청" },
+    { category: "소송/집행", name: "채무불이행자명부등재 신청" },
+    { category: "소송/집행", name: "부동산 인도명령 신청" },
+    { category: "소송/집행", name: "건물 명도소송 서류작성" },
+    { category: "소송/집행", name: "공시최고 및 제권판결 신청" },
+
+    // 회생/파산
+    { category: "회생/파산", name: "개인회생 신청" },
+    { category: "회생/파산", name: "개인회생 금지명령 및 중지명령 신청" },
+    { category: "회생/파산", name: "개인회생 변제계획안 작성 및 수정" },
+    { category: "회생/파산", name: "개인파산 신청" },
+    { category: "회생/파산", name: "개인파산 면책 신청" },
+    { category: "회생/파산", name: "일반회생 신청" },
+    { category: "회생/파산", name: "법인회생 신청" },
+    { category: "회생/파산", name: "법인파산 신청" },
+    { category: "회생/파산", name: "상속재산 파산신청" },
+
+    // 상속/가사
+    { category: "상속/가사", name: "상속포기 심판청구" },
+    { category: "상속/가사", name: "한정승인 심판청구" },
+    { category: "상속/가사", name: "특별한정승인 심판청구" },
+    { category: "상속/가사", name: "상속재산분할 심판청구" },
+    { category: "상속/가사", name: "기여분 결정 심판청구" },
+    { category: "상속/가사", name: "유언증서 검인 청구" },
+    { category: "상속/가사", name: "유류분 반환 청구 서류작성" },
+    { category: "상속/가사", name: "성년후견 개시 심판청구" },
+    { category: "상속/가사", name: "한정후견 개시 심판청구" },
+    { category: "상속/가사", name: "특정후견 개시 심판청구" },
+    { category: "상속/가사", name: "임의후견계약 공증 및 감독인 선임" },
+    { category: "상속/가사", name: "실종선고 심판청구" },
+    { category: "상속/가사", name: "부재자재산관리인 선임 청구" },
+    { category: "상속/가사", name: "개명허가 신청" },
+    { category: "상속/가사", name: "가족관계등록부 정정허가 신청" },
+    { category: "상속/가사", name: "친양자 입양 심판청구" },
+    
+    // 공탁
+    { category: "공탁", name: "변제공탁" },
+    { category: "공탁", name: "수용보상금 공탁" },
+    { category: "공탁", name: "재판상 보증공탁" },
+    { category: "공탁", name: "가압류 해방공탁" },
+    { category: "공탁", name: "집행공탁" },
+    { category: "공탁", name: "혼합공탁" },
+    { category: "공탁", name: "공탁금 출급 및 회수 청구" },
+
+    // 행정/기타
+    { category: "행정/기타", name: "비영리 사단법인 설립 허가 및 등기" },
+    { category: "행정/기타", name: "비영리 재단법인 설립 허가 및 등기" },
+    { category: "행정/기타", name: "사회적협동조합 설립 인가 및 등기" },
+    { category: "행정/기타", name: "행정심판 청구서 작성 (영업정지, 과징금 등)" },
+    { category: "행정/기타", name: "집행정지 신청서 작성" },
+    { category: "행정/기타", name: "토지수용 이의신청 및 수용재결신청" },
+    { category: "행정/기타", name: "매매계약서, 합의서 등 각종 서류작성 및 검토" },
+    { category: "행정/기타", name: "정보공개청구" },
+
+    // 각종 손해배상
+    { category: "각종 손해배상", name: "교통사고 손해배상 청구" },
+    { category: "각종 손해배상", name: "의료사고 손해배상 청구" },
+    { category: "각종 손해배상", name: "산업재해 손해배상 청구" },
+    { category: "각종 손해배상", name: "하자보수 손해배상 청구 (누수, 균열 등)" },
+    { category: "각종 손해배상", name: "공사대금 청구 소송 서류작성" },
+    { category: "각종 손해배상", name: "일조권, 조망권, 사생활 침해 손해배상 청구" },
+    { category: "각종 손해배상", name: "층간소음 손해배상 청구" },
+    { category: "각종 손해배상", name: "명예훼손 손해배상 청구 (온라인 포함)" },
+    { category: "각종 손해배상", name: "폭행, 상해로 인한 손해배상 청구" },
+    { category: "각종 손해배상", name: "학교폭력 관련 손해배상 청구" },
+    { category: "각종 손해배상", name: "임대차보증금 반환 청구 소송 서류작성" },
+    { category: "각종 손해배상", name: "권리금 회수 방해로 인한 손해배상 청구" },
+    { category: "각종 손해배상", name: "계약불이행으로 인한 손해배상 청구" },
+    { category: "각종 손해배상", name: "물품대금 청구 소송 서류작성" },
+    { category: "각종 손해배상", name: "사기, 횡령 등 재산범죄 피해 회복 손해배상" },
+    { category: "각종 손해배상", name: "저작권, 상표권 등 지식재산권 침해 손해배상" },
+
+    // 소송/집행 (추가)
+    { category: "소송/집행", name: "사해행위취소 소송 서류작성" },
+    { category: "소송/집행", name: "배당이의의 소 서류작성" },
+    { category: "소송/집행", name: "청구이의의 소 서류작성" },
+    { category: "소송/집행", name: "제3자이의의 소 서류작성" },
+    { category: "소송/집행", name: "공유물분할 청구 소송 서류작성" },
+    { category: "소송/집행", name: "임금 및 퇴직금 청구 소송 서류작성" },
+
+    // 상속/가사 (추가)
+    { category: "상속/가사", name: "상속회복청구의 소 서류작성" },
+    { category: "상속/가사", name: "유언무효확인의 소 서류작성" },
+    { category: "상속/가사", name: "재판상 이혼 청구 서류작성" },
+    { category: "상속/가사", name: "이혼에 따른 위자료 청구" },
+    { category: "상속/가사", name: "양육비 청구 및 변경 신청" },
+    { category: "상속/가사", name: "면접교섭권 이행명령 신청" },
+    { category: "상속/가사", name: "약혼해제로 인한 손해배상 청구" },
+    { category: "상속/가사", name: "인지청구의 소 서류작성" },
+    { category: "상속/가사", name: "친생자관계부존재확인의 소 서류작성" },
+
+    // 행정/기타 (추가)
+    { category: "행정/기타", name: "국가배상 신청 및 소송 서류작성" },
+    { category: "행정/기타", name: "범죄피해자 구조금 지급신청" },
+    { category: "행정/기타", name: "형사소송 배상명령신청" },
+    { category: "행정/기타", name: "자동차손해배상보장법에 따른 정부보장사업 청구" },
+    { category: "행정/기타", name: "영업정지처분 취소소송 서류작성" },
+    { category: "행정/기타", name: "과징금부과처분 취소소송 서류작성" },
+    { category: "행정/기타", name: "운전면허 취소/정지처분 취소 행정심판 및 소송" },
+    { category: "행정/기타", name: "산재 불승인처분 취소소송 서류작성" },
+    { category: "행정/기타", name: "정보공개거부처분 취소소송 서류작성" }
+];
+
+
+
+        // 키워드 목록: 카테고리와 이름으로 구조화 (대폭 확장 및 다각화됨)
+        const keywords = [
+            // 1. 개념 및 필요성 (업무의 본질)
+            { category: "개념/필요성", name: "핵심 개념과 법적 효력" },
+            { category: "개념/필요성", name: "반드시 해야하는 이유" },
+            { category: "개념/필요성", name: "안했을 때 발생하는 법적 불이익" },
+            { category: "개념/필요성", name: "관련 법규 및 최신 판례" },
+            { category: "개념/필요성", name: "핵심 용어 완벽 정리" },
+            
+            // 2. 자격 및 준비 (실행의 전제 조건)
+            { category: "자격/준비", name: "필요서류 A to Z 체크리스트" },
+            { category: "자격/준비", name: "필수 확인사항 TOP 5" },
+            { category: "자격/준비", name: "신청 자격 및 요건 상세 분석" },
+            { category: "자격/준비", name: "인감증명서 vs 본인서명사실확인서" },
+            { category: "자격/준비", name: "정부24, 인터넷등기소 서류 발급 방법" },
+            { category: "자격/준비", name: "공증이 필요한 서류와 절차" },
+
+            // 3. 절차 및 방법 (구체적인 실행 과정)
+            { category: "절차/방법", name: "단계별 전체 절차 완벽 가이드" },
+            { category: "절차/방법", name: "셀프(나홀로) 진행 완전 정복" },
+            { category: "절차/방법", name: "온라인(전자) 신청 총정리" },
+            { category: "절차/방법", name: "가장 빠르고 간단하게 처리하는 법" },
+            { category: "절차/방법", name: "신청서 작성법 및 상세 예시" },
+
+            // 4. 비용 및 기간 (경제적/시간적 자원)
+            { category: "비용/기간", name: "총 비용(공과금, 수수료) 완벽 분석" },
+            { category: "비용/기간", name: "세금(취득세,등록면허세) 절약 꿀팁" },
+            { category: "비용/기간", name: "총 소요 기간과 단축 노하우" },
+            { category: "비용/기간", name: "과태료 폭탄 피하는 방법" },
+            { category: "비용/기간", name: "최소 비용으로 해결하는 방법" },
+            
+            // 5. 위험 및 노하우 (실수 방지와 효율 증대)
+            { category: "위험/노하우", name: "가장 자주 하는 실수와 예방법" },
+            { category: "위험/노하우", name: "반드시 알아야 할 법적 리스크" },
+            { category: "위험/노하우", name: "기각, 보정명령 피하는 비법" },
+            { category: "위험/노하우", name: "전문가만 아는 숨은 꿀팁" },
+            { category: "위험/노하우", name: "모르면 손해보는 핵심 포인트 3가지" },
+
+            // 6. 관할 및 기관 (업무 처리 장소)
+            { category: "관할/기관", name: "내 사건의 관할 법원/등기소 찾는 법" },
+            { category: "관할/기관", name: "제출 기관과 담당 부서 총정리" },
+            { category: "관할/기관", name: "방문 전 예약 및 준비사항" },
+
+            // 7. 결과 및 사후관리 (완료 이후)
+            { category: "결과/사후관리", name: "처리결과 확인 및 진행상황 조회 방법" },
+            { category: "결과/사후관리", name: "완료 증명서(등기필정보 등) 관리법" },
+            { category: "결과/사후관리", name: "문제 발생 시 이의신청/항고 절차" },
+            { category: "결과/사후관리", name: "완료 후 반드시 해야 할 후속 조치" },
+
+            // 8. 비교 분석 (선택의 기로)
+            { category: "비교 분석", name: "A와 B, 무엇이 유리할까? (장단점 비교)" },
+            { category: "비교 분석", name: "셀프진행 vs 전문가 위임, 비용과 시간 비교" },
+            { category: "비교 분석", name: "나에게 맞는 최적의 방법 선택 가이드" },
+            { category: "비교 분석", name: "구법과 신법의 차이점" },
+
+            // 9. 심화 탐구 (더 깊은 이해)
+            { category: "심화 탐구", name: "실제 성공사례 및 실패사례 분석" },
+            { category: "심화 탐구", name: "가장 자주 묻는 질문(FAQ) TOP 10" },
+            { category: "심화 탐구", name: "해외 거주자(재외국민)의 경우" },
+            { category: "심화 탐구", name: "미성년자가 당사자인 경우" },
+            { category: "심화 탐구", name: "최신 개정법령 완벽 해설" }
+        ];
+
+        const generateBtn = document.getElementById('generate-btn');
+        const resultsList = document.getElementById('results-list');
+        const resultsContainer = document.getElementById('results-container');
+
+        generateBtn.addEventListener('click', generateTopics);
+
+        /**
+         * Fisher-Yates (aka Knuth) Shuffle 알고리즘.
+         * 배열의 요소를 무작위로 섞어줍니다.
+         * @param {Array} array 섞을 배열
+         */
+        function shuffleArray(array) {
+            let currentIndex = array.length, randomIndex;
+            while (currentIndex !== 0) {
+                randomIndex = Math.floor(Math.random() * currentIndex);
+                currentIndex--;
+                [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+            }
+            return array;
+        }
+
+        /**
+         * 수학적으로 분산된 블로그 주제 5개를 생성하는 핵심 함수
+         */
+        function generateTopics() {
+            // --- 1단계: 카테고리 추출 및 무작위화 ---
+            // 각 주제와 키워드에서 중복 없는 카테고리 목록을 추출합니다.
+            const uniqueTopicCategories = [...new Set(topics.map(t => t.category))];
+            const uniqueKeywordCategories = [...new Set(keywords.map(k => k.category))];
+
+            // 추출된 카테고리 목록의 순서를 무작위로 섞습니다.
+            // 이것이 '수학적 분산'의 핵심입니다. 이 과정을 통해 다양한 카테고리에서 주제가 선정됩니다.
+            shuffleArray(uniqueTopicCategories);
+            shuffleArray(uniqueKeywordCategories);
+
+            const generatedTopics = new Set(); // 중복된 주제 생성을 방지하기 위한 Set
+
+            // --- 2단계: 5개 주제 조합 ---
+            // 5개의 고유한 주제가 생성될 때까지 반복합니다.
+            while (generatedTopics.size < 5) {
+                const topicIndex = generatedTopics.size % uniqueTopicCategories.length;
+                const keywordIndex = generatedTopics.size % uniqueKeywordCategories.length;
+
+                // 섞인 카테고리 목록에서 순서대로 카테고리를 선택합니다.
+                const selectedTopicCategory = uniqueTopicCategories[topicIndex];
+                const selectedKeywordCategory = uniqueKeywordCategories[keywordIndex];
+
+                // 선택된 카테고리에 해당하는 모든 항목을 필터링합니다.
+                const topicsInCategory = topics.filter(t => t.category === selectedTopicCategory);
+                const keywordsInCategory = keywords.filter(k => k.category === selectedKeywordCategory);
+
+                // 필터링된 목록에서 무작위로 하나의 항목을 선택합니다.
+                const randomTopic = topicsInCategory[Math.floor(Math.random() * topicsInCategory.length)];
+                const randomKeyword = keywordsInCategory[Math.floor(Math.random() * keywordsInCategory.length)];
+
+                // 주제와 키워드를 조합하여 최종 제목을 만듭니다.
+                const finalTopic = `${randomTopic.name}: ${randomKeyword.name}`;
+                
+                generatedTopics.add(finalTopic);
+            }
+
+            // --- 3단계: 결과 표시 ---
+            displayResults(Array.from(generatedTopics));
+        }
+
+        /**
+         * 생성된 주제 목록을 화면에 표시하는 함수
+         * @param {string[]} topicsArray 표시할 주제 문자열 배열
+         */
+        function displayResults(topicsArray) {
+            resultsList.innerHTML = ''; // 기존 목록 초기화
+            resultsContainer.classList.remove('fade-in');
+            
+            // 미세한 딜레이를 주어 애니메이션 효과를 다시 적용합니다.
+            setTimeout(() => {
+                 topicsArray.forEach(topic => {
+                    const li = document.createElement('li');
+                    li.textContent = topic;
+                    li.className = "text-lg";
+                    resultsList.appendChild(li);
+                });
+                resultsContainer.classList.add('fade-in');
+            }, 10);
+        }
+
+    </script>
+</body>
+</html>
+
