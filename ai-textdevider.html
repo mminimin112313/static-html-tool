@@ -302,52 +302,83 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     function generatePrompt(returnOnly = false) {
-        let purpose, schemaKey;
+        let purpose, schema;
         const chapterCount = state.chapterCount;
         const formattedContentForAI = state.rawContentForAI;
 
+        const contentLines = formattedContentForAI.split('\n').filter(line => line.trim().startsWith('['));
+        const totalParagraphs = contentLines.length;
+        const totalCharacters = formattedContentForAI.length;
+        const avgCharsPerParagraph = totalParagraphs > 0 ? Math.round(totalCharacters / totalParagraphs) : 0;
+        
         const countInstruction = chapterCount ? `Create exactly ${chapterCount} main chapters.` : `Create an appropriate number of main chapters.`;
         const userInstructions = state.advancedPrompt ? `\n<User_Instructions>\n${state.advancedPrompt}\n</User_Instructions>` : '';
 
         if (state.fileType === 'text') {
-            purpose = `Analyze the provided text, which is broken into numbered paragraphs, and reorganize it into a hierarchical structure.`;
-            schemaKey = `"start_paragraph": 1`;
-        } else {
-            purpose = `Analyze the provided timed subtitles and group them into a hierarchical structure.`;
-            schemaKey = `"start_time": "HH:MM:SS"`;
-        }
-
-        const prompt = `
-<Prime_Directive>
-${purpose}
-</Prime_Directive>
-
-<purpose>
-1. Understand the entire text and identify major themes to form the "main chapters". ${countInstruction}
-2. For each main chapter, group related content into smaller, specific "sub-chapters".
-3. Your output MUST be a valid JSON array of objects following the specified schema. Do not add any explanation outside the JSON.
-</purpose>${userInstructions}
-
-<Output_Specification>
-  <Format>JSON Array</Format>
+            purpose = `Analyze the provided text, which is broken into numbered paragraphs, and reorganize it into a deep hierarchical structure.`;
+            schema = `
   <Schema>
   [
     {
-      "main_chapter_title": "A descriptive title for the first major section.",
-      ${schemaKey.replace('1', '... (the ID of the first entry in this chapter)')},
+      "main_chapter_title": "string - A descriptive title for the first major section.",
+      "start_paragraph": "integer - The numeric ID of the first paragraph. MUST be a number.",
       "sub_chapters": [
         {
-          "sub_chapter_title": "Title for the first sub-topic.",
-          ${schemaKey.replace('1', '...')}
-        },
-        {
-          "sub_chapter_title": "Title for the second sub-topic.",
-          ${schemaKey.replace('1', '...')}
+          "sub_chapter_title": "string - Title for the sub-topic (child).",
+          "start_paragraph": "integer - The numeric ID for this sub-topic. MUST be a number.",
+          "sub_chapters": [
+             {
+                "sub_chapter_title": "string - Title for a nested sub-sub-topic (grandchild).",
+                "start_paragraph": "integer - The numeric ID for this grandchild topic. MUST be a number.",
+                "sub_chapters": "[... You can continue nesting as deep as logically necessary]"
+             }
+          ]
         }
       ]
     }
   ]
-  </Schema>
+  </Schema>`;
+        } else {
+            purpose = `Analyze the provided timed subtitles and group them into a deep hierarchical structure.`;
+            schema = `
+  <Schema>
+  [
+    {
+      "main_chapter_title": "string - A descriptive title for the first major section.",
+      "start_time": "string - The start time (HH:MM:SS) of the first subtitle in this chapter.",
+      "sub_chapters": [
+        {
+          "sub_chapter_title": "string - Title for the sub-topic.",
+          "start_time": "string - The start time (HH:MM:SS) of the first subtitle in this sub-chapter.",
+          "sub_chapters": "[... You can continue nesting as deep as logically necessary]"
+        }
+      ]
+    }
+  ]
+  </Schema>`;
+        }
+
+        const prompt = `
+<Prime_Directive>
+${purpose} Your final output MUST be a single, valid JSON array.
+</Prime_Directive>
+
+<Context>
+- Total Paragraphs/Subtitles: ${totalParagraphs}
+- Total Characters: ${totalCharacters}
+- Average Characters per Entry: ${avgCharsPerParagraph}
+</Context>
+
+<Purpose>
+1.  **Logical Grouping**: First, comprehend the entire text to identify its core logical structure and relationships between topics.
+2.  **Hierarchical Decomposition**: Based on this logical structure, decompose the content into a deep, multi-level hierarchy. This means creating main chapters, sub-chapters, and if necessary, sub-sub-chapters (grandchildren) or even deeper levels to represent the topic relationships accurately.
+3.  **Balanced Distribution**: The resulting hierarchy should be well-balanced. Avoid creating one massive chapter with many sub-points alongside a very small one. Distribute the content evenly and logically across the structure.
+4.  **Size Constraint**: As a final rule, ensure the content within any single node (chapter, sub-chapter, etc.) is between 10,000 and 25,000 characters. You MUST break down any node that exceeds this limit into smaller sub-chapters.
+</Purpose>${userInstructions}
+
+<Output_Specification>
+  <Format>JSON Array</Format>
+${schema}
 </Output_Specification>
 
 <data content="formatted_content">
@@ -503,27 +534,25 @@ ${formattedContentForAI}
                 throw new Error("텍스트를 문단/자막으로 파싱할 수 없습니다. 파일 형식을 확인해주세요.");
             }
             debugLog(`  - Status: OK. Found ${state.contentEntries.length} entries.`);
-            debugLog(`  - First 3 entries: ${JSON.stringify(state.contentEntries.slice(0, 3), null, 2)}`);
-            debugLog(`  - Last 3 entries: ${JSON.stringify(state.contentEntries.slice(-3), null, 2)}`);
             
             debugLog("\nStep 2: Parsing JSON from input.");
             const chaptersData = JSON.parse(ui.jsonInput.value);
             debugLog("  - Status: OK. JSON is valid.");
 
             debugLog("\nStep 3: Generating files based on content and JSON...");
-            const selectedFormat = document.querySelector('input[name="outputFormat"]:checked').value;
-            const processFunction = selectedFormat === 'zip-sub' ? generateSubChapterFiles : generateMainChapterFiles;
-            const { toc, files } = processFunction(chaptersData);
+            const { toc, files } = generateHierarchicalFiles(chaptersData);
             
             renderTocPreview(toc);
 
             if (files.every(f => f.content.trim() === '')) {
-                 debugLog(`\n[FATAL ERROR] All generated files are empty. This usually means the 'id' in parsed entries does not match the 'start_paragraph' from the JSON. Check the IDs in 'First/Last 3 entries' above against the JSON values.`);
+                 debugLog(`\n[FATAL ERROR] All generated files are empty. This usually means the 'id' in parsed entries does not match the 'start_paragraph' from the JSON.`);
             } else {
                  debugLog(`\nStep 4: File generation complete.`);
             }
 
             const safeTitle = (state.fileName || "Content_Analysis").replace(/\.[^/.]+$/, "");
+            const selectedFormat = document.querySelector('input[name="outputFormat"]:checked').value; // 이 라인이 추가되었습니다.
+
             if (selectedFormat === 'md') {
                 const markdownContent = generateMarkdown(toc, files);
                 const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
@@ -685,6 +714,98 @@ ${formattedContentForAI}
         });
         return { toc, files };
     }
+
+    function processChaptersRecursively(chapters, parentPath = '', level = 1, prefix = '', toc, files, allChapterNodes) {
+        const sortedChapters = [...chapters].sort((a, b) => {
+             const idA = getStartId(a);
+             const idB = getStartId(b);
+             if (isNaN(idA)) return 1; if (isNaN(idB)) return -1;
+             return idA - idB;
+        });
+
+        sortedChapters.forEach((chapter, index) => {
+            const currentPrefix = level === 1 ? String(index + 1).padStart(2, '0') : `${prefix}-${String(index + 1).padStart(2, '0')}`;
+            const title = chapter.main_chapter_title || chapter.sub_chapter_title;
+            const sanitizedTitle = title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
+            const currentPath = `${parentPath}${currentPrefix}_${sanitizedTitle}`;
+
+            const startId = getStartId(chapter);
+            if (isNaN(startId)) {
+                debugLog(`[WARNING] Skipping chapter with invalid start_id: "${title}"`);
+                return;
+            }
+
+            const currentGlobalIndex = allChapterNodes.findIndex(c => 
+                (c.main_chapter_title || c.sub_chapter_title) === title && getStartId(c) === startId
+            );
+
+            const nextChapter = allChapterNodes[currentGlobalIndex + 1];
+            const endId = nextChapter ? getStartId(nextChapter) : Infinity;
+            
+            const filteredEntries = state.contentEntries.filter(entry => entry.id >= startId && entry.id < endId);
+            const chapterText = filteredEntries.map(entry => entry.text).join('\n');
+            
+            debugLog(`- - - - -`);
+            debugLog(`Processing (L${level}): "${title}"`);
+            debugLog(`  - Path: ${currentPath}`);
+            debugLog(`  - Range: id >= ${startId} && id < ${endId}`);
+            debugLog(`  - Found: ${filteredEntries.length} entries`);
+
+            toc.push({ level: level, title: title, content: chapterText, raw: `${' '.repeat((level - 1) * 3)}${level > 1 ? '-' : (index + 1) + '.'} ${title}` });
+            
+            const hasSubChapters = chapter.sub_chapters && chapter.sub_chapters.length > 0;
+            if (!hasSubChapters) {
+                 files.push({ name: `${currentPath}.txt`, content: chapterText });
+            }
+
+            if (hasSubChapters) {
+                processChaptersRecursively(chapter.sub_chapters, `${currentPath}/`, level + 1, currentPrefix, toc, files, allChapterNodes);
+            }
+        });
+    }
+
+    function generateHierarchicalFiles(chaptersData) {
+        const toc = [];
+        const files = [];
+
+        function collectAllNodes(chapters) {
+            let nodes = [];
+            chapters.forEach(c => {
+                nodes.push(c);
+                if (c.sub_chapters) {
+                    nodes = nodes.concat(collectAllNodes(c.sub_chapters));
+                }
+            });
+            return nodes;
+        }
+
+        const allChapterNodes = collectAllNodes(chaptersData).sort((a, b) => {
+             const idA = getStartId(a);
+             const idB = getStartId(b);
+             if (isNaN(idA)) return 1; if (isNaN(idB)) return -1;
+             
+             if (idA !== idB) return idA - idB;
+
+             // --- BUG FIX STARTS HERE ---
+             // Tie-breaker for identical start IDs: parents should come before children.
+             const aHasChildren = a.sub_chapters && a.sub_chapters.length > 0;
+             const bHasChildren = b.sub_chapters && b.sub_chapters.length > 0;
+             if (aHasChildren && !bHasChildren) return -1; // a (parent) comes first
+             if (!aHasChildren && bHasChildren) return 1;  // b (parent) comes first
+             return 0;
+             // --- BUG FIX ENDS HERE ---
+        });
+        
+        const chapterList = allChapterNodes.map(c => `  - ${getStartId(c)}: ${c.main_chapter_title || c.sub_chapter_title}`).join('\n');
+        debugLog("  - Globally sorted chapters (id: title):");
+        debugLog(chapterList);
+        debugLog("\nStep 3a: Processing each chapter range recursively...");
+        
+        processChaptersRecursively(chaptersData, '', 1, '', toc, files, allChapterNodes);
+        
+        return { toc, files };
+    }
+
     function generateSubChapterFiles(mainChapters) {
         const toc = [];
         const files = [];
