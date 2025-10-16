@@ -53,8 +53,8 @@
             gap: 16px;
         }
         #suggestion-box {
-            max-height: 250px; /* 추천 목록 최대 높이 제한 */
-            overflow-y: auto;  /* 높이를 초과할 경우 스크롤 생성 */
+            max-height: 200px; /* 추천 목록 최대 높이를 조정 */
+            overflow-y: auto;
         }
         .suggestion-item-selected {
             background-color: #e2e8f0; /* slate-200 */
@@ -490,7 +490,15 @@ const firebaseUtils = {
                         </div>
                     </div>`;
             } else if (entry.type === 'journal') {
-                contentHtml = `<div class="text-sm font-medium text-slate-400 mb-2">${dayjs(entry.timestamp).format('HH:mm A')}</div><div class="journal-entry prose prose-sm prose-slate max-w-none">${entry.content}</div>`;
+                contentHtml = `
+                    <div class="flex gap-4">
+                        <div class="w-14 flex-shrink-0 text-center text-sm font-semibold text-slate-500 pt-0.5">
+                            ${dayjs(entry.timestamp).format('HH:mm')}
+                        </div>
+                        <div class="flex-grow min-w-0 border-l border-slate-200 pl-4">
+                            <div class="journal-entry prose prose-sm prose-slate max-w-none">${entry.content}</div>
+                        </div>
+                    </div>`;
             } else contentHtml = `<p class="text-red-500">데이터를 표시할 수 없습니다.</p>`;
             return actionsHtml + contentHtml;
         },
@@ -649,10 +657,14 @@ const firebaseUtils = {
             }
 
             // 3. 피드 렌더링 로직
+            const descendantIds = logic.getDescendantIds(defId);
+            const allTargetIds = [defId, ...descendantIds];
+
             const allDbEntries = await firebaseUtils.getAll('entries');
             const allLogs = allDbEntries.flatMap(day => day.entries || [])
-                                     .filter(entry => entry.definitionId === defId)
+                                     .filter(entry => entry.definitionId && allTargetIds.includes(entry.definitionId))
                                      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
             
             const renderFeed = (filterText = '') => {
                 const container = $('#feed-container');
@@ -1332,6 +1344,14 @@ const firebaseUtils = {
             
             // 7일 이전의 데이터는 스크롤 시점에 수동으로 로드 (loadAndRenderDays에서 처리)
             await logic.loadAndRenderDays(dayjs(date).subtract(7, 'day'), 5);
+        },
+        getDescendantIds: (parentId) => {
+            const children = state.definitions.filter(d => d.parentId === parentId);
+            let allIds = children.map(c => c.id);
+            children.forEach(child => {
+                allIds = allIds.concat(logic.getDescendantIds(child.id));
+            });
+            return allIds;
         },
         restoreEntry: async (id) => {
             const trashedEntry = await firebaseUtils.get('trash', id);
@@ -2405,5 +2425,6 @@ const firebaseUtils = {
     </script>
 </body>
 </html>
+
 
 
