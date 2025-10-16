@@ -53,7 +53,7 @@
             gap: 16px;
         }
         #suggestion-box {
-            max-height: 200px; /* 추천 목록 최대 높이를 조정 */
+            max-height: 600px; /* 추천 목록 최대 높이를 조정 */
             overflow-y: auto;
         }
         .suggestion-item-selected {
@@ -462,8 +462,8 @@ const firebaseUtils = {
                     let displayValue;
                     if (value === null || value === undefined || value === '') displayValue = '<span class="text-slate-400">-</span>';
                     else if (typeof value === 'boolean') displayValue = value ? '<span class="text-green-600 font-semibold">완료</span>' : '<span class="text-slate-500">미완료</span>';
-                    else displayValue = value;
-                    return `<div><strong class="font-medium text-slate-600">${key}:</strong> <span class="text-slate-800">${displayValue}</span></div>`;
+                    else displayValue = String(value).replace(/\n/g, '<br>');
+                    return `<div><strong class="font-bold text-slate-700">${key}:</strong> <span class="text-slate-800">${displayValue}</span></div>`;
                 }).join('');
 
                 const imageBody = imageValues.map(({ key, value }) => 
@@ -472,8 +472,14 @@ const firebaseUtils = {
 
                 const tagsHtml = def.tags?.length > 0 ? `<div class="flex flex-wrap gap-2">${def.tags.map(tag => `<span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded-full">#${tag}</span>`).join('')}</div>` : '';
                 const breadcrumbPath = logic.getBreadcrumbPath(def.id);
-                const breadcrumbHtml = breadcrumbPath.map(d => `<a href="#def/${d.id}" class="font-semibold hover:underline">${d.name}</a>`).join('<span class="mx-1 text-slate-400">/</span>');
-                const targetHtml = `<div class="text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">${breadcrumbHtml}</div>`;
+                // 아이콘은 경로의 가장 마지막(현재 대상)에만 표시
+                const breadcrumbHtml = breadcrumbPath.map((d, index) => {
+                    const isLast = index === breadcrumbPath.length - 1;
+                    const iconHtml = isLast && d.icon ? `<span class="mr-1.5">${d.icon}</span>` : '';
+                    return `<a href="#def/${d.id}" class="font-semibold hover:underline flex items-center">${iconHtml}${d.name}</a>`;
+                }).join('<span class="mx-1 text-slate-400">/</span>');
+
+                const targetHtml = `<div class="text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full flex items-center">${breadcrumbHtml}</div>`;
 
                 contentHtml = `
                     <div class="flex gap-4">
@@ -496,7 +502,7 @@ const firebaseUtils = {
                             ${dayjs(entry.timestamp).format('HH:mm')}
                         </div>
                         <div class="flex-grow min-w-0 border-l border-slate-200 pl-4">
-                            <div class="journal-entry prose prose-sm prose-slate max-w-none">${entry.content}</div>
+                            <div class="journal-entry text-sm">${entry.content}</div>
                         </div>
                     </div>`;
             } else contentHtml = `<p class="text-red-500">데이터를 표시할 수 없습니다.</p>`;
@@ -725,7 +731,9 @@ const firebaseUtils = {
                                 <div class="w-5 h-5 flex items-center justify-center flex-shrink-0 cursor-pointer rounded-md hover:bg-slate-200" data-action="toggle-node" data-id="${node.id}">
                                     ${hasChildren ? `<i data-lucide="chevron-down" class="w-4 h-4 text-slate-400 transition-transform ${isExpanded ? '' : '-rotate-90'}"></i>` : '<div class="w-4 h-4"></div>'}
                                 </div>
-                                <span class="font-medium text-sm text-slate-800 cursor-pointer hover:text-blue-600 transition-colors" data-action="view-definition-dashboard" data-id="${node.id}">${node.name}</span>
+                                <span class="font-medium text-sm text-slate-800 cursor-pointer hover:text-blue-600 transition-colors flex items-center" data-action="view-definition-dashboard" data-id="${node.id}">
+                                    ${node.icon ? `<span class="mr-2 text-lg">${node.icon}</span>` : ''}${node.name}
+                                </span>
                             </div>
                             <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button class="button text-xs font-semibold bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 px-3 py-1.5 rounded-md shadow-sm" data-action="edit-def" data-id="${node.id}">수정</button>
@@ -841,7 +849,16 @@ const firebaseUtils = {
                          <button class="button w-9 h-9 flex items-center justify-center bg-slate-200 text-slate-500 rounded-full hover:bg-slate-300" data-action="close-modal" data-modal-id="definition-modal"><i data-lucide="x" class="w-5 h-5"></i></button>
                     </div>
                     <div class="modal-content p-4 sm:p-5 space-y-5 overflow-y-auto">
-                        <div class="form-group"><label class="text-sm font-medium text-slate-600 mb-1.5 block">대상 이름</label><input type="text" id="def-name-input" value="${defData.name}" class="w-full h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" autofocus></div>
+                        <div class="grid sm:grid-cols-[1fr_110px] gap-4">
+                            <div class="form-group">
+                                <label class="text-sm font-medium text-slate-600 mb-1.5 block">대상 이름</label>
+                                <input type="text" id="def-name-input" value="${defData.name}" class="w-full h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500" autofocus>
+                            </div>
+                            <div class="form-group">
+                                <label class="text-sm font-medium text-slate-600 mb-1.5 block">아이콘 (이모지)</label>
+                                <input type="text" id="def-icon-input" value="${defData.icon || ''}" class="w-full h-11 px-4 text-center text-2xl bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500">
+                            </div>
+                        </div>
                         <div class="grid sm:grid-cols-2 gap-4">
                             <div><label class="text-sm font-medium text-slate-600 mb-1.5 block">부모 대상 (선택)</label><select id="def-parent-select" class="w-full h-11 px-3 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500"><option value="0">-- 없음 --</option>${parentOptions}</select></div>
                             <div><label class="text-sm font-medium text-slate-600 mb-1.5 block">태그 (쉼표로 구분)</label><input type="text" id="def-tags-input" value="${(defData.tags || []).join(', ')}" class="w-full h-11 px-4 bg-white rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500"></div>
@@ -857,7 +874,7 @@ const firebaseUtils = {
             setTimeout(() => $('#definition-modal-content').classList.add('scale-100', 'opacity-100'), 10);
         },
         showSuggestions: (query) => {
-            // [핵심 로직] 오늘 기록된 로그 횟수를 계산합니다.
+            // 1. 오늘 기록 횟수 계산 (UI 표시용)
             const todayStr = dayjs().format('YYYY-MM-DD');
             const todaysEntries = state.loadedEntries.get(todayStr) || [];
             const logCountsToday = todaysEntries.reduce((acc, entry) => {
@@ -867,33 +884,67 @@ const firebaseUtils = {
                 return acc;
             }, {});
 
+            // 2. 모든 대상의 마지막 기록 시간 계산 (정렬용)
+            const lastLogTimestamps = new Map();
+            for (const day of state.loadedEntries.values()) {
+                for (const entry of day) {
+                    if (entry.type === 'log' && entry.definitionId) {
+                        const currentTimestamp = lastLogTimestamps.get(entry.definitionId);
+                        if (!currentTimestamp || new Date(entry.timestamp) > new Date(currentTimestamp)) {
+                            lastLogTimestamps.set(entry.definitionId, entry.timestamp);
+                        }
+                    }
+                }
+            }
+
             const lowerQuery = query.toLowerCase();
             const filtered = state.definitions.filter(def => def.name.toLowerCase().includes(lowerQuery));
 
-            // [핵심 로직] 정렬: 오늘 기록되지 않은 항목을 위로, 그 다음 이름순으로 정렬합니다.
+            // 3. 새로운 정렬 로직 적용
             filtered.sort((a, b) => {
-                const countA = logCountsToday[a.id] || 0;
-                const countB = logCountsToday[b.id] || 0;
-                if (countA > 0 && countB === 0) return 1;  // a는 기록됨, b는 안됨 -> b가 먼저
-                if (countA === 0 && countB > 0) return -1; // a는 안됨, b는 기록됨 -> a가 먼저
-                return a.name.localeCompare(b.name); // 둘 다 기록됐거나 안됐으면 이름순
+                const timeA = lastLogTimestamps.get(a.id);
+                const timeB = lastLogTimestamps.get(b.id);
+
+                const aHasLog = !!timeA;
+                const bHasLog = !!timeB;
+
+                // 기록이 없는 항목을 위로
+                if (aHasLog !== bHasLog) {
+                    return aHasLog - bHasLog; // false(0) - true(1) = -1 (a가 먼저)
+                }
+
+                // 둘 다 기록이 없는 경우: 이름순
+                if (!aHasLog) { 
+                    return a.name.localeCompare(b.name);
+                }
+                
+                // 둘 다 기록이 있는 경우: 오래된 순
+                const diff = new Date(timeA) - new Date(timeB);
+                if (diff !== 0) {
+                    return diff;
+                }
+
+                // 시간이 같은 경우: 이름순
+                return a.name.localeCompare(b.name);
             });
 
+            // 4. HTML 렌더링 (기존 로직 유지)
             let html = `<button class="flex items-center gap-3 w-full text-left px-4 py-2.5 text-base hover:bg-slate-100 transition-colors" data-type="journal"><i data-lucide="book-pen" class="w-5 h-5 text-slate-500"></i><span class="font-medium">일기 쓰기</span></button>`;
             
             html += filtered.map(def => {
                 const count = logCountsToday[def.id] || 0;
                 const isLoggedToday = count > 0;
                 
-                // [스타일 변경] 기록된 항목은 회색 텍스트로 처리
                 const textClass = isLoggedToday ? 'text-slate-400' : 'text-slate-800';
-                
-                // [카운트 표시] 기록 횟수를 작은 배지로 표시
                 const countBadge = isLoggedToday ? `<span class="ml-auto text-xs font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">${count}회</span>` : '';
+                
+                const breadcrumbPath = logic.getBreadcrumbPath(def.id);
+                const breadcrumbText = breadcrumbPath.map(d => d.name).join('<span class="mx-1 font-normal text-slate-400">/</span>');
+                const iconHtml = def.icon ? `<span class="text-xl w-6 text-center">${def.icon}</span>` : `<i data-lucide="pencil-ruler" class="w-5 h-5 text-slate-500"></i>`;
 
                 return `<button class="flex items-center gap-3 w-full text-left px-4 py-2.5 text-base hover:bg-slate-100 transition-colors" data-type="log" data-id="${def.id}">
-                            <i data-lucide="pencil-ruler" class="w-5 h-5 ${textClass}"></i>
-                            <span class="font-medium ${textClass}">${def.name}</span>
+                            ${iconHtml}
+                            <span class="font-medium ${textClass}">${breadcrumbText}</span>
                             ${countBadge}
                         </button>`;
             }).join('');
@@ -1697,6 +1748,7 @@ const firebaseUtils = {
             if (!name) return alert('대상 이름은 필수입니다.');
             const parentId = parseInt($('#def-parent-select').value) || 0;
             const tags = $('#def-tags-input').value.split(',').map(tag => tag.trim()).filter(Boolean);
+            const icon = $('#def-icon-input').value.trim();
             const newFields = [];
             document.querySelectorAll('#def-fields-container .field-row').forEach(row => {
                 const fieldName = row.querySelector('.field-name-input').value.trim();
@@ -1708,7 +1760,7 @@ const firebaseUtils = {
                 }
             });
 
-            const definitionData = { name, fields: newFields, parentId, tags };
+            const definitionData = { name, icon, fields: newFields, parentId, tags };
             const isUpdate = !!id;
             definitionData.id = isUpdate ? parseInt(id) : Date.now();
 
