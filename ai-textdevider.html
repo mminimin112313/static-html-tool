@@ -628,153 +628,97 @@ ${formattedContentForAI}
     }
     
     // --- FILE GENERATION ---
-    
+    function getGloballySortedSubChapters(mainChapters) {
+        const flatList = mainChapters.flatMap(mc => mc.sub_chapters.map(sc => ({ ...sc, parent: mc })));
+        return flatList.sort((a, b) => {
+            const idA = getStartId(a);
+            const idB = getStartId(b);
+            if (isNaN(idA)) return 1;
+            if (isNaN(idB)) return -1;
+            return idA - idB;
+        });
+    }
     function generateMainChapterFiles(mainChapters) {
         const toc = [];
         const files = [];
-        const allChapters = getGloballySortedAllChapters(mainChapters); 
+        const allSubChapters = getGloballySortedSubChapters(mainChapters);
         const mainChapterContents = new Map();
-        
-        const chapterList = allChapters.map(c => `  - ${'  '.repeat(c.level-1)}${getStartId(c)}: ${c.sub_chapter_title || c.main_chapter_title}`).join('\n');
-        debugLog("  - Globally sorted all chapters (id: title):");
+
+        const chapterList = allSubChapters.map(c => `  - ${getStartId(c)}: ${c.sub_chapter_title}`).join('\n');
+        debugLog("  - Globally sorted sub-chapters (id: title):");
         debugLog(chapterList);
-        debugLog("\nStep 3a: Processing each chapter range...");
+        debugLog("\nStep 3a: Processing each sub-chapter range...");
 
         mainChapters.forEach(mc => mainChapterContents.set(mc.main_chapter_title, []));
-        
-        // 모든 리프 노드(가장 하위 챕터)를 순회하며 텍스트를 추출하고, 상위 main chapter에 따라 그룹화합니다.
-        allChapters.forEach((chapter, index) => {
-            const startId = getStartId(chapter);
+        allSubChapters.forEach((subChapter, index) => {
+            const startId = getStartId(subChapter);
             if (isNaN(startId)) return;
-            // isLeaf 속성을 사용하여 파일로 생성될 최하위 챕터만 텍스트를 추출하도록 보장합니다.
-            if (!chapter.isLeaf) return; 
-
-            const nextChapter = allChapters[index + 1];
-            const endId = nextChapter ? getStartId(nextChapter) : Infinity;
-
+            const nextSubChapter = allSubChapters[index + 1];
+            const endId = nextSubChapter ? getStartId(nextSubChapter) : Infinity;
             const filteredEntries = state.contentEntries.filter(entry => entry.id >= startId && entry.id < endId);
             debugLog(`- - - - -`);
-            debugLog(`Processing Leaf: "${chapter.sub_chapter_title || chapter.main_chapter_title}"`);
+            debugLog(`Processing: "${subChapter.sub_chapter_title}"`);
             debugLog(`  - Range: id >= ${startId} && id < ${endId}`);
             debugLog(`  - Found: ${filteredEntries.length} entries`);
-            
+            if (filteredEntries.length > 0) debugLog(`  - First found ID: ${filteredEntries[0].id}`);
             const chapterText = filteredEntries.map(entry => entry.text).join('\n');
-            
-            const topLevelParentPath = chapter.path.split('/')[0];
-            const topLevelParent = allChapters.find(c => c.path === topLevelParentPath);
-            if (topLevelParent && mainChapterContents.has(topLevelParent.main_chapter_title)) {
-                mainChapterContents.get(topLevelParent.main_chapter_title).push({
-                    title: chapter.sub_chapter_title, 
-                    content: chapterText
-                });
-            }
+            const contentBlock = `## ${subChapter.sub_chapter_title}\n\n${chapterText}\n\n`;
+            mainChapterContents.get(subChapter.parent.main_chapter_title).push({
+                title: subChapter.sub_chapter_title, content: chapterText, fullBlock: contentBlock
+            });
         });
-        
         mainChapters.forEach((mainChapter, mainIndex) => {
-            toc.push({ level: 1, title: mainChapter.main_chapter_title, content: '', raw: `${String(mainIndex + 1).padStart(2, '0')}. ${mainChapter.main_chapter_title}`});
-            const subContentsMap = new Map((mainChapterContents.get(mainChapter.main_chapter_title) || []).map(item => [item.title, item.content]));
+            toc.push({ level: 1, title: mainChapter.main_chapter_title, content: '', raw: `${mainIndex + 1}. ${mainChapter.main_chapter_title}`});
+            const subContents = mainChapterContents.get(mainChapter.main_chapter_title) || [];
             let fileContent = '';
-
-            /**
-             * [핵심 수정] 이 헬퍼 함수는 이제 재귀적으로 자신을 호출합니다.
-             * 중첩된 sub_chapters를 만나면, 더 깊은 레벨로 들어가 모든 내용을 fileContent에 순서대로 추가합니다.
-             * @param {Array} chapters - 처리할 챕터 배열
-             * @param {number} level - 현재 목차의 깊이
-             */
-            const buildContentAndTocRecursively = (chapters, level) => {
-                 const sortedChapters = [...chapters].sort((a,b) => getStartId(a) - getStartId(b));
-                 sortedChapters.forEach(sub => {
-                    const title = sub.sub_chapter_title;
-                    toc.push({ level: level, title: title, content: '', raw: `${'  '.repeat(level-1)}- ${title}` });
-
-                    // 만약 현재 챕터가 리프 노드(최하위)라면, 미리 추출해 둔 텍스트를 추가합니다.
-                    if (!sub.sub_chapters || sub.sub_chapters.length === 0) {
-                        if (subContentsMap.has(title)) {
-                            fileContent += `## ${title}\n\n${subContentsMap.get(title)}\n\n`;
-                        }
-                    }
-
-                    // 중첩된 sub_chapters가 있다면 재귀적으로 함수를 호출합니다.
-                    if (sub.sub_chapters && sub.sub_chapters.length > 0) {
-                        buildContentAndTocRecursively(sub.sub_chapters, level + 1);
-                    }
-                 });
-            };
-            
-            if(mainChapter.sub_chapters) {
-               buildContentAndTocRecursively(mainChapter.sub_chapters, 2); // 시작 레벨 2로 호출
-            }
-            
+            const sortedSubChaptersInMain = [...mainChapter.sub_chapters].sort((a, b) => getStartId(a) - getStartId(b));
+            sortedSubChaptersInMain.forEach(sub => {
+                const foundContent = subContents.find(c => c.title === sub.sub_chapter_title);
+                if (foundContent) {
+                    fileContent += foundContent.fullBlock;
+                    toc.push({ level: 2, title: sub.sub_chapter_title, content: foundContent.content, raw: `   - ${sub.sub_chapter_title}` });
+                }
+            });
             const sanitizedTitle = mainChapter.main_chapter_title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
             const fileName = `${String(mainIndex + 1).padStart(2, '0')}_${sanitizedTitle}.txt`;
-            files.push({ name: fileName, content: fileContent.trim() });
+            files.push({ name: fileName, content: fileContent });
         });
         return { toc, files };
     }
-
     function generateSubChapterFiles(mainChapters) {
         const toc = [];
         const files = [];
-        const allChapters = getGloballySortedAllChapters(mainChapters);
+        const allSubChapters = getGloballySortedSubChapters(mainChapters);
 
-        const chapterList = allChapters.map(c => `  - ${'  '.repeat(c.level-1)}${getStartId(c)}: ${c.sub_chapter_title || c.main_chapter_title}`).join('\n');
-        debugLog("  - Globally sorted all chapters (id: title):");
+        const chapterList = allSubChapters.map(c => `  - ${getStartId(c)}: ${c.sub_chapter_title}`).join('\n');
+        debugLog("  - Globally sorted sub-chapters (id: title):");
         debugLog(chapterList);
-        debugLog("\nStep 3a: Processing each chapter's content range...");
+        debugLog("\nStep 3a: Processing each sub-chapter range...");
 
-        allChapters.forEach((chapter, index) => {
-            const startId = getStartId(chapter);
-            if (isNaN(startId)) {
-                debugLog(`- - - - - \nSkipping chapter "${chapter.sub_chapter_title || chapter.main_chapter_title}" due to invalid startId.`);
-                return;
-            }
-
-            const nextChapter = allChapters[index + 1];
-            const endId = nextChapter ? getStartId(nextChapter) : Infinity;
-
-            debugLog(`- - - - -`);
-            debugLog(`Processing: "${chapter.path}"`);
-            debugLog(`  - Range: id >= ${startId} && id < ${endId}`);
-            
-            // isLeaf 속성이 true인 챕터(최하위 챕터)만 파일로 생성합니다.
-            if (chapter.isLeaf) {
+        mainChapters.forEach((mainChapter, mainIndex) => {
+            toc.push({ level: 1, title: mainChapter.main_chapter_title, content: '', raw: `${mainIndex + 1}. ${mainChapter.main_chapter_title}`});
+            const sanitizedMainTitle = mainChapter.main_chapter_title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
+            const mainFolder = `${String(mainIndex + 1).padStart(2, '0')}_${sanitizedMainTitle}`;
+            const sortedSubChaptersInMain = [...mainChapter.sub_chapters].sort((a, b) => getStartId(a) - getStartId(b));
+            sortedSubChaptersInMain.forEach((subChapter, subIndex) => {
+                const startId = getStartId(subChapter);
+                if (isNaN(startId)) return;
+                const currentGlobalIndex = allSubChapters.findIndex(sc => getStartId(sc) === startId);
+                const nextSubChapter = allSubChapters[currentGlobalIndex + 1];
+                const endId = nextSubChapter ? getStartId(nextSubChapter) : Infinity;
                 const filteredEntries = state.contentEntries.filter(entry => entry.id >= startId && entry.id < endId);
-                debugLog(`  - Found: ${filteredEntries.length} entries for this leaf node.`);
+                debugLog(`- - - - -`);
+                debugLog(`Processing: "${subChapter.sub_chapter_title}"`);
+                debugLog(`  - Range: id >= ${startId} && id < ${endId}`);
+                debugLog(`  - Found: ${filteredEntries.length} entries`);
                 if (filteredEntries.length > 0) debugLog(`  - First found ID: ${filteredEntries[0].id}`);
-                
                 const chapterText = filteredEntries.map(entry => entry.text).join('\n');
-                const fileName = `${chapter.path}.txt`;
-                files.push({ name: fileName, content: chapterText });
-            } else {
-                 debugLog(`  - Node is a directory, not generating a file.`);
-            }
-        });
-
-        // 목차(TOC)를 생성하기 위한 재귀 함수
-        const buildTocRecursively = (chapters, level = 1, prefix = '') => {
-             const sortedChapters = [...chapters].sort((a,b) => getStartId(a) - getStartId(b));
-             sortedChapters.forEach((chapter, index) => {
-                const title = chapter.main_chapter_title || chapter.sub_chapter_title;
-                const rawTocEntry = `${'  '.repeat(level-1)}- ${title}`;
-                 
-                // 파일로 생성된 텍스트를 찾아서 TOC 항목에 연결합니다.
-                const leafChapter = allChapters.find(c => (c.sub_chapter_title || c.main_chapter_title) === title && c.isLeaf);
-                let content = '';
-                if(leafChapter){
-                    const file = files.find(f => f.name.includes(leafChapter.path));
-                    if(file) content = file.content;
-                }
-                 
-                toc.push({ level: level, title: title, content: content, raw: rawTocEntry });
-                
-                if (chapter.sub_chapters && chapter.sub_chapters.length > 0) {
-                    buildTocRecursively(chapter.sub_chapters, level + 1, `${prefix}${index + 1}.`);
-                }
+                toc.push({ level: 2, title: subChapter.sub_chapter_title, content: chapterText, raw: `   - ${subChapter.sub_chapter_title}` });
+                const sanitizedSubTitle = subChapter.sub_chapter_title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
+                const subFileName = `${String(mainIndex + 1).padStart(2, '0')}-${String(subIndex + 1).padStart(2, '0')}_${sanitizedSubTitle}.txt`;
+                files.push({ name: `${mainFolder}/${subFileName}`, content: chapterText });
             });
-        };
-
-        buildTocRecursively(mainChapters);
-        
+        });
         return { toc, files };
     }
 
@@ -791,79 +735,6 @@ ${formattedContentForAI}
         html += '</ul>';
         ui.tocPreview.innerHTML = html;
         ui.tocPreview.style.display = 'block';
-    }
-
-    function getGloballySortedAllChapters(mainChapters) {
-        /**
-         * @param {Array} chapters - 처리할 챕터 노드 배열
-         * @param {string} parentPath - 상위 폴더의 전체 경로 (예: '01_Main_Title/01-01_Sub_Title')
-         * @param {string} parentNumericPrefix - 상위 폴더의 숫자 접두사 (예: '01-01')
-         * @param {number} level - 현재 재귀의 깊이
-         */
-        const flattenChaptersRecursively = (chapters, parentPath = '', parentNumericPrefix = '', level = 1) => {
-            let flatList = [];
-            // 현재 계층의 챕터들을 시작 ID 기준으로 먼저 정렬하여 순번의 일관성을 보장합니다.
-            const sortedChapters = [...(chapters || [])].sort((a, b) => getStartId(a) - getStartId(b));
-            
-            sortedChapters.forEach((chapter, index) => {
-                const title = chapter.main_chapter_title || chapter.sub_chapter_title;
-                if (!title) return; // 제목이 없는 비정상적인 노드는 건너뜁니다.
-                
-                const sanitizedTitle = title.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_');
-                
-                // 1. 현재 노드의 숫자 접두사를 생성합니다. (예: '01', '02', ...)
-                const currentNumericPrefix = String(index + 1).padStart(2, '0');
-                
-                // 2. 부모의 숫자 접두사와 결합하여 전체 숫자 접두사를 만듭니다. (예: '01-01', '01-02-01')
-                const fullNumericPrefix = parentNumericPrefix ? `${parentNumericPrefix}-${currentNumericPrefix}` : currentNumericPrefix;
-
-                // 3. 현재 노드의 이름(폴더 또는 파일명)을 생성합니다. (예: '01-01_Some_Title')
-                const nodeName = `${fullNumericPrefix}_${sanitizedTitle}`;
-
-                // 4. 부모의 전체 경로와 현재 노드 이름을 결합하여 최종 경로를 완성합니다.
-                const currentPath = parentPath ? `${parentPath}/${nodeName}` : nodeName;
-
-                const isLeaf = !chapter.sub_chapters || chapter.sub_chapters.length === 0;
-
-                flatList.push({
-                    ...chapter,
-                    path: currentPath,
-                    isLeaf: isLeaf,
-                    level: level,
-                });
-
-                // 5. 자식 노드가 있다면, ★수정된 로직★에 따라 '현재 전체 경로'와 '현재 전체 숫자 접두사'를 자식에게 전달합니다.
-                if (!isLeaf) {
-                    flatList = flatList.concat(flattenChaptersRecursively(chapter.sub_chapters, currentPath, fullNumericPrefix, level + 1));
-                }
-            });
-            return flatList;
-        };
-
-        const allChapters = flattenChaptersRecursively(mainChapters);
-        
-        // 모든 챕터를 시작 ID(start_paragraph 또는 start_time) 기준으로 최종 정렬하여 콘텐츠 분할의 정확도를 보장합니다.
-        return allChapters.sort((a, b) => {
-            const idA = getStartId(a);
-            const idB = getStartId(b);
-            if (isNaN(idA)) return 1;
-            if (isNaN(idB)) return -1;
-            return idA - idB;
-        });
-    }
-    
-    // 이 함수는 getGloballySortedSubChapters를 대체합니다.
-    // 기존 함수는 더 이상 사용되지 않습니다.
-    function getGloballySortedSubChapters(mainChapters) {
-       console.warn("getGloballySortedSubChapters is deprecated. Use getGloballySortedAllChapters instead.");
-       const flatList = mainChapters.flatMap(mc => (mc.sub_chapters || []).map(sc => ({ ...sc, parent: mc })));
-       return flatList.sort((a, b) => {
-            const idA = getStartId(a);
-            const idB = getStartId(b);
-            if (isNaN(idA)) return 1;
-            if (isNaN(idB)) return -1;
-            return idA - idB;
-        });
     }
 
     function generateMarkdown(toc, files) {
