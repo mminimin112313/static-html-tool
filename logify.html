@@ -52,6 +52,13 @@
             grid-auto-rows: 100px;
             gap: 16px;
         }
+        #suggestion-box {
+            max-height: 250px; /* 추천 목록 최대 높이 제한 */
+            overflow-y: auto;  /* 높이를 초과할 경우 스크롤 생성 */
+        }
+        .suggestion-item-selected {
+            background-color: #e2e8f0; /* slate-200 */
+        }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800 pb-28 md:pb-24">
@@ -175,7 +182,8 @@
         { id: 'timeline', tooltip: '타임라인', icon: 'list-ordered' },
         { id: 'dashboard', tooltip: '대시보드', icon: 'layout-dashboard' },
         { id: 'workspace', tooltip: '워크스페이스', icon: 'folder-kanban' },
-        { id: 'calendar', tooltip: '캘린더', icon: 'calendar-days' }
+        { id: 'calendar', tooltip: '캘린더', icon: 'calendar-days' },
+        { id: 'trash', tooltip: '휴지통', icon: 'trash-2' } // <-- 이 줄을 추가하세요
     ];
 
     const $ = selector => document.querySelector(selector);
@@ -329,7 +337,8 @@ const firebaseUtils = {
             const renderMap = {
                 'timeline': ui.renderTimeline, 'dashboard': ui.renderDashboard,
                 'workspace': ui.renderWorkspace, 'calendar': ui.renderCalendar,
-                'definition-dashboard': ui.renderDefinitionDashboard // [추가]
+                'definition-dashboard': ui.renderDefinitionDashboard,
+                'trash': ui.renderTrash // <-- 이 줄을 추가하세요
             };
             const renderFn = renderMap[viewId] || (() => {
                 console.warn(`[DEBUG] ui.renderMainContent: '${viewId}'에 해당하는 렌더링 함수를 찾을 수 없습니다.`);
@@ -342,6 +351,53 @@ const firebaseUtils = {
         renderTimeline: () => {
             elements.mainContent.innerHTML = '<div id="timeline-container" class="space-y-4"></div>';
             logic.loadDataForDate(state.currentDate);
+        },
+        renderTrash: async () => {
+            elements.mainContent.innerHTML = `
+                <div class="bg-white p-6 rounded-xl shadow-lg">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-xl font-bold flex items-center gap-2"><i data-lucide="trash-2" class="w-5 h-5"></i>휴지통</h2>
+                        <p class="text-sm text-slate-500">기록은 30일 후 영구적으로 삭제됩니다.</p>
+                    </div>
+                    <div id="trash-container" class="space-y-4"></div>
+                </div>
+            `;
+            const container = $('#trash-container');
+            const trashedItems = await firebaseUtils.getAll('trash');
+            
+            if (!trashedItems || trashedItems.length === 0) {
+                container.innerHTML = '<p class="text-slate-500 text-center py-12">휴지통이 비어 있습니다.</p>';
+                ui.refreshIcons();
+                return;
+            }
+
+            const sorted = [...trashedItems].sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt));
+            
+            container.innerHTML = sorted.map(entry => {
+                const deletedDate = dayjs(entry.deletedAt);
+                const daysLeft = 30 - dayjs().diff(deletedDate, 'day');
+                
+                const originalItemHtml = ui.createTimelineItemHtml(entry);
+                
+                return `<div class="trash-item border border-slate-200 rounded-xl p-4">
+                            <div class="p-4 bg-slate-50 rounded-lg relative group">
+                                ${originalItemHtml}
+                            </div>
+                            <div class="flex justify-between items-center mt-3 pt-3 border-t border-slate-100">
+                                <p class="text-xs font-semibold text-red-600">남은 기간: ${daysLeft > 0 ? `${daysLeft}일` : '삭제 예정'}</p>
+                                <div class="flex gap-2">
+                                    <button class="button text-sm font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 px-3 py-2 rounded-lg transition flex items-center gap-1.5" data-action="restore-entry" data-id="${entry.id}">
+                                        <i data-lucide="undo-2" class="w-4 h-4"></i> 복원
+                                    </button>
+                                    <button class="button text-sm font-semibold bg-red-50 text-red-700 hover:bg-red-100 px-3 py-2 rounded-lg transition flex items-center gap-1.5" data-action="delete-permanently" data-id="${entry.id}">
+                                        <i data-lucide="trash" class="w-4 h-4"></i> 영구 삭제
+                                    </button>
+                                </div>
+                            </div>
+                        </div>`;
+            }).join('');
+            
+            ui.refreshIcons();
         },
         renderMoreEntries: (daysData) => {
             const container = $('#timeline-container');
@@ -415,7 +471,9 @@ const firebaseUtils = {
                 ).join('');
 
                 const tagsHtml = def.tags?.length > 0 ? `<div class="flex flex-wrap gap-2">${def.tags.map(tag => `<span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-1 rounded-full">#${tag}</span>`).join('')}</div>` : '';
-                const targetHtml = `<a href="#def/${def.id}" class="bg-slate-200 text-slate-800 text-xs font-bold px-2.5 py-1 rounded-full hover:bg-slate-300 transition-colors">${def.name}</a>`;
+                const breadcrumbPath = logic.getBreadcrumbPath(def.id);
+                const breadcrumbHtml = breadcrumbPath.map(d => `<a href="#def/${d.id}" class="font-semibold hover:underline">${d.name}</a>`).join('<span class="mx-1 text-slate-400">/</span>');
+                const targetHtml = `<div class="text-xs text-slate-600 bg-slate-100 px-2.5 py-1 rounded-full">${breadcrumbHtml}</div>`;
 
                 contentHtml = `
                     <div class="flex gap-4">
@@ -565,8 +623,7 @@ const firebaseUtils = {
             `;
 
             // 2. 이 대상에만 해당하는 위젯 데이터 로드 및 렌더링
-            const dashboardConfig = await dbUtils.get('dashboard', defId) || { widgets: [] };
-            state.dashboard.widgets = dashboardConfig.widgets; // 상태 업데이트
+            const dashboardConfig = await firebaseUtils.get('dashboard', defId) || { widgets: [] };            state.dashboard.widgets = dashboardConfig.widgets; // 상태 업데이트
             const grid = $('#dashboard-grid');
             if (state.dashboard.widgets.length === 0) {
                 grid.innerHTML = `<div class="col-span-12 text-center py-12 bg-white rounded-xl shadow-sm"><p class="text-slate-500">'위젯 추가' 버튼으로 이 대상의 대시보드를 만드세요.</p></div>`;
@@ -593,7 +650,7 @@ const firebaseUtils = {
 
             // 3. 피드 렌더링 로직
             const allDbEntries = await firebaseUtils.getAll('entries');
-            const allLogs = allDbEntries.flatMap(day => day.entries)
+            const allLogs = allDbEntries.flatMap(day => day.entries || [])
                                      .filter(entry => entry.definitionId === defId)
                                      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             
@@ -602,19 +659,30 @@ const firebaseUtils = {
                 const lowerFilter = filterText.toLowerCase();
                 const filteredLogs = allLogs.filter(entry => {
                     if (!lowerFilter) return true;
-                    // 값(value)들 중에서 검색
-                    return Object.values(entry.values).some(val => String(val).toLowerCase().includes(lowerFilter));
+                    return entry.values && Object.values(entry.values).some(val => String(val).toLowerCase().includes(lowerFilter));
                 });
 
                 if (filteredLogs.length === 0) {
                     container.innerHTML = '<div class="text-center py-12 bg-white rounded-xl shadow-sm"><p class="text-slate-500">일치하는 기록이 없습니다.</p></div>';
                     return;
                 }
-                container.innerHTML = filteredLogs.map(entry => `
-                    <div class="timeline-item bg-white rounded-xl shadow-lg shadow-slate-200/50 p-4 relative group transition-all duration-300 hover:shadow-xl hover:shadow-slate-300/60">
-                        ${ui.createTimelineItemHtml(entry)}
-                    </div>
-                `).join('');
+
+                let feedHtml = '';
+                let lastRenderedDate = null;
+
+                filteredLogs.forEach(entry => {
+                    const currentDate = dayjs(entry.timestamp).format('YYYY-MM-DD');
+                    if (currentDate !== lastRenderedDate) {
+                        feedHtml += `<div class="timeline-date-header text-sm font-semibold text-slate-500 py-2 sticky top-[64px] bg-slate-50/80 backdrop-blur-sm z-10">${dayjs(currentDate).format('YYYY년 M월 D일')}</div>`;
+                        lastRenderedDate = currentDate;
+                    }
+                    feedHtml += `
+                        <div class="timeline-item bg-white rounded-xl shadow-lg shadow-slate-200/50 p-4 relative group transition-all duration-300 hover:shadow-xl hover:shadow-slate-300/60">
+                            ${ui.createTimelineItemHtml(entry)}
+                        </div>`;
+                });
+
+                container.innerHTML = feedHtml;
                 ui.refreshIcons();
             };
 
@@ -1265,6 +1333,66 @@ const firebaseUtils = {
             // 7일 이전의 데이터는 스크롤 시점에 수동으로 로드 (loadAndRenderDays에서 처리)
             await logic.loadAndRenderDays(dayjs(date).subtract(7, 'day'), 5);
         },
+        restoreEntry: async (id) => {
+            const trashedEntry = await firebaseUtils.get('trash', id);
+            if (!trashedEntry) {
+                alert('복원할 항목을 찾지 못했습니다.');
+                return;
+            }
+
+            // 휴지통에서 추가했던 deletedAt 속성 제거
+            delete trashedEntry.deletedAt;
+
+            // saveEntry를 사용하여 원래 위치로 복원
+            await firebaseUtils.saveEntry(trashedEntry);
+            
+            // 휴지통에서 해당 항목 삭제
+            await firebaseUtils.delete('trash', id);
+
+            // UI 새로고침
+            ui.renderTrash();
+        },
+
+        deletePermanently: async (id) => {
+            if (confirm('이 항목을 영구적으로 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) {
+                await firebaseUtils.delete('trash', id);
+                ui.renderTrash();
+            }
+        },
+        getBreadcrumbPath: (defId) => {
+            const path = [];
+            let currentDef = state.definitions.find(d => d.id === defId);
+            while(currentDef) {
+                path.unshift(currentDef);
+                if (currentDef.parentId) {
+                    currentDef = state.definitions.find(d => d.id === currentDef.parentId);
+                } else {
+                    currentDef = null;
+                }
+            }
+            return path;
+        },
+        cleanupTrash: async () => {
+            if (!state.user) return;
+            console.log("[DEBUG] logic.cleanupTrash: 30일 이상된 휴지통 데이터 정리 시작.");
+            const trashRef = fbDb.collection(firebaseUtils._getCollectionPath('trash'));
+            const thirtyDaysAgo = dayjs().subtract(30, 'day').toISOString();
+            
+            const snapshot = await trashRef.where('deletedAt', '<', thirtyDaysAgo).get();
+            if (snapshot.empty) {
+                console.log("[DEBUG] logic.cleanupTrash: 삭제할 오래된 데이터가 없습니다.");
+                return;
+            }
+            
+            const batch = fbDb.batch();
+            snapshot.docs.forEach(doc => {
+                console.log(`[DEBUG] logic.cleanupTrash: '${doc.id}' 항목을 영구 삭제합니다.`);
+                batch.delete(doc.ref);
+            });
+            
+            await batch.commit();
+            console.log(`[DEBUG] logic.cleanupTrash: ${snapshot.size}개의 항목을 정리했습니다.`);
+        },
         exportAllData: async () => {
             try {
                 alert('데이터 내보내기를 시작합니다. 데이터 양에 따라 시간이 걸릴 수 있습니다.');
@@ -1322,6 +1450,9 @@ const firebaseUtils = {
                     case '#calendar':
                         state.currentView = 'calendar';
                         break;
+                    case '#trash': // <-- 이 case를 추가하세요
+                        state.currentView = 'trash';
+                        break;
                     default:
                         state.currentView = 'timeline';
                         break;
@@ -1358,10 +1489,23 @@ const firebaseUtils = {
         saveEntry: async (type, definitionId, entryId = null) => {
             try {
                 const isUpdate = entryId !== null;
+            
+                // [수정] isUpdate일 경우, 기존 timestamp를 가져오기 위해 모든 엔트리에서 검색
+                let originalTimestamp = new Date().toISOString();
+                if (isUpdate) {
+                    for (const entries of state.loadedEntries.values()) {
+                        const found = entries.find(e => e.id === entryId);
+                        if (found) {
+                            originalTimestamp = found.timestamp;
+                            break;
+                        }
+                    }
+                }
+                
                 const newEntryData = {
                     id: isUpdate ? entryId : Date.now(),
                     type: type,
-                    timestamp: new Date().toISOString(),
+                    timestamp: originalTimestamp, // [수정] 기존 timestamp 또는 새 timestamp 사용
                 };
 
                 if (type === 'journal') {
@@ -1639,22 +1783,50 @@ const firebaseUtils = {
                 if (state.currentView === 'workspace') ui.renderWorkspace();
             }
         },
-        deleteEntry: async (id, timestamp) => {
-            const date = dayjs(timestamp).format('YYYY-MM-DD');
+        deleteEntry: async (id) => {
+            if (!confirm('정말로 이 기록을 휴지통으로 이동하시겠습니까?\n30일 후에 영구 삭제됩니다.')) return;
+            
+            let entryToDelete = null;
+            let entryDate = null;
+            
+            // 1. 모든 로드된 데이터에서 삭제할 엔트리 찾기
+             for (const [date, entries] of state.loadedEntries.entries()) {
+                const found = entries.find(e => e.id === id);
+                if (found) {
+                    entryToDelete = found;
+                    entryDate = date;
+                    break;
+                }
+            }
+            
+            if (!entryToDelete) {
+                return alert('삭제할 항목을 찾지 못했습니다.');
+            }
+
+            // 2. 휴지통으로 이동
+            const trashedEntry = {
+                ...entryToDelete,
+                deletedAt: new Date().toISOString()
+            };
+            await firebaseUtils.save('trash', trashedEntry);
+
+            // 3. 기존 위치에서 제거 (기존 deleteEntry 로직 재사용)
+            const date = dayjs(entryToDelete.timestamp).format('YYYY-MM-DD');
             const docRef = fbDb.collection(firebaseUtils._getCollectionPath('entries')).doc(date);
-            return fbDb.runTransaction(async (transaction) => {
+
+            await fbDb.runTransaction(async (transaction) => {
                 const docSnap = await transaction.get(docRef);
                 if (!docSnap.exists) return;
-                
                 const existingEntries = docSnap.data().entries || [];
                 const updatedEntries = existingEntries.filter(e => e.id !== id);
-                
                 if (updatedEntries.length === 0) {
                     transaction.delete(docRef);
                 } else {
                     transaction.update(docRef, { entries: updatedEntries });
                 }
             });
+            
+            // 실시간 렌더링은 Firestore 리스너가 처리합니다.
         },
         handleAuthStateChanged: async (user) => {
             console.log("[DEBUG] logic.handleAuthStateChanged: 인증 상태 변경 감지.");
@@ -1679,6 +1851,7 @@ const firebaseUtils = {
                 await logic.loadDataForDate(state.currentDate);
                 
                 console.log("[DEBUG] logic.handleAuthStateChanged: 앱 오버레이 숨김 처리.");
+                logic.cleanupTrash();
                 elements.appOverlay.classList.add('opacity-0');
                 setTimeout(() => elements.appOverlay.classList.add('hidden'), 300);
             } else {
@@ -1903,6 +2076,38 @@ const firebaseUtils = {
             const config = configManager.load();
             ui.showSettingsModal(config);
         },
+        handleCommandBarKeydown: (e) => {
+            const container = elements.suggestionBox;
+            const items = container.querySelectorAll('button');
+            if (items.length === 0) return;
+
+            let selectedIndex = -1;
+            items.forEach((item, index) => {
+                if (item.classList.contains('suggestion-item-selected')) {
+                    selectedIndex = index;
+                }
+            });
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                selectedIndex = (selectedIndex + 1) % items.length;
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                selectedIndex = (selectedIndex - 1 + items.length) % items.length;
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                if (selectedIndex > -1) {
+                    items[selectedIndex].click();
+                }
+                return;
+            } else {
+                return; // 다른 키는 무시
+            }
+            
+            items.forEach(item => item.classList.remove('suggestion-item-selected'));
+            items[selectedIndex].classList.add('suggestion-item-selected');
+            items[selectedIndex].scrollIntoView({ block: 'nearest' });
+        },
         handleLogout: () => {
             if (confirm('로그아웃 하시겠습니까?')) {
                 logic.signOut();
@@ -2087,12 +2292,29 @@ const firebaseUtils = {
                 'dashboard': () => handlers.handleDashboardActions(action, target, id),
                 'definition-dashboard': () => handlers.handleDashboardActions(action, target, id), // 대시보드 액션 재사용
                 'workspace': () => handlers.handleWorkspaceActions(action, target, id),
-                'calendar': () => handlers.handleCalendarActions(action, target)
+                'calendar': () => handlers.handleCalendarActions(action, target),
+                'trash': () => handlers.handleTrashActions(action, target, id)
             };
 
             const handler = actionHandlers[state.currentView];
             if (handler) {
                 handler();
+            }
+        },
+        handleTrashActions: (action, target, id) => {
+            if (!id) return;
+            switch (action) {
+                case 'restore-entry':
+                    logic.restoreEntry(id);
+                    break;
+                case 'delete-permanently':
+                    logic.deletePermanently(id);
+                    break;
+                // 휴지통 내의 타임라인 아이템 수정/삭제 버튼은 비활성화
+                case 'edit-entry':
+                case 'delete-entry':
+                    alert('휴지통에서는 항목을 수정하거나 삭제할 수 없습니다. 먼저 복원해주세요.');
+                    break;
             }
         },
         handleMainContentInput: (e) => {
@@ -2152,6 +2374,7 @@ const firebaseUtils = {
             window.addEventListener('scroll', handlers.handleScroll);
             elements.commandBarInput.addEventListener('focus', handlers.handleCommandBarFocus);
             elements.commandBarInput.addEventListener('input', handlers.handleCommandBarInput);
+            elements.commandBarInput.addEventListener('keydown', handlers.handleCommandBarKeydown);
             elements.suggestionBox.addEventListener('click', handlers.handleSuggestionClick);
             elements.dynamicFormContainer.addEventListener('click', handlers.handleFormActionClick);
             document.addEventListener('click', handlers.handleDocumentClick);
