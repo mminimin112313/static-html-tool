@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF 퀵컷 (Kwik-Cut)</title>
+    
+    <!-- PDF 렌더링 라이브러리 (pdf.js) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+
+    <!-- PDF 조작 (분할) 라이브러리 (pdf-lib.js) -->
+    <script src="https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js"></script>
+    
+    <!-- ZIP 압축 라이브러리 (JSZip.js) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <!-- 파일 저장 라이브러리 (FileSaver.js) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Nanum+Gothic:wght@400;700&display=swap" rel="stylesheet">
+
+    <style>
+        /* --- 기본 스타일 --- */
+        :root {
+            --primary-color: #007aff;
+            --primary-light: #e6f2ff;
+            --border-color: #d1d5db;
+            --bg-light: #f9fafb;
+            --bg-dark: #f3f4f6;
+            --text-dark: #1f2937;
+            --text-light: #6b7280;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            width: 100vw;
+            font-family: 'Inter', 'Nanum Gothic', sans-serif;
+            background-color: var(--bg-light);
+            color: var(--text-dark);
+            overflow: hidden; /* 전체 스크롤 방지 */
+        }
+
+        /* --- 로더 (파일 드롭 영역) --- */
+        #loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: var(--bg-light);
+            transition: opacity 0.3s ease, z-index 0.3s ease;
+        }
+
+        #drop-zone {
+            width: 80%;
+            max-width: 600px;
+            height: 300px;
+            border: 3px dashed var(--border-color);
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+            background-color: #ffffff;
+            transition: background-color 0.2s ease, transform 0.2s ease;
+            box-shadow: var(--shadow-md);
+        }
+
+        #loader.dragover #drop-zone {
+            background-color: var(--primary-light);
+            border-color: var(--primary-color);
+            transform: scale(1.02);
+        }
+
+        #drop-zone h2 {
+            color: var(--text-dark);
+            font-size: 1.5rem;
+            margin: 0 0 10px 0;
+        }
+
+        #drop-zone p {
+            color: var(--text-light);
+            font-size: 1rem;
+        }
+        
+        #file-input {
+            display: none;
+        }
+
+        /* --- 메인 UI --- */
+        #app {
+            display: none; /* 로드 후 flex로 변경 */
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 24px;
+            background-color: #ffffff;
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            flex-shrink: 0;
+        }
+
+        header h1 {
+            font-size: 1.25rem;
+            margin: 0;
+            color: var(--primary-color);
+            font-weight: 700;
+        }
+        
+        header #file-info {
+            font-size: 0.9rem;
+            color: var(--text-light);
+        }
+
+        #open-file-btn {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        #open-file-btn:hover {
+            background-color: #0056b3;
+        }
+
+        #workspace {
+            display: flex;
+            flex: 1; /* 남은 공간 모두 차지 */
+            overflow: hidden; /* 중요 */
+        }
+
+        /* --- 사이드바 (분할 목록 + 썸네일) --- */
+        #sidebar {
+            width: 320px;
+            background-color: #ffffff;
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* 중요 */
+            flex-shrink: 0;
+        }
+
+        .sidebar-section {
+            padding: 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .sidebar-section h3 {
+            font-size: 1rem;
+            font-weight: 700;
+            margin: 0 0 12px 0;
+            color: var(--text-dark);
+        }
+
+        #split-list-container {
+            max-height: 40%;
+            overflow-y: auto;
+        }
+
+        .split-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .split-item span {
+            flex-basis: 90px;
+            flex-shrink: 0;
+            color: var(--text-light);
+            white-space: nowrap;
+        }
+
+        .split-item input[type="text"] {
+            flex: 1;
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.9rem;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .split-item input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 2px var(--primary-light);
+        }
+
+        #thumbnail-container {
+            flex: 1; /* 남은 사이드바 공간 모두 차지 */
+            overflow-y: auto;
+            padding: 16px;
+            background-color: var(--bg-dark);
+        }
+
+        .thumbnail-item {
+            margin: 0 auto 12px auto;
+            border: 3px solid transparent;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            position: relative;
+            width: 150px; /* 썸네일 너비 고정 */
+        }
+        
+        .thumbnail-item canvas {
+            display: block;
+            width: 100%;
+            height: auto;
+            border-radius: 2px;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .thumbnail-item.active {
+            border-color: var(--primary-color);
+            box-shadow: 0 0 10px rgba(0,122,255,0.3);
+        }
+
+        .thumbnail-item.split-start::before {
+             /* content: '▶️'; */ /* 이모지 대신 CSS로 변경 */
+             content: '';
+             position: absolute;
+             top: 4px;
+             left: 4px;
+             width: 16px;
+             height: 16px;
+             background-color: var(--primary-color);
+             color: white;
+             border-radius: 50%;
+             z-index: 10;
+             background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='white'%3E%3Cpath d='M8 5a1 1 0 011 1v3h3a1 1 0 110 2H9v3a1 1 0 11-2 0V9H4a1 1 0 110-2h3V6a1 1 0 011-1z' clip-rule='evenodd' fill-rule='evenodd' /%3E%3C/svg%3E");
+             background-size: 12px 12px;
+             background-position: center;
+             background-repeat: no-repeat;
+             box-shadow: 0 0 4px rgba(0,0,0,0.3);
+        }
+
+        /* --- 썸네일 플레이스홀더 (지연 로딩용) --- */
+        .thumbnail-placeholder {
+            width: 100%;
+            background-color: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.5rem;
+            color: var(--text-light);
+            border-radius: 2px;
+        }
+        
+        .thumbnail-error {
+            width: 100%;
+            height: 212px; /* A4 비율(150 * 1.414)과 유사하게 */
+            background-color: #ffebee;
+            border: 1px solid #f44336;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2rem;
+            color: #f44336;
+            border-radius: 2px;
+        }
+
+
+        /* --- 메인 뷰 (PDF 페이지) --- */
+        #main-view {
+            flex: 1; /* 남은 공간 모두 차지 */
+            background-color: var(--bg-dark);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden; /* 중요 */
+        }
+
+        #page-info-bar {
+            text-align: center;
+            padding: 10px;
+            background-color: #ffffff;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.9rem;
+            font-weight: 500;
+            flex-shrink: 0;
+            color: var(--text-dark);
+        }
+
+        #pdf-viewer {
+            flex: 1;
+            overflow: auto; /* 페이지 스크롤 */
+            display: flex;
+            justify-content: center;
+            padding: 24px;
+        }
+
+        #pdf-canvas {
+            box-shadow: var(--shadow-md);
+            border: 1px solid var(--border-color);
+            background-color: #ffffff;
+        }
+
+        /* --- 도움말 바 --- */
+        #help-bar {
+            background-color: var(--text-dark);
+            color: #ffffff;
+            padding: 10px 24px;
+            text-align: center;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+        }
+        
+        #help-bar kbd {
+            background-color: rgba(255,255,255,0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.9em;
+            margin: 0 4px;
+        }
+        
+        #help-bar span {
+            margin: 0 8px;
+        }
+
+        /* --- 로딩 스피너 (처리 중) --- */
+        #spinner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 200;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(4px);
+        }
+        
+        #spinner-content {
+            text-align: center;
+        }
+
+        .spinner-icon {
+            width: 50px;
+            height: 50px;
+            border: 4px solid var(--primary-light);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        #spinner-text {
+            margin-top: 16px;
+            font-size: 1rem;
+            font-weight: 500;
+            color: var(--text-dark);
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* --- 유틸리티 클래스 --- */
+        .hidden {
+            display: none !important;
+            opacity: 0;
+            z-index: -1;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 1. 파일 드롭 영역 -->
+    <div id="loader">
+        <div id="drop-zone">
+            <h2>PDF 퀵컷 (Kwik-Cut)</h2>
+            <p>여기에 PDF 파일을 드래그 앤 드롭하세요</p>
+            <p style="font-size: 0.9rem; margin-top: 20px;">
+                <button id="browse-btn" class="secondary-btn">또는 파일 찾아보기 (O)</button>
+            </p>
+        </div>
+    </div>
+    
+    <input type="file" id="file-input" accept="application/pdf">
+
+    <!-- 2. 메인 애플리케이션 UI -->
+    <div id="app">
+        <header>
+            <h1>PDF 퀵컷</h1>
+            <div id="file-info">파일이 로드되지 않았습니다.</div>
+            <button id="open-file-btn">새 파일 열기 (O)</button>
+        </header>
+
+        <div id="workspace">
+            <!-- 2.1 사이드바 -->
+            <aside id="sidebar">
+                <!-- 분할 목록 -->
+                <div id="split-list-container" class="sidebar-section">
+                    <h3>분할 목록 (Enter로 저장)</h3>
+                    <div id="split-list">
+                        <!-- JS로 동적 생성 -->
+                        <!-- 
+                        <div class="split-item">
+                            <span>p. 1-24</span>
+                            <input type="text" value="파일-1" data-start-page="1">
+                        </div>
+                        -->
+                    </div>
+                </div>
+                <!-- 썸네일 -->
+                <div id="thumbnail-container-wrapper" class="sidebar-section" style="flex: 1; display: flex; flex-direction: column; overflow: hidden;">
+                     <h3>페이지 썸네일</h3>
+                     <div id="thumbnail-container">
+                        <!-- JS로 동적 생성 -->
+                     </div>
+                </div>
+            </aside>
+
+            <!-- 2.2 메인 뷰 -->
+            <main id="main-view">
+                <div id="page-info-bar">페이지 0 / 0</div>
+                <div id="pdf-viewer">
+                    <canvas id="pdf-canvas"></canvas>
+                </div>
+            </main>
+        </div>
+        
+        <!-- 2.3 도움말 바 -->
+        <footer id="help-bar">
+            <span><kbd>↑</kbd> <kbd>↓</kbd> 페이지 탐색</span>
+            <span><kbd>S</kbd> 현재 페이지에서 분할</span>
+            <span><kbd>X</kbd> 현재 분할 지점 삭제</span>
+            <span><kbd>Enter</kbd> ZIP으로 내보내기</span>
+            <span><kbd>Tab</kbd> 파일명 입력 종료/포커스 해제</span>
+        </footer>
+    </div>
+
+    <!-- 3. 처리 중 스피너 -->
+    <div id="spinner" class="hidden">
+        <div id="spinner-content">
+            <div class="spinner-icon"></div>
+            <div id="spinner-text">PDF 파일을 로드하는 중...</div>
+        </div>
+    </div>
+
+    <script>
+        // --- 라이브러리 전역 변수 설정 ---
+        // 이 스크립트들이 로드된 후 window 객체에 할당됩니다.
+        const { PDFDocument } = PDFLib; // pdf-lib.js에서 PDFDocument 가져오기
+        const { pdfjsLib } = window;   // pdf.js에서 pdfjsLib 가져오기
+
+        // pdf.js 워커 경로 설정 (경고 메시지 제거용)
+        if (pdfjsLib) {
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js`;
+        }
+        
+        // --- 전역 상태 변수 ---
+        let pdfDoc = null;
+        let currentPage = 1;
+        let totalPages = 0;
+        let pdfData = null; // 원본 PDF의 ArrayBuffer
+        let splitPoints = new Map(); // <number, string> -> <시작 페이지, 파일명>
+        let isRendering = false; // 메인 뷰 렌더링 중복 방지
+        let renderTimer = null; // 렌더링 디바운스 타이머
+        let currentFile = null; // 현재 로드된 파일 객체
+        let thumbnailObserver = null; // 썸네일 지연 로딩을 위한 옵저버
+        let thumbnailsToLoad = new Set(); // 썸네일 로드 큐
+        let currentRenderTask = null; // 현재 페이지 렌더링 작업 (취소 가능)
+
+        // --- DOM 요소 참조 ---
+        const loader = document.getElementById('loader');
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const browseBtn = document.getElementById('browse-btn');
+        const app = document.getElementById('app');
+        const openFileBtn = document.getElementById('open-file-btn');
+        const fileInfo = document.getElementById('file-info');
+        const splitList = document.getElementById('split-list');
+        const thumbnailContainer = document.getElementById('thumbnail-container');
+        const pageInfoBar = document.getElementById('page-info-bar');
+        const pdfViewer = document.getElementById('pdf-viewer');
+        const canvas = document.getElementById('pdf-canvas');
+        const ctx = canvas.getContext('2d');
+        const spinner = document.getElementById('spinner');
+        const spinnerText = document.getElementById('spinner-text');
+
+        // --- 초기화 ---
+        document.addEventListener('DOMContentLoaded', init);
+
+        function init() {
+            // 드래그 앤 드롭 이벤트
+            loader.addEventListener('dragover', handleDragOver);
+            loader.addEventListener('dragleave', handleDragLeave);
+            loader.addEventListener('drop', handleDrop);
+            
+            // 파일 열기 버튼
+            browseBtn.addEventListener('click', () => fileInput.click());
+            openFileBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileSelect);
+
+            // 키보드 이벤트
+            window.addEventListener('keydown', handleKeydown);
+
+            // 썸네일 클릭 이벤트
+            thumbnailContainer.addEventListener('click', handleThumbnailClick);
+            
+            // 분할 목록 파일명 변경 이벤트 (이벤트 위임)
+            splitList.addEventListener('input', handleFilenameChange);
+
+            // Intersection Observer 초기화
+            thumbnailObserver = new IntersectionObserver(handleThumbnailIntersection, {
+                root: thumbnailContainer, // 스크롤 영역
+                rootMargin: '100px', // 뷰포트보다 100px 먼저 로드 시작
+            });
+        }
+
+        // --- (신규) 썸네일 Intersection Observer 핸들러 ---
+        function handleThumbnailIntersection(entries, observer) {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const thumbItem = entry.target;
+                    const pageNum = parseInt(thumbItem.dataset.page, 10);
+                    
+                    // 썸네일 렌더링 (한 번만)
+                    renderSingleThumbnail(pageNum, thumbItem);
+                    
+                    // 렌더링 시작했으면 관찰 중지
+                    observer.unobserve(thumbItem);
+                }
+            });
+        }
+
+        // --- 스피너 제어 ---
+        function showSpinner(text) {
+            spinnerText.textContent = text;
+            spinner.classList.remove('hidden');
+        }
+
+        function hideSpinner() {
+            spinner.classList.add('hidden');
+        }
+
+        // --- 파일 로드 함수 ---
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            loader.classList.add('dragover');
+        }
+
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            loader.classList.remove('dragover');
+        }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            loader.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0 && files[0].type === 'application/pdf') {
+                loadPDF(files[0]);
+            } else {
+                alert("PDF 파일만 드롭할 수 있습니다.");
+            }
+        }
+        
+        function handleFileSelect(e) {
+            const files = e.target.files;
+            if (files.length > 0 && files[0].type === 'application/pdf') {
+                loadPDF(files[0]);
+            }
+            // 입력 필드 초기화 (동일한 파일 다시 로드 가능하도록)
+            e.target.value = null; 
+        }
+
+        async function loadPDF(file) {
+            currentFile = file;
+            showSpinner('PDF 파일을 로드하는 중...');
+            
+            try {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    // 원본 ArrayBuffer를 읽어옵니다.
+                    const originalBuffer = e.target.result;
+                    
+                    /*
+                     * pdf.js는 내부적으로 ArrayBuffer를 worker로 넘기면서
+                     * transfer()를 통해 원본 버퍼를 detach할 수 있습니다. 만약
+                     * pdf-lib와 pdf.js가 동일한 ArrayBuffer를 공유하면,
+                     * 이후 pdf-lib 사용 시 "Cannot perform ... on a detached ArrayBuffer"
+                     * 오류가 발생할 수 있습니다. 따라서 하나의 원본 버퍼로부터
+                     * pdf-lib 전용 복사본과 pdf.js 전용 복사본 두 개를 생성합니다.
+                     */
+                    let bufferForLib;
+                    let bufferForViewer;
+                    if (originalBuffer && typeof originalBuffer.slice === 'function') {
+                        // 복사본 생성: 이 복사본은 이후에도 detached 되지 않습니다.
+                        bufferForLib = originalBuffer.slice(0);
+                        bufferForViewer = originalBuffer.slice(0);
+                    } else {
+                        // slice 메서드가 없으면 원본을 그대로 사용합니다.
+                        bufferForLib = originalBuffer;
+                        bufferForViewer = originalBuffer;
+                    }
+                    // pdf-lib용 데이터로 저장
+                    pdfData = bufferForLib;
+                    
+                    // pdf.js로 문서 로드 (복사본을 Uint8Array로 래핑하여 전달)
+                    const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(bufferForViewer) });
+                    pdfDoc = await loadingTask.promise;
+                    
+                    totalPages = pdfDoc.numPages;
+                    
+                    // 상태 초기화
+                    // resetState(); // BUG: This was causing currentFile to become null
+
+                    // --- Fix: resetState() 호출 대신 수동으로 상태 초기화 ---
+                    // currentFile, pdfData, pdfDoc, totalPages는 방금 설정되었으므로 유지합니다.
+                    currentPage = 1;
+                    
+                    splitPoints.clear();
+                    splitPoints.set(1, '파일-1'); // 첫 분할 지점 다시 추가
+                    
+                    splitList.innerHTML = ''; // UI 리셋
+                    thumbnailContainer.innerHTML = ''; // UI 리셋
+                    pageInfoBar.textContent = '페이지 0 / 0'; // UI 리셋
+                    ctx.clearRect(0, 0, canvas.width, canvas.height); // 캔버스 클리어
+                    // --- Fix End ---
+                    
+                    // UI 변경
+                    loader.classList.add('hidden');
+                    app.style.display = 'flex';
+                    fileInfo.textContent = `${currentFile.name} (${totalPages} 페이지)`;
+
+                    // 1. 썸네일 렌더링 (백그라운드) (수정: await 추가)
+                    await renderThumbnails(); 
+                    
+                    // 2. 첫 페이지 렌더링
+                    await renderPage(currentPage);
+                    
+                    // 3. 분할 목록 UI 업데이트
+                    updateSplitListUI();
+                    
+                    // --- (신규) 첫 번째 분할 목록 아이템에 포커스 ---
+                    const firstInput = splitList.querySelector('.split-item input[type="text"]');
+                    if (firstInput) {
+                        firstInput.focus();
+                        firstInput.select();
+                    }
+                    // --- (신규) ---
+
+                    hideSpinner();
+                    // 썸네일의 유휴 시간 로딩은 총 페이지 수가 많을 경우
+                    // 초기 로딩 시간과 CPU 사용량을 크게 증가시킬 수 있습니다.
+                    // 총 페이지 수가 50페이지를 초과하면 유휴 로딩을 건너뛰고,
+                    // IntersectionObserver를 통해 보이는 썸네일만 로드하도록 합니다.
+                    if (totalPages <= 50) {
+                        startIdleThumbnailLoading(); // 유휴 시간 썸네일 로딩 시작
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            } catch (error) {
+                console.error("PDF 로드 오류:", error);
+                alert("PDF 파일을 로드하는 데 실패했습니다.");
+                hideSpinner();
+                resetToInitialState();
+            }
+        }
+        
+        function resetToInitialState() {
+             loader.classList.remove('hidden');
+             app.style.display = 'none';
+             if (thumbnailObserver) thumbnailObserver.disconnect(); // 옵저버 연결 해제
+             thumbnailsToLoad.clear();
+             resetState();
+        }
+
+        function resetState() {
+            pdfDoc = null;
+            currentPage = 1;
+            totalPages = 0;
+            pdfData = null;
+            currentFile = null;
+            splitPoints.clear();
+            thumbnailsToLoad.clear();
+            
+            // 첫 번째 분할 지점 자동 추가
+            splitPoints.set(1, '파일-1'); 
+            
+            splitList.innerHTML = '';
+            thumbnailContainer.innerHTML = '';
+            pageInfoBar.textContent = '페이지 0 / 0';
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        // --- (수정) 썸네일 Intersection Observer 핸들러 ---
+        function handleThumbnailIntersection(entries, observer) {
+            entries.forEach(entry => {
+                const pageNum = parseInt(entry.target.dataset.page, 10);
+                if (entry.isIntersecting && thumbnailsToLoad.has(pageNum)) {
+                    // 썸네일 렌더링 (보이는 것 + 5개 선로드)
+                    loadThumbnailAndNeighbors(pageNum);
+                }
+            });
+        }
+
+        // --- 스피너 제어 ---
+
+        // --- (수정) 렌더링 함수 (누락된 부분 복원) ---
+        async function renderPage(pageNum) {
+            if (isRendering || !pdfDoc || pageNum < 1 || pageNum > totalPages) return;
+            isRendering = true;
+
+            try {
+                const page = await pdfDoc.getPage(pageNum);
+                
+                // 뷰어 너비에 맞게 스케일 조정
+                const viewerWidth = pdfViewer.clientWidth - 48; // 24px padding * 2
+                const viewportDefault = page.getViewport({ scale: 1 });
+                const scale = viewerWidth / viewportDefault.width;
+                const viewport = page.getViewport({ scale: scale }); // Use scaled viewport
+
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+
+                // 이전 렌더링 작업이 진행 중이면 취소
+                if (currentRenderTask && currentRenderTask.cancel) {
+                    try {
+                        currentRenderTask.cancel();
+                    } catch (err) {
+                        console.warn('이전 렌더링 취소 오류:', err);
+                    }
+                }
+                // 새 렌더링 작업 실행
+                currentRenderTask = page.render(renderContext);
+                await currentRenderTask.promise;
+                
+                currentPage = pageNum;
+                // pageInfoBar.textContent = `페이지 ${currentPage} / ${totalPages}`; // 디바운서가 처리
+                // updateActiveThumbnail(); // 디바운서가 처리
+
+            } catch (error) {
+                console.error(`페이지 ${pageNum} 렌더링 오류:`, error);
+            } finally {
+                isRendering = false;
+            }
+        }
+        
+        // --- (신규) 디바운스 렌더링 함수 (반응성 향상용) ---
+        function renderPage_Debounced(pageNum) {
+            // 1. UI를 즉시 업데이트하여 반응성 향상
+            pageInfoBar.textContent = `페이지 ${pageNum} / ${totalPages}`;
+            updateActiveThumbnail(pageNum); // 썸네일 활성화
+            
+            // 2. 렌더링 타이머 설정
+            clearTimeout(renderTimer);
+            renderTimer = setTimeout(() => {
+                renderPage(pageNum); // 50ms 후 실제 렌더링
+            }, 50); // 50ms 딜레이
+        }
+
+
+        // --- (수정) 썸네일 렌더링 (플레이스홀더 생성 - 배치 처리) ---
+        function renderThumbnails() {
+            // Promise를 반환하여 모든 배치가 완료될 때까지 기다릴 수 있도록 함
+            return new Promise((resolve) => {
+                thumbnailContainer.innerHTML = ''; // 기존 썸네일 삭제
+                thumbnailsToLoad.clear(); // 로드 큐 초기화
+                
+                // 기존 옵저버 연결 해제
+                if (thumbnailObserver) {
+                    thumbnailObserver.disconnect();
+                }
+                
+                const placeholderHeight = (150 * 1.414) + 'px'; 
+                // 한 번에 생성할 썸네일 수. 페이지가 많을수록 배치 크기를 줄여
+                // 메인 스레드를 장시간 점유하지 않도록 한다.
+                const batchSize = (totalPages > 100) ? 50 : 100;
+                let i = 1; // 1페이지부터 시작
+
+                function renderBatch() {
+                    const fragment = document.createDocumentFragment(); // 성능 향상을 위해 DocumentFragment 사용
+                    const endIndex = Math.min(i + batchSize, totalPages + 1);
+                    
+                    for (; i < endIndex; i++) {
+                        const thumbItem = document.createElement('div');
+                        thumbItem.className = 'thumbnail-item';
+                        thumbItem.dataset.page = i;
+                        
+                        // 캔버스 대신 플레이스홀더 div 생성
+                        const placeholder = document.createElement('div');
+                        placeholder.className = 'thumbnail-placeholder';
+                        placeholder.style.height = placeholderHeight;
+                        placeholder.textContent = `${i}`; // 페이지 번호 표시
+                        thumbItem.appendChild(placeholder);
+                        
+                        if (i === currentPage) {
+                            thumbItem.classList.add('active');
+                        }
+                        if (splitPoints.has(i)) {
+                            thumbItem.classList.add('split-start');
+                        }
+                        
+                        fragment.appendChild(thumbItem);
+                        thumbnailsToLoad.add(i); // 로드 큐에 추가
+                        
+                        // 옵저버에 등록
+                        thumbnailObserver.observe(thumbItem);
+                    }
+                    
+                    thumbnailContainer.appendChild(fragment); // DOM에 한 번만 추가
+
+                    if (i <= totalPages) {
+                        // 다음 배치를 위해 0ms 대기 (메인 스레드 양보)
+                        setTimeout(renderBatch, 0); 
+                    } else {
+                        // 모든 placeholder 생성이 완료됨
+                        resolve(); 
+                    }
+                }
+                
+                renderBatch(); // 첫 번째 배치 시작
+            });
+        }
+
+        // --- (신규) 개별 썸네일 렌더링 함수 ---
+        async function renderSingleThumbnail(pageNum, thumbItem) {
+            if (!pdfDoc || thumbItem.querySelector('canvas')) return; // 이미 렌더링됨
+
+            try {
+                const page = await pdfDoc.getPage(pageNum);
+                const thumbnailScale = 0.2; // 썸네일 스케일
+                const viewport = page.getViewport({ scale: thumbnailScale });
+                
+                const thumbCanvas = document.createElement('canvas');
+                const thumbCtx = thumbCanvas.getContext('2d');
+                thumbCanvas.height = viewport.height;
+                thumbCanvas.width = viewport.width;
+                
+                const renderContext = {
+                    canvasContext: thumbCtx,
+                    viewport: viewport
+                };
+                
+                // 플레이스홀더 제거
+                thumbItem.innerHTML = ''; 
+                thumbItem.appendChild(thumbCanvas);
+                
+                // 비동기 렌더링
+                await page.render(renderContext).promise;
+
+            } catch (error) {
+                 console.error(`썸네일 ${pageNum} 렌더링 오류:`, error);
+                 // 오류 발생 시 오류 아이콘 표시
+                 if (!thumbItem.querySelector('canvas')) {
+                     thumbItem.innerHTML = `<div class="thumbnail-error">X</div>`;
+                 }
+            }
+        }
+
+
+        // --- (신규) 보이는 썸네일 + 5개 선로드 함수 ---
+        function loadThumbnailAndNeighbors(startPageNum) {
+            const pagesToLoad = [];
+            
+            // 1. 타겟 페이지 로드
+            if (thumbnailsToLoad.has(startPageNum)) {
+                pagesToLoad.push(startPageNum);
+            }
+            
+            // 2. 다음 5개 페이지 선로드
+            for (let i = 1; i <= 5; i++) {
+                const nextPage = startPageNum + i;
+                if (nextPage <= totalPages && thumbnailsToLoad.has(nextPage)) {
+                    pagesToLoad.push(nextPage);
+                }
+            }
+
+            // 3. 실제 로드 실행
+            for (const pageNum of pagesToLoad) {
+                if (thumbnailsToLoad.has(pageNum)) { // 중복 로드 방지
+                    thumbnailsToLoad.delete(pageNum); // 큐에서 제거
+                    const thumbItem = thumbnailContainer.querySelector(`.thumbnail-item[data-page="${pageNum}"]`);
+                    if (thumbItem) {
+                        renderSingleThumbnail(pageNum, thumbItem); // 비동기 렌더링
+                        thumbnailObserver.unobserve(thumbItem); // 렌더링 시작했으면 관찰 중지
+                    }
+                }
+            }
+        }
+        
+        // --- (신규) 유휴 시간 썸네일 로더 ---
+        function startIdleThumbnailLoading() {
+            function loadNextIdleThumbnail(deadline) {
+                // 시간이 남았거나 타임아웃이 임박했고, 로드할 썸네일이 남아있는 동안
+                while ((deadline.timeRemaining() > 1 || deadline.didTimeout) && thumbnailsToLoad.size > 0) {
+                    // 큐에서 다음 페이지 번호 가져오기
+                    const pageNum = thumbnailsToLoad.values().next().value;
+                    thumbnailsToLoad.delete(pageNum); // 큐에서 제거
+                    
+                    const thumbItem = thumbnailContainer.querySelector(`.thumbnail-item[data-page="${pageNum}"]`);
+                    if (thumbItem) {
+                        renderSingleThumbnail(pageNum, thumbItem); // 비동기 렌더링
+                        thumbnailObserver.unobserve(thumbItem); // 관찰 중지
+                    }
+                }
+
+                // 아직 로드할 썸네일이 남았다면 다음 유휴 시간에 계속
+                if (thumbnailsToLoad.size > 0) {
+                    requestIdleCallback(loadNextIdleThumbnail);
+                }
+            }
+            
+            // 첫 번째 유휴 콜백 등록
+            requestIdleCallback(loadNextIdleThumbnail);
+        }
+
+
+        function updateActiveThumbnail(pageNumToActivate) {
+            // 기존 active 클래스 제거
+            const targetPage = pageNumToActivate || currentPage; // (수정) 인자 값 우선
+            
+            const activeThumb = thumbnailContainer.querySelector('.thumbnail-item.active');
+            if (activeThumb) {
+                activeThumb.classList.remove('active');
+            }
+            
+            // 새 active 클래스 추가
+            const newActiveThumb = thumbnailContainer.querySelector(`.thumbnail-item[data-page="${targetPage}"]`);
+            if (newActiveThumb) {
+                newActiveThumb.classList.add('active');
+                // 활성 썸네일이 보이도록 스크롤 (애니메이션 없이 'auto'로 변경)
+                newActiveThumb.scrollIntoView({ behavior: 'auto', block: 'nearest' });
+            }
+        }
+
+        // --- 키보드 이벤트 핸들러 ---
+        function handleKeydown(e) {
+            if (!pdfDoc) return; // PDF가 로드되지 않았으면 무시
+            
+            // 입력창에 포커스가 있을 때는 페이지 탐색 방지
+            if (e.target.tagName === 'INPUT') {
+                // 입력창에서 Tab 키를 누르면 포커스를 해제하여 페이지 이동 가능하게 함
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    e.target.blur();
+                    return;
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    exportPDFs();
+                } else if (e.key === 'Escape') {
+                    e.target.blur(); // 포커스 해제
+                }
+                return;
+            }
+
+            // switch (e.key) { // <- 변경 전: 키보드 레이아웃에 따라 's' 또는 'ㄴ'이 됨
+            switch (e.code) { // <- 변경 후: 물리적 키 'KeyS'를 감지
+                case 'ArrowDown':
+                // case 'j': // <- 변경 전
+                case 'KeyJ': // <- 변경 후 (J키, 한글 'ㅓ')
+                    e.preventDefault();
+                    // (수정) 디바운스 렌더링 호출
+                    const nextPage = Math.min(totalPages, currentPage + 1);
+                    if (nextPage !== currentPage) {
+                        renderPage_Debounced(nextPage);
+                    }
+                    break;
+                case 'ArrowUp':
+                // case 'k': // <- 변경 전
+                case 'KeyK': // <- 변경 후 (K키, 한글 'ㅏ')
+                    e.preventDefault();
+                    // (수정) 디바운스 렌더링 호출
+                    const prevPage = Math.max(1, currentPage - 1);
+                    if (prevPage !== currentPage) {
+                        renderPage_Debounced(prevPage);
+                    }
+                    break;
+                // case 's': // <- 변경 전
+                // case 'S': // <- 변경 전
+                case 'KeyS': // <- 변경 후 (S키, 한글 'ㄴ')
+                    e.preventDefault();
+                    addSplitPoint();
+                    break;
+                // case 'x': // <- 변경 전
+                // case 'X': // <- 변경 전
+                case 'KeyX': // <- 변경 후 (X키, 한글 'ㅌ')
+                    e.preventDefault();
+                    deleteSplitPoint();
+                    break;
+                case 'Enter':
+                    e.preventDefault();
+                    exportPDFs();
+                    break;
+                // case 'o': // <- 변경 전
+                // case 'O': // <- 변경 전
+                case 'KeyO': // <- 변경 후 (O키, 한글 'ㅐ')
+                    e.preventDefault();
+                    fileInput.click();
+                    break;
+                case 'Home':
+                    e.preventDefault();
+                    // (수정) 디바운스 렌더링 호출
+                    if (currentPage !== 1) {
+                        renderPage_Debounced(1);
+                    }
+                    break;
+                case 'End':
+                    e.preventDefault();
+                    // (수정) 디바운스 렌더링 호출
+                    if (currentPage !== totalPages) {
+                        renderPage_Debounced(totalPages);
+                    }
+                    break;
+            }
+        }
+        
+        // --- 썸네일 클릭 핸들러 ---
+        function handleThumbnailClick(e) {
+            const thumbItem = e.target.closest('.thumbnail-item');
+            if (thumbItem) {
+                const pageNum = parseInt(thumbItem.dataset.page, 10);
+                if (pageNum !== currentPage) {
+                    // (수정) 디바운스 렌더링 호출
+                    renderPage_Debounced(pageNum);
+                }
+            }
+        }
+        
+        // --- 분할(Split) 로직 ---
+        function addSplitPoint() {
+            if (splitPoints.has(currentPage)) {
+                // 이미 분할 지점임. 해당 파일명 입력창에 포커스
+                const input = splitList.querySelector(`input[data-start-page="${currentPage}"]`);
+                if (input) input.focus();
+                return;
+            }
+            
+            const newFileName = `파일-${splitPoints.size + 1}`;
+            splitPoints.set(currentPage, newFileName);
+            
+            updateSplitListUI();
+            
+            // 새로 추가된 입력창에 포커스
+            const newInput = splitList.querySelector(`input[data-start-page="${currentPage}"]`);
+            if (newInput) {
+                newInput.focus();
+                newInput.select();
+            }
+        }
+        
+        function deleteSplitPoint() {
+            if (currentPage === 1) {
+                alert("첫 페이지(시작)의 분할 지점은 삭제할 수 없습니다.");
+                return;
+            }
+            
+            if (splitPoints.has(currentPage)) {
+                splitPoints.delete(currentPage);
+                updateSplitListUI();
+            } else {
+                alert("현재 페이지는 분할 지점이 아닙니다.");
+            }
+        }
+        
+        function handleFilenameChange(e) {
+            if (e.target.tagName === 'INPUT' && e.target.type === 'text') {
+                const startPage = parseInt(e.target.dataset.startPage, 10);
+                const newName = e.target.value;
+                if (splitPoints.has(startPage)) {
+                    splitPoints.set(startPage, newName);
+                }
+            }
+        }
+
+        function updateSplitListUI() {
+            splitList.innerHTML = ''; // 목록 비우기
+            
+            // Map을 페이지 번호 순으로 정렬
+            const sortedSplits = [...splitPoints.entries()].sort((a, b) => a[0] - b[0]);
+            
+            // 썸네일 시각적 표시 업데이트
+            thumbnailContainer.querySelectorAll('.split-start').forEach(el => el.classList.remove('split-start'));
+            
+            for (let i = 0; i < sortedSplits.length; i++) {
+                const [startPage, filename] = sortedSplits[i];
+                
+                // 다음 분할 지점 또는 마지막 페이지
+                const endPage = (i === sortedSplits.length - 1) ? totalPages : sortedSplits[i+1][0] - 1;
+
+                const item = document.createElement('div');
+                item.className = 'split-item';
+                
+                item.innerHTML = `
+                    <span>p. ${startPage}-${endPage}</span>
+                    <input type="text" value="${filename}" data-start-page="${startPage}" title="파일 ${i+1} 이름">
+                `;
+                
+                splitList.appendChild(item);
+                
+                // 썸네일에 ✂️ 표시
+                const thumb = thumbnailContainer.querySelector(`.thumbnail-item[data-page="${startPage}"]`);
+                if (thumb) {
+                    thumb.classList.add('split-start');
+                }
+            }
+        }
+        
+        // --- 내보내기(Export) 로직 ---
+        async function exportPDFs() {
+            if (splitPoints.size === 0) {
+                alert("분할 지점이 없습니다.");
+                return;
+            }
+            
+            showSpinner('PDF 파일을 분할하고 압축하는 중...');
+            
+            try {
+                const zip = new JSZip();
+                
+                // 원본 PDF 문서를 pdf-lib로 로드
+                // loadPDF()에서 pdf-lib용 버퍼를 이미 복사하여 저장했으므로
+                // 여기서는 그대로 사용합니다.
+                const originalPdfDoc = await PDFDocument.load(pdfData);
+                
+                const sortedSplits = [...splitPoints.entries()].sort((a, b) => a[0] - b[0]);
+                
+                for (let i = 0; i < sortedSplits.length; i++) {
+                    const [startPage, filename] = sortedSplits[i];
+                    const endPage = (i === sortedSplits.length - 1) ? totalPages : sortedSplits[i+1][0] - 1;
+                    
+                    spinnerText.textContent = `파일 생성 중 (${i+1}/${sortedSplits.length}): ${filename}.pdf`;
+                    
+                    // 새 PDF 문서 생성
+                    const newPdfDoc = await PDFDocument.create(); // (수정됨)
+                    
+                    // 페이지 인덱스 배열 생성 (pdf-lib는 0-based)
+                    const pageIndices = [];
+                    for (let p = startPage; p <= endPage; p++) {
+                        pageIndices.push(p - 1);
+                    }
+                    
+                    // 원본 문서에서 페이지 복사
+                    const copiedPages = await newPdfDoc.copyPages(originalPdfDoc, pageIndices);
+                    
+                    // 새 문서에 페이지 추가
+                    copiedPages.forEach(page => newPdfDoc.addPage(page));
+                    
+                    // PDF를 바이트 배열로 저장
+                    const pdfBytes = await newPdfDoc.save();
+                    
+                    // ZIP 파일에 추가
+                    zip.file(`${filename}.pdf`, pdfBytes);
+                }
+                
+                spinnerText.textContent = 'ZIP 파일 압축 중...';
+                
+                // ZIP 파일 생성
+                const zipBlob = await zip.generateAsync({ 
+                    type: 'blob',
+                    compression: "DEFLATE",
+                    compressionOptions: {
+                        level: 6 // 1(빠름) ~ 9(높은 압축)
+                    }
+                });
+                
+                // 파일명에서 확장자 제거
+                const baseFilename = currentFile.name.replace(/\.pdf$/i, '');
+                
+                // 파일 저장
+                saveAs(zipBlob, `${baseFilename}_split_files.zip`);
+                
+            } catch (error) {
+                console.error("PDF 내보내기 오류:", error);
+                alert("PDF 파일을 분할하고 저장하는 데 실패했습니다.");
+            } finally {
+                hideSpinner();
+            }
+        }
+
+    </script>
+</body>
+</html>
+
+
