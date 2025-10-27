@@ -1,0 +1,2601 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Legal-Writer AI (v-Final)</title>
+    <!-- Bootstrap Icons CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 기본 폰트 및 레이아웃 */
+        body { font-family: 'Pretendard', sans-serif; }
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+        /* --- 스크롤바 스타일 --- */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+        ::-webkit-scrollbar-track { background-color: #f1f5f9; }
+
+        /* --- TOC(목차) 스타일 --- */
+        #toc-panel ul {
+            position: relative;
+            padding-left: 1rem; /* 16px */
+        }
+        #toc-panel li {
+            position: relative;
+        }
+        /* 모든 li 항목에 수직/수평선 그리기 */
+        #toc-panel li::before,
+        #toc-panel li::after {
+            content: '';
+            position: absolute;
+            left: -0.75rem; /* -12px */
+        }
+        /* 수직선 */
+        #toc-panel li::before {
+            border-left: 1px solid #cbd5e1; /* border-gray-300 */
+            top: 0;
+            bottom: 0;
+            width: 1px;
+        }
+        /* 마지막 항목은 수직선을 절반만 그림 */
+        #toc-panel li:last-child::before {
+            height: 1.125rem; /* 18px (py-1.5의 중앙까지) */
+        }
+        /* 수평선 */
+        #toc-panel li::after {
+            border-top: 1px solid #cbd5e1; /* border-gray-300 */
+            top: 1.125rem; /* 18px */
+            width: 0.75rem; /* 12px */
+        }
+        /* 최상위(root) ul의 선은 숨김 */
+        #toc-panel ul.toc-root {
+            padding-left: 0;
+        }
+        #toc-panel ul.toc-root > li::before,
+        #toc-panel ul.toc-root > li::after {
+            display: none;
+        }
+        /* 포커스 및 선택 스타일 */
+        .toc-item {
+            padding-left: 0.5rem; /* 8px */
+        }
+        .toc-item.focused {
+            background-color: #e0e7ff; /* bg-indigo-100 */
+        }
+        .toc-item.focused > div > span {
+            font-weight: 600;
+            color: #3730a3; /* text-indigo-800 */
+        }
+
+        /* --- 지식 베이스(KB) 탭 스타일 --- */
+        .kb-tab-button {
+            border-bottom: 2px solid transparent;
+            padding-bottom: 4px;
+        }
+        .kb-tab-button.active {
+            border-color: #4f46e5; /* border-indigo-600 */
+            color: #4f46e5; /* text-indigo-600 */
+            font-weight: 600;
+        }
+        .kb-tab-pane {
+            display: none;
+        }
+        .kb-tab-pane.active {
+            display: flex; /* flex-col */
+        }
+
+        /* --- 설정 탭 스타일 [신규] --- */
+        .settings-tab {
+            border-bottom: 2px solid transparent;
+            padding-bottom: 4px;
+        }
+        .settings-tab.active {
+            border-color: #4f46e5; /* border-indigo-600 */
+            color: #4f46e5; /* text-indigo-600 */
+            font-weight: 600;
+        }
+        .settings-tab-pane {
+            display: none;
+        }
+        .settings-tab-pane.active {
+            display: block;
+        }
+
+        /* --- 하이라이팅 에디터 --- */
+        .highlighter-wrapper {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            border-radius: 0.375rem; /* rounded-md */
+        }
+        .highlighter-backdrop {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            padding: 0.75rem; /* p-3 */
+            overflow: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            color: transparent;
+            z-index: 1;
+            pointer-events: none; /* 클릭 방지 */
+            font-size: 0.875rem; /* text-sm */
+            line-height: 1.5; /* leading-relaxed */
+            font-family: inherit;
+        }
+        .highlighter-textarea {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            padding: 0.75rem; /* p-3 */
+            overflow: auto;
+            background-color: transparent;
+            color: #111827; /* text-gray-900 */
+            z-index: 2;
+            border: none;
+            resize: none;
+            font-size: 0.875rem; /* text-sm */
+            line-height: 1.5; /* leading-relaxed */
+            font-family: inherit;
+        }
+        .highlighter-textarea:focus {
+            outline: none;
+            box-shadow: none;
+            border: none;
+        }
+        .highlighter-backdrop mark {
+            background-color: #fef08a; /* bg-yellow-200 */
+            color: transparent;
+            border-radius: 2px;
+        }
+
+        /* --- 가상 파일 토글 스위치 --- */
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 36px;
+            height: 20px;
+        }
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 20px;
+        }
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .toggle-slider {
+            background-color: #4f46e5;
+        }
+        input:checked + .toggle-slider:before {
+            transform: translateX(16px);
+        }
+
+        /* --- 컨텍스트 메뉴 --- */
+        #custom-context-menu {
+            position: fixed;
+            display: none;
+            z-index: 1000;
+            min-width: 180px;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 p-3 flex justify-between items-center shadow-sm flex-shrink-0">
+        <div class="flex items-center space-x-2">
+            <i class="bi bi-vector-pen text-2xl text-indigo-600"></i>
+            <h1 class="text-xl font-bold text-gray-800">Legal-Writer AI <span class="text-sm font-normal text-indigo-500">(v-Final)</span></h1>
+        </div>
+        <!-- [신규] 설정 버튼 -->
+        <button id="open-settings-btn" class="bg-gray-200 text-gray-700 px-3 py-1.5 rounded-md hover:bg-gray-300 transition-colors flex items-center space-x-1.5 text-sm">
+            <i class="bi bi-gear"></i>
+            <span>설정 (프롬프트 관리)</span>
+        </button>
+    </header>
+
+    <!-- Main Content -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Left Sidebar: Case List -->
+        <aside class="w-1/5 bg-white border-r border-gray-200 h-full flex flex-col">
+            <div class="p-3 border-b border-gray-200">
+                <button id="new-book-btn" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 transition-colors flex items-center justify-center space-x-2">
+                    <i class="bi bi-plus-circle"></i>
+                    <span>새 사건</span>
+                </button>
+            </div>
+            <div id="book-list" class="flex-1 overflow-y-auto p-2 space-y-1">
+                <!-- 사건 목록이 여기에 동적으로 렌더링됩니다. -->
+            </div>
+        </aside>
+
+        <!-- Center Panel: TOC -->
+        <nav class="w-1/5 bg-gray-50 border-r border-gray-200 h-full flex flex-col">
+            <div class="p-3 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-sm font-semibold text-gray-600 uppercase">문서 목차 (TOC)</h2>
+                <button id="generate-toc-btn" title="AI로 목차 생성" class="bg-gray-200 text-gray-700 p-1.5 rounded-md hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                    <i class="bi bi-magic"></i>
+                </button>
+            </div>
+            <div id="toc-panel" class="flex-1 overflow-y-auto p-2">
+                <!-- TOC 항목이 여기에 동적으로 렌더링됩니다. -->
+            </div>
+        </nav>
+
+        <!-- Right Panel: Editors -->
+        <section class="w-3/5 h-full flex flex-col">
+            <!-- Top: Main Editor & Actions -->
+            <div class="h-1/2 w-full flex flex-col p-3 border-b border-gray-300 bg-white">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-sm font-semibold text-gray-600 uppercase">메인 에디터</h2>
+                    <!-- Action Palette -->
+                    <div id="action-palette-container" class="flex space-x-1">
+                        <!-- 액션 버튼이 여기에 동적으로 렌더링됩니다. -->
+                    </div>
+                </div>
+                <!-- 하이라이팅 에디터 -->
+                <div class="highlighter-wrapper flex-1">
+                    <div id="main-editor-backdrop" class="highlighter-backdrop"></div>
+                    <textarea id="main-editor" class="highlighter-textarea" placeholder="목차를 선택하고 AI 기능을 실행하세요..." disabled></textarea>
+                </div>
+            </div>
+
+            <!-- Bottom: Knowledge Base Tabs -->
+            <div class="h-1/2 w-full flex flex-col p-3 bg-gray-50">
+                <!-- 탭 네비게이션 -->
+                <div id="kb-tabs" class="flex space-x-4 border-b border-gray-300 mb-2">
+                    <button class="kb-tab-button" data-tab="kb-tab-content-summary">사건 개요</button>
+                    <button class="kb-tab-button" data-tab="kb-tab-content-individual">목차별 개별 자료</button>
+                    <button class="kb-tab-button" data-tab="kb-tab-content-global">전역 자료실</button>
+                    <button class="kb-tab-button" data-tab="kb-tab-content-anonymize">익명화 관리</button>
+                </div>
+
+                <!-- 탭 패널 (공간 분할) -->
+                <div class="flex-1 overflow-y-auto">
+                    <!-- 1. 사건 개요 -->
+                    <div id="kb-tab-content-summary" class="kb-tab-pane active flex-col h-full">
+                        <div class="highlighter-wrapper flex-1">
+                            <div id="kb-summary-backdrop" class="highlighter-backdrop"></div>
+                            <textarea id="kb-summary-textarea" class="highlighter-textarea" placeholder="사건의 핵심 사실, 당사자, 쟁점 등을 입력하세요..."></textarea>
+                        </div>
+                    </div>
+                    <!-- 2. 목차별 개별 자료 -->
+                    <div id="kb-tab-content-individual" class="kb-tab-pane flex-col h-full">
+                        <div class="highlighter-wrapper flex-1">
+                            <div id="kb-individual-backdrop" class="highlighter-backdrop"></div>
+                            <textarea id="kb-individual-textarea" class="highlighter-textarea" placeholder="현재 선택한 목차에만 적용될 메모, 참고자료, AI 지시사항 등을 입력하세요..."></textarea>
+                        </div>
+                    </div>
+                    <!-- 3. 전역 자료실 (가상 파일) -->
+                    <div id="kb-tab-content-global" class="kb-tab-pane flex-col h-full space-y-2">
+                        <div class="flex-shrink-0">
+                            <button id="add-global-file-btn" class="w-full bg-blue-500 text-white px-3 py-1.5 rounded-md hover:bg-blue-600 text-sm flex items-center justify-center space-x-1.5">
+                                <i class="bi bi-plus-circle"></i>
+                                <span>새 자료 추가</span>
+                            </button>
+                        </div>
+                        <!-- 파일 목록 -->
+                        <div id="global-file-list" class="flex-1 overflow-y-auto space-y-1 pr-1">
+                            <!-- 가상 파일 목록이 여기에 렌더링됩니다. -->
+                        </div>
+                        <!-- 파일 편집기 (숨겨져 있음) -->
+                        <div id="global-file-editor" class="hidden flex-col space-y-1 p-2 border border-gray-300 rounded-md bg-white">
+                            <input type="text" id="global-file-title" class="text-sm font-medium p-1 border-b border-gray-200 w-full focus:outline-none focus:border-indigo-500" placeholder="자료 제목 (예: 민법 제750조)">
+                            <div class="highlighter-wrapper" style="height: 120px;">
+                                <div id="kb-global-content-backdrop" class="highlighter-backdrop"></div>
+                                <textarea id="kb-global-content-textarea" class="highlighter-textarea" placeholder="관련 법령, 판례, 참고 자료의 내용을 입력하세요..."></textarea>
+                            </div>
+                            <div class="flex justify-end space-x-2">
+                                <button id="save-global-file-btn" class="bg-indigo-600 text-white px-3 py-1 rounded text-xs hover:bg-indigo-700">저장</button>
+                                <button id="close-global-file-btn" class="bg-gray-200 text-gray-700 px-3 py-1 rounded text-xs hover:bg-gray-300">닫기</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 4. 익명화 관리 -->
+                    <div id="kb-tab-content-anonymize" class="kb-tab-pane flex-col h-full space-y-2">
+                        <form id="anonymize-add-form" class="flex items-center space-x-2 flex-shrink-0">
+                            <input type="text" id="anonymize-key-input" class="flex-1 p-2 border border-gray-300 rounded-md text-sm" placeholder="원본 텍스트 (예: 김철수)">
+                            <i class="bi bi-arrow-right text-gray-500"></i>
+                            <input type="text" id="anonymize-value-input" class="flex-1 p-2 border border-gray-300 rounded-md text-sm font-mono" placeholder="익명화 키 (예: [원고 A])">
+                            <button type="submit" class="bg-green-600 text-white px-3 py-2 rounded-md hover:bg-green-700 text-sm">
+                                <i class="bi bi-check-lg"></i>
+                            </button>
+                        </form>
+                        <p class="text-xs text-gray-500 px-1 flex-shrink-0">
+                            <i class="bi bi-info-circle"></i> '김철수'와 '철수'가 모두 등록된 경우, 더 긴 '김철수'가 먼저 치환됩니다.
+                        </p>
+                        <div id="anonymize-list" class="flex-1 overflow-y-auto space-y-1 pr-1">
+                            <!-- 익명화 목록이 여기에 렌더링됩니다. -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Modals -->
+    <!-- 로딩 모달 -->
+    <div id="loading-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50">
+        <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-white"></div>
+    </div>
+
+    <!-- 메시지 모달 -->
+    <div id="message-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full">
+            <h3 id="message-title" class="text-lg font-medium text-gray-900 mb-2">알림</h3>
+            <p id="message-content" class="text-sm text-gray-600 mb-4">메시지 내용</p>
+            <button id="message-close-btn" class="w-full bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">확인</button>
+        </div>
+    </div>
+
+    <!-- 새 사건 모달 -->
+    <div id="new-case-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full">
+            <h3 class="text-lg font-medium text-gray-900 mb-4">새 사건 생성</h3>
+            <input type="text" id="new-case-name" class="w-full p-2 border border-gray-300 rounded-md mb-4" placeholder="사건명 (예: 2025가합12345 손해배상)">
+            <div class="flex justify-end space-x-2">
+                <button id="new-case-cancel-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">취소</button>
+                <button id="new-case-confirm-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">생성</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 확인 모달 (confirm 대체) -->
+    <div id="confirm-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full">
+            <h3 id="confirm-title" class="text-lg font-medium text-gray-900 mb-2">삭제 확인</h3>
+            <p id="confirm-content" class="text-sm text-gray-600 mb-4">정말로 삭제하시겠습니까?</p>
+            <div class="flex justify-end space-x-2">
+                <button id="confirm-cancel-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">취소</button>
+                <button id="confirm-confirm-btn" class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">삭제</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 범용 프롬프트 모달 (이름 입력용) -->
+    <div id="prompt-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-sm w-full">
+            <h3 id="prompt-title" class="text-lg font-medium text-gray-900 mb-4">새 자료 이름</h3>
+            <input type="text" id="prompt-input" class="w-full p-2 border border-gray-300 rounded-md mb-4" placeholder="자료 제목을 입력하세요...">
+            <div class="flex justify-end space-x-2">
+                <button id="prompt-cancel-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">취소</button>
+                <button id="prompt-confirm-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI 프롬프트 모달 (복사/붙여넣기) -->
+    <div id="ai-prompt-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-3xl w-full flex flex-col" style="height: 90vh;">
+            <h3 id="ai-prompt-title" class="text-lg font-medium text-gray-900 mb-3">AI 프롬프트 (수동)</h3>
+            
+            <p class="text-sm text-gray-600 mb-1">1. 아래 프롬프트를 복사하여 AI에 입력하세요. (익명화 완료됨)</p>
+            <div class="highlighter-wrapper flex-1 mb-2">
+                <div id="ai-prompt-backdrop" class="highlighter-backdrop"></div>
+                <textarea id="ai-prompt-display" class="highlighter-textarea bg-gray-50" readonly></textarea>
+            </div>
+            <button id="ai-prompt-copy-btn" class="w-full bg-blue-500 text-white px-4 py-2 rounded-md hover:bg-blue-600 mb-3 text-sm">
+                <i class="bi bi-clipboard"></i> 프롬프트 복사
+            </button>
+
+            <p class="text-sm text-gray-600 mb-1">2. AI의 응답을 아래에 붙여넣으세요. (복원 하이라이트)</p>
+            <div class="highlighter-wrapper flex-1 mb-3">
+                <div id="ai-response-backdrop" class="highlighter-backdrop"></div>
+                <textarea id="ai-response-input" class="highlighter-textarea" placeholder="AI가 생성한 응답 텍스트를 여기에 붙여넣으세요..."></textarea>
+            </div>
+
+            <div class="flex justify-end space-x-2">
+                <button id="ai-response-cancel-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">취소</button>
+                <button id="ai-response-confirm-btn" class="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">확인 (적용)</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- [신규] 액션 변수 입력 모달 -->
+    <div id="action-variable-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-lg shadow-xl p-6 max-w-lg w-full">
+            <h3 id="modal-action-title" class="text-lg font-medium text-gray-900 mb-4">액션 실행</h3>
+            <div id="modal-variable-inputs" class="space-y-4">
+                <!-- 동적 변수 입력 필드가 여기에 삽입됩니다. -->
+            </div>
+            <div class="mt-8 flex justify-end space-x-3">
+                <button id="modal-cancel-btn" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-md hover:bg-gray-300">취소</button>
+                <button id="modal-confirm-action-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">프롬프트 생성</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- [신규] 설정 모달 -->
+    <div id="settings-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4">
+         <div class="bg-white rounded-lg shadow-xl p-0 w-full max-w-3xl flex flex-col" style="max-height: 90vh;">
+            <!-- Modal Header -->
+            <div class="flex justify-between items-center p-4 border-b border-gray-200 flex-shrink-0">
+                <h2 class="text-xl font-bold text-gray-800">설정 (프롬프트 관리)</h2>
+                <button id="modal-close-settings-btn" class="text-gray-400 hover:text-gray-700 text-3xl">&times;</button>
+            </div>
+            
+            <!-- Modal Body -->
+            <div class="flex-grow overflow-y-auto p-4">
+                <div id="settings-panel-wrapper">
+                    <!-- Tab Navigation -->
+                    <nav class="flex border-b border-gray-200 -mt-4">
+                        <button data-tab="settings-actions" class="settings-tab active px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700">
+                            액션 관리
+                        </button>
+                        <button data-tab="settings-prompts" class="settings-tab px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700">
+                            프롬프트 관리
+                        </button>
+                    </nav>
+
+                    <div class="pt-4">
+                        <!-- Action Management Tab -->
+                        <div id="settings-actions" class="settings-tab-pane active space-y-4">
+                            <h3 class="text-lg font-semibold text-gray-700 mb-3">액션 팔레트 관리</h3>
+                            <div>
+                                <label for="actions-doc-type" class="block text-sm font-medium text-gray-700 mb-1">문서 종류 선택</label>
+                                <select id="actions-doc-type" class="w-full p-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                    <option value="litigation">소송 문서 (litigation)</option>
+                                    <!-- 다른 문서 타입이 있다면 여기에 추가 -->
+                                </select>
+                            </div>
+                            <div>
+                                <label for="actions-json-editor" class="block text-sm font-medium text-gray-700 mb-1">액션 JSON (수정 후 저장)</label>
+                                <textarea id="actions-json-editor" rows="12" class="w-full p-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs" placeholder="액션 목록에 대한 JSON 데이터를 입력..."></textarea>
+                            </div>
+                            <div class="text-right">
+                                <button id="save-actions-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
+                                    액션 설정 저장
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Prompt Management Tab -->
+                        <div id="settings-prompts" class="settings-tab-pane space-y-4">
+                            <h3 class="text-lg font-semibold text-gray-700 mb-3">프롬프트 관리</h3>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label for="prompts-doc-type" class="block text-sm font-medium text-gray-700 mb-1">문서 종류</label>
+                                    <select id="prompts-doc-type" class="w-full p-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                        <option value="litigation">소송 문서 (litigation)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="prompts-key" class="block text-sm font-medium text-gray-700 mb-1">프롬프트 종류</label>
+                                    <select id="prompts-key" class="w-full p-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                                        <option value="tocPrompt">목차 생성 (TOC) 프롬프트</option>
+                                        <option value="writingPrompt">본문 작성 프롬프트</option>
+                                        <option value="modificationPrompt">수정/보완 프롬프트</TOC_V2>
+                                        <option value="reviewPrompt">글 점검 프롬프트</TOC_V2>
+                                    </select>
+                                </div>
+                            </div>
+                            <div>
+                                <label for="prompts-editor" class="block text-sm font-medium text-gray-700 mb-1">프롬프트 내용 (수정 후 저장)</label>
+                                <textarea id="prompts-editor" rows="15" class="w-full p-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono text-xs" placeholder="선택한 프롬프트의 내용을 수정..."></textarea>
+                            </div>
+                            <div class="text-right">
+                                <button id="save-prompt-btn" class="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700">
+                                    프롬프트 저장
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Context Menu (Hidden) -->
+    <div id="custom-context-menu" class="bg-white rounded-md shadow-lg border border-gray-200 py-1">
+        <!-- 컨텍스트 메뉴 아이템이 여기에 동적으로 렌더링됩니다. -->
+    </div>
+
+
+    <script type="module">
+        // --- [신규] 1. 프롬프트 템플릿 (기본값) ---
+        // (textgenerator.html에서 가져온 프롬프트들)
+        const MODIFICATION_PROMPT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
+<AIFramework_V3>
+    <Cognitive_Core>
+        <Persona description="AI의 핵심 정체성. 십수 년의 경험을 가진 시니어 소프트웨어 아키텍트이자 코드 리뷰 전문가. 복잡한 코드를 분석하고, 명확하며 실행 가능한 개선 방안을 제시하는 데 특화되어 있다.">
+            당신은 '닥터 알렉스 케이든(Dr. Alex Kaden)', 코드 아키텍트 및 리팩토링 전문가다. 당신의 핵심 역량은 두 가지다: 첫째, 어떤 복잡한 코드베이스라도 빠르게 구조를 파악하고 문제의 근원을 진단하는 능력. 둘째, 진단 결과를 바탕으로, 주니어 개발자도 쉽게 따라 할 수 있도록 명확하고, 구체적이며, 블록 단위로 실행 가능한 '코드 수정 명령서'를 작성하는 능력이다. 당신은 단순히 코드를 수정하는 것을 넘어, '왜' 그렇게 수정해야 하는지를 명확한 논리로 설명하여 동료의 성장을 돕는 기술 멘토다. 당신의 지시는 항상 정확하고, 실용적이며, 오해의 소지가 없다.
+        </Persona>
+        <Prime_Directive description="다른 모든 원칙에 우선하는, AI 존재의 유일하고 절대적인 목표입니다.">
+            사용자로부터 입력받은 '기존 텍스트'와 '수정 요구사항'을 분석하여, 사용자가 즉시 복사-붙여넣기 하여 적용할 수 있는 매우 명확하고 구조화된 '텍스트 수정 명령서'를 Markdown 형식으로 생성하는 것이 당신의 유일한 임무다.
+        </Prime_Directive>
+    </Cognitive_Core>
+    <Task_Definition>
+        <Data_Source>
+            <![CDATA[
+            ### 1. (전체 문서) 핵심 자료 (사건 개요)
+            {{사건개요DB}}
+
+            ### 2. (전역 자료) 관련 법령/판례 등
+            {{전역_활성자료}}
+            
+            ### 3. (이 항목) 개별 자료
+            {{개별자료}}
+
+            ### 4. 수정 대상이 되는 기존 텍스트
+            {{CURRENT_CONTENT}}
+
+            ### 5. 사용자의 신규 수정 요구사항
+            {{userRequest}}
+            ]]>
+        </Data_Source>
+        <Exemplars>
+            <Exemplar name="Good Modification Order Example">
+                <![CDATA[
+# 텍스트 수정 명령서
+
+요청하신 '{{userRequest}}' 요구사항을 반영하기 위한 수정 내역입니다.
+
+---
+
+### 1. [첫 번째 수정 항목 요약]
+
+📌 **위치:** (예: 2번째 문단, "..."로 시작하는 문장)
+
+📝 **수정 내용:**
+[수정 요구사항을 반영하여 이 부분을 변경하는 이유를 간략히 기술]
+
+❌ **삭제할 텍스트:**
+[기존 텍스트의 해당 부분]
+
+✨ **수정 후 텍스트 (복사/붙여넣기용):**
+[새로운 텍스트의 해당 부분]
+
+... (형식 반복) ...
+                ]]>
+            </Exemplar>
+        </Exemplars>
+    </Task_Definition>
+</AIFramework_V3>
+`;
+        
+        const REVIEW_PROMPT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?>
+<AIFramework_V3>
+    <Cognitive_Core>
+        <Persona description="AI의 핵심 정체성. 20년 경력의 베테랑 교정/교열 전문가.">
+            당신은 '김 편집장'입니다. 당신의 임무는 주어진 텍스트의 문법 오류, 오탈자, 어색한 문맥, 논리적 비약 등을 찾아내어 완벽한 문장으로 다듬는 것입니다.
+        </Persona>
+        <Prime_Directive>
+            주어진 <Data_Source>의 모든 정보를 바탕으로, '점검 대상 텍스트'를 점검하고 개선된 텍스트를 제공하는 것입니다.
+        </Prime_Directive>
+    </Cognitive_Core>
+    <Task_Definition>
+        <Data_Source>
+            <![CDATA[
+            ### 1. (전체 문서) 핵심 자료 (사건 개요)
+            {{사건개요DB}}
+
+            ### 2. (전역 자료) 관련 법령/판례 등
+            {{전역_활성자료}}
+            
+            ### 3. (이 항목) 개별 자료
+            {{개별자료}}
+
+            ### 4. 점검 대상 텍스트
+            {{CURRENT_CONTENT}}
+            ]]>
+        </Data_Source>
+        <Exemplars>
+            <Exemplar name="Good Review Output Example">
+                <![CDATA[
+[점검 및 수정이 완료된, 완벽한 버전의 텍스트 전체를 여기에 작성]
+                ]]>
+            </Exemplar>
+        </Exemplars>
+    </Task_Definition>
+</AIFramework_V3>
+`;
+
+        // 기본 프롬프트 템플릿 객체
+        const PROMPT_TEMPLATES = {
+            litigation: {
+                tocPrompt: `<?xml version="1.0" encoding="UTF-8"?>
+<AIFramework_TOC_v2>
+<System_Role>
+당신은 베테랑 변호사입니다. 주어진 자료를 바탕으로 법률 문서(소장)의 표준 목차(TOC)를 생성해야 합니다.
+</System_Role>
+<Constraints>
+- 목차는 'I.', '1.', '가.', '(1)'의 계층 구조를 따릅니다.
+- '청구취지'와 '청구원인'은 항상 최상위 레벨(I, II)에 포함되어야 합니다.
+- '사실관계', '법리 검토', '소결' 등 핵심 논증 구조를 포함해야 합니다.
+- <Global_Data>에 법령이나 판례가 제공된 경우, 목차에 반영하십시오.
+</Constraints>
+<Input_Data>
+<사건개요DB>
+{{사건개요DB}}
+</사건개요DB>
+<전역_활성자료>
+{{전역_활성자료}}
+</전역_활성자료>
+</Input_Data>
+<Task>
+위 <Input_Data>를 바탕으로 소장의 전체 목차(TOC)를 생성하십시오.
+</Task>
+</AIFramework_TOC_v2>
+`,
+                writingPrompt: `<?xml version="1.0" encoding="UTF-8"?>
+<AIFramework_Writing_v2>
+<System_Role>
+당신은 대한민국 법률 전문가이자 뛰어난 법률 문장가입니다.
+당신의 임무는 주어진 '컨텍스트'를 완벽하게 숙지하고, '현재 작업중인 목차'에 해당하는 법률 문서 본문을 생성하거나 수정하는 것입니다.
+</System_Role>
+<Constraints>
+- 모든 주장은 반드시 <사건개요DB>의 사실과 <전역_활성자료>의 법적 근거에 기반(Grounded)해야 합니다.
+- 법률 용어와 문체를 정확하게 사용해야 합니다.
+- 환각(Hallucination)이나 근거 없는 추론을 생성해서는 안 됩니다.
+</Constraints>
+<Context>
+    <사건개요DB>
+    {{사건개요DB}}
+    </사건개요DB>
+    
+    <전역_활성자료>
+    {{전역_활성자료}}
+    </전역_활성자료>
+
+    <전체_목차>
+    {{전체_목차}}
+    </전체_목차>
+
+    <이전_작성_본문>
+    {{이전_작성_본문}}
+    </이전_작성_본문>
+    
+    <목차별_개별자료>
+    {{개별자료}}
+    </목차별_개별자료>
+</Context>
+<Working_Area>
+    <Current_Section>
+    {{CURRENT_SECTION_TEXT}} (ID: {{CURRENT_SECTION_ID}})
+    </Current_Section>
+    <Current_Content>
+    {{CURRENT_CONTENT}}
+    </Current_Content>
+</Working_Area>
+<Task>
+[Task] 위 모든 <Context>를 참조하여, <Current_Section> '{{CURRENT_SECTION_TEXT}}' 부분의 본문 초고를 상세하고 논리적으로 작성하십시오.
+</Task>
+</AIFramework_Writing_v2>
+`,
+                // [신규] 프롬프트 관리용 기본값 추가
+                modificationPrompt: MODIFICATION_PROMPT_TEMPLATE,
+                reviewPrompt: REVIEW_PROMPT_TEMPLATE,
+                
+                // [신규] textgenerator (1).html의 actions 구조 참조
+                actions: [
+                    {
+                        id: 'write',
+                        icon: 'bi-magic',
+                        tooltip: '초고 작성',
+                        variables: [], // 추가 변수 없음
+                        promptTemplateKey: 'writingPrompt' // writingPrompt를 직접 사용
+                    },
+                    {
+                        id: 'modify',
+                        icon: 'bi-pencil-square',
+                        tooltip: '요구사항 반영 및 수정',
+                        variables: [
+                            { id: 'userRequest', label: '수정 요구사항', type: 'textarea', placeholder: '예: 3번째 문단의 논리를 강화하고, 1번 자료를 인용하세요.' }
+                        ],
+                        promptTemplateKey: 'modificationPrompt' // modificationPrompt 사용
+                    },
+                    {
+                        id: 'review',
+                        icon: 'bi-search',
+                        tooltip: '글 점검 (교정/교열)',
+                        variables: [], // 추가 변수 없음
+                        promptTemplateKey: 'reviewPrompt' // reviewPrompt 사용
+                    },
+                    {
+                        id: 'deanonymize',
+                        icon: 'bi-eye',
+                        tooltip: '익명화 되돌리기 (복원)',
+                        variables: [],
+                        promptTemplateKey: '__CLIENT_ACTION__' // AI를 호출하지 않는 특수 키
+                    }
+                ]
+            }
+            // ... other document types like 'textbook' could be added here
+        };
+
+        /**
+         * @class AIAnonymizer
+         * Handles anonymization, deanonymization, and highlighting logic.
+         */
+        class AIAnonymizer {
+            anonymize(text, mapString) {
+                if (!text || !mapString) return text;
+                try {
+                    const anonymizationMap = JSON.parse(mapString);
+                    if (typeof anonymizationMap !== 'object' || anonymizationMap === null) return text;
+                    let anonymizedText = text;
+                    const sortedKeys = this.getSortedKeys(anonymizationMap, 'key');
+                    
+                    for (const original of sortedKeys) {
+                        const anonymized = anonymizationMap[original];
+                        const regex = new RegExp(this.escapeRegExp(original), 'g');
+                        anonymizedText = anonymizedText.replace(regex, anonymized);
+                    }
+                    return anonymizedText;
+                } catch (e) {
+                    console.error("Anonymize error:", e);
+                    return text;
+                }
+            }
+
+            deanonymize(text, mapString) {
+                if (!text || !mapString) return text;
+                try {
+                    const anonymizationMap = JSON.parse(mapString);
+                    if (typeof anonymizationMap !== 'object' || anonymizationMap === null) return text;
+
+                    const deanonymizationMap = {};
+                    for (const key in anonymizationMap) {
+                        deanonymizationMap[anonymizationMap[key]] = key;
+                    }
+
+                    let deanonymizedText = text;
+                    const sortedKeys = this.getSortedKeys(deanonymizationMap, 'key'); 
+                    
+                    for (const anonymized of sortedKeys) {
+                        const original = deanonymizationMap[anonymized];
+                        const regex = new RegExp(this.escapeRegExp(anonymized), 'g');
+                        deanonymizedText = deanonymizedText.replace(regex, original);
+                    }
+                    return deanonymizedText;
+                } catch (e) {
+                    console.error("Deanonymize error:", e);
+                    return text;
+                }
+            }
+            
+            getSortedKeys(map, type = 'key') {
+                let keys;
+                if (type === 'key') {
+                    keys = Object.keys(map);
+                } else { // 'value'
+                    keys = Object.values(map);
+                }
+                return [...new Set(keys)].sort((a, b) => b.length - a.length);
+            }
+
+            buildHighlightRegex(mapString, keyOrValue = 'key') {
+                try {
+                    const map = JSON.parse(mapString || "{}");
+                    if (typeof map !== 'object' || map === null) return null;
+
+                    const sortedKeys = this.getSortedKeys(map, keyOrValue);
+                    if (sortedKeys.length === 0) return null;
+                    
+                    const escapedKeys = sortedKeys.map(k => this.escapeRegExp(k)).filter(k => k.length > 0);
+                    if (escapedKeys.length === 0) return null;
+
+                    return new RegExp(`(${escapedKeys.join('|')})`, 'g');
+                } catch (e) {
+                    console.error("Highlight regex creation error:", e);
+                    return null;
+                }
+            }
+
+            escapeRegExp(str) {
+                return (str || "").replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+        }
+
+        /**
+         * @class AnonymizationHighlighter
+         * Manages the backdrop div for a textarea to show highlights.
+         */
+        class AnonymizationHighlighter {
+            constructor(textarea, backdrop, anonymizer) {
+                this.textarea = textarea;
+                this.backdrop = backdrop;
+                this.anonymizer = anonymizer;
+            }
+
+            update(text, mapString, keyOrValue = 'key') {
+                if (!text) {
+                    this.backdrop.innerHTML = "";
+                    return;
+                }
+                
+                const regex = this.anonymizer.buildHighlightRegex(mapString, keyOrValue);
+                
+                if (!regex) {
+                    this.backdrop.innerHTML = this.escapeHTML(text) + "\n";
+                    return;
+                }
+
+                const highlightedText = this.escapeHTML(text).replace(regex, (match) => {
+                    return `<mark>${match}</mark>`;
+                });
+
+                this.backdrop.innerHTML = highlightedText + "\n";
+            }
+
+            escapeHTML(str) {
+                return (str || "").replace(/[&<>"']/g, (match) => {
+                    const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+                    return map[match];
+                });
+            }
+
+            syncScroll() {
+                this.backdrop.scrollTop = this.textarea.scrollTop;
+                this.backdrop.scrollLeft = this.textarea.scrollLeft;
+            }
+        }
+
+        /**
+         * @class GeminiService
+         * Manages interactions with the AI (now manual via modal).
+         */
+        class GeminiService {
+            constructor(ui) {
+                this.ui = ui;
+            }
+
+            async call(prompt, title = "AI 프롬프트 (수동)") {
+                const response = await this.ui.showAIPrompt(title, prompt);
+                return response;
+            }
+        }
+
+        /**
+         * @class UIRenderer
+         * Manages all DOM manipulations, rendering, and modal logic.
+         */
+        class UIRenderer {
+            constructor() {
+                this.tocPanel = document.getElementById("toc-panel");
+                this.mainEditor = document.getElementById("main-editor");
+                this.bookList = document.getElementById("book-list");
+                this.generateTocBtn = document.getElementById("generate-toc-btn");
+                this.actionPaletteContainer = document.getElementById("action-palette-container");
+                this.newBookBtn = document.getElementById("new-book-btn");
+                this.openSettingsBtn = document.getElementById("open-settings-btn"); // [신규]
+                
+                // Modal Elements
+                this.loadingModal = document.getElementById("loading-modal");
+                this.messageModal = document.getElementById("message-modal");
+                this.messageTitle = document.getElementById("message-title");
+                this.messageContent = document.getElementById("message-content");
+                this.messageCloseBtn = document.getElementById("message-close-btn");
+                
+                this.newCaseModal = document.getElementById("new-case-modal");
+                this.newCaseNameInput = document.getElementById("new-case-name");
+                this.newCaseConfirmBtn = document.getElementById("new-case-confirm-btn");
+                this.newCaseCancelBtn = document.getElementById("new-case-cancel-btn");
+
+                this.confirmModal = document.getElementById("confirm-modal");
+                this.confirmTitle = document.getElementById("confirm-title");
+                this.confirmContent = document.getElementById("confirm-content");
+                this.confirmConfirmBtn = document.getElementById("confirm-confirm-btn");
+                this.confirmCancelBtn = document.getElementById("confirm-cancel-btn");
+
+                this.promptModal = document.getElementById("prompt-modal");
+                this.promptTitle = document.getElementById("prompt-title");
+                this.promptInput = document.getElementById("prompt-input");
+                this.promptConfirmBtn = document.getElementById("prompt-confirm-btn");
+                this.promptCancelBtn = document.getElementById("prompt-cancel-btn");
+
+                this.aiPromptModal = document.getElementById("ai-prompt-modal");
+                this.aiPromptTitle = document.getElementById("ai-prompt-title");
+                this.aiPromptDisplay = document.getElementById("ai-prompt-display");
+                this.aiPromptCopyBtn = document.getElementById("ai-prompt-copy-btn");
+                this.aiResponseInput = document.getElementById("ai-response-input");
+                this.aiResponseConfirmBtn = document.getElementById("ai-response-confirm-btn");
+                this.aiResponseCancelBtn = document.getElementById("ai-response-cancel-btn");
+                
+                this.aiPromptBackdrop = document.getElementById("ai-prompt-backdrop");
+                this.aiResponseBackdrop = document.getElementById("ai-response-backdrop");
+                
+                // [신규] Action Variable Modal
+                this.actionVariableModal = document.getElementById("action-variable-modal");
+                this.modalActionTitle = document.getElementById("modal-action-title");
+                this.modalVariableInputs = document.getElementById("modal-variable-inputs");
+                this.modalConfirmActionBtn = document.getElementById("modal-confirm-action-btn");
+                this.modalCancelBtn = document.getElementById("modal-cancel-btn");
+
+                // [신규] Settings Modal
+                this.settingsModal = document.getElementById("settings-modal");
+                this.modalCloseSettingsBtn = document.getElementById("modal-close-settings-btn");
+                this.settingsPanelWrapper = document.getElementById("settings-panel-wrapper");
+                this.actionsDocType = document.getElementById("actions-doc-type");
+                this.actionsJsonEditor = document.getElementById("actions-json-editor");
+                this.saveActionsBtn = document.getElementById("save-actions-btn");
+                this.promptsDocType = document.getElementById("prompts-doc-type");
+                this.promptsKey = document.getElementById("prompts-key");
+                this.promptsEditor = document.getElementById("prompts-editor");
+                this.savePromptBtn = document.getElementById("save-prompt-btn");
+
+                // KB Tab Elements
+                this.kbTabsContainer = document.getElementById("kb-tabs");
+                this.kbTabPanes = {
+                    summary: document.getElementById("kb-summary-textarea"),
+                    individual: document.getElementById("kb-individual-textarea"),
+                    global: document.querySelector("#kb-tab-content-global"),
+                    anonymize: document.querySelector("#kb-tab-content-anonymize"),
+                };
+                this.kbBackdrops = {
+                    summary: document.getElementById("kb-summary-backdrop"),
+                    individual: document.getElementById("kb-individual-backdrop"),
+                    global: document.getElementById("kb-global-content-backdrop"),
+                };
+                this.mainEditorBackdrop = document.getElementById("main-editor-backdrop");
+                
+                // Anonymize UI
+                this.anonymizeForm = document.getElementById("anonymize-add-form");
+                this.anonymizeKeyInput = document.getElementById("anonymize-key-input");
+                this.anonymizeValueInput = document.getElementById("anonymize-value-input");
+                this.anonymizeList = document.getElementById("anonymize-list");
+
+                // Global KB (V-KB) UI
+                this.addGlobalFileBtn = document.getElementById("add-global-file-btn");
+                this.globalFileList = document.getElementById("global-file-list");
+                this.globalFileEditor = document.getElementById("global-file-editor");
+                this.globalFileTitle = document.getElementById("global-file-title");
+                this.globalFileContent = document.getElementById("kb-global-content-textarea");
+                this.saveGlobalFileBtn = document.getElementById("save-global-file-btn");
+                this.closeGlobalFileBtn = document.getElementById("close-global-file-btn");
+
+                // Context Menu
+                this.contextMenu = document.getElementById("custom-context-menu");
+                
+                this.currentSelectedGlobalFileId = null;
+                this.currentActionHandler = null; // [신규]
+            }
+
+            // --- Modal Logic ---
+
+            /**
+             * [신규] Shows the modal for actions that require user variables.
+             * @param {object} action - The action object from templates.
+             * @returns {Promise<object|null>} An object with variable values, or null if canceled.
+             */
+            showActionVariableModal(action) {
+                return new Promise((resolve) => {
+                    this.modalActionTitle.textContent = action.tooltip;
+                    this.modalVariableInputs.innerHTML = ''; 
+
+                    action.variables.forEach(variable => {
+                        const label = document.createElement('label');
+                        label.htmlFor = `modal-var-${variable.id}`;
+                        label.className = 'block text-sm font-medium text-gray-700 mb-1';
+                        label.textContent = variable.label;
+                        
+                        let inputEl;
+                        if (variable.type === 'textarea') {
+                            inputEl = document.createElement('textarea');
+                            inputEl.rows = 4;
+                            inputEl.placeholder = variable.placeholder || '';
+                        } else {
+                            inputEl = document.createElement('input');
+                            inputEl.type = variable.type || 'text';
+                            inputEl.placeholder = variable.placeholder || '';
+                        }
+                        
+                        inputEl.id = `modal-var-${variable.id}`;
+                        inputEl.dataset.variableId = variable.id; 
+                        inputEl.className = 'w-full p-2 border border-gray-300 rounded-md text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500';
+                        
+                        this.modalVariableInputs.appendChild(label);
+                        this.modalVariableInputs.appendChild(inputEl);
+                    });
+
+                    this.actionVariableModal.classList.remove('hidden');
+
+                    // Remove old listener if exists
+                    if (this.currentActionHandler) {
+                        this.modalConfirmActionBtn.removeEventListener('click', this.currentActionHandler);
+                    }
+
+                    // Add new listener
+                    this.currentActionHandler = () => {
+                        const modalVariables = {};
+                        this.modalVariableInputs.querySelectorAll('[data-variable-id]').forEach(input => {
+                            modalVariables[input.dataset.variableId] = input.value;
+                        });
+                        this.actionVariableModal.classList.add('hidden');
+                        resolve(modalVariables);
+                    };
+                    
+                    this.modalConfirmActionBtn.addEventListener('click', this.currentActionHandler);
+
+                    this.modalCancelBtn.onclick = () => {
+                        this.actionVariableModal.classList.add('hidden');
+                        resolve(null);
+                    };
+                });
+            }
+
+            showAIPrompt(title, prompt) {
+                return new Promise((resolve) => {
+                    this.aiPromptTitle.textContent = title;
+                    this.aiPromptDisplay.value = prompt;
+                    this.aiResponseInput.value = "";
+                    this.aiPromptModal.classList.remove("hidden");
+                    
+                    const app = window.appInstance;
+                    if (app) {
+                        this.aiPromptDisplay.oninput = () => app.updateHighlighter('ai-prompt', 'key');
+                        this.aiPromptDisplay.onscroll = () => app.syncHighlighterScroll('ai-prompt');
+                        app.updateHighlighter('ai-prompt', 'key');
+                        
+                        this.aiResponseInput.oninput = () => app.updateHighlighter('ai-response', 'value');
+                        this.aiResponseInput.onscroll = () => app.syncHighlighterScroll('ai-response');
+                        app.updateHighlighter('ai-response', 'value');
+                    }
+
+                    this.aiPromptCopyBtn.onclick = () => {
+                        try {
+                            const textarea = document.createElement('textarea');
+                            textarea.value = prompt;
+                            document.body.appendChild(textarea);
+                            textarea.select();
+                            document.execCommand('copy');
+                            document.body.removeChild(textarea);
+                            
+                            this.showMessage("성공", "프롬프트가 클립보드에 복사되었습니다.");
+                        } catch (err) {
+                            console.error("클립보드 복사 실패:", err);
+                            this.showMessage("오류", "클립보드 복사에 실패했습니다. 수동으로 복사해주세요.");
+                        }
+                    };
+                    
+                    this.aiResponseConfirmBtn.onclick = () => {
+                        const responseText = this.aiResponseInput.value;
+                        this.aiPromptModal.classList.add("hidden");
+                        resolve(responseText);
+                    };
+                    
+                    this.aiResponseCancelBtn.onclick = () => {
+                        this.aiPromptModal.classList.add("hidden");
+                        resolve(null);
+                    };
+                });
+            }
+
+            showNewCasePrompt() {
+                return new Promise((resolve) => {
+                    this.newCaseNameInput.value = "";
+                    this.newCaseModal.classList.remove("hidden");
+                    this.newCaseNameInput.focus();
+                    
+                    this.newCaseConfirmBtn.onclick = () => {
+                        const caseName = this.newCaseNameInput.value.trim() || "제목 없는 사건";
+                        this.newCaseModal.classList.add("hidden");
+                        resolve(caseName);
+                    };
+                    this.newCaseCancelBtn.onclick = () => {
+                        this.newCaseModal.classList.add("hidden");
+                        resolve(null);
+                    };
+                });
+            }
+
+            showConfirm(title, content) {
+                return new Promise((resolve) => {
+                    this.confirmTitle.textContent = title;
+                    this.confirmContent.textContent = content;
+                    this.confirmModal.classList.remove("hidden");
+                    
+                    this.confirmConfirmBtn.onclick = () => {
+                        this.confirmModal.classList.add("hidden");
+                        resolve(true);
+                    };
+                    this.confirmCancelBtn.onclick = () => {
+                        this.confirmModal.classList.add("hidden");
+                        resolve(false);
+                    };
+                });
+            }
+            
+            showPrompt(title, placeholder, defaultValue = "") {
+                return new Promise((resolve) => {
+                    this.promptTitle.textContent = title;
+                    this.promptInput.placeholder = placeholder;
+                    this.promptInput.value = defaultValue;
+                    this.promptModal.classList.remove("hidden");
+                    this.promptInput.focus();
+                    
+                    this.promptConfirmBtn.onclick = () => {
+                        const value = this.promptInput.value.trim();
+                        if (value) {
+                            this.promptModal.classList.add("hidden");
+                            resolve(value);
+                        }
+                    };
+                    this.promptCancelBtn.onclick = () => {
+                        this.promptModal.classList.add("hidden");
+                        resolve(null);
+                    };
+                });
+            }
+
+            showLoading(isLoading) {
+                this.loadingModal.classList.toggle("hidden", !isLoading);
+            }
+
+            showMessage(title, content) {
+                this.messageTitle.textContent = title;
+                this.messageContent.textContent = content;
+                this.messageModal.classList.remove("hidden");
+            }
+
+            hideMessage() {
+                this.messageModal.classList.add("hidden");
+            }
+
+            // --- Rendering Logic ---
+
+            renderBookList(books, currentBookId, onSelect, onDelete) {
+                this.bookList.innerHTML = "";
+                if (books.length === 0) {
+                    this.bookList.innerHTML = `<span class="text-sm text-gray-500 p-3">사건이 없습니다. '새 사건'을 눌러 시작하세요.</span>`;
+                    return;
+                }
+                books.forEach(book => {
+                    const item = document.createElement("div");
+                    item.className = `p-3 rounded-md cursor-pointer hover:bg-gray-100 flex justify-between items-center ${book.id === currentBookId ? 'bg-blue-100 text-blue-700 font-medium' : ''}`;
+                    item.dataset.id = book.id;
+                    item.onclick = () => onSelect(book.id);
+                    
+                    const title = document.createElement("span");
+                    title.textContent = book.bookName;
+                    title.className = "text-sm truncate";
+                    item.appendChild(title);
+                    
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.className = "ml-2 text-gray-400 hover:text-red-600 flex-shrink-0";
+                    deleteBtn.innerHTML = `<i class="bi bi-trash" style="font-size: 0.875rem;"></i>`;
+                    deleteBtn.title = "사건 삭제";
+                    deleteBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        onDelete(book.id, book.bookName);
+                    };
+                    item.appendChild(deleteBtn);
+                    this.bookList.appendChild(item);
+                });
+            }
+
+            renderTOC(tocItems, currentSectionId, onSelect, onContextMenu) {
+                this.tocPanel.innerHTML = "";
+                const renderLevel = (items, level = 0) => {
+                const ul = document.createElement("ul");
+                if (level === 0) ul.classList.add('toc-root'); // .toc-root 클래스 추가
+                
+                    items.forEach(item => {
+                        const li = document.createElement("li");
+                        // [수정] 클래스 변경 및 CSS 트리 클래스 추가
+                        li.className = "toc-item rounded-md cursor-pointer hover:bg-gray-200";
+                        li.dataset.id = item.id;
+                        li.title = item.text; // Tooltip for long text
+                        
+                        if (item.id === currentSectionId) {
+                            li.classList.add("focused");
+                        }
+                        
+                        // [수정] 클릭 이벤트
+                        li.onclick = (e) => {
+                            e.stopPropagation();
+                            onSelect(item.id);
+                        };
+                        
+                        // [신규] 컨텍스트 메뉴 이벤트
+                        li.oncontextmenu = (e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onContextMenu(e, item);
+                        };
+                        
+                        // [신규] 아이콘과 텍스트를 담을 div
+                        const contentDiv = document.createElement("div");
+                        contentDiv.className = "flex items-center space-x-1.5 p-1.5"; // p-1.5는 기존 li의 패딩
+
+                        // [신규] 완료 상태 아이콘
+                        if (item.status === 'completed') {
+                            const iconSpan = document.createElement("span");
+                            iconSpan.innerHTML = `<i class="bi bi-check-circle-fill text-green-500"></i>`;
+                            contentDiv.appendChild(iconSpan);
+                        } else {
+                            // 아이콘이 없을 때 정렬을 맞추기 위한 빈 공간
+                            const iconPlaceholder = document.createElement("span");
+                            iconPlaceholder.innerHTML = `<i class="bi bi-dot text-gray-400"></i>`; // 혹은 투명 아이콘
+                            contentDiv.appendChild(iconPlaceholder);
+                        }
+
+                        const textSpan = document.createElement("span");
+                        textSpan.textContent = item.text;
+                        // [수정] 클래스 변경 (block 제거)
+                        textSpan.className = "text-sm text-gray-800 truncate";
+                        
+                        contentDiv.appendChild(textSpan);
+                        li.appendChild(contentDiv);
+                        
+                        if (item.children && item.children.length > 0) {
+                            li.appendChild(renderLevel(item.children, level + 1));
+                        }
+                        ul.appendChild(li);
+                    });
+                    return ul;
+                };
+                this.tocPanel.appendChild(renderLevel(tocItems, 0));
+            }
+
+            renderActionPalette(actions, onAction) {
+                this.actionPaletteContainer.innerHTML = "";
+                actions.forEach(action => {
+                    const button = document.createElement("button");
+                    button.className = "bg-gray-200 text-gray-700 p-1.5 rounded-md hover:bg-gray-300 transition-colors";
+                    button.title = action.tooltip;
+                    button.innerHTML = `<i class="${action.icon}"></i>`;
+                    button.onclick = () => onAction(action);
+                    this.actionPaletteContainer.appendChild(button);
+                });
+            }
+
+            showContextMenu(x, y, menuItems, onAction) {
+                this.contextMenu.innerHTML = "";
+                menuItems.forEach(item => {
+                    const button = document.createElement("button");
+                    button.className = "flex items-center space-x-2 w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100";
+                    button.innerHTML = `<i class="bi ${item.icon} w-4 h-4"></i><span>${item.label}</span>`;
+                    button.onclick = (e) => {
+                        e.preventDefault();
+                        onAction(item.action);
+                        this.hideContextMenu();
+                    };
+                    this.contextMenu.appendChild(button);
+                });
+                
+                this.contextMenu.style.left = `${x}px`;
+                this.contextMenu.style.top = `${y}px`;
+                this.contextMenu.style.display = "block";
+
+                const clickOutsideHandler = (event) => {
+                    if (!this.contextMenu.contains(event.target)) {
+                        this.hideContextMenu();
+                        document.removeEventListener("click", clickOutsideHandler);
+                    }
+                };
+                setTimeout(() => document.addEventListener("click", clickOutsideHandler), 0);
+            }
+
+            hideContextMenu() {
+                this.contextMenu.style.display = "none";
+            }
+
+            renderAnonymizationList(mapString, onDelete) {
+                this.anonymizeList.innerHTML = "";
+                let map = {};
+                try {
+                    map = JSON.parse(mapString || "{}");
+                } catch (e) { console.error("Anonymization map parse error:", e); }
+
+                const sortedKeys = Object.keys(map).sort((a, b) => b.length - a.length);
+
+                if (sortedKeys.length === 0) {
+                    this.anonymizeList.innerHTML = `<span class="text-sm text-gray-500 p-2">등록된 익명화 키가 없습니다.</span>`;
+                    return;
+                }
+
+                sortedKeys.forEach(key => {
+                    const value = map[key];
+                    const item = document.createElement("div");
+                    item.className = "flex items-center justify-between p-1.5 bg-white rounded border border-gray-200";
+                    item.innerHTML = `
+                        <div class="flex items-center space-x-2 overflow-hidden">
+                            <span class="text-sm font-medium text-gray-900 truncate" title="${this.escapeHTML(key)}">${this.escapeHTML(key)}</span>
+                            <i class="bi bi-arrow-right text-gray-400 text-xs"></i>
+                            <span class="text-sm text-blue-600 font-mono bg-blue-50 px-1 py-0.5 rounded truncate" title="${this.escapeHTML(value)}">${this.escapeHTML(value)}</span>
+                        </div>
+                    `;
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.className = "text-gray-400 hover:text-red-600 flex-shrink-0 p-1";
+                    deleteBtn.innerHTML = `<i class="bi bi-x-lg" style="font-size: 0.75rem;"></i>`;
+                    deleteBtn.title = "삭제";
+                    deleteBtn.onclick = () => onDelete(key);
+                    item.appendChild(deleteBtn);
+                    this.anonymizeList.appendChild(item);
+                });
+            }
+
+            renderGlobalFileList(files, onToggle, onSelect, onDelete, onRename) {
+                this.globalFileList.innerHTML = "";
+                if (!files || files.length === 0) {
+                    this.globalFileList.innerHTML = `<span class="text-sm text-gray-500 p-2">등록된 전역 자료가 없습니다.</span>`;
+                    return;
+                }
+                
+                files.forEach(file => {
+                    const item = document.createElement("div");
+                    item.className = `flex items-center justify-between p-1.5 bg-white rounded border border-gray-200 ${file.id === this.currentSelectedGlobalFileId ? 'border-indigo-500' : ''}`;
+                    
+                    const left = document.createElement("div");
+                    left.className = "flex items-center space-x-2 overflow-hidden";
+                    
+                    const toggle = document.createElement("label");
+                    toggle.className = "toggle-switch";
+                    const input = document.createElement("input");
+                    input.type = "checkbox";
+                    input.checked = file.isActive;
+                    input.onchange = (e) => onToggle(file.id, e.target.checked);
+                    const slider = document.createElement("span");
+                    slider.className = "toggle-slider";
+                    toggle.appendChild(input);
+                    toggle.appendChild(slider);
+                    
+                    const title = document.createElement("span");
+                    title.className = "text-sm text-gray-800 cursor-pointer hover:text-indigo-600 truncate";
+                    title.textContent = file.title;
+                    title.title = file.title;
+                    title.onclick = () => onSelect(file);
+                    
+                    left.appendChild(toggle);
+                    left.appendChild(title);
+                    
+                    const buttonGroup = document.createElement("div");
+                    buttonGroup.className = "flex items-center space-x-1 flex-shrink-0";
+
+                    const renameBtn = document.createElement("button");
+                    renameBtn.className = "text-gray-400 hover:text-blue-600 p-1";
+                    renameBtn.innerHTML = `<i class="bi bi-pencil" style="font-size: 0.875rem;"></i>`;
+                    renameBtn.title = "이름 바꾸기";
+                    renameBtn.onclick = (e) => {
+                        e.stopPropagation();
+                        onRename(file.id, file.title);
+                    };
+
+                    const deleteBtn = document.createElement("button");
+                    deleteBtn.className = "text-gray-400 hover:text-red-600 p-1";
+                    deleteBtn.innerHTML = `<i class="bi bi-trash" style="font-size: 0.875rem;"></i>`;
+                    deleteBtn.title = "자료 삭제";
+                    deleteBtn.onclick = () => onDelete(file.id);
+                    
+                    buttonGroup.appendChild(renameBtn);
+                    buttonGroup.appendChild(deleteBtn);
+                    
+                    item.appendChild(left);
+                    item.appendChild(buttonGroup);
+                    this.globalFileList.appendChild(item);
+                });
+            }
+            
+            showGlobalFileEditor(file) {
+                if (!file) {
+                    this.globalFileEditor.classList.add("hidden");
+                    this.currentSelectedGlobalFileId = null;
+                    return;
+                }
+                
+                this.currentSelectedGlobalFileId = file.id;
+                this.globalFileTitle.value = file.title;
+                this.globalFileContent.value = file.content;
+                this.saveGlobalFileBtn.dataset.id = file.id;
+                this.globalFileEditor.classList.remove("hidden");
+
+                if (window.appInstance) {
+                    window.appInstance.updateHighlighter('global');
+                }
+            }
+
+            // --- UI Data Binding ---
+
+            setEditorText(text) {
+                this.mainEditor.value = text;
+            }
+            getEditorText() {
+                return this.mainEditor.value;
+            }
+
+            setActiveTab(tabId) {
+                this.kbTabsContainer.querySelectorAll('.kb-tab-button').forEach(btn => btn.classList.remove('active'));
+                document.querySelectorAll('.kb-tab-pane').forEach(pane => pane.classList.remove('active'));
+                
+                const activeBtn = this.kbTabsContainer.querySelector(`[data-tab="${tabId}"]`);
+                const activePane = document.getElementById(tabId);
+                if (activeBtn) activeBtn.classList.add('active');
+                if (activePane) activePane.classList.add('active');
+                
+                if (tabId !== 'kb-tab-content-global') {
+                     this.showGlobalFileEditor(null);
+                }
+            }
+            
+            // [신규] 설정 모달의 탭 전환
+            setActiveSettingsTab(tabId) {
+                this.settingsPanelWrapper.querySelectorAll('.settings-tab').forEach(btn => btn.classList.remove('active', 'text-gray-700', 'font-semibold'));
+                this.settingsPanelWrapper.querySelectorAll('.settings-tab-pane').forEach(pane => pane.classList.remove('active'));
+                
+                const activeBtn = this.settingsPanelWrapper.querySelector(`[data-tab="${tabId}"]`);
+                const activePane = document.getElementById(tabId);
+                
+                if (activeBtn) activeBtn.classList.add('active', 'text-gray-700', 'font-semibold');
+                if (activePane) activePane.classList.add('active');
+            }
+
+            loadBookDataToUI(book, app) {
+                this.kbTabPanes.summary.value = book.kb_summary || "";
+                this.kbTabPanes.individual.value = ""; 
+                
+                this.renderGlobalFileList(book.virtualFiles || [],
+                    (id, isActive) => app.toggleGlobalFile(id, isActive),
+                    (file) => app.selectGlobalFile(file),
+                    (id) => app.deleteGlobalFile(id),
+                    (id, title) => app.renameGlobalFile(id, title)
+                );
+                this.showGlobalFileEditor(null); 
+
+                this.renderAnonymizationList(book.anonymizationMap || "{}", (key) => app.deleteAnonymizationPair(key));
+                
+                if (window.appInstance) {
+                    window.appInstance.updateAllHighlighters();
+                }
+                this.setActiveTab("kb-tab-content-summary");
+            }
+
+            saveBookDataFromUI(book) {
+                book.kb_summary = this.kbTabPanes.summary.value;
+            }
+
+            resetUI(app) {
+                this.tocPanel.innerHTML = "<span class='text-sm text-gray-500 p-3'>사건을 선택하세요.</span>";
+                this.actionPaletteContainer.innerHTML = "";
+                this.mainEditor.value = "";
+                this.mainEditor.disabled = true;
+                this.generateTocBtn.disabled = true;
+                
+                this.kbTabPanes.summary.value = "";
+                this.kbTabPanes.individual.value = "";
+                this.renderGlobalFileList([], () => {}, () => {}, () => {}, () => {});
+                this.showGlobalFileEditor(null);
+                this.renderAnonymizationList("{}", () => {});
+            }
+
+            attachEventListeners(app) {
+                this.messageCloseBtn.onclick = () => this.hideMessage();
+                
+                this.kbTabsContainer.addEventListener('click', (e) => {
+                    const button = e.target.closest('.kb-tab-button');
+                    if (button && button.dataset.tab) {
+                        this.setActiveTab(button.dataset.tab);
+                    }
+                });
+                
+                this.addGlobalFileBtn.onclick = () => app.addNewGlobalFile();
+                this.saveGlobalFileBtn.onclick = () => app.saveSelectedGlobalFile();
+                this.closeGlobalFileBtn.onclick = () => this.showGlobalFileEditor(null);
+                
+                // [신규] 설정 모달 리스너
+                this.openSettingsBtn.onclick = () => {
+                    app.loadPromptEditorToUI(); // 모달 열 때 프롬프트 로드
+                    this.settingsModal.classList.remove('hidden');
+                }
+                this.modalCloseSettingsBtn.onclick = () => this.settingsModal.classList.add('hidden');
+                
+                this.settingsPanelWrapper.addEventListener('click', (e) => {
+                     const button = e.target.closest('.settings-tab');
+                    if (button && button.dataset.tab) {
+                        this.setActiveSettingsTab(button.dataset.tab);
+                    }
+                });
+                
+                this.saveActionsBtn.onclick = () => app.saveCustomActionsFromUI();
+                this.savePromptBtn.onclick = () => app.saveCustomPromptFromUI();
+                this.actionsDocType.onchange = () => app.loadPromptEditorToUI();
+                this.promptsDocType.onchange = () => app.loadPromptEditorToUI();
+                this.promptsKey.onchange = () => app.loadPromptEditorToUI();
+            }
+            
+            escapeHTML(str) {
+                 return (str || "").replace(/[&<>"']/g, (match) => {
+                    const map = {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'};
+                    return map[match];
+                });
+            }
+        }
+
+        /**
+         * @class BookStorageService (IndexedDB)
+         */
+        class BookStorageService {
+            constructor() {
+                this.dbName = "LegalWriterDB_v_Final";
+                this.dbVersion = 1;
+                this.db = null;
+            }
+
+            async open() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, this.dbVersion);
+                    request.onerror = (event) => reject("IndexedDB open error: " + event.target.error);
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        resolve(this.db);
+                    };
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains("books")) {
+                            db.createObjectStore("books", { keyPath: "id", autoIncrement: true });
+                        }
+                    };
+                });
+            }
+
+            async getBook(id) {
+                if (!this.db) await this.open();
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(["books"], "readonly");
+                    const store = transaction.objectStore("books");
+                    const request = store.get(id);
+                    request.onsuccess = (event) => resolve(event.target.result);
+                    request.onerror = (event) => reject("Get book error: " + event.target.error);
+                });
+            }
+
+            async getAllBooks() {
+                if (!this.db) await this.open();
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(["books"], "readonly");
+                    const store = transaction.objectStore("books");
+                    const request = store.getAll();
+                    request.onsuccess = (event) => {
+                        resolve(event.target.result.reverse());
+                    };
+                    request.onerror = (event) => reject("Get all books error: " + event.target.error);
+                });
+            }
+
+            async saveBook(book) {
+                if (!this.db) await this.open();
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(["books"], "readwrite");
+                    const store = transaction.objectStore("books");
+                    const request = store.put(book);
+                    request.onsuccess = (event) => resolve(event.target.result); 
+                    request.onerror = (event) => reject("Save book error: " + event.target.error);
+                });
+            }
+
+            async deleteBook(id) {
+                if (!this.db) await this.open();
+                return new Promise((resolve, reject) => {
+                    const transaction = this.db.transaction(["books"], "readwrite");
+                    const store = transaction.objectStore("books");
+                    const request = store.delete(id);
+                    request.onsuccess = () => resolve();
+                    request.onerror = (event) => reject("Delete book error: " + event.target.error);
+                });
+            }
+        }
+        
+        /**
+         * @class PromptBuilder
+         */
+        class PromptBuilder {
+            // [신규] 생성자에서 templates를 받음
+            constructor(templates) {
+                this.templates = templates;
+            }
+
+            buildTocPrompt(book) {
+                const template = this.templates.litigation.tocPrompt;
+                if (!template) return "TOC 프롬프트 템플릿을 찾을 수 없습니다.";
+                
+                const summary = book.kb_summary || "데이터 없음";
+                const activeFiles = (book.virtualFiles || []).filter(f => f.isActive);
+                const globalData = activeFiles.map(f => `
+<Global_Data title="${this.escapeXML(f.title)}">
+${this.escapeXML(f.content)}
+</Global_Data>
+                `).join('\n');
+
+                let prompt = template;
+                prompt = prompt.replace(new RegExp('{{사건개요DB}}', 'g'), this.escapeXML(summary));
+                prompt = prompt.replace(new RegExp('{{전역_활성자료}}', 'g'), globalData || "데이터 없음");
+                
+                return prompt;
+            }
+
+            buildActionPrompt(action, context, modalVariables = {}) {
+                const { book, section, allTocText, previousText, currentText, individualContent } = context;
+                
+                // 1. 사용할 프롬프트 템플릿 결정
+                const promptTemplateKey = action.promptTemplateKey;
+                let template = this.templates.litigation[promptTemplateKey];
+                
+                if (!template) {
+                    console.error(`프롬프트 템플릿 '${promptTemplateKey}'를 찾을 수 없습니다.`);
+                    return `오류: '${promptTemplateKey}' 템플릿이 없습니다.`;
+                }
+
+                // 2. 컨텍스트 변수 준비
+                const summary = book.kb_summary || "데이터 없음";
+                const localData = individualContent || "데이터 없음";
+                const activeFiles = (book.virtualFiles || []).filter(f => f.isActive);
+                const globalData = activeFiles.map(f => `
+<Global_Data title="${this.escapeXML(f.title)}">
+${this.escapeXML(f.content)}
+</Global_Data>
+                `).join('\n');
+
+                // 3. 모든 변수를 객체로
+                const allVars = {
+                    '{{사건개요DB}}': this.escapeXML(summary),
+                    '{{전역_활성자료}}': globalData || "데이터 없음",
+                    '{{전체_목차}}': this.escapeXML(allTocText),
+                    '{{이전_작성_본문}}': this.escapeXML(previousText) || "아직 없음",
+                    '{{개별자료}}': this.escapeXML(localData),
+                    '{{CURRENT_SECTION_ID}}': section.id,
+                    '{{CURRENT_SECTION_TEXT}}': this.escapeXML(section.text),
+                    '{{CURRENT_CONTENT}}': this.escapeXML(currentText) || "아직 없음",
+                    ...modalVariables // userRequest 등 모달 변수 추가
+                };
+                
+                // 4. 모든 변수 일괄 치환
+                let prompt = template;
+                for (const key in allVars) {
+                    // {{userRequest}} 같은 모달 변수도 치환
+                    const value = allVars[key] || allVars[this.escapeXML(key)] || "";
+                    prompt = prompt.replace(new RegExp(key, 'g'), value);
+                }
+
+                return prompt;
+            }
+            
+            escapeXML(str) {
+                return (str || "").replace(/[<>&'"]/g, (match) => {
+                    const map = {'<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&#39;', '"': '&quot;'};
+                    return map[match];
+                });
+            }
+        }
+
+        /**
+         * @class App
+         * Main application controller.
+         */
+        class App {
+            constructor() {
+                this.db = new BookStorageService();
+                this.ui = new UIRenderer();
+                this.gemini = new GeminiService(this.ui);
+                this.anonymizer = new AIAnonymizer();
+                this.highlighters = {};
+                
+                // [신규] 템플릿과 빌더는 init에서 로드
+                this.templates = null;
+                this.promptBuilder = null; 
+
+                this.books = [];
+                this.currentBook = null;
+                this.currentSectionId = null;
+                
+                this.contextMenuActions = [
+                    { label: "반박 논리 생성", icon: "bi-lightbulb", action: "rebuttal" },
+                    { label: "내용 요약하기", icon: "bi-card-text", action: "summarize" },
+                    { label: "더 상세하게 작성", icon: "bi-pencil-fill", action: "modify" },
+                    { label: "익명화 처리", icon: "bi-eye-slash", action: "anonymize-add" },
+                    { label: "사건 개요로 등록", icon: "bi-bookmark-plus", action: "add-to-summary" },
+                ];
+            }
+
+            /**
+             * [신규] 템플릿 로드 (localStorage와 기본값 병합)
+             */
+            loadTemplates() {
+                const defaultTemplates = JSON.parse(JSON.stringify(PROMPT_TEMPLATES));
+                let customTemplates = {};
+                try {
+                    const stored = localStorage.getItem('legalWriterCustomTemplates');
+                    if (stored) {
+                        customTemplates = JSON.parse(stored);
+                    }
+                } catch (e) {
+                    console.error("커스텀 프롬프트 파싱 실패:", e);
+                    localStorage.removeItem('legalWriterCustomTemplates');
+                }
+
+                // 기본값 위에 커스텀 템플릿 덮어쓰기
+                if (customTemplates.litigation) {
+                    // actions와 프롬프트 키들을 개별적으로 병합
+                    if (customTemplates.litigation.actions) {
+                        defaultTemplates.litigation.actions = customTemplates.litigation.actions;
+                    }
+                    if (customTemplates.litigation.tocPrompt) {
+                        defaultTemplates.litigation.tocPrompt = customTemplates.litigation.tocPrompt;
+                    }
+                    if (customTemplates.litigation.writingPrompt) {
+                        defaultTemplates.litigation.writingPrompt = customTemplates.litigation.writingPrompt;
+                    }
+                     if (customTemplates.litigation.modificationPrompt) {
+                        defaultTemplates.litigation.modificationPrompt = customTemplates.litigation.modificationPrompt;
+                    }
+                     if (customTemplates.litigation.reviewPrompt) {
+                        defaultTemplates.litigation.reviewPrompt = customTemplates.litigation.reviewPrompt;
+                    }
+                }
+                
+                this.templates = defaultTemplates;
+                this.promptBuilder = new PromptBuilder(this.templates); // 새 템플릿으로 빌더 재생성
+            }
+            
+            /**
+             * [신규] 커스텀 템플릿 저장 (UI 로직 아님)
+             */
+            saveCustomTemplate(docType, key, value) {
+                let customTemplates = {};
+                try {
+                    const stored = localStorage.getItem('legalWriterCustomTemplates');
+                    if (stored) {
+                        customTemplates = JSON.parse(stored);
+                    }
+                } catch (e) { console.error("Error reading custom templates:", e); }
+
+                if (!customTemplates[docType]) {
+                    customTemplates[docType] = {};
+                }
+                customTemplates[docType][key] = value;
+                
+                try {
+                    localStorage.setItem('legalWriterCustomTemplates', JSON.stringify(customTemplates));
+                    this.loadTemplates(); // 저장 후 즉시 리로드
+                    this.ui.showMessage("저장 완료", "프롬프트 설정이 저장되었습니다. 앱에 반영됩니다.");
+                } catch (e) {
+                    console.error("Failed to save custom templates:", e);
+                    this.ui.showMessage("저장 실패", "프롬프트를 저장하는 데 실패했습니다.");
+                }
+            }
+            
+            /**
+             * [신규] 설정 모달 UI에 현재 템플릿 로드
+             */
+            loadPromptEditorToUI() {
+                try {
+                    const actionsDocType = this.ui.actionsDocType.value;
+                    const actions = this.templates[actionsDocType]?.actions || [];
+                    this.ui.actionsJsonEditor.value = JSON.stringify(actions, null, 4);
+                } catch (e) {
+                    this.ui.actionsJsonEditor.value = "[]";
+                }
+
+                try {
+                    const promptsDocType = this.ui.promptsDocType.value;
+                    const promptsKey = this.ui.promptsKey.value;
+                    
+                    let promptContent = "";
+                    if (promptsKey === 'modificationPrompt') {
+                         promptContent = this.templates[promptsDocType]?.modificationPrompt || MODIFICATION_PROMPT_TEMPLATE;
+                    } else if (promptsKey === 'reviewPrompt') {
+                        promptContent = this.templates[promptsDocType]?.reviewPrompt || REVIEW_PROMPT_TEMPLATE;
+                    } else {
+                        promptContent = this.templates[promptsDocType]?.[promptsKey] || "";
+                    }
+                    this.ui.promptsEditor.value = promptContent;
+                } catch (e) {
+                    this.ui.promptsEditor.value = "프롬프트를 불러오는 데 실패했습니다.";
+                }
+            }
+            
+            /**
+             * [신규] 설정 UI에서 액션 저장
+             */
+            saveCustomActionsFromUI() {
+                const docType = this.ui.actionsDocType.value;
+                try {
+                    const actionsArray = JSON.parse(this.ui.actionsJsonEditor.value);
+                    if (!Array.isArray(actionsArray)) throw new Error("JSON이 배열이 아닙니다.");
+                    
+                    this.saveCustomTemplate(docType, 'actions', actionsArray);
+                    // 액션 팔레트 즉시 새로고침
+                    this.ui.renderActionPalette(
+                        this.templates.litigation.actions || [], 
+                        (action) => this.handleActionButton(action)
+                    );
+                } catch (e) {
+                    this.ui.showMessage("저장 실패", "유효하지 않은 JSON 형식입니다.\n" + e.message);
+                }
+            }
+            
+            /**
+             * [신규] 설정 UI에서 프롬프트 저장
+             */
+            saveCustomPromptFromUI() {
+                const docType = this.ui.promptsDocType.value;
+                const key = this.ui.promptsKey.value;
+                const content = this.ui.promptsEditor.value;
+                this.saveCustomTemplate(docType, key, content);
+            }
+
+            /**
+             * Initializes the application.
+             */
+            async init() {
+                this.loadTemplates(); // [신규] 템플릿 먼저 로드
+                this.ui.attachEventListeners(this);
+                this.initHighlighters();
+                this.attachGlobalEventListeners();
+                
+                await this.db.open();
+                await this.loadBookList();
+                this.ui.resetUI(this);
+            }
+            
+            initHighlighters() {
+                this.highlighters = {
+                    'main': new AnonymizationHighlighter(this.ui.mainEditor, this.ui.mainEditorBackdrop, this.anonymizer),
+                    'summary': new AnonymizationHighlighter(this.ui.kbTabPanes.summary, this.ui.kbBackdrops.summary, this.anonymizer),
+                    'individual': new AnonymizationHighlighter(this.ui.kbTabPanes.individual, this.ui.kbBackdrops.individual, this.anonymizer),
+                    'global': new AnonymizationHighlighter(this.ui.globalFileContent, this.ui.kbBackdrops.global, this.anonymizer),
+                    'ai-prompt': new AnonymizationHighlighter(this.ui.aiPromptDisplay, this.ui.aiPromptBackdrop, this.anonymizer),
+                    'ai-response': new AnonymizationHighlighter(this.ui.aiResponseInput, this.ui.aiResponseBackdrop, this.anonymizer),
+                };
+            }
+            
+            attachGlobalEventListeners() {
+                this.ui.newBookBtn.onclick = () => this.createNewBook();
+                this.ui.generateTocBtn.onclick = () => this.generateTOC();
+                
+                this.ui.mainEditor.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    const selection = window.getSelection().toString().trim();
+                    const menuItems = this.contextMenuActions.filter(item => {
+                        if (item.action === 'anonymize-add' || item.action === 'add-to-summary') {
+                            return !!selection;
+                        }
+                        return true;
+                    });
+                    this.ui.showContextMenu(e.pageX, e.pageY, menuItems, (action) => this.handleContextMenuAction(action, selection));
+                };
+                
+                this.ui.kbTabPanes.summary.onblur = () => this.saveCurrentBookDataFromUI();
+                this.ui.kbTabPanes.individual.onblur = () => this.saveCurrentIndividualContent();
+                
+                const textareas = [
+                    { id: 'main', el: this.ui.mainEditor },
+                    { id: 'summary', el: this.ui.kbTabPanes.summary },
+                    { id: 'individual', el: this.ui.kbTabPanes.individual },
+                    { id: 'global', el: this.ui.globalFileContent }
+                ];
+                
+                textareas.forEach(({ id, el }) => {
+                    el.oninput = () => this.updateHighlighter(id);
+                    el.onscroll = () => this.syncHighlighterScroll(id);
+                });
+                
+                this.ui.anonymizeForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    this.addAnonymizationPair();
+                };
+            }
+
+            // --- Book (Case) Management ---
+
+            async loadBookList() {
+                this.books = await this.db.getAllBooks();
+                this.ui.renderBookList(this.books, this.currentBook?.id, 
+                    (id) => this.loadBook(id),
+                    (id, name) => this.deleteBook(id, name)
+                );
+            }
+
+            async loadBook(id) {
+                this.currentBook = await this.db.getBook(id);
+                this.currentSectionId = null;
+                
+                this.ui.renderBookList(this.books, this.currentBook.id, 
+                    (id) => this.loadBook(id),
+                    (id, name) => this.deleteBook(id, name)
+                );
+                this.ui.renderTOC(this.currentBook.toc || [], null, 
+                    (id) => this.selectSection(id),
+                    (e, item) => this.handleTocContextMenu(e, item)
+                );
+                
+                this.ui.mainEditor.disabled = true;
+                this.ui.generateTocBtn.disabled = false;
+                
+                this.ui.setEditorText("");
+                this.ui.loadBookDataToUI(this.currentBook, this);
+                
+                // [신규] 템플릿 기반으로 액션 팔레트 렌더링
+                this.ui.renderActionPalette(
+                    this.templates.litigation.actions || [], 
+                    (action) => this.handleActionButton(action)
+                );
+                
+                this.updateAllHighlighters();
+            }
+
+            async createNewBook() {
+                const bookName = await this.ui.showNewCasePrompt();
+                if (!bookName) return; 
+
+                const newBook = {
+                    bookName: bookName,
+                    toc: [],
+                    contents: {},
+                    individualContents: {},
+                    kb_summary: "",
+                    anonymizationMap: "{}",
+                    virtualFiles: [],
+                    createdAt: Date.now(),
+                    // [신규] 기본 문서 타입을 litigation으로 설정
+                    documentType: 'litigation' 
+                };
+                const newId = await this.db.saveBook(newBook);
+                newBook.id = newId;
+                
+                this.books.unshift(newBook); 
+                this.loadBook(newId);
+            }
+
+            async deleteBook(id, name) {
+                const confirmed = await this.ui.showConfirm("사건 삭제", `'${name}' 사건을 정말로 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.`);
+                if (!confirmed) return;
+
+                await this.db.deleteBook(id);
+                this.books = this.books.filter(b => b.id !== id);
+                
+                if (this.currentBook && this.currentBook.id === id) {
+                    this.currentBook = null;
+                    this.currentSectionId = null;
+                    this.ui.resetUI(this);
+                }
+                
+                this.ui.renderBookList(this.books, this.currentBook?.id, 
+                    (id) => this.loadBook(id),
+                    (id, name) => this.deleteBook(id, name)
+                );
+            }
+
+            // --- Section (TOC) & Content Management ---
+
+            selectSection(id) {
+                if (this.currentSectionId !== null) {
+                    this.saveCurrentSectionContent(true); 
+                }
+                
+                this.currentSectionId = id;
+                this.ui.renderTOC(this.currentBook.toc, id, 
+                    (id) => this.selectSection(id),
+                    (e, item) => this.handleTocContextMenu(e, item)
+                );
+                
+                const content = this.currentBook.contents[id] || "";
+                this.ui.setEditorText(content);
+                this.ui.mainEditor.disabled = false;
+                
+                const individualContent = this.currentBook.individualContents[id] || "";
+                this.ui.kbTabPanes.individual.value = individualContent;
+                
+                this.updateHighlighter('main');
+                this.updateHighlighter('individual');
+
+                // [신규] 템플릿 기반으로 액션 팔레트 렌더링
+                this.ui.renderActionPalette(
+                    this.templates.litigation.actions || [], 
+                    (action) => this.handleActionButton(action)
+                );
+            }
+
+            async saveCurrentSectionContent(saveToDb = true) {
+                if (this.currentBook && this.currentSectionId !== null) {
+                    const content = this.ui.getEditorText();
+                    this.currentBook.contents[this.currentSectionId] = content;
+                    if (saveToDb) {
+                        await this.db.saveBook(this.currentBook);
+                    }
+                }
+            }
+            
+            async saveCurrentIndividualContent() {
+                if (this.currentBook && this.currentSectionId !== null) {
+                    const content = this.ui.kbTabPanes.individual.value;
+                    if (!this.currentBook.individualContents) {
+                        this.currentBook.individualContents = {};
+                    }
+                    this.currentBook.individualContents[this.currentSectionId] = content;
+                    await this.db.saveBook(this.currentBook);
+                }
+            }
+
+            async saveCurrentBookDataFromUI() {
+                if (this.currentBook) {
+                    this.ui.saveBookDataFromUI(this.currentBook);
+                    await this.db.saveBook(this.currentBook);
+                }
+            }
+            
+            // --- Anonymization Handlers ---
+
+            async addAnonymizationPair() {
+                if (!this.currentBook) return;
+                
+                const key = this.ui.anonymizeKeyInput.value.trim();
+                const value = this.ui.anonymizeValueInput.value.trim();
+                
+                if (!key || !value) {
+                    this.ui.showMessage("입력 오류", "원본 텍스트와 익명화 키를 모두 입력해야 합니다.");
+                    return;
+                }
+                
+                let map = {};
+                try {
+                    map = JSON.parse(this.currentBook.anonymizationMap || "{}");
+                } catch (e) { map = {}; }
+                
+                map[key] = value;
+                this.currentBook.anonymizationMap = JSON.stringify(map);
+                
+                this.ui.renderAnonymizationList(this.currentBook.anonymizationMap, (k) => this.deleteAnonymizationPair(k));
+                this.ui.anonymizeKeyInput.value = "";
+                this.ui.anonymizeValueInput.value = "";
+                
+                await this.db.saveBook(this.currentBook);
+                
+                this.updateAllHighlighters();
+            }
+            
+            async deleteAnonymizationPair(key) {
+                if (!this.currentBook) return;
+                
+                const confirmed = await this.ui.showConfirm("삭제 확인", `'${key}' 항목을 삭제하시겠습니까?`);
+                if (confirmed) {
+                    let map = {};
+                    try {
+                        map = JSON.parse(this.currentBook.anonymizationMap || "{}");
+                    } catch (e) { map = {}; }
+                    
+                    delete map[key];
+                    this.currentBook.anonymizationMap = JSON.stringify(map);
+                    
+                    this.ui.renderAnonymizationList(this.currentBook.anonymizationMap, (k) => this.deleteAnonymizationPair(k));
+                    await this.db.saveBook(this.currentBook);
+                    
+                    this.updateAllHighlighters();
+                }
+            }
+            
+            // --- Global Data (V-KB) Handlers ---
+
+            async addNewGlobalFile() {
+                if (!this.currentBook) return;
+                
+                const title = await this.ui.showPrompt("새 자료 추가", "새 자료의 제목을 입력하세요", "새 자료");
+                if (!title) return;
+
+                const newFile = {
+                    id: 'vf-' + Date.now(),
+                    title: title,
+                    content: '',
+                    isActive: true
+                };
+                
+                if (!this.currentBook.virtualFiles) {
+                    this.currentBook.virtualFiles = [];
+                }
+                this.currentBook.virtualFiles.push(newFile);
+                
+                await this.db.saveBook(this.currentBook);
+                
+                this.ui.renderGlobalFileList(this.currentBook.virtualFiles,
+                    (id, isActive) => this.toggleGlobalFile(id, isActive),
+                    (file) => this.selectGlobalFile(file),
+                    (id) => this.deleteGlobalFile(id),
+                    (id, title) => this.renameGlobalFile(id, title)
+                );
+                this.ui.showGlobalFileEditor(newFile);
+            }
+            
+            selectGlobalFile(file) {
+                this.ui.showGlobalFileEditor(file);
+                this.ui.renderGlobalFileList(this.currentBook.virtualFiles,
+                    (id, isActive) => this.toggleGlobalFile(id, isActive),
+                    (file) => this.selectGlobalFile(file),
+                    (id) => this.deleteGlobalFile(id),
+                    (id, title) => this.renameGlobalFile(id, title)
+                );
+            }
+            
+            async saveSelectedGlobalFile() {
+                if (!this.currentBook || !this.ui.currentSelectedGlobalFileId) return;
+                
+                const fileId = this.ui.saveGlobalFileBtn.dataset.id;
+                const file = this.currentBook.virtualFiles.find(f => f.id === fileId);
+                
+                if (file) {
+                    file.title = this.ui.globalFileTitle.value;
+                    file.content = this.ui.globalFileContent.value;
+                    
+                    await this.db.saveBook(this.currentBook);
+                    
+                    this.ui.renderGlobalFileList(this.currentBook.virtualFiles,
+                        (id, isActive) => this.toggleGlobalFile(id, isActive),
+                        (file) => this.selectGlobalFile(file),
+                        (id) => this.deleteGlobalFile(id),
+                        (id, title) => this.renameGlobalFile(id, title)
+                    );
+                    this.ui.showMessage("저장 완료", `"${file.title}" 자료가 저장되었습니다.`);
+                }
+            }
+
+            async toggleGlobalFile(fileId, isActive) {
+                if (!this.currentBook) return;
+                
+                const file = this.currentBook.virtualFiles.find(f => f.id === fileId);
+                if (file) {
+                    file.isActive = isActive;
+                    await this.db.saveBook(this.currentBook);
+                }
+            }
+
+            async renameGlobalFile(fileId, oldTitle) {
+                if (!this.currentBook) return;
+
+                const newTitle = await this.ui.showPrompt("자료 이름 바꾸기", "새 제목을 입력하세요", oldTitle);
+                if (!newTitle || newTitle === oldTitle) return; 
+
+                const file = this.currentBook.virtualFiles.find(f => f.id === fileId);
+                if (file) {
+                    file.title = newTitle;
+                    await this.db.saveBook(this.currentBook);
+
+                    this.ui.renderGlobalFileList(this.currentBook.virtualFiles,
+                        (id, isActive) => this.toggleGlobalFile(id, isActive),
+                        (file) => this.selectGlobalFile(file),
+                        (id) => this.deleteGlobalFile(id),
+                        (id, title) => this.renameGlobalFile(id, title)
+                    );
+                    
+                    if (this.ui.currentSelectedGlobalFileId === fileId) {
+                        this.ui.globalFileTitle.value = newTitle;
+                    }
+                }
+            }
+
+            async deleteGlobalFile(fileId) {
+                if (!this.currentBook) return;
+                
+                const file = this.currentBook.virtualFiles.find(f => f.id === fileId);
+                const confirmed = await this.ui.showConfirm("자료 삭제", `'${file.title}' 자료를 삭제하시겠습니까?`);
+                
+                if (confirmed) {
+                    this.currentBook.virtualFiles = this.currentBook.virtualFiles.filter(f => f.id !== fileId);
+                    await this.db.saveBook(this.currentBook);
+                    
+                    this.ui.renderGlobalFileList(this.currentBook.virtualFiles,
+                        (id, isActive) => this.toggleGlobalFile(id, isActive),
+                        (file) => this.selectGlobalFile(file),
+                        (id) => this.deleteGlobalFile(id),
+                        (id, title) => this.renameGlobalFile(id, title)
+                    );
+                    
+                    if (this.ui.currentSelectedGlobalFileId === fileId) {
+                        this.ui.showGlobalFileEditor(null);
+                    }
+                }
+            }
+
+
+            // --- AI Function Handlers ---
+
+            async generateTOC() {
+                if (!this.currentBook) return;
+                
+                const confirmed = await this.ui.showConfirm("목차 생성", "KB 데이터를 기반으로 새 목차를 생성합니다. 기존 목차와 본문은 삭제됩니다. 계속하시겠습니까?");
+                if (!confirmed) return;
+
+                this.ui.showLoading(true);
+                try {
+                    const rawPrompt = this.promptBuilder.buildTocPrompt(this.currentBook);
+                    const prompt = this.anonymizer.anonymize(rawPrompt, this.currentBook.anonymizationMap);
+                    
+                    const anonymizedResult = await this.gemini.call(prompt, "목차(TOC) 생성");
+                    
+                    if (anonymizedResult) {
+                        const result = this.anonymizer.deanonymize(anonymizedResult, this.currentBook.anonymizationMap);
+                        
+                        // [신규] textgenerator.html의 파서 로직 적용
+                        const newToc = this.parseToc(result);
+                        if (!Array.isArray(newToc)) {
+                             throw new Error("AI가 유효한 JSON 배열을 반환하지 않았습니다. 프롬프트를 확인하세요.");
+                        }
+                        
+                        let nextId = 0;
+                        const generateIds = (items) => {
+                            return items.map(item => ({
+                                id: nextId++,
+                                text: item.text,
+                                status: "default", // [신규] 작업 완료 상태 필드
+                                children: item.children ? generateIds(item.children) : []
+                            }));
+                        };
+                        
+                        this.currentBook.toc = generateIds(newToc);
+                        this.currentBook.contents = {}; 
+                        this.currentBook.individualContents = {}; 
+                        
+                        await this.db.saveBook(this.currentBook);
+                        this.selectSection(null); 
+                        this.ui.renderTOC(this.currentBook.toc, null, (id) => this.selectSection(id));this.ui.renderTOC(this.currentBook.toc, null, 
+                            (id) => this.selectSection(id),
+                            (e, item) => this.handleTocContextMenu(e, item)
+                        );
+                        this.ui.setEditorText("");
+                        this.ui.kbTabPanes.individual.value = "";
+                    }
+                } catch (error) {
+                    console.error("TOC generation failed:", error);
+                    this.ui.showMessage("TOC 생성 오류", error.message);
+                } finally {
+                    this.ui.showLoading(false);
+                }
+            }
+            
+            parseToc(text) {
+                try {
+                    // 1. JSON 파싱 시도
+                    return JSON.parse(text);
+                } catch (e) {
+                     // 2. JSON 파싱 실패 시, 텍스트 계층 파서 실행
+                     console.error("Failed to parse TOC JSON (fallback to text parser):", e, text);
+                     try {
+                        const lines = text.split('\n').filter(line => line.trim().length > 0);
+                        if (lines.length === 0) return [];
+
+                        const getIndentLevel = (lineText) => {
+                            const match = lineText.match(/^(\s*)/);
+                            // 탭을 스페이스 4칸으로 계산 (혹은 필요에 따라 조정)
+                            const indent = match ? match[1].replace(/\t/g, '    ').length : 0;
+                            return indent;
+                        };
+
+                        const root = { children: [] };
+                        // 스택: [ { node: 부모노드, level: 부모노드의 들여쓰기 레벨 } ]
+                        const stack = [{ node: root, level: -1 }];
+
+                        lines.forEach(line => {
+                            const text = line.trim();
+                            if (!text) return;
+
+                            const level = getIndentLevel(line);
+                            const newNode = { text: text, children: [] };
+
+                            // 현재 스택에서 현재 레벨보다 낮은(상위) 노드를 찾음
+                            while (stack.length > 0 && stack[stack.length - 1].level >= level) {
+                                stack.pop();
+                            }
+
+                            // 스택의 top이 현재 노드의 부모
+                            const parent = stack[stack.length - 1].node;
+                            parent.children.push(newNode);
+                            
+                            // 현재 노드를 스택에 추가
+                            stack.push({ node: newNode, level: level });
+                        });
+
+                        return root.children;
+                        
+                     } catch (parseError) {
+                        // 3. 텍스트 파서도 실패하면, 기존의 단순 폴백 실행
+                        console.error("Failed to parse hierarchical text (fallback to flat list):", parseError, text);
+                        const lines = text.split('\n').filter(line => line.trim() !== "");
+                        return lines.map(line => ({
+                            text: line.trim().replace(/<\/?(ul|li|p|div)>/g, ''),
+                            children: []
+                        }));
+                     }
+                }
+            }
+            
+            async handleContextMenuAction(action, selection) {
+                if (!this.currentBook) return;
+
+                if (action === 'anonymize-add') {
+                    this.ui.setActiveTab('kb-tab-content-anonymize');
+                    this.ui.anonymizeKeyInput.value = selection;
+                    this.ui.anonymizeValueInput.focus();
+                    return;
+                }
+                
+                if (action === 'add-to-summary') {
+                    this.ui.kbTabPanes.summary.value += `\n- (주요 사실) ${selection}`;
+                    await this.saveCurrentBookDataFromUI();
+                    this.ui.showMessage("성공", "선택한 텍스트가 '사건 개요'에 추가되었습니다.");
+                    this.updateHighlighter('summary');
+                    return;
+                }
+                
+                // [신규] 컨텍스트 메뉴의 AI 액션을 액션 버튼과 동일하게 처리
+                const mockAction = {
+                    id: action,
+                    tooltip: `컨텍스트 메뉴: ${action}`,
+                    actionType: action,
+                    // textgenerator (1).html의 구조를 참조하여,
+                    // 컨텍스트 메뉴 액션은 기본 프롬프트를 사용한다고 가정
+                    variables: (action === 'modify') ? [{ id: 'userRequest', label: '수정 요구사항', type: 'textarea', placeholder: '예: 3번째 문단의 논리를 강화하고, 1번 자료를 인용하세요.' }] : [],
+                    promptTemplateKey: (action === 'modify') ? 'modificationPrompt' : 'writingPrompt' // 임시 매핑
+                };
+                
+                // 'rebuttal', 'summarize'가 별도 프롬프트 템플릿을 써야 한다면
+                // this.templates.litigation.actions에 해당 정의가 필요함.
+                // 현재는 'modify'만 변수 모달을 띄우고, 나머지는 'writingPrompt'를 쓴다고 가정.
+                
+                // 'modify'와 동일한 로직을 태우기
+                if (action === 'rebuttal' || action === 'summarize' || action === 'modify') {
+                     const realAction = this.templates.litigation.actions.find(a => a.id === action);
+                     if (realAction) {
+                         await this.handleActionButton(realAction);
+                     } else {
+                         this.ui.showMessage("오류", `액션 '${action}'이(가) 설정에서 정의되지 않았습니다.`);
+                     }
+                }
+            }
+
+            async performDeanonymizeEditor() {
+                if (!this.currentBook) throw new Error("현재 선택된 사건이 없습니다.");
+                
+                const currentAnonymizedText = this.ui.getEditorText();
+                if (!currentAnonymizedText) {
+                    this.ui.showMessage("알림", "편집기 내용이 비어있습니다.");
+                    return;
+                }
+                
+                const mapString = this.currentBook.anonymizationMap || "{}";
+                const deanonymizedText = this.anonymizer.deanonymize(currentAnonymizedText, mapString);
+                
+                this.ui.setEditorText(deanonymizedText);
+                
+                // 하이라이터 업데이트
+                this.updateHighlighter('main'); 
+                
+                // 복원된 내용 저장
+                await this.saveCurrentSectionContent(true); 
+                
+                this.ui.showMessage("복원 완료", "편집기 본문의 익명화를 되돌렸습니다.");
+            }
+
+            
+            
+            /**
+             * [수정] textgenerator (1).html의 로직을 통합한 액션 핸들러
+             */
+            async handleActionButton(action) {
+                if (!this.currentBook || this.currentSectionId === null) {
+                    this.ui.showMessage("오류", "먼저 목차(TOC) 항목을 선택하세요.");
+                    return;
+                }
+
+                // [신규] 클라이언트 전용 액션 분기 처리
+                if (action.promptTemplateKey === '__CLIENT_ACTION__') {
+                    this.ui.showLoading(true);
+                    try {
+                        switch (action.id) {
+                            case 'deanonymize':
+                                await this.performDeanonymizeEditor();
+                                break;
+                            default:
+                                this.ui.showMessage("오류", "알 수 없는 클라이언트 액션입니다: " + action.id);
+                        }
+                    } catch (e) {
+                        console.error("Client action failed:", e);
+                        this.ui.showMessage("작업 오류", e.message);
+                    } finally {
+                        this.ui.showLoading(false);
+                    }
+                    return; // AI 로직을 실행하지 않고 종료
+                }
+
+                // --- 기존 AI 호출 로직 ---
+                this.ui.showLoading(true);
+                
+                try {
+                    let modalVariables = {};
+                    
+                    // 1. 변수 입력 모달이 필요한지 확인
+                    if (action.variables && action.variables.length > 0) {
+                        modalVariables = await this.ui.showActionVariableModal(action);
+                        if (!modalVariables) { // 사용자가 취소
+                            this.ui.showLoading(false);
+                            return;
+                        }
+                    }
+
+                    // 2. 프롬프트 생성에 필요한 컨텍스트 수집
+                    const section = this.findTocItem(this.currentBook.toc, this.currentSectionId);
+                    if (!section) throw new Error("선택된 섹션을 찾을 수 없습니다.");
+                    
+                    const context = {
+                        book: this.currentBook,
+                        section: section,
+                        allTocText: this.tocToText(this.currentBook.toc),
+                        previousText: this.getPreviousSectionsText(this.currentSectionId),
+                        currentText: this.ui.getEditorText(),
+                        individualContent: this.currentBook.individualContents[this.currentSectionId] || ""
+                    };
+                    
+                    // 3. 프롬프트 빌드
+                    const rawPrompt = this.promptBuilder.buildActionPrompt(action, context, modalVariables);
+                    const anonymizedPrompt = this.anonymizer.anonymize(rawPrompt, this.currentBook.anonymizationMap);
+                    
+                    // 4. 수동 모달 호출
+                    const anonymizedResult = await this.gemini.call(anonymizedPrompt, `${section.text} - ${action.tooltip}`);
+                    
+                    if (anonymizedResult) {
+                        const resultText = this.anonymizer.deanonymize(anonymizedResult, this.currentBook.anonymizationMap);
+                        
+                        // 5. 결과 적용
+                        if (action.id === 'write') {
+                             this.ui.setEditorText(resultText); // 덮어쓰기
+                        } else {
+                             // 수정, 요약 등은 덧붙이기
+                             this.ui.setEditorText(this.ui.getEditorText() + "\n\n--- AI 응답 (" + action.tooltip + ") ---\n" + resultText);
+                        }
+                    }
+                    
+                    await this.saveCurrentSectionContent(true); // 새 내용 저장
+                    this.updateHighlighter('main');
+                    
+                } catch (error) {
+                    console.error(`${action.tooltip} failed:`, error);
+                    this.ui.showMessage("AI 작업 오류", error.message);
+                } finally {
+                    this.ui.showLoading(false);
+                }
+            }
+
+            // --- [신규] TOC 컨텍스트 메뉴 핸들러 ---
+            handleTocContextMenu(e, item) {
+                const menuItems = [
+                    {
+                        label: item.status === 'completed' ? '미완료로 표시' : '완료로 표시',
+                        icon: item.status === 'completed' ? 'bi-arrow-counterclockwise' : 'bi-check-lg',
+                        action: 'toggle-status'
+                    }
+                ];
+                
+                this.ui.showContextMenu(e.pageX, e.pageY, menuItems, (action) => {
+                    if (action === 'toggle-status') {
+                        const newStatus = item.status === 'completed' ? 'default' : 'completed';
+                        this.updateTocItemStatus(item.id, newStatus);
+                    }
+                });
+            }
+
+            async updateTocItemStatus(itemId, newStatus) {
+                if (!this.currentBook) return;
+
+                const findAndUpdate = (items, id, status) => {
+                    for (const item of items) {
+                        if (item.id === id) {
+                            item.status = status;
+                            return true;
+                        }
+                        if (item.children && findAndUpdate(item.children, id, status)) {
+                            return true;
+                        }
+                    }
+                    return false;
+                };
+
+                findAndUpdate(this.currentBook.toc, itemId, newStatus);
+                await this.db.saveBook(this.currentBook);
+                
+                // TOC UI 새로고침
+                this.ui.renderTOC(this.currentBook.toc, this.currentSectionId, 
+                    (id) => this.selectSection(id),
+                    (e, item) => this.handleTocContextMenu(e, item)
+                );
+            }
+
+            // --- Utility Methods ---
+            findTocItem(items, id) {
+                for (const item of items) {
+                    if (item.id === id) return item;
+                    if (item.children) {
+                        const found = this.findTocItem(item.children, id);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            }
+
+            tocToText(items, level = 0) {
+                let text = "";
+                items.forEach(item => {
+                    text += " ".repeat(level * 2) + item.text + "\n";
+                    if (item.children) {
+                        text += this.tocToText(item.children, level + 1);
+                    }
+                });
+                return text;
+            }
+
+            getPreviousSectionsText(currentSectionId) {
+                const texts = [];
+                const traverse = (items) => {
+                    for (const item of items) {
+                        if (item.id === currentSectionId) return true; 
+                        if (this.currentBook.contents[item.id]) {
+                            texts.push(`[${item.text}]\n${this.currentBook.contents[item.id]}`);
+                        }
+                        if (item.children) {
+                            if (traverse(item.children)) return true;
+                        }
+                    }
+                    return false;
+                };
+                traverse(this.currentBook.toc);
+                return texts.join("\n\n---\n\n");
+            }
+            
+            // --- Highlighter Control ---
+            updateHighlighter(id, keyOrValue = 'key') {
+                const highlighter = this.highlighters[id];
+                if (highlighter) {
+                    const text = highlighter.textarea.value;
+                    const mapString = this.currentBook?.anonymizationMap || "{}";
+                    highlighter.update(text, mapString, keyOrValue);
+                }
+            }
+
+            updateAllHighlighters() {
+                this.updateHighlighter('main');
+                this.updateHighlighter('summary');
+                this.updateHighlighter('individual');
+                this.updateHighlighter('global');
+            }
+
+            syncHighlighterScroll(id) {
+                const highlighter = this.highlighters[id];
+                if (highlighter) {
+                    highlighter.syncScroll();
+                }
+            }
+        }
+
+        // --- App Initialization ---
+        window.addEventListener("load", () => {
+            const app = new App();
+            window.appInstance = app; 
+            app.init().catch(err => {
+                console.error("애플리케이션 초기화 실패:", err);
+                app.ui.showMessage("치명적 오류", "애플리케이션을 초기화하는 데 실패했습니다. 콘솔을 확인하세요: " + err.message);
+            });
+        });
+
+    </script>
+</body>
+</html>
+
