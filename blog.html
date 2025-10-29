@@ -3,1115 +3,1345 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>콘텐츠 허브 | v2.1</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- 외부 라이브러리: JSZip (ZIP 처리), Marked (Markdown 렌더링) -->
+    <title>AI 블로그 어시스턴트 (v3.9 - Cover Gen)</title> <!-- v3.9로 버전 업데이트 -->
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Lucide 아이콘 -->
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+    <!-- Dexie.js (IndexedDB 래퍼) -->
+    <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
+    <!-- JSZip -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- html2canvas (표지 이미지 저장을 위해 추가) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
     <style>
-        /*
-            DESIGN SYSTEM DEFINITION
-            - Typography: Poppins
-            - Spacing Unit: 8px
-            - Corner Radius: 8px (md), 12px (lg)
-        */
+        /* ... 기존 스타일 ... */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        /* Noto Sans KR 폰트 (표지 생성을 위해 추가) */
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
 
-        :root {
-            --font-family: 'Poppins', sans-serif;
-            --space-unit: 8px;
-            --radius-md: 8px;
-            --radius-lg: 12px;
-            --color-primary: #3B82F6;
-            --color-primary-hover: #2563EB;
-            --color-background: #F3F4F6;
-            --color-surface: #FFFFFF;
-            --color-text-primary: #1F2937;
-            --color-text-secondary: #6B7280;
-            --color-border: #E5E7EB;
-            --color-danger: #EF4444;
-            --color-danger-hover: #DC2626;
-            --color-success: #10B981;
-            --color-warning: #F59E0B;
-            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-            --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-        }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .spinner { border: 2px solid #e5e7eb; border-top-color: #3b82f6; animation: spin 1s linear infinite; }
+        .toast { visibility: hidden; opacity: 0; transform: translateY(20px); transition: all 0.3s ease-out; }
+        .toast.show { visibility: visible; opacity: 1; transform: translateY(0); }
+        .modal-backdrop { background-color: rgba(0, 0, 0, 0.5); }
+        textarea[readonly] { background-color: #f1f5f9; cursor: default; }
+        
+        .tab-button[aria-selected="true"] { border-color: #3b82f6; color: #2563eb; font-weight: 600; }
+        .tab-button[aria-selected="false"] { border-color: transparent; color: #64748b; font-weight: 500; }
+        .count-badge { display: none; margin-left: 4px; font-size: 0.8rem; font-weight: 500; color: #64748b; padding: 0px 6px; border-radius: 99px; background-color: #e2e8f0; }
+        .tab-button[aria-selected="true"] .count-badge { color: #2563eb; background-color: #dbeafe; }
+        
+        .data-file-item[data-active="true"] { background-color: #f0f9ff; border-left-color: #3b82f6; }
+        .data-file-item[data-active="false"] { background-color: #ffffff; border-left-color: #e5e7eb; }
+        .data-file-item.selected { background-color: #dbeafe; border-left-color: #2563eb; }
 
-        /* --- Base & Reset --- */
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            font-family: var(--font-family);
-            background-color: var(--color-background);
-            color: var(--color-text-primary);
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-            overflow-x: hidden;
-        }
-        h1, h2, h3, h4, h5, h6 { font-weight: 600; }
+        .switch { position: relative; display: inline-block; width: 40px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
+        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: #3b82f6; }
+        input:checked + .slider:before { transform: translateX(16px); }
 
-        /* --- Layout --- */
-        .app-container { display: flex; height: 100vh; width: 100%; position: relative; }
-        .sidebar {
-            width: 280px; background-color: var(--color-surface); border-right: 1px solid var(--color-border);
-            display: flex; flex-direction: column; padding: calc(var(--space-unit) * 3); flex-shrink: 0;
-        }
-        .sidebar-header { display: flex; align-items: center; gap: calc(var(--space-unit) * 1.5); margin-bottom: calc(var(--space-unit) * 4); }
-        .sidebar-header .logo-icon { width: 32px; height: 32px; color: var(--color-primary); }
-        .sidebar-header h1 { font-size: 20px; font-weight: 700; }
-        .sidebar-nav { flex-grow: 1; overflow-y: auto; }
-        .sidebar-footer { margin-top: auto; padding-top: calc(var(--space-unit) * 2); border-top: 1px solid var(--color-border); }
-        .main-content { flex-grow: 1; padding: calc(var(--space-unit) * 4); overflow-y: auto; display: flex; flex-direction: column; }
-        .main-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: calc(var(--space-unit) * 2); flex-shrink: 0; }
-        .main-header h2 { font-size: 28px; }
-        
-        /* Topic Resources */
-        .topic-resources-container { background-color: var(--color-surface); padding: calc(var(--space-unit) * 3); border-radius: var(--radius-lg); margin-bottom: calc(var(--space-unit) * 2); box-shadow: var(--shadow-md); flex-shrink: 0; }
-        .topic-resources-container h4 { font-size: 18px; margin-bottom: var(--space-unit); }
-        .topic-resources-container p { font-size: 14px; color: var(--color-text-secondary); margin-bottom: calc(var(--space-unit) * 2); }
-        
-        .topic-controls { display: flex; justify-content: space-between; align-items: center; margin-bottom: calc(var(--space-unit) * 3); flex-shrink: 0; flex-wrap: wrap; gap: 8px; }
-        .topic-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        
-        .view-switcher { display: flex; background-color: var(--color-background); padding: 4px; border-radius: var(--radius-md); }
-        .view-switcher .btn { background-color: transparent; border: none; padding: 6px 12px; }
-        .view-switcher .btn.active { background-color: var(--color-surface); box-shadow: var(--shadow-md); }
+        /* API 키 목록 스타일 */
+        .api-key-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
+        .api-key-item:last-child { border-bottom: none; }
+        .api-key-name { font-weight: 500; }
+        .api-key-value { color: #64748b; font-family: monospace; font-size: 0.9em; }
 
-        /* --- Components --- */
-        .btn {
-            display: inline-flex; align-items: center; justify-content: center; gap: var(--space-unit);
-            padding: calc(var(--space-unit) * 1.25) calc(var(--space-unit) * 2); border-radius: var(--radius-md);
-            border: none; font-family: inherit; font-weight: 500; font-size: 14px; cursor: pointer;
-            transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
-            text-decoration: none; white-space: nowrap;
+        /* --- 표지 생성기 전용 스타일 --- */
+        .cover-font {
+            font-family: 'Noto Sans KR', "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
         }
-        .btn-icon { width: 18px; height: 18px; }
-        .btn-primary { background-color: var(--color-primary); color: white; }
-        .btn-primary:hover { background-color: var(--color-primary-hover); }
-        .btn-secondary { background-color: var(--color-surface); color: var(--color-text-primary); border: 1px solid var(--color-border); }
-        .btn-secondary:hover { background-color: var(--color-background); }
-        .btn-danger { background-color: var(--color-danger); color: white; }
-        .btn-danger:hover { background-color: var(--color-danger-hover); }
-        .btn-danger-ghost { background-color: transparent; color: var(--color-danger); }
-        .btn-danger-ghost:hover { background-color: rgba(239, 68, 68, 0.1); }
-        .btn-full { width: 100%; }
+        .cover-font .font-medium { font-weight: 500; }
+        .cover-font .font-bold { font-weight: 700; }
         
-        .prompt-actions { display: flex; gap: 8px; margin-bottom: 8px; }
-        .prompt-actions .btn { flex-grow: 1; }
-        .hamburger-btn { display: none; background: none; border: none; padding: 8px; cursor: pointer; }
-
-        /* Topic List */
-        .nav-group-title {
-            font-size: 12px; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase;
-            letter-spacing: 0.05em; padding: 0 calc(var(--space-unit) * 1.5);
-            margin-top: calc(var(--space-unit) * 3); margin-bottom: var(--space-unit);
+        .square-container {
+            width: 100%;
+            padding-top: 100%; /* 높이를 너비와 동일하게 설정 */
+            position: relative;
         }
-        .topic-list a, .sidebar-footer-list a {
-            display: flex; align-items: center; gap: calc(var(--space-unit) * 1.5); padding: var(--space-unit) calc(var(--space-unit) * 1.5);
-            border-radius: var(--radius-md); text-decoration: none; color: var(--color-text-primary);
-            font-size: 14px; font-weight: 500; transition: background-color 0.2s, color 0.2s;
+        .square-content {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between; /* 요소들을 상하로 균등하게 배치 */
+            cursor: pointer; /* 클릭 가능 표시 */
         }
-        .topic-list a:hover, .sidebar-footer-list a:hover { background-color: var(--color-background); }
-        .topic-list a.active { background-color: var(--color-primary); color: white; }
-        .topic-list a .nav-icon, .sidebar-footer-list a .nav-icon { width: 16px; height: 16px; }
-
-        /* Welcome & Empty States */
-        .centered-view { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; text-align: center; }
-        .centered-view .icon-wrapper { background-color: var(--color-surface); padding: calc(var(--space-unit) * 2); border-radius: 50%; margin-bottom: calc(var(--space-unit) * 3); box-shadow: var(--shadow-md); }
-        .centered-view .icon-wrapper svg { width: 48px; height: 48px; color: var(--color-primary); }
-        .centered-view h2 { font-size: 24px; margin-bottom: var(--space-unit); }
-        .centered-view p { color: var(--color-text-secondary); max-width: 400px; margin-bottom: calc(var(--space-unit) * 3); }
-
-        /* Post Cards */
-        .post-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: calc(var(--space-unit) * 3); border-radius: var(--radius-lg); transition: all 0.2s ease; }
-        .post-card-grid.drag-over-posts { border: 2px dashed var(--color-primary); background-color: #EBF2FF; padding: calc(var(--space-unit) * 2); }
-        .post-card {
-            background-color: var(--color-surface); border-radius: var(--radius-lg); border: 1px solid var(--color-border);
-            padding: calc(var(--space-unit) * 2); display: flex; flex-direction: column; justify-content: space-between;
-            box-shadow: var(--shadow-md); transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: pointer;
+        /* 표지 제목 자동 크기 조절을 위한 스타일 */
+        #cover-title-container {
+            flex-grow: 1; /* 남은 공간을 채움 */
+            display: flex;
+            flex-direction: column;
+            justify-content: center; /* 세로 중앙 정렬 */
+            min-height: 0; /* flex-shrink가 올바르게 작동하도록 함 */
+            height: 7rem; /* 112px 고정 높이 (h-28) */
+            overflow: hidden; /* 넘치는 부분 숨김 */
         }
-        .post-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
-        .post-card h3 { font-size: 16px; margin-bottom: calc(var(--space-unit) * 1.5); }
-        .post-card-tags { display: flex; flex-wrap: wrap; gap: calc(var(--space-unit) * 0.5); margin-bottom: calc(var(--space-unit) * 1.5); }
-        .post-card-tag { background-color: var(--color-background); color: var(--color-text-secondary); font-size: 10px; font-weight: 500; padding: 2px 6px; border-radius: 4px; }
-        .progress-bar-container { width: 100%; background-color: var(--color-background); border-radius: 99px; height: 8px; margin-bottom: var(--space-unit); overflow: hidden; }
-        .progress-bar { background-color: var(--color-primary); height: 100%; border-radius: 99px; transition: width 0.3s ease; }
-        .progress-text { font-size: 12px; color: var(--color-text-secondary); }
-        .post-card-footer { font-size: 12px; color: var(--color-text-secondary); margin-top: calc(var(--space-unit) * 2); }
-        
-        /* Kanban View */
-        .kanban-board { display: flex; gap: calc(var(--space-unit) * 2); overflow-x: auto; padding-bottom: var(--space-unit); flex-grow: 1; }
-        .kanban-column { width: 300px; flex-shrink: 0; background-color: var(--color-background); border-radius: var(--radius-lg); display: flex; flex-direction: column; }
-        .kanban-column.drag-over { background-color: #E5E7EB; }
-        .kanban-column-header { padding: calc(var(--space-unit) * 1.5) calc(var(--space-unit) * 2); font-weight: 600; border-bottom: 1px solid var(--color-border); }
-        .kanban-column-cards { padding: var(--space-unit); flex-grow: 1; overflow-y: auto; }
-        .kanban-column-cards .post-card { margin-bottom: var(--space-unit); }
-        
-        /* Modals */
-        .modal-overlay { position: fixed; inset: 0; background-color: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 50; opacity: 0; visibility: hidden; transition: opacity 0.3s ease, visibility 0.3s ease; }
-        .modal-overlay.visible { opacity: 1; visibility: visible; }
-        .modal-content { background-color: var(--color-surface); border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); width: 90%; max-width: 500px; transform: scale(0.95); transition: transform 0.3s ease; }
-        .modal-overlay.visible .modal-content { transform: scale(1); }
-        .modal-header { padding: calc(var(--space-unit) * 2) calc(var(--space-unit) * 3); border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; }
-        .modal-header h3 { font-size: 18px; }
-        .modal-close-btn { background: none; border: none; cursor: pointer; color: var(--color-text-secondary); padding: var(--space-unit); }
-        .modal-close-btn:hover { color: var(--color-text-primary); }
-        .modal-close-btn svg { width: 20px; height: 20px; }
-        .modal-body { padding: calc(var(--space-unit) * 3); }
-        .modal-footer { padding: calc(var(--space-unit) * 2) calc(var(--space-unit) * 3); border-top: 1px solid var(--color-border); display: flex; justify-content: flex-end; gap: var(--space-unit); background-color: #F9FAFB; border-bottom-left-radius: var(--radius-lg); border-bottom-right-radius: var(--radius-lg); }
-        
-        /* Forms */
-        .form-group { margin-bottom: calc(var(--space-unit) * 2); }
-        .form-label { display: block; font-size: 14px; font-weight: 500; margin-bottom: var(--space-unit); }
-        .form-input, .form-textarea {
-            width: 100%; padding: calc(var(--space-unit) * 1.25) calc(var(--space-unit) * 1.5);
-            border-radius: var(--radius-md); border: 1px solid var(--color-border); background-color: var(--color-surface);
-            font-family: inherit; font-size: 14px; transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        .form-input:focus, .form-textarea:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
-        .form-textarea { resize: vertical; min-height: 100px; }
-        .form-hint { font-size: 12px; color: var(--color-text-secondary); margin-top: var(--space-unit); }
-
-        /* Post Modal Specifics */
-        #post-modal .modal-content { max-width: 1024px; max-height: 90vh; display: flex; flex-direction: column; }
-        #post-modal .modal-body { flex-grow: 1; overflow-y: auto; }
-        #modal-post-title { font-size: 24px; font-weight: 700; border: none; padding: 0; }
-        #modal-post-title:focus { box-shadow: none; }
-        .post-modal-grid { display: grid; grid-template-columns: 1fr 2fr; gap: calc(var(--space-unit) * 4); }
-        .section-title { font-size: 16px; font-weight: 600; margin-bottom: calc(var(--space-unit) * 2); padding-bottom: var(--space-unit); border-bottom: 1px solid var(--color-border); }
-        
-        /* Checklist */
-        .checklist-item { display: flex; align-items: center; gap: calc(var(--space-unit) * 1.5); padding: var(--space-unit) 0; cursor: pointer; }
-        .checklist-item input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--color-primary); }
-        .checklist-item span { transition: color 0.2s, text-decoration 0.2s; }
-        .checklist-item input:checked + span { color: var(--color-text-secondary); text-decoration: line-through; }
-
-        /* --- NEW: Text Editor with Highlighter and Preview --- */
-        .editor-container { position: relative; width: 100%; height: 200px; font-family: inherit; }
-        .editor-container .form-textarea, 
-        .editor-container #content-highlighter,
-        .editor-container #post-preview-area {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; margin: 0;
-            padding: calc(var(--space-unit) * 1.25) calc(var(--space-unit) * 1.5);
-            border-radius: var(--radius-md); border: 1px solid var(--color-border);
-            font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-wrap: break-word;
-        }
-        .editor-container .form-textarea {
-            z-index: 2; color: transparent; background: transparent; caret-color: var(--color-text-primary);
-        }
-        .editor-container #content-highlighter { z-index: 1; background-color: var(--color-surface); pointer-events: none; overflow: hidden; }
-        #content-highlighter .highlight { background-color: rgba(245, 158, 11, 0.3); } /* --color-warning with opacity */
-        #post-preview-area {
-             z-index: 3; background-color: var(--color-surface); overflow-y: auto;
-             -webkit-font-smoothing: auto; -moz-osx-font-smoothing: auto;
-        }
-        .editor-header { display: flex; justify-content: space-between; align-items: center; }
-        .editor-actions { display: flex; gap: 8px; align-items: center; }
-        /* Markdown Preview Styles */
-        #post-preview-area h1, #post-preview-area h2, #post-preview-area h3 { border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; margin-bottom: 0.5em; margin-top: 1em; }
-        #post-preview-area p { margin-bottom: 1em; }
-        #post-preview-area ul, #post-preview-area ol { padding-left: 2em; margin-bottom: 1em; }
-        #post-preview-area blockquote { border-left: 4px solid var(--color-border); padding-left: 1em; margin-left: 0; color: var(--color-text-secondary); }
-        #post-preview-area code { background-color: var(--color-background); padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; }
-        #post-preview-area pre { background-color: var(--color-background); padding: 1em; border-radius: var(--radius-md); overflow-x: auto; }
-        #post-preview-area pre code { padding: 0; background: none; }
-
-        /* Diagram Uploader */
-        .diagram-uploader { width: 100%; border: 2px dashed var(--color-border); border-radius: var(--radius-md); padding: var(--space-unit); transition: border-color 0.2s; }
-        .diagram-uploader.dragover { border-color: var(--color-primary); }
-        .diagram-upload-area { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 120px; background-color: var(--color-background); border-radius: var(--radius-md); color: var(--color-text-secondary); font-size: 14px; text-align: center; cursor: pointer; }
-        .diagram-upload-area svg { width: 32px; height: 32px; margin-bottom: var(--space-unit); }
-        .diagram-preview-grid {
-            margin-top: var(--space-unit);
-            display: grid;
-            /* [MODIFIED] Increased minimum thumbnail size from 100px to 180px */
-            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-            gap: var(--space-unit);
-        }
-        .diagram-thumbnail { position: relative; width: 100%; padding-top: 100%; border-radius: var(--radius-md); overflow: hidden; border: 1px solid var(--color-border); }
-        .diagram-thumbnail img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
-        .delete-diagram-btn { position: absolute; top: 4px; right: 4px; background-color: rgba(239, 68, 68, 0.8); color: white; border: none; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; transition: opacity 0.2s; }
-        .diagram-thumbnail:hover .delete-diagram-btn { opacity: 1; }
-        
-        /* Toast Notification */
-        #toast { position: fixed; bottom: 20px; right: 20px; padding: 12px 20px; border-radius: var(--radius-md); color: white; box-shadow: var(--shadow-lg); opacity: 0; transform: translateY(20px); transition: opacity 0.3s, transform 0.3s; z-index: 100; }
-        #toast.show { opacity: 1; transform: translateY(0); }
-        #toast.success { background-color: var(--color-success); }
-        #toast.error { background-color: var(--color-danger); }
-        
-        /* Utility */
-        .hidden { display: none !important; }
-        .sidebar-overlay { display: none; position: fixed; inset: 0; background-color: rgba(0,0,0,0.5); z-index: 999; }
-        .delete-text { display: inline; }
-        
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 8px; }
-        ::-webkit-scrollbar-track { background: var(--color-background); }
-        ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 4px; }
-        ::-webkit-scrollbar-thumb:hover { background: #9CA3AF; }
-
-        /* --- Responsive Design --- */
-        @media (max-width: 768px) {
-            .sidebar { position: fixed; top: 0; left: 0; height: 100%; z-index: 1000; transform: translateX(-100%); transition: transform 0.3s ease-in-out; box-shadow: var(--shadow-lg); }
-            .app-container.sidebar-open .sidebar { transform: translateX(0); }
-            .app-container.sidebar-open .sidebar-overlay { display: block; }
-            .main-content { padding: calc(var(--space-unit) * 2); }
-            .main-header { position: relative; margin-bottom: calc(var(--space-unit) * 3); }
-            .main-header h2 { position: absolute; left: 50%; transform: translateX(-50%); width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: center; font-size: 22px; }
-            .hamburger-btn { display: block; z-index: 1001; }
-            .delete-text { display: none; }
-            .post-card-grid { grid-template-columns: 1fr; }
-            .post-modal-grid { grid-template-columns: 1fr; }
-            #post-modal .modal-content { width: 95%; height: 90vh; }
-            .kanban-board { flex-direction: column; gap: calc(var(--space-unit) * 3); }
-            .kanban-column { width: 100%; }
-            .topic-controls { flex-direction: column; align-items: flex-start; }
+        #cover-mainTitle {
+            /* 기본 폰트 크기 삭제 - 스크립트에서 설정 */
+            line-height: 1.3; /* 라인 간격 조절 */
+            word-break: keep-all; /* 단어 단위 줄바꿈 */
         }
     </style>
 </head>
-<body>
+<body class="text-slate-800">
 
-    <div class="app-container">
-        <!-- Sidebar -->
-        <aside class="sidebar">
-            <header class="sidebar-header">
-                <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22h6a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v10"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M12 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="m12 15-2-2 4-4 2 2-4 4Z"/></svg>
-                <h1>콘텐츠 허브</h1>
-            </header>
-            <button id="show-add-topic-modal-btn" class="btn btn-primary btn-full" style="margin-bottom: 24px;">
-                <svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                <span>새 주제 추가</span>
-            </button>
-            <nav class="sidebar-nav">
-                <h2 class="nav-group-title">주제 목록</h2>
-                <div id="topic-list" class="topic-list"></div>
-            </nav>
-            <footer class="sidebar-footer">
-                <h2 class="nav-group-title">관리</h2>
-                <div id="sidebar-footer-list" class="sidebar-footer-list">
-                    <a href="#" id="settings-btn"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 0 2l-.15.08a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l-.22-.38a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1 0-2l.15.08a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg> 설정</a>
-                    <a href="#" id="export-data-btn"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> 데이터 내보내기</a>
-                    <a href="#" id="import-data-btn"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> 데이터 가져오기</a>
-                    <input type="file" id="import-file-input" class="hidden" accept=".json">
-                </div>
-            </footer>
-        </aside>
-        <div class="sidebar-overlay"></div>
-
-        <!-- Main Content -->
-        <main class="main-content">
-            <div id="welcome-view" class="centered-view">
-                <div class="icon-wrapper"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/><path d="M12 18a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/><path d="m12 15-2-2 4-4 2 2-4 4Z"/></svg></div>
-                <h2>콘텐츠 허브에 오신 것을 환영합니다</h2><p>좌측의 '새 주제 추가' 버튼을 눌러 블로그 글 관리를 시작하세요.</p>
+    <!-- V-01: 메인 앱 뷰 (셸) -->
+    <div class="container mx-auto max-w-4xl p-4 md:p-6 min-h-screen">
+        
+        <!-- === 헤더: 탭 및 설정 버튼 === -->
+        <header class="flex justify-between items-center mb-4 border-b border-slate-200">
+            <!-- C-01: 탭 네비게이션 (v3.9: '표지 생성' 탭 추가) -->
+            <div class="flex space-x-1" role="tablist">
+                <button id="tab-create" role="tab" aria-selected="true" class="tab-button px-4 py-3 border-b-2">
+                    글 생성
+                </button>
+                <!-- '표지 생성' 탭 버튼 추가 -->
+                <button id="tab-cover" role="tab" aria-selected="false" class="tab-button px-4 py-3 border-b-2">
+                    표지 생성
+                </button>
+                <button id="tab-data" role="tab" aria-selected="false" class="tab-button px-4 py-3 border-b-2">
+                    데이터 <span id="data-count" class="count-badge"></span>
+                </button>
+                <button id="tab-progress" role="tab" aria-selected="false" class="tab-button px-4 py-3 border-b-2">
+                    진행 중 <span id="progress-count" class="count-badge"></span>
+                </button>
+                <button id="tab-saved" role="tab" aria-selected="false" class="tab-button px-4 py-3 border-b-2">
+                    저장된 글 <span id="saved-count" class="count-badge"></span>
+                </button>
             </div>
-            <div id="topic-view" class="hidden">
-                <header class="main-header">
-                    <button class="hamburger-btn"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg></button>
-                    <h2 id="topic-title"></h2>
-                    <button id="delete-topic-btn" class="btn btn-danger-ghost"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg><span class="delete-text">주제 삭제</span></button>
-                </header>
-                <section class="topic-resources-container">
-                    <h4>주제별 자료</h4><p>이 주제의 모든 게시물에서 공통으로 사용할 자료입니다. 프롬프트에서 {{자료}} 변수로 사용할 수 있습니다.</p>
-                    <textarea id="topic-resources-input" class="form-textarea" placeholder="주제와 관련된 정보, 키워드, 참조 링크 등을 입력하세요..."></textarea>
-                </section>
-                <div class="topic-controls">
-                    <div class="topic-actions">
-                        <button id="show-add-post-modal-btn" class="btn btn-secondary"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> <span>새 게시물 추가</span></button>
-                        <button id="upload-post-files-btn" class="btn btn-secondary"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg> <span>파일에서 게시물 추가</span></button>
+            <!-- C-07: 아이콘 버튼 (설정) -->
+            <button id="open-settings-button" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="설정 열기">
+                <i data-lucide="settings" class="w-5 h-5"></i>
+            </button>
+        </header>
+
+        <!-- === 메인 콘텐츠 영역 === -->
+        <main>
+            <!-- V-01_Content: '글 생성' 탭 -->
+            <div id="content-create" role="tabpanel">
+                <div class="space-y-6 max-w-3xl mx-auto">
+                    <!-- 주제 입력 -->
+                    <div>
+                        <label for="topic-input" class="block text-sm font-medium text-slate-700 mb-1">주제 (한 줄에 하나씩 입력)</label>
+                        <textarea id="topic-input" rows="8" class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="블로그 글의 주제를 한 줄에 하나씩 입력하세요..."></textarea>
                     </div>
-                    <div class="view-switcher">
-                        <button class="btn btn-secondary active" data-view="grid">Grid</button>
-                        <button class="btn btn-secondary" data-view="kanban">Kanban</button>
+                    <!-- 생성 버튼 -->
+                    <div class="flex items-center space-x-3">
+                        <button id="generate-button" class="inline-flex items-center px-6 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed">
+                            <i data-lucide="send" class="w-4 h-4 mr-2"></i>
+                            <span id="generate-button-text">작업 요청</span>
+                        </button>
                     </div>
                 </div>
-                <div id="post-card-container" class="post-card-grid"></div>
-                <div id="kanban-board-view" class="kanban-board hidden"></div>
+            </div>
+
+            <!-- V-0X_Content: '표지 생성' 탭 (v3.9 신규 추가) -->
+            <div id="content-cover" role="tabpanel" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- 1. 표지 제목 입력 UI -->
+                    <div class="md:col-span-1">
+                        <div class="max-w-md mx-auto p-6 bg-white rounded-xl shadow-lg">
+                            <h2 class="text-2xl font-bold text-gray-800 mb-4 cover-font">표지 제목 생성기</h2>
+                            <div class="mb-4">
+                                <label for="cover-titleInput" class="block text-sm font-medium text-gray-700 mb-2 cover-font">
+                                    제목 입력 (여러 줄 입력 가능):
+                                </label>
+                                <textarea id="cover-titleInput" rows="3" class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-600 focus:border-transparent transition cover-font" placeholder="외국 시민권자&#10;상속포기 한정승인"></textarea>
+                            </div>
+                            <button id="cover-updateButton" class="w-full bg-blue-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-800 transition-colors duration-300 shadow-md mb-3 cover-font">
+                                제목 적용
+                            </button>
+                            <button id="cover-saveImageButton" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300 shadow-md cover-font">
+                                이미지로 저장
+                            </button>
+                             <p class="text-xs text-slate-500 mt-2 text-center cover-font">미리보기 영역을 클릭하면 이미지가 클립보드에 복사됩니다.</p>
+                        </div>
+                    </div>
+                    
+                    <!-- 2. 생성될 배너 템플릿 (정사각형 컨테이너) -->
+                    <div class="md:col-span-2 flex justify-center items-start">
+                        <div class="max-w-xs w-full mb-8"> <!-- 전체 배너의 최대 너비를 제한하여 정사각형 유지 -->
+                            <div class="square-container cover-font">
+                                <!-- 'banner-preview' ID는 이미지 저장 및 클립보드 복사 스크립트에서 사용됩니다. -->
+                                <div id="banner-preview" class="square-content bg-white overflow-hidden" title="클릭하여 이미지 복사">
+                                    <!-- 상단 파란색 삼각형 -->
+                                    <div class="w-0 h-0 border-l-[100px] border-l-transparent border-r-[100px] border-r-transparent border-t-[25px] border-t-[#0b3d91] mx-auto mt-4"></div>
+
+                                    <!-- 본문 (파란색 테두리) -->
+                                    <div class="flex-grow flex flex-col justify-between items-center border-2 border-[#0b3d91] mx-3 mt-3 md:mx-4 md:mt-4 p-3 md:p-5 text-center min-h-0">
+                                        
+                                        <!-- 상단 그룹 (아이콘, 부제목) -->
+                                        <div class="text-center">
+                                            <!-- 1. 아이콘 (인라인 SVG) - 크기 축소 (w-8/h-8) -->
+                                            <svg class="w-8 h-8 md:w-10 md:h-10 mx-auto text-gray-700 mb-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 2.5L2 7h20L12 2.5z"></path> <!-- 페디먼트 (지붕) -->
+                                                <path d="M4 8v10h2.5V8H4z"></path> <!-- 기둥 1 -->
+                                                <path d="M10.75 8v10h2.5V8h-2.5z"></path> <!-- 기둥 2 -->
+                                                <path d="M17.5 8v10h2.5V8h-2.5z"></path> <!-- 기둥 3 -->
+                                                <path d="M2 19h20v2H2v-2z"></path> <!-- 받침대 -->
+                                            </svg>
+
+                                            <!-- 2. 부제목 - 크기 축소 (text-xs/text-sm) -->
+                                            <p class="text-xs md:text-sm text-gray-600 font-normal leading-none">
+                                                법률상담은 김무관 법무사
+                                            </p>
+                                        </div>
+
+                                        <!-- 3. 메인 제목 (이 부분이 변경됩니다) - 고정 높이 컨테이너 -->
+                                        <div id="cover-title-container" class="w-full my-2 h-28 overflow-hidden flex items-center justify-center">
+                                            <h1 id="cover-mainTitle" class="font-medium text-gray-900 leading-snug">
+                                                <!-- 내용은 스크립트로 채워짐 -->
+                                            </h1>
+                                        </div>
+
+                                        <!-- 4. 하단 버튼 (이 버튼이 박스 하단에 붙습니다) - 크기 축소 (text-xs/text-sm) -->
+                                        <div class="inline-block bg-[#333333] text-white py-2 px-16 rounded-full font-bold text-xs md:text-sm shadow-md">
+                                            법무사 김무관
+                                        </div>
+
+                                    </div>
+
+                                    <!-- 하단 파란색 막대 - 두께 축소 (h-5/h-6) -->
+                                    <div class="h-5 md:h-6 bg-[#0b3d91]"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- V-02_Content: '데이터' 탭 -->
+            <div id="content-data" role="tabpanel" class="hidden">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- 파일 목록 -->
+                    <div class="md:col-span-1 space-y-3">
+                        <div class="flex space-x-2">
+                            <button id="data-new-file" class="flex-1 inline-flex items-center justify-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm hover:bg-slate-50">
+                                <i data-lucide="file-plus" class="w-4 h-4 mr-2"></i>새 파일
+                            </button>
+                            <input type="file" id="data-upload-file" accept=".txt" class="hidden">
+                            <label for="data-upload-file" class="flex-1 inline-flex items-center justify-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm hover:bg-slate-50 cursor-pointer">
+                                <i data-lucide="upload-cloud" class="w-4 h-4 mr-2"></i>업로드
+                            </label>
+                        </div>
+                        <div id="data-file-list" class="space-y-2 max-h-[60vh] overflow-y-auto pr-2"></div>
+                    </div>
+                    <!-- 파일 편집기 -->
+                    <div class="md:col-span-2">
+                        <div class="flex justify-between items-center mb-2">
+                            <input id="data-editor-filename" type="text" class="text-lg font-semibold border-b-2 border-transparent focus:border-blue-500 focus:outline-none" value="파일을 선택하세요" disabled>
+                            <button id="data-save-file" class="px-4 py-1 bg-blue-600 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-blue-700 disabled:opacity-50" disabled>
+                                저장
+                            </button>
+                        </div>
+                        <textarea id="data-editor-content" rows="18" class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="파일을 선택하여 내용을 편집하세요..." disabled></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- V-03_Content: '진행 중' 탭 -->
+            <div id="content-progress" role="tabpanel" class="hidden">
+                <div id="progress-list" class="space-y-3 max-w-3xl mx-auto">
+                    <p class="text-slate-500 text-center py-6">진행 중인 작업이 없습니다.</p>
+                </div>
+            </div>
+
+            <!-- V-04_Content: '저장된 글' 탭 -->
+            <div id="content-saved" role="tabpanel" class="hidden">
+                 <!-- v3.7: Export Button -->
+                <div class="flex justify-end mb-4">
+                    <button id="export-posts-button" class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i data-lucide="download" class="w-4 h-4 mr-2"></i>
+                        전체 글 내보내기 (ZIP)
+                    </button>
+                </div>
+                <div id="saved-posts-list" class="space-y-3 max-w-3xl mx-auto">
+                    <p class="text-slate-500 text-center py-6">저장된 글이 없습니다.</p>
+                </div>
             </div>
         </main>
     </div>
-    
-    <input type="file" id="post-upload-input" class="hidden" accept=".txt,text/plain" multiple>
 
-    <!-- Modals -->
-    <div id="add-topic-modal" class="modal-overlay"><div class="modal-content"><header class="modal-header"><h3>새 주제 추가</h3><button class="modal-close-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header><div class="modal-body"><div class="form-group"><label for="topic-names-input" class="form-label">주제</label><textarea id="topic-names-input" class="form-textarea" placeholder="예:&#10;인공지능&#10;마케팅 자동화"></textarea><p class="form-hint">여러 개를 추가하려면 줄바꿈으로 구분해주세요.</p></div></div><footer class="modal-footer"><button class="btn btn-secondary modal-close-btn">취소</button><button id="add-topic-confirm-btn" class="btn btn-primary">추가하기</button></footer></div></div>
-    <div id="add-post-modal" class="modal-overlay"><div class="modal-content"><header class="modal-header"><h3>새 게시물 추가</h3><button class="modal-close-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header><div class="modal-body"><div class="form-group"><label for="post-titles-input" class="form-label">게시물 제목</label><textarea id="post-titles-input" class="form-textarea" placeholder="예:&#10;첫 번째 게시물&#10;두 번째 게시물"></textarea><p class="form-hint">여러 개를 추가하려면 줄바꿈으로 구분해주세요.</p></div></div><footer class="modal-footer"><button class="btn btn-secondary modal-close-btn">취소</button><button id="add-post-confirm-btn" class="btn btn-primary">추가하기</button></footer></div></div>
-    <div id="settings-modal" class="modal-overlay"><div class="modal-content" style="max-width: 700px;"><header class="modal-header"><h3>설정</h3><button class="modal-close-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header><div class="modal-body"><p class="form-hint" style="margin-bottom: 16px;">프롬프트에 {{제목}}, {{내용}}, {{자료}}를 포함하여 동적으로 값을 삽입할 수 있습니다.</p><div class="form-group"><label for="blog-prompt-input" class="form-label">블로그 글 생성 프롬프트</label><textarea id="blog-prompt-input" rows="4" class="form-textarea"></textarea></div><div class="form-group"><label for="diagram-prompt-input" class="form-label">도표 생성 프롬프트</label><textarea id="diagram-prompt-input" rows="4" class="form-textarea"></textarea></div></div><footer class="modal-footer"><button class="btn btn-secondary modal-close-btn">취소</button><button id="save-settings-btn" class="btn btn-primary">설정 저장</button></footer></div></div>
+    <!-- === 모달 영역 === -->
 
-    <div id="post-modal" class="modal-overlay">
-        <div class="modal-content">
-            <header class="modal-header"><input type="text" id="modal-post-title" class="form-input" placeholder="게시물 제목..."><button class="modal-close-btn"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></header>
-            <div class="modal-body">
-                <div class="post-modal-grid">
-                    <div>
-                        <h4 class="section-title">빠른 프롬프트</h4>
-                        <div style="margin-bottom: 8px;"><p class="form-label" style="font-size: 12px; margin-bottom: 4px;">블로그 글 프롬프트</p><div class="prompt-actions"><button class="btn btn-secondary prompt-action-btn" data-type="blog" data-action="copy"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> <span>복사</span></button><button class="btn btn-secondary prompt-action-btn" data-type="blog" data-action="download"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>다운로드</span></button></div></div>
-                        <div style="margin-bottom: 24px;"><p class="form-label" style="font-size: 12px; margin-bottom: 4px;">도표 생성 프롬프트</p><div class="prompt-actions"><button class="btn btn-secondary prompt-action-btn" data-type="diagram" data-action="copy"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> <span>복사</span></button><button class="btn btn-secondary prompt-action-btn" data-type="diagram" data-action="download"><svg class="btn-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg> <span>다운로드</span></button></div></div>
-                        <h4 class="section-title">작업 체크리스트</h4>
-                        <div id="checklist-container"></div>
+    <!-- V-05: 설정 뷰 (모달) -->
+    <div id="settings-modal" class="modal-backdrop fixed inset-0 z-40 flex items-center justify-center p-4 hidden">
+        <div class="bg-white w-full max-w-lg rounded-lg shadow-xl overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+            <header class="flex justify-between items-center p-4 border-b">
+                <h2 id="settings-title" class="text-lg font-semibold">설정</h2>
+                <button id="close-settings-button" class="p-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="설정 닫기">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+            </header>
+            <div class="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
+                <!-- AI 모델 선택 -->
+                <div>
+                    <label for="model-select-input" class="block text-sm font-medium text-slate-700 mb-1">AI 모델 선택</label>
+                    <select id="model-select-input" class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="gemini-2.5-flash-preview-09-2025">Flash (10 RPM)</option>
+                        <option value="gemini-2.5-pro">Pro (2 RPM)</option>
+                    </select>
+                    <p class="text-xs text-slate-500 mt-1">'Pro' 모델은 아래 API 키 목록에 유효한 키가 하나 이상 등록되어 있어야 합니다.</p>
+                </div>
+                
+                <!-- API 키 관리 -->
+                <div class="space-y-3">
+                    <label class="block text-sm font-medium text-slate-700">Gemini API 키 관리</label>
+                    <div class="flex space-x-2">
+                        <input type="text" id="api-key-name-input" placeholder="키 이름 (예: 개인용)" class="flex-1 px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
                     </div>
-                    <div>
-                        <div class="form-group">
-                            <div class="editor-header">
-                                <label for="modal-post-content" class="form-label">블로그 글 내용</label>
-                                <div class="editor-actions">
-                                    <button id="clean-text-btn" class="btn btn-secondary" style="padding: 4px 8px;">텍스트 정제</button>
-                                    <button id="toggle-preview-btn" class="btn btn-secondary" style="padding: 4px 8px;">미리보기</button>
-                                </div>
-                            </div>
-                            <div class="editor-container">
-                                <div id="content-highlighter"></div>
-                                <textarea id="modal-post-content" class="form-textarea" spellcheck="false" placeholder="생성된 블로그 글 내용을 여기에 붙여넣으세요..."></textarea>
-                                <div id="post-preview-area" class="hidden"></div>
-                            </div>
-                        </div>
-                        <div class="form-group"><label class="form-label">도표 이미지</label><div id="diagram-uploader" class="diagram-uploader"><div id="diagram-preview-grid" class="diagram-preview-grid"></div><div id="diagram-upload-area" class="diagram-upload-area"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15c.7-1.2 1-2.5.7-3.9-.6-2.4-2.4-4.2-4.8-4.8-1.4-.3-2.7-.1-3.9.7L12 8l-1.2-1.2a5.2 5.2 0 0 0-7.4 0L2 8.2" /><path d="M10.2 13.8a5.2 5.2 0 0 0 7.4 0l1.2-1.2" /><path d="m22 17-1.5-1.5" /><path d="M13.5 15.5 12 17l-1.5-1.5" /><path d="M2 17l1.5-1.5" /><path d="m10.5 15.5 1.5 1.5 1.5-1.5" /></svg><p>클릭 또는 드래그 앤 드롭<br>이미지, ZIP 파일 붙여넣기 (Ctrl+V)</p></div></div><input type="file" id="diagram-upload-input" class="hidden" accept="image/*,.zip,application/zip" multiple></div>
+                    <div class="flex space-x-2">
+                        <input type="password" id="api-key-value-input" placeholder="API 키 값" class="flex-1 px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <button id="add-api-key-button" class="px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-blue-600">추가</button>
+                    </div>
+                    <div id="api-key-list" class="mt-2 border border-slate-200 rounded-md p-3 bg-slate-50 max-h-40 overflow-y-auto">
+                        <p class="text-sm text-slate-500 text-center">등록된 API 키가 없습니다.</p>
+                    </div>
+                     <p class="text-xs text-slate-500 mt-1">
+                        등록된 키가 없으면 Canvas 기본 키가 사용됩니다 (Flash 모델 전용). Pro 모델 사용 시 키를 등록해야 합니다.
+                    </p>
+                </div>
+                <!-- 데이터 관리 -->
+                <div class="space-y-3">
+                    <label class="block text-sm font-medium text-slate-700">데이터 관리</label>
+                    <p class="text-xs text-slate-500 mt-1">
+                        전체 프로젝트 데이터(설정, 데이터 파일, 저장된 글)를 JSON 파일로 내보내거나 가져옵니다.
+                    </p>
+                    <div class="flex space-x-2">
+                        <button id="export-all-data-button" class="flex-1 inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-green-700">
+                            <i data-lucide="download" class="w-4 h-4 mr-2"></i>전체 내보내기
+                        </button>
+                        <input type="file" id="import-all-data-input" class="hidden" accept=".json">
+                        <label for="import-all-data-input" class="flex-1 inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-blue-700 cursor-pointer">
+                            <i data-lucide="upload" class="w-4 h-4 mr-2"></i>가져오기 (JSON)
+                        </label>
                     </div>
                 </div>
+                <!-- 프롬프트 템플릿 -->
+                <div>
+                    <label for="prompt-template-input" class="block text-sm font-medium text-slate-700 mb-1">프롬프트 템플릿</label>
+                    <p class="text-xs text-slate-500 mb-2">`{{주제}}` 및 `{{데이터}}` 치환자를 사용하세요.</p>
+                    <textarea id="prompt-template-input" rows="12" class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
+                </div>
             </div>
-            <footer class="modal-footer">
-                <button id="delete-post-btn" class="btn btn-danger-ghost" style="margin-right: auto;">게시물 삭제</button>
-                <button class="btn btn-primary modal-close-btn">닫기</button>
+            <footer class="flex justify-end p-4 bg-slate-50 border-t">
+                <button id="save-settings-button" class="px-5 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                    저장하기
+                </button>
             </footer>
         </div>
     </div>
 
-    <div id="confirm-modal" class="modal-overlay"><div class="modal-content" style="max-width: 400px;"><header class="modal-header"><h3 id="confirm-title">확인</h3></header><div class="modal-body"><p id="confirm-message"></p></div><footer class="modal-footer"><button id="confirm-cancel-btn" class="btn btn-secondary">취소</button><button id="confirm-ok-btn" class="btn btn-danger">삭제</button></footer></div></div>
+    <!-- V-06: 저장된 글 상세 뷰 (모달) -->
+    <div id="post-detail-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white w-full max-w-3xl h-[90vh] flex flex-col rounded-lg shadow-xl overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="post-detail-title">
+            <header class="flex justify-between items-center p-4 border-b flex-shrink-0">
+                <button id="close-detail-button" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="목록으로 돌아가기">
+                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
+                </button>
+                <h2 id="post-detail-title" class="text-lg font-semibold truncate px-4">...</h2>
+                <div class="flex space-x-2">
+                    <button id="copy-post-button" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="본문 복사하기">
+                        <i data-lucide="copy" class="w-5 h-5"></i>
+                    </button>
+                    <button id="delete-post-button" class="p-2 rounded-full text-red-500 hover:bg-red-100" aria-label="글 삭제하기">
+                        <i data-lucide="trash-2" class="w-5 h-5"></i>
+                    </button>
+                </div>
+            </header>
+            <div class="p-6 space-y-4 overflow-y-auto">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">주제</label>
+                    <textarea id="detail-topic" rows="1" readonly class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">사용된 데이터 (XML 형식)</label>
+                    <textarea id="detail-data" rows="4" readonly class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm"></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">생성된 글</label>
+                    <textarea id="detail-result" rows="20" readonly class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    <div id="toast"></div>
+    <!-- C-08: 토스트 알림 컨테이너 -->
+    <div id="toast-container" class="fixed bottom-6 right-6 z-50"></div>
 
-    <script>
-    // --- IndexedDB Helper (Database Abstraction Layer) ---
-    const db = {
-        _db: null,
-        // 데이터베이스 버전 3으로 증가 (스키마 변경)
-        _version: 3, 
-        init() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open('BlogWorkflowDB_Redesigned', this._version);
-                request.onerror = (event) => reject("IndexedDB error: " + request.error);
-                request.onsuccess = (event) => {
-                    this._db = event.target.result;
-                    resolve(this._db);
-                };
-                request.onupgradeneeded = async (event) => {
-                    this._db = event.target.result;
-                    const tx = event.target.transaction;
-                    
-                    // 버전 2로 업그레이드: topics, settings 저장소 생성
-                    if (event.oldVersion < 2) {
-                        if (!this._db.objectStoreNames.contains('topics')) {
-                            this._db.createObjectStore('topics', { keyPath: 'id' });
-                        }
-                        if (!this._db.objectStoreNames.contains('settings')) {
-                            this._db.createObjectStore('settings', { keyPath: 'id' });
-                        }
-                    }
-                    
-                    // 버전 3으로 업그레이드: posts 저장소 생성 및 데이터 마이그레이션
-                    if (event.oldVersion < 3) {
-                        if (!this._db.objectStoreNames.contains('posts')) {
-                           const postStore = this._db.createObjectStore('posts', { keyPath: 'id' });
-                           postStore.createIndex('topicId', 'topicId', { unique: false });
-                        }
-                        
-                        // 데이터 마이그레이션: 기존 topics의 posts 배열을 새로운 posts 저장소로 이동
-                        try {
-                            const topicStore = tx.objectStore('topics');
-                            const postStore = tx.objectStore('posts');
-                            const oldTopics = await new Promise((res, rej) => {
-                                const r = topicStore.getAll();
-                                r.onsuccess = () => res(r.result);
-                                r.onerror = () => rej(r.error);
-                            });
 
-                            for (const topic of oldTopics) {
-                                if (topic.posts && Array.isArray(topic.posts)) {
-                                    for (const post of topic.posts) {
-                                        post.topicId = topic.id; // 외래 키 추가
-                                        postStore.put(post);
-                                    }
-                                    delete topic.posts; // 기존 topic 객체에서 posts 배열 삭제
-                                    topicStore.put(topic);
-                                }
-                            }
-                            console.log("Database migration to v3 completed.");
-                        } catch (error) {
-                            console.error("Database migration failed:", error);
-                            tx.abort(); // 마이그레이션 실패 시 트랜잭션 롤백
-                        }
-                    }
-                };
-            });
-        },
-        _getStore(name, mode) { return this._db.transaction(name, mode).objectStore(name); },
-        async getAll(storeName) { return new Promise((resolve, reject) => { const r = this._getStore(storeName, 'readonly').getAll(); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); }); },
-        async get(storeName, key) { return new Promise((resolve, reject) => { const r = this._getStore(storeName, 'readonly').get(key); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); }); },
-        async put(storeName, data) { return new Promise((resolve, reject) => { const r = this._getStore(storeName, 'readwrite').put(data); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); }); },
-        async delete(storeName, key) { return new Promise((resolve, reject) => { const r = this._getStore(storeName, 'readwrite').delete(key); r.onsuccess = () => resolve(); r.onerror = () => reject(r.error); }); },
-        // 특정 인덱스를 사용해 모든 데이터를 가져오는 헬퍼 함수
-        async getAllByIndex(storeName, indexName, key) {
-             return new Promise((resolve, reject) => {
-                const store = this._getStore(storeName, 'readonly');
-                const index = store.index(indexName);
-                const request = index.getAll(key);
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            });
-        }
-    };
+    <!-- v3.9: 로컬 DB 및 앱 로직 (Cover Gen 통합) -->
+    <script type="module">
+        
+        // --- 기본 프롬프트 템플릿 (V-02) ---
+        const DEFAULT_PROMPT_TEMPLATE = `당신은 전문 블로그 작가입니다. 다음 프롬프트 템플릿에 따라 블로그 글을 작성해주세요.
 
-    document.addEventListener('DOMContentLoaded', async () => {
-        try {
-            await db.init();
-        } catch (error) {
-            console.error("Failed to initialize database:", error);
-            alert("데이터베이스 초기화에 실패했습니다. 앱을 사용할 수 없습니다.");
-            return;
+[주제]: {{주제}}
+
+[데이터]:
+{{데이터}}
+
+위 내용을 바탕으로, SEO에 최적화된 매력적인 제목과 본문을 포함한 완결된 블로그 포스트를 Markdown 형식으로 작성해주세요.`;
+
+        // --- 기본 모델 ---
+        const DEFAULT_MODEL = "gemini-2.5-flash-preview-09-2025";
+        
+        // --- v3.6: Smart Rate Limiting & 429 Handling 로직 ---
+        let isDispatcherRunning = false; // 큐 디스패처 전역 잠금
+        const apiKeyLastUsed = new Map(); // Map<string(apiKey.key or ""), number(timestamp)> RPM 관리
+        const apiKeyCooldownUntil = new Map(); // Map<string(apiKey.key or ""), number(timestamp)> 429 관리
+        const processingJobs = new Set(); // Set<number(jobId)> 현재 API 호출 중인 작업 ID
+        
+        // 사용자 정의 오류 타입 (429 식별용)
+        class RateLimitError extends Error {
+            constructor(message, apiKey) {
+                super(message);
+                this.name = "RateLimitError";
+                this.apiKey = apiKey; // 어떤 키가 429를 받았는지 저장
+            }
         }
 
-        // --- State Management ---
-        const state = {
-            topics: [],
-            posts: new Map(), // key: topicId, value: array of posts
-            settings: { blogPrompt: '...', diagramPrompt: '...' },
-            activeTopicId: null,
-            activePostId: null,
-            currentView: 'grid',
-            isEditorPreview: false,
-        };
-
-        // --- DOM Elements ---
-        const appContainer = document.querySelector('.app-container');
-        const sidebar = document.querySelector('.sidebar');
-        const sidebarOverlay = document.querySelector('.sidebar-overlay');
-        const hamburgerBtn = document.querySelector('.hamburger-btn');
-        const topicList = document.getElementById('topic-list');
-        const welcomeView = document.getElementById('welcome-view');
-        const topicView = document.getElementById('topic-view');
-        const topicTitle = document.getElementById('topic-title');
-        const deleteTopicBtn = document.getElementById('delete-topic-btn');
-        const postCardContainer = document.getElementById('post-card-container');
-        const kanbanBoardView = document.getElementById('kanban-board-view');
-        const toast = document.getElementById('toast');
-        const topicResourcesInput = document.getElementById('topic-resources-input');
-
-        const modals = { addTopic: document.getElementById('add-topic-modal'), addPost: document.getElementById('add-post-modal'), settings: document.getElementById('settings-modal'), post: document.getElementById('post-modal'), confirm: document.getElementById('confirm-modal') };
-        
-        const showAddTopicModalBtn = document.getElementById('show-add-topic-modal-btn');
-        const addTopicConfirmBtn = document.getElementById('add-topic-confirm-btn');
-        const showAddPostModalBtn = document.getElementById('show-add-post-modal-btn');
-        const uploadPostFilesBtn = document.getElementById('upload-post-files-btn');
-        const addPostConfirmBtn = document.getElementById('add-post-confirm-btn');
-        const settingsBtn = document.getElementById('settings-btn');
-        const saveSettingsBtn = document.getElementById('save-settings-btn');
-        const exportDataBtn = document.getElementById('export-data-btn');
-        const importDataBtn = document.getElementById('import-data-btn');
-        const viewSwitcherBtns = document.querySelectorAll('.view-switcher .btn');
-
-        const topicNamesInput = document.getElementById('topic-names-input');
-        const postTitlesInput = document.getElementById('post-titles-input');
-        const postUploadInput = document.getElementById('post-upload-input');
-        const blogPromptInput = document.getElementById('blog-prompt-input');
-        const diagramPromptInput = document.getElementById('diagram-prompt-input');
-        const importFileInput = document.getElementById('import-file-input');
-        
-        const modalPostTitle = document.getElementById('modal-post-title');
-        const checklistContainer = document.getElementById('checklist-container');
-        const diagramUploader = document.getElementById('diagram-uploader');
-        const diagramUploadArea = document.getElementById('diagram-upload-area');
-        const diagramUploadInput = document.getElementById('diagram-upload-input');
-        const diagramPreviewGrid = document.getElementById('diagram-preview-grid');
-        const deletePostBtn = document.getElementById('delete-post-btn');
-        
-        const contentEditor = document.getElementById('modal-post-content');
-        const contentHighlighter = document.getElementById('content-highlighter');
-        const postPreviewArea = document.getElementById('post-preview-area');
-        const cleanTextBtn = document.getElementById('clean-text-btn');
-        const togglePreviewBtn = document.getElementById('toggle-preview-btn');
-
-        const confirmMessage = document.getElementById('confirm-message');
-        const confirmOkBtn = document.getElementById('confirm-ok-btn');
-        const confirmCancelBtn = document.getElementById('confirm-cancel-btn');
-        let confirmCallback = null;
-        
-        // --- Utility Functions ---
-        const debounce = (func, delay) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => func.apply(this, a), delay); }; };
-        const showToast = (msg, isErr=false) => { toast.textContent = msg; toast.className = isErr ? 'error' : 'success'; toast.classList.add('show'); setTimeout(() => toast.classList.remove('show'), 3000); };
-        const openModal = (el) => el.classList.add('visible');
-        const closeModal = (el) => el.classList.remove('visible');
-        const showConfirm = (msg, onConfirm) => { confirmMessage.textContent = msg; confirmCallback = onConfirm; openModal(modals.confirm); };
-        const parseTags = (c) => { const m = c.match(/#([a-zA-Z0-9ㄱ-ㅎㅏ-ㅣ가-힣_]+)/g); return m ? [...new Set(m.map(t => t.substring(1)))] : []; };
-
-        // --- Data Logic (Refactored for Normalized DB) ---
-        const loadInitialData = async () => {
-            state.topics = await db.getAll('topics');
-            state.posts.clear();
-            const savedSettings = await db.get('settings', 'userSettings');
-            if (savedSettings) state.settings = savedSettings.data;
-            refreshUI();
-        };
-
-        const setActiveTopic = async (topicId) => {
-            state.activeTopicId = topicId;
-            if (topicId && !state.posts.has(topicId)) {
-                const postsForTopic = await db.getAllByIndex('posts', 'topicId', topicId);
-                state.posts.set(topicId, postsForTopic);
-            }
-            refreshUI();
-        };
-
-        // --- Rendering ---
-        const renderTopics = () => {
-            topicList.innerHTML = '';
-            if (state.topics.length === 0) {
-                topicList.innerHTML = `<p style="padding: 0 12px; font-size: 14px; color: var(--color-text-secondary);">주제가 없습니다.</p>`;
-                return;
-            }
-            state.topics.forEach(topic => {
-                const topicEl = document.createElement('a');
-                topicEl.href = '#';
-                topicEl.dataset.id = topic.id;
-                topicEl.className = state.activeTopicId === topic.id ? 'active' : '';
-                topicEl.innerHTML = `<svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg><span>${topic.name}</span>`;
-                topicEl.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    setActiveTopic(topic.id);
-                    if (window.innerWidth <= 768) appContainer.classList.remove('sidebar-open');
-                });
-                topicList.appendChild(topicEl);
+        // --- Dexie (IndexedDB) 초기화 ---
+        const db = new Dexie('aiBlogAssistantDB');
+        db.version(2).stores({
+            settings: 'id', 
+            dataFiles: '++id, name, isActive',
+            jobs: '++id, status, createdAt', 
+            posts: '++id, createdAt'
+        }).upgrade(tx => {
+            return tx.settings.toCollection().modify(setting => {
+                if (setting.apiKey && !setting.apiKeys) {
+                    setting.apiKeys = [{ name: '기본 키', key: setting.apiKey }];
+                } else if (!setting.apiKeys) {
+                     setting.apiKeys = [];
+                }
+                delete setting.apiKey; 
             });
-        };
+        });
+         db.version(1).stores({ 
+            settings: 'id',
+            dataFiles: '++id, name, isActive',
+            jobs: '++id, status, createdAt',
+            posts: '++id, createdAt'
+        });
 
-        const createPostCardElement = (post) => {
-            const progress = post.checklist.filter(c => c.done).length;
-            const total = post.checklist.length;
-            const progressPercentage = total > 0 ? (progress / total) * 100 : 0;
-            const card = document.createElement('div');
-            card.className = 'post-card';
-            card.dataset.postId = post.id;
-            card.draggable = true;
-            const tagsHTML = post.tags.map(tag => `<span class="post-card-tag">#${tag}</span>`).join('');
-            card.innerHTML = `<div><h3>${post.title}</h3><div class="post-card-tags">${tagsHTML}</div><div class="progress-bar-container"><div class="progress-bar" style="width: ${progressPercentage}%"></div></div><p class="progress-text">진행률: ${progress} / ${total}</p></div><div class="post-card-footer">최근 업데이트: ${new Date(post.updatedAt).toLocaleString()}</div>`;
-            card.addEventListener('click', () => openPostModal(post.id));
-            card.addEventListener('dragstart', (e) => { e.dataTransfer.setData('text/plain', post.id); e.dataTransfer.effectAllowed = 'move'; });
-            return card;
+
+        // --- 앱 상태 변수 ---
+        let currentDataFileId = null;
+        let currentDetailPostId = null; 
+
+        // --- DOM 요소 참조 ---
+        const tabs = { 
+            create: document.getElementById('tab-create'), 
+            cover: document.getElementById('tab-cover'), // v3.9
+            data: document.getElementById('tab-data'), 
+            progress: document.getElementById('tab-progress'), 
+            saved: document.getElementById('tab-saved') 
         };
-        
-        const renderPostCards = () => {
-            postCardContainer.innerHTML = '';
-            const posts = state.posts.get(state.activeTopicId) || [];
-            if (posts.length === 0) {
-                 postCardContainer.innerHTML = `<div class="centered-view" style="grid-column: 1 / -1; padding: 40px 0; min-height: 300px;"><div class="icon-wrapper" style="background-color: #e0e7ff;"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="12" y1="18" x2="12" y2="12"></line><line x1="9" y1="15" x2="15" y2="15"></line></svg></div><h2 style="font-size: 20px;">게시물이 없습니다</h2><p>게시물을 추가하거나<br>여기에 .txt 파일을 드래그 앤 드롭하세요.</p></div>`;
+        const contents = { 
+            create: document.getElementById('content-create'), 
+            cover: document.getElementById('content-cover'), // v3.9
+            data: document.getElementById('content-data'), 
+            progress: document.getElementById('content-progress'), 
+            saved: document.getElementById('content-saved') 
+        };
+        const dataCountEl = document.getElementById('data-count');
+        const progressCountEl = document.getElementById('progress-count');
+        const savedCountEl = document.getElementById('saved-count');
+        const openSettingsBtn = document.getElementById('open-settings-button');
+        const settingsModal = document.getElementById('settings-modal');
+        const closeSettingsBtn = document.getElementById('close-settings-button');
+        const saveSettingsBtn = document.getElementById('save-settings-button');
+        const modelSelectInput = document.getElementById('model-select-input');
+        const apiKeyNameInput = document.getElementById('api-key-name-input'); 
+        const apiKeyValueInput = document.getElementById('api-key-value-input'); 
+        const addApiKeyBtn = document.getElementById('add-api-key-button'); 
+        const apiKeyListDiv = document.getElementById('api-key-list'); 
+        const promptTemplateInput = document.getElementById('prompt-template-input');
+        const generateBtn = document.getElementById('generate-button');
+        const generateBtnText = document.getElementById('generate-button-text');
+        const topicInput = document.getElementById('topic-input');
+        const dataNewFileBtn = document.getElementById('data-new-file');
+        const dataUploadInput = document.getElementById('data-upload-file');
+        const dataFileList = document.getElementById('data-file-list');
+        const dataEditorFilename = document.getElementById('data-editor-filename');
+        const dataEditorContent = document.getElementById('data-editor-content');
+        const dataSaveFileBtn = document.getElementById('data-save-file');
+        const progressList = document.getElementById('progress-list');
+        const savedPostsList = document.getElementById('saved-posts-list');
+        const exportPostsBtn = document.getElementById('export-posts-button'); // v3.7
+        const postDetailModal = document.getElementById('post-detail-modal');
+        const closeDetailBtn = document.getElementById('close-detail-button');
+        const postDetailTitle = document.getElementById('post-detail-title');
+        const copyPostBtn = document.getElementById('copy-post-button');
+        const deletePostBtn = document.getElementById('delete-post-button');
+        const detailTopic = document.getElementById('detail-topic');
+        const detailData = document.getElementById('detail-data');
+        const detailResult = document.getElementById('detail-result');
+        const toastContainer = document.getElementById('toast-container');
+        const exportAllDataBtn = document.getElementById('export-all-data-button');
+        const importAllDataInput = document.getElementById('import-all-data-input');
+
+        // --- v3.9: 표지 생성기 DOM 요소 ---
+        const coverTitleInput = document.getElementById('cover-titleInput');
+        const coverUpdateButton = document.getElementById('cover-updateButton');
+        const coverSaveImageButton = document.getElementById('cover-saveImageButton');
+        const coverMainTitle = document.getElementById('cover-mainTitle');
+        const coverTitleContainer = document.getElementById('cover-title-container');
+        const bannerPreview = document.getElementById('banner-preview'); // 클립보드 복사용
+
+        // --- 1. 로컬 DB 초기화 및 데이터 로드 ---
+        async function initializeLocalDB() {
+            try {
+                await db.open();
+                console.log("IndexedDB (Dexie)가 성공적으로 열렸습니다.");
+                await loadAndRenderSettings(); 
+                await loadAndRenderDataFiles();
+                await loadAndRenderProgressList();
+                await loadAndRenderPostsList();
+                const initialJobsCount = await db.jobs.where('status').equals('queued').count();
+                 if (initialJobsCount > 0) {
+                     console.log(`초기화: 대기 중인 작업 ${initialJobsCount}개 발견. 큐 처리 시작.`);
+                     triggerProcessJobQueue();
+                 }
+            } catch (error) {
+                console.error("IndexedDB 초기화 실패:", error);
+                showToast("로컬 데이터베이스 초기화에 실패했습니다.", true);
+            }
+        }
+
+        // --- 2. 렌더링 및 데이터 로드 함수 ---
+        async function loadAndRenderSettings() {
+            let settings = await db.settings.get('config');
+            if (!settings) {
+                settings = { id: 'config', apiKeys: [], modelName: DEFAULT_MODEL, promptTemplate: DEFAULT_PROMPT_TEMPLATE };
+                await db.settings.put(settings);
+            }
+            modelSelectInput.value = settings.modelName || DEFAULT_MODEL;
+            promptTemplateInput.value = settings.promptTemplate || DEFAULT_PROMPT_TEMPLATE;
+            renderApiKeyList(settings.apiKeys || []);
+        }
+
+        function renderApiKeyList(apiKeys = []) {
+            apiKeyListDiv.innerHTML = ''; 
+            if (apiKeys.length === 0) {
+                apiKeyListDiv.innerHTML = `<p class="text-sm text-slate-500 text-center">등록된 API 키가 없습니다.</p>`;
                 return;
             }
-            posts.forEach(post => { const card = createPostCardElement(post); postCardContainer.appendChild(card); });
-        };
+            apiKeys.forEach((keyObj, index) => {
+                const item = document.createElement('div');
+                item.className = 'api-key-item';
+                const maskedKey = keyObj.key.length > 8 ? `${keyObj.key.substring(0, 4)}...${keyObj.key.substring(keyObj.key.length - 4)}` : keyObj.key;
+                item.innerHTML = `
+                    <div><span class="api-key-name">${escapeHTML(keyObj.name)}</span> <span class="api-key-value">(${maskedKey})</span></div>
+                    <button data-index="${index}" data-action="delete-key" class="p-1 rounded-full text-red-500 hover:bg-red-100" aria-label="API 키 삭제"><i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i></button>`;
+                apiKeyListDiv.appendChild(item);
+            });
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        async function loadAndRenderDataFiles() {
+            const files = await db.dataFiles.toArray();
+            if (!files.some(f => f.name === 'global_data.txt')) {
+                await db.dataFiles.add({ name: 'global_data.txt', content: '모든 프롬프트에 공통으로 적용될 톤앤매너, 지시어 등을 여기에 입력하세요.', isActive: true, isGlobal: true });
+                const updatedFiles = await db.dataFiles.toArray();
+                renderDataFileList(updatedFiles); return;
+            }
+            renderDataFileList(files);
+        }
         
-        const renderKanbanBoard = () => {
-            kanbanBoardView.innerHTML = '';
-            const posts = state.posts.get(state.activeTopicId) || [];
-            const kanbanColumns = ['아이디어', '초안 작성', '검토 중', '발행 완료'];
-            kanbanColumns.forEach(status => {
-                const column = document.createElement('div');
-                column.className = 'kanban-column';
-                column.dataset.status = status;
-                column.innerHTML = `<div class="kanban-column-header">${status}</div><div class="kanban-column-cards"></div>`;
-                const cardsContainer = column.querySelector('.kanban-column-cards');
-                posts.filter(p => p.status === status).forEach(p => cardsContainer.appendChild(createPostCardElement(p)));
-                column.addEventListener('dragover', (e) => { e.preventDefault(); column.classList.add('drag-over'); });
-                column.addEventListener('dragleave', () => column.classList.remove('drag-over'));
-                column.addEventListener('drop', async (e) => {
-                    e.preventDefault(); column.classList.remove('drag-over');
-                    const postId = e.dataTransfer.getData('text/plain');
-                    const post = posts.find(p => p.id === postId);
-                    if (post && post.status !== status) {
-                        post.status = status;
-                        await db.put('posts', post);
-                        renderKanbanBoard();
+        function renderDataFileList(files) {
+             dataFileList.innerHTML = "";
+             files.sort((a, b) => { if (a.isGlobal) return -1; if (b.isGlobal) return 1; return a.name.localeCompare(b.name); });
+             if (files.length === 0) { dataFileList.innerHTML = `<p class="text-slate-500 text-center text-sm p-4">파일이 없습니다.</p>`; } 
+             else {
+                 files.forEach(file => {
+                     const fileEl = document.createElement('div');
+                     fileEl.className = `data-file-item p-3 border-l-4 cursor-pointer hover:bg-slate-50 flex justify-between items-center ${file.id === currentDataFileId ? 'selected' : ''}`;
+                     fileEl.setAttribute('data-id', file.id); fileEl.setAttribute('data-active', file.isActive.toString());
+                     fileEl.innerHTML = `
+                         <div class="flex-1 min-w-0" data-action="select">
+                             <span class="font-medium text-slate-800 truncate block">${escapeHTML(file.name)}</span>
+                             <span class="text-xs text-slate-500">${file.isGlobal ? '전역 데이터' : '개별 데이터'}</span>
+                         </div>
+                         <div class="flex items-center space-x-2 ml-2">
+                             <label class="switch" data-action="toggle" aria-label="활성화 토글">
+                                 <input type="checkbox" class="pointer-events-none" ${file.isActive ? 'checked' : ''}>
+                                 <span class="slider pointer-events-none"></span>
+                             </label>
+                             <button data-action="delete" class="p-1 rounded-full text-red-500 hover:bg-red-100 ${file.isGlobal ? 'hidden' : ''}" aria-label="파일 삭제">
+                                 <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
+                             </button>
+                         </div>`;
+                     dataFileList.appendChild(fileEl);
+                 });
+             }
+             const activeCount = files.filter(f => f.isActive).length;
+             dataCountEl.textContent = `(${activeCount})`; dataCountEl.style.display = activeCount > 0 ? 'inline-block' : 'none';
+             if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        async function loadAndRenderProgressList() {
+            const jobs = await db.jobs.filter(job => ['queued', 'processing', 'failed'].includes(job.status)).sortBy('createdAt');
+            const count = jobs.length;
+            progressCountEl.textContent = `(${count})`; progressCountEl.style.display = count > 0 ? 'inline-block' : 'none';
+            if (count === 0) { progressList.innerHTML = `<p class="text-slate-500 text-center py-6">진행 중인 작업이 없습니다.</p>`; return; }
+            progressList.innerHTML = "";
+            jobs.forEach(job => {
+                const jobElement = document.createElement('div');
+                jobElement.className = "p-4 bg-white border border-slate-200 rounded-lg shadow-sm flex justify-between items-center";
+                jobElement.setAttribute('data-job-id', job.id);
+                let statusHtml = '';
+                switch (job.status) {
+                    case 'processing': statusHtml = `<div class="flex items-center space-x-2 text-blue-600"><div class="spinner w-4 h-4 rounded-full"></div><span>처리 중...</span></div>`; break;
+                    case 'failed': statusHtml = `<div class="flex-1 min-w-0"><div class="flex items-center space-x-2 text-red-600"><i data-lucide="alert-circle" class="w-4 h-4"></i><span>오류</span></div><p class="text-xs text-slate-500 truncate" title="${escapeHTML(job.error)}">${escapeHTML(job.error)}</p></div><button data-action="retry" data-id="${job.id}" class="ml-4 p-2 rounded-full hover:bg-slate-100 text-slate-600" aria-label="재시도"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>`; break;
+                    default: statusHtml = `<div class="flex items-center space-x-2 text-slate-500"><i data-lucide="clock" class="w-4 h-4"></i><span>대기 중</span></div>`; break;
+                }
+                 jobElement.innerHTML = `
+                     <div class="flex-1 min-w-0 mr-4">
+                         <h3 class="font-semibold text-slate-800 truncate" title="${escapeHTML(job.topic)}">${escapeHTML(job.topic)}</h3>
+                         <div class="text-sm mt-1 flex items-center">
+                             ${statusHtml.includes('data-action="retry"') ? statusHtml : `<div class="flex-1">${statusHtml}</div>`}
+                         </div>
+                     </div>
+                     ${!statusHtml.includes('data-action="retry"') ? `<button data-action="delete-job" data-id="${job.id}" class="p-2 rounded-full text-red-500 hover:bg-red-100" aria-label="작업 삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}`;
+                progressList.appendChild(jobElement);
+            });
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+        // V-04: 저장된 글 로드 및 렌더링 (v3.9: 표지 생성 버튼 추가)
+        async function loadAndRenderPostsList() {
+            const posts = await db.posts.orderBy('createdAt').reverse().toArray();
+            const count = posts.length;
+            savedCountEl.textContent = `(${count})`; savedCountEl.style.display = count > 0 ? 'inline-block' : 'none';
+            exportPostsBtn.disabled = (count === 0); 
+            if (count === 0) { savedPostsList.innerHTML = `<p class="text-slate-500 text-center py-6">저장된 글이 없습니다.</p>`; return; }
+            savedPostsList.innerHTML = "";
+            posts.forEach(post => {
+                const postDate = new Date(post.createdAt).toLocaleString('ko-KR');
+                const postElement = document.createElement('div');
+                postElement.className = "post-item p-4 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md hover:border-slate-300 flex justify-between items-center transition-all";
+                postElement.innerHTML = `
+                    <div class="flex-1 min-w-0 cursor-pointer" data-action="view-detail" data-id="${post.id}">
+                        <h3 class="font-semibold text-slate-800 truncate pointer-events-none" title="${escapeHTML(post.title)}">${escapeHTML(post.title || "제목 없음")}</h3>
+                        <p class="text-sm text-slate-500 pointer-events-none">생성일: ${postDate}</p>
+                    </div>
+                    <div class="flex items-center space-x-1 ml-2"> 
+                         <!-- v3.9: 표지 생성 버튼 추가 -->
+                         <button data-action="create-cover" data-id="${post.id}" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="표지 생성하기">
+                            <i data-lucide="image" class="w-4 h-4 pointer-events-none"></i>
+                         </button>
+                         <button data-action="copy-list-item" data-id="${post.id}" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="본문 복사하기">
+                            <i data-lucide="copy" class="w-4 h-4 pointer-events-none"></i>
+                         </button>
+                         <button data-action="delete-list-item" data-id="${post.id}" class="p-2 rounded-full text-red-500 hover:bg-red-100" aria-label="글 삭제하기">
+                            <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
+                         </button>
+                         <i data-lucide="chevron-right" class="w-5 h-5 text-slate-400 pointer-events-none" data-action="view-detail" data-id="${post.id}"></i>
+                    </div>`;
+                savedPostsList.appendChild(postElement);
+            });
+            if (typeof lucide !== 'undefined') lucide.createIcons();
+        }
+
+
+        // --- 3. 핵심 로직 ---
+
+        // V-01: '생성 요청' 버튼 핸들러
+        async function handleGenerateJobs() {
+            const topicsRaw = topicInput.value.trim();
+            if (!topicsRaw) { showToast("주제를 한 줄 이상 입력해주세요.", true); return; }
+            const topics = topicsRaw.split('\n').filter(t => t.trim() !== '');
+            if (topics.length === 0) { showToast("유효한 주제가 없습니다.", true); return; }
+            try {
+                const newJobs = topics.map(topic => ({ topic: topic.trim(), status: 'queued', createdAt: new Date(), error: null }));
+                await db.jobs.bulkAdd(newJobs); 
+                showToast(`${topics.length}개의 작업을 큐에 추가했습니다.`, false);
+                topicInput.value = ""; updateGenerateButton(0);
+                await loadAndRenderProgressList(); 
+                triggerProcessJobQueue(); 
+            } catch (error) { console.error("작업 추가 오류:", error); showToast("작업 큐 추가 중 오류 발생", true); }
+        }
+
+        // v3.5: 큐 처리 시작 함수 (중복 실행 방지)
+        function triggerProcessJobQueue() { if (!isDispatcherRunning) { processJobQueue(); } else { console.log("Dispatcher가 이미 실행 중..."); } }
+
+        // v3.6: Smart Rate-Limited 큐 디스패처 (Handle 429 Error)
+        async function processJobQueue() {
+            if (isDispatcherRunning) return; 
+            console.log("Dispatcher 시작..."); isDispatcherRunning = true;
+            try {
+                while (true) {
+                     const queuedJobs = await db.jobs.filter(job => job.status === 'queued' && !processingJobs.has(job.id)).sortBy('createdAt');
+                    if (queuedJobs.length === 0) {
+                         const currentlyProcessing = processingJobs.size;
+                          if (currentlyProcessing > 0) { console.log(`처리할 새 작업 없음. 현재 ${currentlyProcessing}개 처리 중... 대기.`); await sleep(2000); continue; } 
+                         else { console.log("처리할 작업 & 진행 중 작업 없음. Dispatcher 중지."); break; }
                     }
-                });
-                kanbanBoardView.appendChild(column);
-            });
-        };
-
-        const renderActiveView = () => {
-            if (state.activeTopicId) {
-                const activeTopic = state.topics.find(t => t.id === state.activeTopicId);
-                if (activeTopic) {
-                    welcomeView.classList.add('hidden');
-                    topicView.classList.remove('hidden');
-                    topicTitle.textContent = activeTopic.name;
-                    topicResourcesInput.value = activeTopic.resources || '';
-                    if (state.currentView === 'grid') {
-                        postCardContainer.classList.remove('hidden'); kanbanBoardView.classList.add('hidden');
-                        renderPostCards();
+                    const job = queuedJobs[0]; 
+                    const currentSettings = await db.settings.get('config');
+                    let targetModel = currentSettings?.modelName || DEFAULT_MODEL;
+                    const apiKeys = currentSettings?.apiKeys || [];
+                    let modelForThisJob = targetModel;
+                    if (targetModel.includes("pro") && apiKeys.length === 0) { console.warn(`[Job ${job.id}] API 키 없어 '${targetModel}' 대신 'Flash' 사용.`); modelForThisJob = DEFAULT_MODEL; }
+                    const requiredDelay = getDelayForModel(modelForThisJob); 
+                    const now = Date.now();
+                    let availableKeyInfo = null; let earliestNextAvailableTime = Infinity;
+                    const potentialKeys = [...apiKeys.map((k, idx) => ({ ...k, index: idx })), { key: "", name: "Canvas 기본 키", index: -1 }];
+                    for (const keyInfo of potentialKeys) {
+                        if (modelForThisJob.includes("pro") && keyInfo.key === "") continue; 
+                        const lastUsed = apiKeyLastUsed.get(keyInfo.key) || 0;
+                        const cooldownUntil = apiKeyCooldownUntil.get(keyInfo.key) || 0;
+                        const timeUntilNextAvailable = Math.max(0, (lastUsed + requiredDelay) - now);
+                        const timeUntilCooldownEnd = Math.max(0, cooldownUntil - now);
+                        if (timeUntilNextAvailable === 0 && timeUntilCooldownEnd === 0) { availableKeyInfo = keyInfo; break; } 
+                        else { earliestNextAvailableTime = Math.min(earliestNextAvailableTime, now + Math.max(timeUntilNextAvailable, timeUntilCooldownEnd)); }
+                    }
+                    if (availableKeyInfo) {
+                        console.log(`[Job ${job.id}] 사용 키: ${availableKeyInfo.name}. 실행.`);
+                        processingJobs.add(job.id); 
+                        apiKeyLastUsed.set(availableKeyInfo.key, now); 
+                        executeJob(job, currentSettings, availableKeyInfo.key, modelForThisJob).catch(err => { console.error(`[Job ${job.id}] executeJob 예상치 못한 오류:`, err); }).finally(() => {}); // finally 로직은 executeJob 자체에서 처리
+                        await sleep(100); continue; 
                     } else {
-                        postCardContainer.classList.add('hidden'); kanbanBoardView.classList.remove('hidden');
-                        renderKanbanBoard();
+                        const waitTime = Math.max(100, earliestNextAvailableTime - now); 
+                        console.log(`[Job ${job.id}] 사용 가능한 키 없음. ${Math.round(waitTime/1000)}초 후 재시도...`);
+                        await sleep(waitTime);
                     }
-                } else {
-                    state.activeTopicId = null;
-                    welcomeView.classList.remove('hidden'); topicView.classList.add('hidden');
-                }
-            } else {
-                welcomeView.classList.remove('hidden'); topicView.classList.add('hidden');
+                } 
+            } catch (error) { console.error("Dispatcher 루프 오류:", error); showToast("작업 큐 처리에 심각한 오류 발생.", true); } 
+            finally {
+                isDispatcherRunning = false; console.log("Dispatcher 중지됨.");
+                const remainingJobs = await db.jobs.where('status').equals('queued').count();
+                if (remainingJobs > 0) { console.log("대기 작업 존재. 5초 후 재시작 시도."); setTimeout(triggerProcessJobQueue, 5000); }
             }
-        };
+        }
 
-        const refreshUI = () => { renderTopics(); renderActiveView(); };
-        
-        // --- CRUD Functions ---
-        const addTopics = async () => {
-            const names = topicNamesInput.value.split('\n').map(s => s.trim()).filter(Boolean);
-            if (names.length === 0) return;
-            let lastNewTopicId = null;
-            for (const name of names) {
-                const newTopic = { id: Date.now().toString() + Math.random(), name: name, resources: '' };
-                await db.put('topics', newTopic);
-                state.topics.push(newTopic);
-                lastNewTopicId = newTopic.id;
-            }
-            topicNamesInput.value = '';
-            closeModal(modals.addTopic);
-            if (lastNewTopicId) await setActiveTopic(lastNewTopicId);
-            showToast(`${names.length}개의 주제를 추가했습니다.`);
-        };
-        
-        const deleteActiveTopic = async () => {
-            if (!state.activeTopicId) return;
-            showConfirm('이 주제와 모든 게시물을 정말로 삭제하시겠습니까?', async () => {
-                const topicIdToDelete = state.activeTopicId;
-                const postsToDelete = state.posts.get(topicIdToDelete) || [];
-                for (const post of postsToDelete) {
-                    await db.delete('posts', post.id);
-                }
-                await db.delete('topics', topicIdToDelete);
-                state.topics = state.topics.filter(t => t.id !== topicIdToDelete);
-                state.posts.delete(topicIdToDelete);
-                state.activeTopicId = state.topics.length > 0 ? state.topics[0].id : null;
-                if(state.activeTopicId) await setActiveTopic(state.activeTopicId);
-                else refreshUI();
-                
-                showToast('주제를 삭제했습니다.');
-                closeModal(modals.confirm);
-            });
-        };
-
-        const createNewPostObject = (title, content = '', topicId) => {
-            const checklist = [
-                { id: 'c1', text: '블로그 글 생성', done: !!content },
-                { id: 'c2', text: '블로그 글 내용 붙여넣기', done: !!content },
-                { id: 'c3', text: '도표 생성', done: false },
-                { id: 'c4', text: '도표 이미지 업로드', done: false },
-                { id: 'c5', text: '블로그에 업로드', done: false },
-            ];
-            return {
-                id: Date.now().toString() + Math.random(),
-                topicId: topicId,
-                title: title,
-                content: content,
-                diagrams: [],
-                tags: parseTags(content),
-                status: '아이디어',
-                checklist: checklist,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-            };
-        };
-        
-        const addPost = async () => {
-            const titles = postTitlesInput.value.split('\n').map(s => s.trim()).filter(Boolean);
-            if (titles.length === 0 || !state.activeTopicId) return;
-            const currentPosts = state.posts.get(state.activeTopicId) || [];
-            for (const title of titles) {
-                const newPost = createNewPostObject(title, '', state.activeTopicId);
-                await db.put('posts', newPost);
-                currentPosts.push(newPost);
-            }
-            postTitlesInput.value = '';
-            closeModal(modals.addPost);
-            refreshUI();
-            showToast(`${titles.length}개의 게시물을 추가했습니다.`);
-        };
-        
-        const addPostsFromFiles = async (files) => {
-            if (!state.activeTopicId) { showToast('먼저 주제를 선택해주세요.', true); return; }
-            if (!files || files.length === 0) return;
-            const currentPosts = state.posts.get(state.activeTopicId) || [];
-            const readFile = (file) => new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve({ title: file.name.replace(/\.txt$/, ''), content: reader.result });
-                reader.onerror = (error) => reject(error);
-                reader.readAsText(file, 'UTF-8');
-            });
+        // v3.7: '작업 큐' 워커 (Advanced Text Processing 추가)
+        async function executeJob(job, settings, chosenApiKey, actualModel) {
+            let generatedDataString = ""; 
             try {
-                const postsData = await Promise.all([...files].map(readFile));
-                for (const data of postsData) {
-                    const newPost = createNewPostObject(data.title, data.content, state.activeTopicId);
-                    await db.put('posts', newPost);
-                    currentPosts.push(newPost);
-                }
-                refreshUI();
-                showToast(`${postsData.length}개의 게시물을 파일에서 추가했습니다.`);
-            } catch (error) {
-                console.error("Error reading files:", error);
-                showToast('파일을 읽는 중 오류가 발생했습니다.', true);
-            }
-        };
+                await db.jobs.update(job.id, { status: 'processing', error: null }); 
+                await loadAndRenderProgressList(); 
 
-        const deletePost = async () => {
-            if (!state.activePostId) return;
-            showConfirm('이 게시물을 정말로 삭제하시겠습니까?', async () => {
-                await db.delete('posts', state.activePostId);
-                let currentPosts = state.posts.get(state.activeTopicId) || [];
-                currentPosts = currentPosts.filter(p => p.id !== state.activePostId);
-                state.posts.set(state.activeTopicId, currentPosts);
+                const activeFiles = await db.dataFiles.where('isActive').equals(1).toArray();
+                generatedDataString = activeFiles.map(file => {
+                    const tagName = file.name.replace(/\.txt$/i, '').replace(/[^a-zA-Z0-9_]/g, '_');
+                    const safeTagName = tagName.match(/^[a-zA-Z_]/) ? tagName : `_${tagName}`;
+                    return `<${safeTagName}>\n${file.content}\n</${safeTagName}>`;
+                }).join('\n\n');
                 
-                state.activePostId = null;
-                closeModal(modals.post);
-                closeModal(modals.confirm);
-                refreshUI();
-                showToast('게시물을 삭제했습니다.');
-            });
-        };
+                const promptTemplate = settings?.promptTemplate || DEFAULT_PROMPT_TEMPLATE;
+                const userPrompt = promptTemplate.replace('{{주제}}', job.topic).replace('{{데이터}}', generatedDataString || "<!-- 데이터 없음 -->");
 
-        // --- Post Modal Logic ---
-        const openPostModal = (postId) => {
-            state.activePostId = postId;
-            const post = (state.posts.get(state.activeTopicId) || []).find(p => p.id === postId);
-            if (!post) return;
-            
-            modalPostTitle.value = post.title;
-            contentEditor.value = post.content;
-            renderChecklistInModal(post);
-            renderDiagrams(post.diagrams || []);
-            state.isEditorPreview = false;
-            updateEditorVisibility();
-            updateHighlighter();
-            openModal(modals.post);
-        };
-        
-        const autoSavePost = async () => {
-            if (!state.activePostId || !state.activeTopicId) return;
-            const post = (state.posts.get(state.activeTopicId) || []).find(p => p.id === state.activePostId);
-            if (!post) return;
+                const generatedText = await callGeminiAPIWithRetry(userPrompt, actualModel, chosenApiKey);
+                
+                // v3.7: Advanced Text Processing
+                const finalText = processGeneratedText(generatedText);
 
-            post.title = modalPostTitle.value;
-            post.content = contentEditor.value;
-            post.tags = parseTags(post.content);
-            post.updatedAt = new Date().toISOString();
-            
-            await db.put('posts', post);
-            
-            const cardInUI = document.querySelector(`.post-card[data-post-id="${post.id}"]`);
-            if (cardInUI) {
-                const newCard = createPostCardElement(post);
-                cardInUI.replaceWith(newCard);
-            }
-            console.log("Auto-saved post:", post.title);
-        };
-        const debouncedAutoSave = debounce(autoSavePost, 750);
-        
-        const renderChecklistInModal = (post) => {
-            checklistContainer.innerHTML = '';
-            post.checklist.forEach(item => {
-                const el = document.createElement('label');
-                el.className = 'checklist-item';
-                el.innerHTML = `<input type="checkbox" data-id="${item.id}" ${item.done ? 'checked' : ''}><span>${item.text}</span>`;
-                el.querySelector('input').addEventListener('change', (e) => { item.done = e.target.checked; autoSavePost(); });
-                checklistContainer.appendChild(el);
-            });
-        };
-        
-        const updateChecklistItem = (post, itemId, isDone) => {
-            const item = post.checklist.find(i => i.id === itemId);
-            if (item && item.done !== isDone) { item.done = isDone; renderChecklistInModal(post); autoSavePost(); }
-        };
-
-        // --- Diagram Logic ---
-        const renderDiagrams = (diagrams) => {
-            diagramPreviewGrid.innerHTML = '';
-            if (diagrams && diagrams.length > 0) {
-                diagramUploadArea.classList.add('hidden');
-                diagrams.forEach((diagramData, index) => {
-                    const thumb = document.createElement('div');
-                    thumb.className = 'diagram-thumbnail';
-                    thumb.innerHTML = `<img src="${diagramData.url}" alt="${diagramData.name}"><button class="delete-diagram-btn" data-index="${index}"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>`;
-                    thumb.querySelector('.delete-diagram-btn').addEventListener('click', () => deleteDiagram(index));
-                    diagramPreviewGrid.appendChild(thumb);
+                await db.posts.add({
+                    title: job.topic, 
+                    topic: job.topic,
+                    data: generatedDataString,
+                    result: finalText, // 최종 처리된 텍스트 저장
+                    createdAt: new Date()
                 });
-            } else {
-                diagramUploadArea.classList.remove('hidden');
-            }
-        };
-
-        const isImageAsset = (fileName) => /\.((png)|(jpe?g)|(gif)|(webp)|(svg))$/i.test(fileName);
-        const getMimeTypeFromFileName = (fileName) => {
-            const ext = fileName.split('.').pop().toLowerCase();
-            if (ext === 'png') return 'image/png';
-            if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
-            if (ext === 'gif') return 'image/gif';
-            if (ext === 'webp') return 'image/webp';
-            if (ext === 'svg') return 'image/svg+xml';
-            return null;
-        };
-
-        // [MODIFIED] Refactored function to sort files and zip entries by name before processing.
-        const handleDiagramFiles = async (files) => {
-            const post = (state.posts.get(state.activeTopicId) || []).find(p => p.id === state.activePostId);
-            if (!post) return;
-        
-            const initialDiagramCount = post.diagrams.length;
-            let fileProcessingPromises = [];
-
-            try {
-                // 1. Convert FileList to an array and sort by file name.
-                const sortedFiles = Array.from(files).sort((a, b) => a.name.localeCompare(b.name));
-        
-                for (const file of sortedFiles) {
-                    if (file.type.startsWith('image/')) {
-                        // Handle regular image files
-                        const promise = new Promise((resolve, reject) => {
-                            const reader = new FileReader();
-                            reader.onload = (e) => resolve({ name: file.name, url: e.target.result });
-                            reader.onerror = reject;
-                            reader.readAsDataURL(file);
-                        });
-                        fileProcessingPromises.push(promise);
-                    } else if (file.name.toLowerCase().endsWith('.zip')) {
-                        // Handle ZIP files
-                        const zipPromise = (async () => {
-                            const zip = await JSZip.loadAsync(file);
-                            const zipEntries = [];
-                            zip.forEach((_, zipEntry) => {
-                                if (isImageAsset(zipEntry.name) && !zipEntry.dir) {
-                                    zipEntries.push(zipEntry);
-                                }
-                            });
-        
-                            // 2. Sort entries within the ZIP file by name.
-                            zipEntries.sort((a, b) => a.name.localeCompare(b.name));
-        
-                            // Process sorted entries
-                            const entryPromises = zipEntries.map(async (entry) => {
-                                const base64 = await entry.async('base64');
-                                const mimeType = getMimeTypeFromFileName(entry.name);
-                                if (mimeType) {
-                                    return { name: entry.name, url: `data:${mimeType};base64,${base64}` };
-                                }
-                                return null;
-                            });
-                            
-                            // Await all promises from this zip and filter out any nulls
-                            return (await Promise.all(entryPromises)).filter(Boolean);
-                        })();
-                        fileProcessingPromises.push(zipPromise);
-                    }
-                }
-        
-                // 3. Resolve all promises and add the new diagrams to the post.
-                const results = await Promise.all(fileProcessingPromises);
-                const newDiagrams = results.flat(); // .flat() handles arrays of diagrams from ZIP files.
                 
-                if (!post.diagrams) post.diagrams = [];
-                post.diagrams.push(...newDiagrams);
-                
-                // Sort the entire diagrams array by name after adding new ones
-                post.diagrams.sort((a,b) => a.name.localeCompare(b.name));
+                await db.jobs.delete(job.id);
+                console.log(`[Job ${job.id}] 작업 성공 및 삭제: ${job.topic}`);
 
-                renderDiagrams(post.diagrams);
-                
-                if (post.diagrams.length > initialDiagramCount) {
-                    updateChecklistItem(post, 'c4', true); // This will trigger autoSave
-                } else {
-                    autoSavePost();
-                }
             } catch (error) {
-                console.error("Error handling diagram files:", error);
-                showToast('파일 처리 중 오류가 발생했습니다.', true);
+                 if (error instanceof RateLimitError) {
+                     const cooldownDuration = 61 * 1000; 
+                     const cooldownEndTime = Date.now() + cooldownDuration;
+                     apiKeyCooldownUntil.set(error.apiKey, cooldownEndTime);
+                     console.warn(`[Job ${job.id}] Rate limit (429). 키 ${error.apiKey ? `"${error.apiKey.substring(0,4)}..."` : '기본 키'} ${Math.round(cooldownDuration/1000)}초 휴면.`);
+                     await db.jobs.update(job.id, { status: 'queued', error: `API Rate Limit 초과 (키 휴면)` });
+                 } else {
+                     console.error(`[Job ${job.id}] 작업 실패: ${job.topic}`, error);
+                     await db.jobs.update(job.id, { status: 'failed', error: error.message || "알 수 없는 오류 발생" });
+                 }
+            } finally {
+                processingJobs.delete(job.id); 
+                await loadAndRenderProgressList(); 
+                await loadAndRenderPostsList(); 
+                triggerProcessJobQueue(); 
             }
-        };
+        }
+
+        // --- v3.7: Advanced Text Processing Functions ---
+
+        // 메인 처리 함수
+        function processGeneratedText(rawText) {
+            console.log("[Text Processing] 시작...");
+            let cleanedText = cleanText(rawText);
+            console.log("[Text Processing] 1단계 Clean 완료.");
+            let lines = cleanedText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            const initialLineCount = lines.length;
+            lines = removeDuplicateBlocks(lines); 
+            const removedLineCount = initialLineCount - lines.length;
+            console.log(`[Text Processing] 2단계 Duplicates 완료. ${removedLineCount}줄 제거됨.`);
+            let finalText = formatFinalOutput(lines);
+            console.log("[Text Processing] 3단계 Format 완료.");
+            return finalText.trim(); 
+        }
+
+        // 1단계: HTML, Markdown, 사용자 정의 규칙 제거 및 공백 정규화
+        function cleanText(text) {
+            let cleaned = text;
+            const entities = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&nbsp;': ' ' };
+            cleaned = cleaned.replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&nbsp;/g, match => entities[match]);
+            cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
+            cleaned = cleaned.replace(/<[^>]*>/g, '');
+            cleaned = cleaned.replace(/!\[.*?\]\(.*?\)/g, ''); 
+            cleaned = cleaned.replace(/\[(.*?)\]\(.*?\)/g, '$1'); 
+            cleaned = cleaned.replace(/(\*\*|__)(.*?)\1/g, '$2'); 
+            cleaned = cleaned.replace(/(\*|_)(.*?)\1/g, '$2'); 
+            cleaned = cleaned.replace(/`(.*?)`/g, '$1'); 
+            cleaned = cleaned.replace(/^#{1,6}\s+/gm, ''); 
+            cleaned = cleaned.replace(/^[\*\-\+]\s+/gm, ''); 
+            cleaned = cleaned.replace(/^\d+\.\s+/gm, ''); 
+            cleaned = cleaned.replace(/^>\s+/gm, ''); 
+            cleaned = cleaned.replace(/\[\d+\]/g, ''); 
+            cleaned = cleaned.replace(/대표사진 삭제링크AI 활용 설정/g, '');
+            cleaned = cleaned.replace(/사진 설명을 입력하세요/g, '');
+            cleaned = cleaned.replace(/김무관법무사사무소/g, ''); 
+            cleaned = cleaned.replace(/^\s*#.*/gm, ''); 
+            cleaned = cleaned.replace(/[\s\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF]+/g, ' ');
+            return cleaned;
+        }
         
-        const deleteDiagram = (index) => {
-            const post = (state.posts.get(state.activeTopicId) || []).find(p => p.id === state.activePostId);
-            if (post && post.diagrams) {
-                post.diagrams.splice(index, 1);
-                renderDiagrams(post.diagrams);
-                if (post.diagrams.length === 0) {
-                    updateChecklistItem(post, 'c4', false);
-                } else {
-                    autoSavePost();
+        // 2단계: 중복 블록 제거 (롤링 해시)
+        function removeDuplicateBlocks(lines, minLines = 5, minRepeats = 3) {
+            if (!lines || lines.length < minLines * minRepeats) { return lines; }
+            const prime = 101; const base = 256; 
+            const calculateHash = (blockLines) => { let hash = 0; const blockText = blockLines.join('\n'); for (let i = 0; i < blockText.length; i++) { hash = (hash * base + blockText.charCodeAt(i)) % prime; } return hash; };
+            const linesToRemove = new Set(); 
+            for (let blockSize = Math.min(20, lines.length -1); blockSize >= minLines; blockSize--) {
+                const hashes = new Map(); 
+                for (let i = 0; i <= lines.length - blockSize; i++) {
+                    let skip = false; for (let j = 0; j < blockSize; j++) { if (linesToRemove.has(i + j)) { skip = true; break; } } if (skip) continue;
+                    const block = lines.slice(i, i + blockSize); const hash = calculateHash(block);
+                    if (!hashes.has(hash)) { hashes.set(hash, []); } hashes.get(hash).push({ startIndex: i, lines: block }); 
+                }
+                for (const [hash, blocks] of hashes.entries()) {
+                     if (blocks.length < minRepeats) continue;
+                     const groups = {}; blocks.forEach(blockInfo => { const blockKey = blockInfo.lines.join('\n'); if (!groups[blockKey]) groups[blockKey] = []; groups[blockKey].push(blockInfo.startIndex); });
+                     for (const blockKey in groups) {
+                         if (groups[blockKey].length >= minRepeats) { console.log(`[Text Processing] 중복 블록 발견 (크기: ${blockSize}, 반복: ${groups[blockKey].length}회)`); groups[blockKey].forEach(startIndex => { for (let k = 0; k < blockSize; k++) { linesToRemove.add(startIndex + k); } }); }
+                     }
                 }
             }
-        };
+            return lines.filter((_, index) => !linesToRemove.has(index));
+        }
 
-        // --- Data Management & Prompts ---
-        const getPromptText = (type, post) => {
-            if (!post) return null;
-            const activeTopic = state.topics.find(t => t.id === post.topicId);
-            const resources = activeTopic.resources || '';
-            let promptTemplate = type === 'blog' ? state.settings.blogPrompt : state.settings.diagramPrompt;
-            if (type === 'diagram' && !post.content) {
-                showToast('도표 프롬프트는 글 내용이 필요합니다.', true);
-                return null;
+        // 3단계: 최종 출력 서식 적용
+        function formatFinalOutput(lines) {
+            if (!lines || lines.length === 0) return "";
+            const formattedLines = [];
+            lines.forEach(line => { const trimmedLine = line.trim(); if (trimmedLine.length > 0) { let prefix = ""; if (trimmedLine.endsWith('?')) { prefix = "\n"; } formattedLines.push(prefix + trimmedLine); } });
+            return formattedLines.join('\n\n'); 
+        }
+
+        // V-03: '재시도' 및 '작업 삭제' 버튼 핸들러 (이벤트 위임)
+        async function handleProgressListClick(event) {
+            const button = event.target.closest('button[data-id]'); if (!button) return;
+            const jobId = parseInt(button.getAttribute('data-id'), 10); if (!jobId) return;
+            const action = button.getAttribute('data-action');
+            if (action === 'retry') { try { await db.jobs.update(jobId, { status: 'queued', error: null }); showToast("재시도.", false); await loadAndRenderProgressList(); triggerProcessJobQueue(); } catch (error) { console.error("재시도 오류:", error); showToast("재시도 설정 오류.", true); } } 
+            else if (action === 'delete-job') { if (confirm("작업 삭제?")) { try { await db.jobs.delete(jobId); processingJobs.delete(jobId); showToast("삭제됨.", false); await loadAndRenderProgressList(); } catch (error) { console.error("작업 삭제 오류:", error); showToast("작업 삭제 오류.", true); } } }
+        }
+
+        // v3.6: Gemini API 호출 (429 오류 처리 추가)
+        async function callGeminiAPIWithRetry(prompt, modelName, apiKeyForCall, maxRetries = 3) {
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKeyForCall}`;
+            const payload = { contents: [{ "role": "user", "parts": [{ "text": prompt }] }], safetySettings: [ { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, ] };
+            for (let i = 0; i < maxRetries; i++) {
+                let response;
+                try {
+                    response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                    if (response.status === 429) { throw new RateLimitError(`API Error 429: Too Many Requests`, apiKeyForCall); }
+                    if (!response.ok) { const errorData = await response.json(); throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`); }
+                    const result = await response.json();
+                    if (result.candidates?.[0]?.content?.parts?.[0]?.text) { return result.candidates[0].content.parts[0].text; } 
+                    else if (result.candidates?.[0]?.finishReason) { console.error(`콘텐츠 생성 실패 (Reason: ${result.candidates[0].finishReason})`, result); let errorMessage = `콘텐츠 생성 실패 (Reason: ${result.candidates[0].finishReason})`; if (result.promptFeedback?.blockReason) { errorMessage += ` - ${result.promptFeedback.blockReason}`; } throw new Error(errorMessage); } 
+                    else { console.error("Unexpected API response format:", result); throw new Error("API 응답 형식이 올바르지 않습니다."); }
+                } catch (error) {
+                    if (error instanceof RateLimitError) { throw error; }
+                    console.warn(`API 호출 실패 (시도 ${i+1}/${maxRetries}): ${error.message}`);
+                    if (i === maxRetries - 1) throw error; 
+                    await sleep(Math.pow(2, i) * 1000 + Math.random() * 1000); 
+                }
             }
-            return promptTemplate.replace(/\{\{제목\}\}/g, post.title).replace(/\{\{내용\}\}/g, post.content).replace(/\{\{자료\}\}/g, resources);
-        };
+            throw new Error("API 호출 재시도 모두 실패 (알 수 없는 원인)");
+        }
         
-        const exportData = async () => {
-            const topics = await db.getAll('topics');
-            const posts = await db.getAll('posts');
-            const settings = await db.get('settings', 'userSettings');
-            const dataToExport = { topics, posts, settings };
-            const dataStr = JSON.stringify(dataToExport, null, 2);
-            const blob = new Blob([dataStr], {type: "application/json"});
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `content-hub-backup-${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
-        };
-
-        const importData = (file) => {
-            if (!file) return;
+        // --- 5. UI 이벤트 핸들러 ---
+        async function handleSaveSettings() {
+             try {
+                 const currentSettings = await db.settings.get('config') || {};
+                 await db.settings.put({ ...currentSettings, id: 'config', modelName: modelSelectInput.value, promptTemplate: promptTemplateInput.value.trim() || DEFAULT_PROMPT_TEMPLATE });
+                 showToast("설정 저장됨.", false); settingsModal.classList.add('hidden');
+             } catch (error) { console.error("설정 저장 오류:", error); showToast("설정 저장 오류.", true); }
+        }
+        async function handleAddApiKey() {
+            const name = apiKeyNameInput.value.trim(); const key = apiKeyValueInput.value.trim();
+            if (!name || !key) { showToast("이름과 키 값 필요.", true); return; }
+            try {
+                await db.transaction('rw', db.settings, async () => {
+                    const settings = await db.settings.get('config') || { id: 'config', apiKeys: [] };
+                    if (settings.apiKeys?.some(k => k.name === name)) { showToast(`'${name}' 이름 중복.`, true); throw new Error("Duplicate key name"); }
+                    const newApiKeys = [...(settings.apiKeys || []), { name, key }];
+                    await db.settings.put({ ...settings, apiKeys: newApiKeys }); renderApiKeyList(newApiKeys); 
+                });
+                apiKeyNameInput.value = ''; apiKeyValueInput.value = ''; showToast(`'${name}' 키 추가됨.`, false);
+            } catch (error) { if (error.message !== "Duplicate key name") { console.error("API 키 추가 오류:", error); showToast("API 키 추가 오류.", true); } }
+        }
+        async function handleDeleteApiKey(event) {
+            const deleteButton = event.target.closest('[data-action="delete-key"]'); if (!deleteButton) return;
+            const indexToDelete = parseInt(deleteButton.getAttribute('data-index'), 10); if (isNaN(indexToDelete)) return;
+             const settings = await db.settings.get('config') || { apiKeys: [] };
+             const keyNameToDelete = settings.apiKeys?.[indexToDelete]?.name;
+            if (!confirm(`'${keyNameToDelete || '선택한'}' API 키 삭제?`)) return;
+            try {
+                 await db.transaction('rw', db.settings, async () => {
+                    const currentSettings = await db.settings.get('config') || { id: 'config', apiKeys: [] };
+                    const newApiKeys = (currentSettings.apiKeys || []).filter((_, index) => index !== indexToDelete);
+                    await db.settings.put({ ...currentSettings, apiKeys: newApiKeys }); renderApiKeyList(newApiKeys); 
+                 }); showToast("API 키 삭제됨.", false);
+            } catch (error) { console.error("API 키 삭제 오류:", error); showToast("API 키 삭제 오류.", true); }
+        }
+        async function handleDataNewFile() {
+            const fileName = prompt("새 파일 이름 (.txt 제외):", `new_file_${Date.now()}`); if (!fileName) return;
+            const nameWithExt = fileName.toLowerCase().endsWith('.txt') ? fileName : `${fileName}.txt`;
+             const existingFile = await db.dataFiles.where('name').equalsIgnoreCase(nameWithExt).first();
+             if (existingFile) { showToast(`'${nameWithExt}' 이름 중복.`, true); return; }
+            await db.dataFiles.add({ name: nameWithExt, content: '', isActive: false, isGlobal: false }); await loadAndRenderDataFiles();
+        }
+        async function handleDataUpload(event) {
+            const file = event.target.files[0]; if (!file) return;
+             if (!file.name.toLowerCase().endsWith('.txt')) { showToast(".txt 파일만 가능.", true); event.target.value = null; return; }
+             const existingFile = await db.dataFiles.where('name').equalsIgnoreCase(file.name).first();
+             if (existingFile && !confirm(`'${file.name}' 덮어쓰기?`)) { event.target.value = null; return; }
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
-                    const imported = JSON.parse(e.target.result);
-                    if (imported.topics && (imported.posts || imported.topics.some(t => t.posts))) {
-                        showConfirm('현재 데이터를 덮어쓰고 가져오시겠습니까?', async () => {
-                            const topicStore = db._getStore('topics', 'readwrite');
-                            const postStore = db._getStore('posts', 'readwrite');
-                            const settingsStore = db._getStore('settings', 'readwrite');
-                            await Promise.all([
-                                new Promise(res => { const r = topicStore.clear(); r.onsuccess = res; }),
-                                new Promise(res => { const r = postStore.clear(); r.onsuccess = res; }),
-                                new Promise(res => { const r = settingsStore.clear(); r.onsuccess = res; })
+                    if (existingFile) { await db.dataFiles.update(existingFile.id, { content: e.target.result }); showToast(`${file.name} 덮어씀.`, false); if (currentDataFileId === existingFile.id) { dataEditorContent.value = e.target.result; } } 
+                    else { await db.dataFiles.add({ name: file.name, content: e.target.result, isActive: false, isGlobal: false }); showToast(`${file.name} 업로드됨.`, false); }
+                    await loadAndRenderDataFiles();
+                } catch (error) { showToast("파일 저장 오류.", true); }
+            }; reader.readAsText(file); event.target.value = null; 
+        }
+        
+        // v3.9: 목록 클릭 핸들러 (표지 생성 분기 추가)
+        async function handleSavedListClick(event) {
+            const actionTarget = event.target.closest('[data-action]');
+            if (!actionTarget) return;
+
+            const action = actionTarget.getAttribute('data-action');
+            const postId = parseInt(actionTarget.getAttribute('data-id'), 10);
+            if (!postId) return;
+
+            if (action === 'view-detail') {
+                 handlePostItemClick(postId); // 상세 보기 로직 호출
+            } else if (action === 'copy-list-item') {
+                 handleCopyListItem(postId); // 목록 복사 로직 호출
+            } else if (action === 'create-cover') { // v3.9: 신규
+                 handleCreateCoverFromPost(postId); 
+            } else if (action === 'delete-list-item') {
+                 handleDeleteListItem(postId);
+            }
+        }
+
+        // v3.8: 목록 복사 로직
+        async function handleCopyListItem(postId) {
+             try {
+                 const post = await db.posts.get(postId);
+                 if (post && post.result) {
+                     copyToClipboard(post.result);
+                     showToast("글 내용이 복사되었습니다.", false);
+                 } else {
+                     showToast("글 내용을 찾을 수 없습니다.", true);
+                 }
+             } catch (error) {
+                 console.error("목록 복사 오류:", error);
+                 showToast("복사 중 오류 발생", true);
+             }
+        }
+
+        async function handleDeleteListItem(postId) {
+            if (!confirm("이 글을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
+            try {
+                await db.posts.delete(postId);
+                showToast("삭제되었습니다.", false);
+                await loadAndRenderPostsList(); // 목록 새로고침
+            } catch (error) {
+                console.error("목록 삭제 오류:", error);
+                showToast("삭제 중 오류 발생", true);
+            }
+        }
+
+        // v3.8: 상세 보기 로직 (ID만 받도록 수정)
+        async function handlePostItemClick(postId) {
+            const post = await db.posts.get(postId);
+            if (post) { 
+                currentDetailPostId = post.id; 
+                postDetailTitle.textContent = post.title || "제목 없음"; 
+                detailTopic.value = post.topic || ""; 
+                detailData.value = post.data || ""; 
+                detailResult.value = post.result || ""; 
+                postDetailModal.classList.remove('hidden'); 
+            }
+        }
+
+        // v3.9: '저장된 글'에서 표지 생성 로직
+        async function handleCreateCoverFromPost(postId) {
+            try {
+                const post = await db.posts.get(postId);
+                if (post && post.topic) {
+                    coverTitleInput.value = post.topic; // 텍스트 영역에 주제 설정
+                    updateCoverTitle(); // 표지 미리보기 업데이트
+                    
+                    // '표지 생성' 탭으로 강제 이동
+                    handleTabClick(null, 'tab-cover'); 
+                    
+                    showToast(`'${post.topic}' 표지 생성을 시작합니다.`, false);
+                } else {
+                    showToast("글 주제를 찾을 수 없습니다.", true);
+                }
+            } catch (error) {
+                console.error("표지 생성 이동 오류:", error);
+                showToast("표지 생성으로 이동 중 오류 발생", true);
+            }
+        }
+
+        async function handleDataFileListClick(event) {
+            const target = event.target; const fileItem = target.closest('.data-file-item'); if (!fileItem) return;
+            const fileId = parseInt(fileItem.getAttribute('data-id'), 10); const action = target.closest('[data-action]')?.getAttribute('data-action');
+            if (action === 'toggle') { const checkbox = fileItem.querySelector('input[type="checkbox"]'); if (!checkbox) return; const newState = checkbox.checked; await db.dataFiles.update(fileId, { isActive: newState }); await loadAndRenderDataFiles(); } 
+            else if (action === 'delete') { const fileToDelete = await db.dataFiles.get(fileId); if (fileToDelete?.isGlobal) { showToast("전역 파일 삭제 불가.", true); return; } if (confirm(`'${fileToDelete?.name}' 삭제?`)) { await db.dataFiles.delete(fileId); await loadAndRenderDataFiles(); if (currentDataFileId === fileId) resetDataEditor(); } } 
+            else { currentDataFileId = fileId; const file = await db.dataFiles.get(fileId); if(file) { dataEditorFilename.value = file.name; dataEditorContent.value = file.content; dataEditorFilename.disabled = file.isGlobal; dataEditorContent.disabled = false; dataSaveFileBtn.disabled = false; document.querySelectorAll('.data-file-item').forEach(el => el.classList.remove('selected')); fileItem.classList.add('selected'); } else { resetDataEditor(); } }
+        }
+        function resetDataEditor() { currentDataFileId = null; dataEditorFilename.value = "파일 선택"; dataEditorContent.value = ""; dataEditorFilename.disabled = true; dataEditorContent.disabled = true; dataSaveFileBtn.disabled = true; document.querySelectorAll('.data-file-item').forEach(el => el.classList.remove('selected')); }
+        async function handleDataSaveFile() {
+            if (!currentDataFileId) return;
+            const newName = dataEditorFilename.value.trim(); if (!newName.toLowerCase().endsWith('.txt')) { showToast(".txt로 끝나야 함.", true); const originalFile = await db.dataFiles.get(currentDataFileId); if (originalFile) dataEditorFilename.value = originalFile.name; return; }
+             const existingFile = await db.dataFiles.where('name').equalsIgnoreCase(newName).first(); if (existingFile && existingFile.id !== currentDataFileId) { showToast(`'${newName}' 이름 중복.`, true); const originalFile = await db.dataFiles.get(currentDataFileId); if (originalFile) dataEditorFilename.value = originalFile.name; return; }
+            await db.dataFiles.update(currentDataFileId, { name: newName, content: dataEditorContent.value }); await loadAndRenderDataFiles(); showToast(`${newName} 저장됨.`, false);
+        }
+        
+        async function handleDeletePost() {
+            if (!currentDetailPostId || !confirm("저장된 글 삭제?")) return;
+            try { await db.posts.delete(currentDetailPostId); showToast("삭제됨.", false); closePostDetailModal(); await loadAndRenderPostsList(); } 
+            catch (error) { console.error("글 삭제 오류:", error); showToast("글 삭제 오류.", true); }
+        }
+
+        // --- v3.9: 표지 생성기 함수 ---
+        function updateCoverTitle() {
+            let inputText = coverTitleInput.value;
+            if (inputText.trim() === "") {
+                inputText = "외국 시민권자\n상속포기 한정승인";
+            }
+            let formattedText = inputText.replace(/\n/g, '<br>');
+            coverMainTitle.innerHTML = formattedText;
+
+            // 자동 폰트 크기 조절 로직
+            adjustCoverFontSize();
+        }
+
+        // 최대 폰트 크기 찾는 로직으로 수정
+        function adjustCoverFontSize() {
+            const containerHeight = coverTitleContainer.clientHeight;
+            let bestSize = 1; // 최소 1px
+
+            // 임시로 스타일을 적용하여 높이를 측정
+            const tempTitle = coverMainTitle.cloneNode(true);
+            tempTitle.style.visibility = 'hidden';
+            tempTitle.style.position = 'absolute';
+            tempTitle.style.width = coverTitleContainer.clientWidth + 'px'; // 너비 고정
+            document.body.appendChild(tempTitle);
+
+            for (let currentSize = 1; currentSize <= 100; currentSize++) { // 100px까지 시도
+                tempTitle.style.fontSize = `${currentSize}px`;
+                if (tempTitle.scrollHeight <= containerHeight) {
+                    bestSize = currentSize;
+                } else {
+                    break; // 넘치면 중단
+                }
+            }
+            document.body.removeChild(tempTitle); // 임시 요소 제거
+            
+            // 최종 찾은 크기로 설정
+            coverMainTitle.style.fontSize = `${bestSize}px`;
+        }
+
+
+        function saveCoverAsImage() {
+            if (!bannerPreview) {
+                showToast("표지 미리보기 요소를 찾을 수 없습니다.", true);
+                return;
+            }
+            
+            // (그림자 제거/복원 로직이 삭제되었습니다)
+
+            html2canvas(bannerPreview, {
+                scale: 3, // 3배수 크기로 캡처하여 고해상도 이미지 생성
+                useCORS: true,
+                backgroundColor: null // 배경 투명도 유지
+            }).then(canvas => {
+                // (그림자 복원 로직이 삭제되었습니다)
+                
+                // 다운로드 링크 생성
+                const link = document.createElement('a');
+                link.download = 'cover_image.png'; // 파일 이름
+                link.href = canvas.toDataURL('image/png'); // 캔버스 데이터를 PNG 이미지로 변경
+                link.click(); // 링크 클릭 자동 실행 (다운로드)
+            }).catch(err => {
+                console.error("이미지 저장 오류:", err);
+                showToast("이미지 저장 중 오류가 발생했습니다.", true);
+                // (그림자 복원 로직이 삭제되었습니다)
+            });
+        }
+
+        // v3.9: 클립보드 복사 함수 추가
+        async function copyCoverToClipboard() {
+            if (!bannerPreview) {
+                 showToast("표지 미리보기 요소를 찾을 수 없습니다.", true);
+                 return;
+            }
+            
+            // (그림자 제거/복원 로직이 삭제되었습니다)
+
+            try {
+                const canvas = await html2canvas(bannerPreview, { 
+                    scale: 2, // 복사용은 2배수로 충분
+                    useCORS: true, 
+                    backgroundColor: null 
+                });
+                // (그림자 복원 로직이 삭제되었습니다)
+
+                canvas.toBlob(async (blob) => {
+                    if (blob) {
+                        try {
+                            await navigator.clipboard.write([
+                                new ClipboardItem({
+                                    [blob.type]: blob
+                                })
                             ]);
-                            
-                            for (const topic of imported.topics) {
-                                if (topic.posts && Array.isArray(topic.posts)) {
-                                    for (const post of topic.posts) {
-                                        post.topicId = topic.id;
-                                        await db.put('posts', post);
-                                    }
-                                    delete topic.posts;
-                                }
-                                await db.put('topics', topic);
-                            }
-                            if (imported.posts && Array.isArray(imported.posts)) {
-                                 for (const post of imported.posts) await db.put('posts', post);
-                            }
-                            if (imported.settings) await db.put('settings', imported.settings);
-                            
-                            await loadInitialData();
-                            showToast('데이터를 성공적으로 가져왔습니다.');
-                            closeModal(modals.confirm);
+                            showToast("표지 이미지가 클립보드에 복사되었습니다.", false);
+                        } catch (err) {
+                            console.error('클립보드 복사 실패:', err);
+                            showToast("클립보드 복사 실패. 브라우저 호환성 문제일 수 있습니다.", true);
+                        }
+                    } else {
+                        throw new Error('Canvas to Blob 변환 실패');
+                    }
+                }, 'image/png'); // PNG 형식으로 Blob 생성
+            } catch (err) {
+                console.error("이미지 클립보드 복사 오류:", err);
+                showToast("이미지 복사 중 오류 발생.", true);
+                // (그림자 복원 로직이 삭제되었습니다)
+            }
+        }
+        
+        // --- 6. 유틸리티 함수 ---
+        function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+        function getDelayForModel(modelName) { const bufferMs = 100; return modelName.includes('pro') ? 30000 + bufferMs : 6000 + bufferMs; }
+        function handleTabClick(event, forceTabId = null) { 
+            let clickedTabId = forceTabId || event.currentTarget.id; 
+            Object.values(tabs).forEach(tab => tab.setAttribute('aria-selected', (tab.id === clickedTabId).toString())); 
+            Object.entries(contents).forEach(([key, content]) => { 
+                content.classList.toggle('hidden', key !== clickedTabId.replace('tab-', '')); 
+            }); 
+            // 표지 탭이 선택되면 폰트 크기 강제 조절 (레이아웃이 잡힌 후)
+            if (clickedTabId === 'tab-cover') {
+                setTimeout(adjustCoverFontSize, 50); // 약간의 딜레이 추가
+            }
+        }
+        function updateGenerateButton(count = null) { let topicCount = count; if (topicCount === null) { const topicsRaw = topicInput.value.trim(); topicCount = topicsRaw ? topicsRaw.split('\n').filter(t => t.trim() !== '').length : 0; } generateBtnText.textContent = (topicCount > 0) ? `${topicCount}개 생성 요청` : "작업 요청"; generateBtn.disabled = (topicCount === 0); }
+        function closePostDetailModal() { postDetailModal.classList.add('hidden'); currentDetailPostId = null; }
+        function handleCopyPost() { copyToClipboard(detailResult.value); showToast("클립보드에 복사됨.", false); }
+        function showToast(message, isError = false) { const toastId = `toast-${Date.now()}`; const toast = document.createElement('div'); toast.id = toastId; toast.className = `toast p-4 rounded-lg shadow-lg text-white font-medium ${isError ? 'bg-red-500' : 'bg-green-500'}`; toast.textContent = message; toastContainer.appendChild(toast); toast.offsetHeight; toast.classList.add('show'); setTimeout(() => { toast.classList.remove('show'); toast.addEventListener('transitionend', () => toast.remove(), { once: true }); }, 3000); }
+        function escapeHTML(str) { if (typeof str !== 'string') return ''; const element = document.createElement('div'); element.innerText = str; return element.innerHTML; }
+        function copyToClipboard(text) { if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).catch(err => { console.error('클립보드 복사 실패 (async):', err); legacyCopyToClipboard(text); }); } else { legacyCopyToClipboard(text); } }
+        function legacyCopyToClipboard(text) { const textarea = document.createElement('textarea'); textarea.value = text; textarea.style.position = 'fixed'; textarea.style.opacity = '0'; textarea.style.left = '-9999px'; document.body.appendChild(textarea); textarea.select(); try { const successful = document.execCommand('copy'); if (!successful) { console.error('클립보드 복사 실패 (execCommand)'); showToast('복사 실패.', true); } } catch (err) { console.error('클립보드 복사 오류:', err); showToast('복사 오류.', true); } document.body.removeChild(textarea); }
+
+        // --- 7. 이벤트 리스너 바인딩 ---
+        function setupEventListeners() {
+            Object.values(tabs).forEach(tab => tab.addEventListener('click', handleTabClick));
+            openSettingsBtn.addEventListener('click', async () => { await loadAndRenderSettings(); settingsModal.classList.remove('hidden'); });
+            closeSettingsBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
+            saveSettingsBtn.addEventListener('click', handleSaveSettings);
+            addApiKeyBtn.addEventListener('click', handleAddApiKey); 
+            apiKeyListDiv.addEventListener('click', handleDeleteApiKey); 
+            generateBtn.addEventListener('click', handleGenerateJobs);
+            topicInput.addEventListener('input', () => updateGenerateButton(null));
+            exportAllDataBtn.addEventListener('click', handleExportAllData);
+            importAllDataInput.addEventListener('change', handleImportAllData);
+            dataNewFileBtn.addEventListener('click', handleDataNewFile);
+            dataUploadInput.addEventListener('change', handleDataUpload);
+            dataFileList.addEventListener('click', handleDataFileListClick);
+            dataSaveFileBtn.addEventListener('click', handleDataSaveFile);
+            dataEditorFilename.addEventListener('blur', () => { if (!dataEditorFilename.disabled && currentDataFileId) { handleDataSaveFile(); } });
+            progressList.addEventListener('click', handleProgressListClick);
+            // v3.8: 저장된 글 목록 이벤트 리스너 통합
+            savedPostsList.addEventListener('click', handleSavedListClick); 
+            exportPostsBtn.addEventListener('click', handleExportPosts); 
+            closeDetailBtn.addEventListener('click', closePostDetailModal);
+            copyPostBtn.addEventListener('click', handleCopyPost);
+            deletePostBtn.addEventListener('click', handleDeletePost);
+
+            // v3.9: 표지 생성기 이벤트 리스너
+            coverUpdateButton.addEventListener('click', updateCoverTitle);
+            coverSaveImageButton.addEventListener('click', saveCoverAsImage);
+            // 텍스트 입력 시 실시간 폰트 조절 (선택 사항)
+            coverTitleInput.addEventListener('input', updateCoverTitle);
+            // 클립보드 복사 이벤트 리스너 추가
+            bannerPreview.addEventListener('click', copyCoverToClipboard);
+        }
+
+        // v3.7: Export Posts Functionality
+        async function handleExportPosts() {
+            const posts = await db.posts.toArray();
+            if (posts.length === 0) { showToast("내보낼 글 없음.", true); return; }
+            exportPostsBtn.disabled = true; exportPostsBtn.innerHTML = `<div class="spinner w-4 h-4 mr-2 inline-block"></div> 내보내는 중...`;
+            try {
+                const zip = new JSZip();
+                posts.forEach(post => { let filename = (post.title || `post_${post.id}`).replace(/[<>:"/\\|?*]/g, '_'); filename = `${filename}_${post.id}.txt`; zip.file(filename, post.result || ""); });
+                const blob = await zip.generateAsync({ type: "blob" });
+                const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `ai_blog_posts_${new Date().toISOString().slice(0,10)}.zip`; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href);
+                showToast(`총 ${posts.length}개 글 내보냄.`, false);
+            } catch (error) { console.error("ZIP 오류:", error); showToast("내보내기 오류.", true); } 
+            finally { exportPostsBtn.disabled = false; exportPostsBtn.innerHTML = `<i data-lucide="download" class="w-4 h-4 mr-2"></i> 전체 글 내보내기 (ZIP)`; if (typeof lucide !== 'undefined') lucide.createIcons(); }
+        }
+
+        async function handleExportAllData() {
+            if (!confirm("전체 프로젝트 데이터를 내보내시겠습니까?\n(API 키, 데이터 파일, 저장된 글)")) return;
+
+            try {
+                const settings = await db.settings.toArray();
+                const dataFiles = await db.dataFiles.toArray();
+                const posts = await db.posts.toArray();
+                
+                const exportData = {
+                    version: 3.9, // Versioning
+                    exportedAt: new Date().toISOString(),
+                    data: {
+                        settings,
+                        dataFiles,
+                        posts
+                    }
+                };
+                
+                const dataStr = JSON.stringify(exportData, null, 2);
+                const blob = new Blob([dataStr], { type: "application/json" });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = `ai_blog_assistant_backup_${new Date().toISOString().slice(0,10)}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+                
+                showToast("전체 데이터 내보내기 성공.", false);
+            } catch (error) {
+                console.error("전체 데이터 내보내기 오류:", error);
+                showToast("전체 데이터 내보내기 실패.", true);
+            }
+        }
+
+        // --- v3.9: Import All Project Data ---
+        async function handleImportAllData(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!file.name.toLowerCase().endsWith('.json')) {
+                showToast(".json 파일만 가져올 수 있습니다.", true);
+                event.target.value = null; // Reset input
+                return;
+            }
+
+            if (!confirm("경고: 데이터를 가져오면 현재 모든 프로젝트 데이터(설정, 파일, 저장된 글)가 삭제되고 덮어쓰기 됩니다.\n\n정말로 진행하시겠습니까?")) {
+                event.target.value = null; // Reset input
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                try {
+                    const importData = JSON.parse(e.target.result);
+                    
+                    if (!importData.data || !importData.data.settings || !importData.data.dataFiles || !importData.data.posts) {
+                        throw new Error("유효하지 않은 백업 파일 형식입니다.");
+                    }
+
+                    // Destructive operation: clear existing data
+                    await db.transaction('rw', db.settings, db.dataFiles, db.posts, async () => {
+                        await db.settings.clear();
+                        await db.dataFiles.clear();
+                        await db.posts.clear();
+
+                        // Bulk add new data
+                        // settings 'id' is 'config', so it's fine.
+                        // dataFiles/posts 'id' is '++id', must be removed for bulkAdd to generate new keys.
+                        
+                        const settingsToImport = importData.data.settings;
+                        const dataFilesToImport = importData.data.dataFiles.map(file => {
+                            delete file.id; // Remove auto-incrementing key
+                            return file;
                         });
-                    } else { showToast('잘못된 파일 형식입니다.', true); }
-                } catch (error) { showToast('파일을 읽는 중 오류 발생.', true); }
+                        const postsToImport = importData.data.posts.map(post => {
+                            delete post.id; // Remove auto-incrementing key
+                            return post;
+                        });
+
+                        await db.settings.bulkAdd(settingsToImport);
+                        await db.dataFiles.bulkAdd(dataFilesToImport);
+                        await db.posts.bulkAdd(postsToImport);
+                    });
+
+                    showToast("데이터 가져오기 성공. 앱을 새로고침합니다.", false);
+                    
+                    // Reload the app to reflect all changes
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500);
+
+                } catch (error) {
+                    console.error("데이터 가져오기 오류:", error);
+                    showToast(`가져오기 실패: ${error.message}`, true);
+                } finally {
+                    event.target.value = null; // Reset input
+                }
             };
             reader.readAsText(file);
-        };
-        
-        // --- Text Editor & Preview Logic ---
-        const FAKE_SPACE_REGEX = /[\u200B-\u200D\uFEFF*]/g;
-        const updateHighlighter = () => {
-            const text = contentEditor.value;
-            const highlightedText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(FAKE_SPACE_REGEX, '<span class="highlight">$&</span>');
-            contentHighlighter.innerHTML = highlightedText;
-            contentHighlighter.scrollTop = contentEditor.scrollTop;
-            contentHighlighter.scrollLeft = contentEditor.scrollLeft;
-        };
-        
-        const updatePreview = () => {
-            if (state.isEditorPreview) {
-                postPreviewArea.innerHTML = marked.parse(contentEditor.value);
-            }
-        };
+        }
 
-        const updateEditorVisibility = () => {
-            if (state.isEditorPreview) {
-                postPreviewArea.classList.remove('hidden');
-                contentEditor.classList.add('hidden');
-                contentHighlighter.classList.add('hidden');
-                togglePreviewBtn.textContent = '편집하기';
-                togglePreviewBtn.classList.add('active');
-                updatePreview();
-            } else {
-                postPreviewArea.classList.add('hidden');
-                contentEditor.classList.remove('hidden');
-                contentHighlighter.classList.remove('hidden');
-                togglePreviewBtn.textContent = '미리보기';
-                togglePreviewBtn.classList.remove('active');
-            }
-        };
 
-        // --- Event Listeners ---
-        cleanTextBtn.addEventListener('click', () => {
-            const cleanedText = contentEditor.value.replace(FAKE_SPACE_REGEX, '');
-            if (contentEditor.value !== cleanedText) {
-                contentEditor.value = cleanedText;
-                contentEditor.dispatchEvent(new Event('input', { bubbles: true }));
-                showToast('불필요한 공백과 문자를 제거했습니다.');
-            } else { showToast('제거할 문자가 없습니다.'); }
+        // --- 앱 시작 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof lucide !== 'undefined') { lucide.createIcons(); } else { console.warn("Lucide library not loaded."); }
+            updateGenerateButton(0); 
+            resetDataEditor();
+            setupEventListeners(); 
+            initializeLocalDB(); 
+            
+            // v3.9: 표지 생성기 초기화
+            updateCoverTitle(); 
+            // 탭 로드 후 약간의 시간차를 두고 폰트 크기 재조정 (정확한 계산 위함)
+            setTimeout(adjustCoverFontSize, 100); 
         });
-        
-        togglePreviewBtn.addEventListener('click', () => { state.isEditorPreview = !state.isEditorPreview; updateEditorVisibility(); });
-        contentEditor.addEventListener('input', () => { updateHighlighter(); updatePreview(); debouncedAutoSave(); const post = (state.posts.get(state.activeTopicId) || []).find(p => p.id === state.activePostId); if(post) updateChecklistItem(post, 'c2', contentEditor.value.trim().length > 0); });
-        contentEditor.addEventListener('scroll', () => { contentHighlighter.scrollTop = contentEditor.scrollTop; contentHighlighter.scrollLeft = contentEditor.scrollLeft; });
-        modalPostTitle.addEventListener('input', debouncedAutoSave);
-        deletePostBtn.addEventListener('click', deletePost);
 
-        showAddTopicModalBtn.addEventListener('click', () => openModal(modals.addTopic));
-        addTopicConfirmBtn.addEventListener('click', addTopics);
-        showAddPostModalBtn.addEventListener('click', () => openModal(modals.addPost));
-        addPostConfirmBtn.addEventListener('click', addPost);
-        deleteTopicBtn.addEventListener('click', deleteActiveTopic);
-        settingsBtn.addEventListener('click', () => { blogPromptInput.value = state.settings.blogPrompt; diagramPromptInput.value = state.settings.diagramPrompt; openModal(modals.settings); });
-        saveSettingsBtn.addEventListener('click', async () => { state.settings.blogPrompt = blogPromptInput.value; state.settings.diagramPrompt = diagramPromptInput.value; await db.put('settings', { id: 'userSettings', data: state.settings }); closeModal(modals.settings); showToast('설정을 저장했습니다.'); });
-        topicResourcesInput.addEventListener('input', debounce(async () => { if (!state.activeTopicId) return; const topic = state.topics.find(t=>t.id===state.activeTopicId); if(topic) { topic.resources = topicResourcesInput.value; await db.put('topics', topic); console.log("Saved topic resources"); }}, 750));
-        
-        document.querySelectorAll('.prompt-action-btn').forEach(btn => btn.addEventListener('click', () => {
-            const post = (state.posts.get(state.activeTopicId) || []).find(p => p.id === state.activePostId);
-            const promptText = getPromptText(btn.dataset.type, post);
-            if(promptText === null) return;
-            if (btn.dataset.action === 'copy') { navigator.clipboard.writeText(promptText).then(() => { showToast('프롬프트가 복사되었습니다!'); if (btn.dataset.type === 'blog') updateChecklistItem(post, 'c1', true); if (btn.dataset.type === 'diagram') updateChecklistItem(post, 'c3', true); }).catch(err => showToast('복사 실패.', true)); }
-            else if (btn.dataset.action === 'download') { const blob = new Blob([promptText], { type: 'text/plain;charset=utf-8' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `${btn.dataset.type}_prompt.txt`; a.click(); URL.revokeObjectURL(url); }
-        }));
-        
-        viewSwitcherBtns.forEach(btn => btn.addEventListener('click', () => { state.currentView = btn.dataset.view; viewSwitcherBtns.forEach(b => b.classList.remove('active')); btn.classList.add('active'); renderActiveView(); }));
-        
-        diagramUploadArea.addEventListener('click', () => diagramUploadInput.click());
-        diagramUploadInput.addEventListener('change', (e) => handleDiagramFiles(e.target.files));
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => diagramUploader.addEventListener(ev, e => {e.preventDefault(); e.stopPropagation();}, false));
-        ['dragenter', 'dragover'].forEach(ev => diagramUploader.addEventListener(ev, () => diagramUploader.classList.add('dragover'), false));
-        ['dragleave', 'drop'].forEach(ev => diagramUploader.addEventListener(ev, () => diagramUploader.classList.remove('dragover'), false));
-        diagramUploader.addEventListener('drop', (e) => handleDiagramFiles(e.dataTransfer.files), false);
-        modals.post.addEventListener('paste', (e) => { if (document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') { handleDiagramFiles(e.clipboardData.files); } });
-        
-        uploadPostFilesBtn.addEventListener('click', () => postUploadInput.click());
-        postUploadInput.addEventListener('change', (e) => { addPostsFromFiles(e.target.files); e.target.value = null; });
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(ev => postCardContainer.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); }, false));
-        ['dragenter', 'dragover'].forEach(ev => postCardContainer.addEventListener(ev, () => { if(state.activeTopicId) postCardContainer.classList.add('drag-over-posts'); }, false));
-        ['dragleave', 'drop'].forEach(ev => postCardContainer.addEventListener(ev, () => postCardContainer.classList.remove('drag-over-posts'), false));
-        postCardContainer.addEventListener('drop', e => { const files = [...e.dataTransfer.files].filter(f => f.type === 'text/plain' || f.name.endsWith('.txt')); if(files.length > 0) addPostsFromFiles(files); }, false);
-
-        Object.values(modals).forEach(m => { m.addEventListener('click', (e) => { if (e.target === m) closeModal(m); }); m.querySelectorAll('.modal-close-btn').forEach(b => b.addEventListener('click', () => closeModal(m))); });
-        confirmCancelBtn.addEventListener('click', () => { closeModal(modals.confirm); confirmCallback = null; });
-        modals.confirm.querySelector('.modal-close-btn')?.addEventListener('click', () => { closeModal(modals.confirm); confirmCallback = null; });
-        confirmOkBtn.addEventListener('click', () => { if (confirmCallback) confirmCallback(); });
-        
-        exportDataBtn.addEventListener('click', (e) => { e.preventDefault(); exportData(); });
-        importDataBtn.addEventListener('click', (e) => { e.preventDefault(); importFileInput.click(); });
-        importFileInput.addEventListener('change', (e) => { importData(e.target.files[0]); e.target.value = null; });
-        hamburgerBtn.addEventListener('click', () => appContainer.classList.toggle('sidebar-open'));
-        sidebarOverlay.addEventListener('click', () => appContainer.classList.remove('sidebar-open'));
-
-        // --- Final Initialization ---
-        await loadInitialData();
-    });
     </script>
 </body>
 </html>
+
