@@ -1,0 +1,2414 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Base App (Firebase v1)</title>
+    <!-- 1. Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 2. Bootstrap Icons CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- 3. Marked.js (Markdown Renderer) CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <!-- 📌 [NEW] Firebase v8 SDK (v9 모듈 방식은 이 파일 구조에서 복잡함) -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    
+    <style>
+        /* ... (기존 스타일 동일) ... */
+        body {
+            font-family: 'Inter', 'Pretendard', sans-serif;
+            -webkit-font-smoothing: antialiased; /* iOS/Mac 가독성 향상 */
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* 📌 [NEW] A. 설정 탭(Settings) UI 스타일 */
+        #settings-nav button {
+            display: block;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            text-align: left;
+            font-weight: 500;
+            color: #374151; /* text-gray-700 */
+            transition: background-color 0.15s ease-in-out, color 0.15s ease-in-out;
+        }
+        #settings-nav button:hover {
+            background-color: #f3f4f6; /* hover:bg-gray-100 */
+        }
+        #settings-nav button.settings-nav-active {
+            background-color: #e0f2fe; /* bg-sky-100 */
+            color: #0c4a6e; /* text-sky-800 */
+            font-weight: 600;
+        }
+
+        /* 📌 [NEW] B. 뷰어(Viewer) 가독성 향상 스타일 */
+        /* 📌 [FIX] 모든 선택자를 #c03-body 기준으로 변경 */
+        #c03-body h1,
+        #c03-body h2,
+        #c03-body h3,
+        #c03-body h4,
+        #c03-body h5,
+        #c03-body h6 {
+            font-weight: 700;
+            letter-spacing: -0.025em; /* tracking-tight */
+            color: #1f2937; /* text-gray-900 */
+        }
+        #c03-body h1 {
+            font-size: 2.25rem; /* text-4xl */
+            line-height: 2.5rem;
+            margin-top: 2rem; /* my-8 */
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid #e5e7eb; /* border-gray-200 */
+            padding-bottom: 0.75rem;
+        }
+        #c03-body h2 {
+            font-size: 1.875rem; /* text-3xl */
+            line-height: 2.25rem;
+            margin-top: 2.5rem; /* mt-10 */
+            margin-bottom: 1rem; /* mb-4 */
+        }
+        #c03-body h3 {
+            font-size: 1.5rem; /* text-2xl */
+            line-height: 2rem;
+            margin-top: 2rem; /* mt-8 */
+            margin-bottom: 0.75rem; /* mb-3 */
+        }
+        #c03-body h4 {
+            font-size: 1.25rem; /* text-xl */
+            line-height: 1.75rem;
+            margin-top: 1.5rem; /* mt-6 */
+            margin-bottom: 0.5rem; /* mb-2 */
+        }
+        #c03-body p {
+            font-size: 1.125rem; /* text-lg */
+            line-height: 1.75; /* leading-loose (1.75) */
+            color: #374151; /* text-gray-700 */
+            margin-top: 1.25rem; /* my-5 */
+            margin-bottom: 1.25rem;
+        }
+        #c03-body ul,
+        #c03-body ol {
+            font-size: 1.125rem; /* text-lg */
+            color: #374151; /* text-gray-700 */
+            margin-top: 1.25rem; /* my-5 */
+            margin-bottom: 1.25rem;
+            padding-left: 1.75rem; /* pl-7 */
+        }
+        #c03-body ul {
+            list-style-type: disc;
+        }
+        #c03-body ol {
+            list-style-type: decimal;
+        }
+        #c03-body li {
+            padding-left: 0.5rem; /* pl-2 */
+            margin-top: 0.75rem; /* space-y-3 */
+        }
+        #c03-body li > p {
+            margin-top: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        #c03-body li::marker {
+            color: #6b7280; /* text-gray-500 */
+        }
+        /* 요약(c03-summary)이 아닌, 일반 blockquote 스타일 */
+        #c03-body blockquote {
+            margin-top: 1.5rem; /* my-6 */
+            margin-bottom: 1.5rem;
+            padding-left: 1.25rem; /* pl-5 */
+            border-left-width: 4px;
+            border-color: #d1d5db; /* border-gray-300 */
+            font-style: italic;
+            color: #4b5563; /* text-gray-600 */
+        }
+        #c03-body blockquote p {
+            font-size: 1.125rem; /* text-lg */
+            line-height: 1.75;
+        }
+        /* 인라인 코드 */
+        #c03-body code:not(pre *) {
+            font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
+            font-size: 0.9em; /* text-sm 대비 살짝 작게 */
+            background-color: #f3f4f6; /* bg-gray-100 */
+            color: #dc2626; /* text-red-600 */
+            padding: 0.25rem 0.5rem; /* px-2 py-1 */
+            border-radius: 0.375rem; /* rounded-md */
+            word-break: break-all;
+        }
+        /* 코드 블록 */
+        #c03-body pre {
+            background-color: #1f2937; /* bg-gray-800 */
+            color: #f3f4f6; /* text-gray-100 */
+            padding: 1rem; /* p-4 */
+            border-radius: 0.5rem; /* rounded-lg */
+            overflow-x: auto;
+            margin-top: 1.5rem; /* my-6 */
+            margin-bottom: 1.5rem;
+        }
+        #c03-body pre code {
+            font-family: 'Menlo', 'Monaco', 'Consolas', monospace;
+            font-size: 0.875rem; /* text-sm */
+            line-height: 1.5; /* leading-relaxed */
+            background-color: transparent !important;
+            color: inherit !important;
+            padding: 0 !important;
+        }
+        #c03-body a {
+            color: #2563eb; /* text-blue-600 */
+            text-decoration: underline;
+            font-weight: 500;
+        }
+        #c03-body a:hover {
+            color: #1d4ed8; /* text-blue-700 */
+        }
+        #c03-body hr {
+            margin-top: 2rem; /* my-8 */
+            margin-bottom: 2rem;
+            border-top: 1px solid #e5e7eb; /* border-gray-200 */
+        }
+        .analyzing-spin {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .hidden {
+            display: none;
+        }
+        .note-item-active {
+            background-color: #e0f2fe;
+        }
+        .folder-drag-over {
+            background-color: #dbeafe;
+            outline: 2px dashed #3b82f6;
+        }
+        .folder-item .folder-actions {
+            opacity: 0;
+            transition: opacity 0.15s ease-in-out;
+        }
+        .folder-item:hover .folder-actions {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900 antialiased">
+
+    <!-- 
+    📌 [MODIFIED] 전역 애플리케이션 컨테이너 (최대 너비 적용)
+    - max-w-7xl: 와이드 스크린에서 너무 넓어지지 않게 최대 너비 설정
+    - mx-auto: 가운데 정렬
+    - shadow-2xl: 시각적 구분을 위한 그림자 (선택 사항)
+    -->
+    <div id="app" class="h-screen w-full max-w-7xl mx-auto shadow-2xl bg-gray-100">
+
+        <!-- 
+        ============================================================
+        [NEW] V-00: 로그인 뷰 (Login View)
+        ============================================================
+        -->
+        <div id="view-login" class="hidden flex flex-col h-screen items-center justify-center text-center p-6">
+            <i class="bi bi-journal-richtext text-8xl text-gray-300 mb-6"></i>
+            <h1 class="text-4xl font-bold text-gray-800 mb-4">Knowledge Base</h1>
+            <p class="text-lg text-gray-600 mb-8">Firebase와 AI로 구동되는 개인용 노트 앱</p>
+            
+            <button id="btn-google-login" class="flex items-center justify-center bg-white text-gray-700 px-6 py-3 rounded-lg shadow-md hover:shadow-lg transition duration-150 border border-gray-300">
+                <svg class="w-6 h-6 mr-3" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path><path fill="none" d="M0 0h48v48H0z"></path></svg>
+                Google 계정으로 로그인
+            </button>
+            
+            <p class="text-gray-500 text-sm mt-8">
+                Firebase 설정이 필요하신가요? 
+                <a href="#/settings" id="btn-goto-settings-from-login" class="text-blue-600 hover:underline">설정 화면으로 이동</a>
+            </p>
+        </div>
+
+
+        <!-- V-01: 대시보드 뷰 (Dashboard View) -->
+        <div id="view-dashboard" class="hidden flex flex-col h-screen">
+            <!-- 
+            📌 [MODIFIED] V-01 헤더 (사용자 정보 표시)
+            -->
+            <header class="flex-shrink-0 bg-white border-b border-gray-200 p-3 flex justify-between items-center shadow-sm">
+                <div class="flex items-center space-x-4">
+                    <button id="btn-new-note" class="flex items-center bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 transition duration-150">
+                        <i class="bi bi-plus-lg mr-2"></i>
+                        신규 노트
+                    </button>
+                    <div class="relative">
+                        <input type="text" placeholder="글로벌 검색 (TBD)..." class="pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm w-64" disabled>
+                        <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    </div>
+                </div>
+                <!-- 📌 [NEW] 사용자 정보 및 설정 버튼 -->
+                <div id="user-profile-area" class="flex items-center space-x-3">
+                    <span id="user-display-name" class="text-sm font-medium text-gray-700 hidden"></span>
+                    <img id="user-avatar" class="w-8 h-8 rounded-full hidden" alt="User Avatar">
+                    <a href="#/settings" id="btn-settings" class="w-10 h-10 bg-gray-100 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200" title="설정">
+                        <i class="bi bi-gear-fill text-xl"></i>
+                    </a>
+                </div>
+            </header>
+            
+            <!-- ... (V-01 main 태그 및 하위 구조는 기존과 동일) ... -->
+            <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+                <div class="lg:col-span-4 bg-gray-50 border-r border-gray-200 flex flex-col h-full">
+                    <nav id="c01-nav-pane" class="flex flex-col h-1/2 overflow-y-auto">
+                        <div class="p-3 sticky top-0 bg-gray-50 z-10 border-b border-gray-200">
+                            <div class="relative">
+                                <input type="text" id="c06-nav-search" placeholder="폴더/태그 검색..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                            </div>
+                        </div>
+                        <div class="flex-1 p-3 space-y-4">
+                            <ul class="space-y-1">
+                                <li><a href="#" data-filter-type="all" class="nav-filter-btn flex items-center px-3 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium"><i class="bi bi-journal-text w-6 text-gray-600"></i> 모든 노트</a></li>
+                                <!-- 📌 [MODIFIED] '미분류'에 data-folder-id="root" 추가 (폴더 드롭용) -->
+                                <li><a href="#" data-filter-type="category" data-filter-value="root" class="nav-filter-btn flex items-center px-3 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium" data-folder-id="root"><i class="bi bi-archive w-6 text-gray-600"></i> 미분류</a></li>
+                            </ul>
+                            <div>
+                                <div class="flex justify-between items-center px-3 mb-2">
+                                    <h3 class="text-xs font-semibold text-gray-500 uppercase tracking-wider">폴더</h3>
+                                    <button id="nav-new-folder-btn" class="c12-btn text-gray-500 hover:text-blue-600" title="신규 폴더">
+                                        <i class="bi bi-folder-plus"></i>
+                                    </button>
+                                </div>
+                                <div id="c01-folder-tree" class="space-y-0.5">
+                                    <!-- JS로 동적 렌더링됨 -->
+                                </div>
+                            </div>
+                            <div>
+                                <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">태그</h3>
+                                <div id="c01-tag-list" class="space-y-1">
+                                    <!-- JS로 동적 렌더링됨 -->
+                                </div>
+                            </div>
+                        </div>
+                        <div class="p-3 mt-auto border-t border-gray-200 sticky bottom-0 bg-gray-50">
+                            <a href="#/manage" id="btn-manage-nav" class="flex items-center px-3 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium text-gray-700">
+                                <i class="bi bi-gear w-6 text-gray-600"></i> 태그 관리
+                            </a>
+                        </div>
+                    </nav>
+                    <div class="h-2 flex-shrink-0 bg-gray-100 border-t border-b border-gray-200 cursor-n-resize" title="Drag to resize (TBD)"></div>
+                    <aside id="c02-note-list-pane" class="flex flex-col h-1/2 overflow-y-auto">
+                        <div class="p-3 sticky top-0 bg-gray-50 z-10 border-b border-gray-200">
+                            <h2 id="c02-header" class="text-lg font-semibold text-gray-800 mb-3">모든 노트</h2>
+                            <div class="relative">
+                                <input type="text" id="c02-note-search" placeholder="노트 검색 (제목, 본문)..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                            </div>
+                        </div>
+                        <div id="c02-note-list" class="flex-1 divide-y divide-gray-200">
+                            <!-- C-07: Note List Item (JS로 동적 렌더링됨) -->
+                        </div>
+                    </aside>
+                </div>
+                <section id="c03-viewer-pane" class="lg:col-span-8 bg-white h-full overflow-y-auto flex flex-col">
+                    <div id="c09-viewer-header" class="hidden p-4 border-b border-gray-200 sticky top-0 bg-white z-10">
+                    </div>
+                    <div id="c03-viewer-content" class="flex-1 p-6 md:p-10">
+                        <div id="c03-welcome-screen" class="flex flex-col items-center justify-center h-full text-center text-gray-500">
+                            <i class="bi bi-journal-richtext text-6xl text-gray-300 mb-4"></i>
+                            <h2 class="text-2xl font-semibold">Knowledge Base</h2>
+                            <p class="mt-2">좌측에서 노트를 선택하거나 '신규 노트'를 작성하세요.</p>
+                        </div>
+                        <!-- 📌 [MODIFIED] 뷰어 가독성 래퍼 (max-w-75ch) -->
+                        <div id="c03-note-content" class="hidden mx-auto max-w-[75ch]">
+                            <blockquote id="c03-summary" class="border-l-4 border-blue-300 bg-blue-50 p-4 text-blue-800 rounded-r-lg"></blockquote>
+                            <div id="c03-tags-top" class="flex flex-wrap gap-2 my-4"></div>
+                            <!-- 📌 [MODIFIED] 마크다운 본문은 여기에 주입됨 (#c03-body) -->
+                            <div id="c03-body" class="mt-6"></div>
+                            <hr class="my-8">
+                            <h3 class="text-xl font-semibold text-gray-700 mb-4">연관 문서</h3>
+                            <div id="c03-related-docs" class="flex flex-wrap gap-2"></div>
+                        </div>
+                    </div>
+                </section>
+            </main>
+        </div>
+
+        <!-- V-02: 에디터 뷰 (Editor View) - (기존과 동일) -->
+        <div id="view-editor" class="hidden flex flex-col h-screen bg-gray-50">
+            <!-- ... (V-02 내용은 기존과 동일) ... -->
+            <header id="c04-editor-header" class="flex-shrink-0 bg-white border-b border-gray-200 p-3 flex justify-between items-center shadow-sm sticky top-0 z-10">
+                <div>
+                    <button id="editor-cancel-btn" class="text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100 transition duration-150">취소</button>
+                </div>
+                <div>
+                    <button id="editor-delete-btn" class="text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 transition duration-150 mr-2 hidden">
+                        <i class="bi bi-trash mr-1"></i> 삭제
+                    </button>
+                    <button id="editor-save-btn" class="bg-blue-600 text-white px-6 py-2 rounded-lg shadow-sm hover:bg-blue-700 transition duration-150 disabled:opacity-50" disabled>
+                        <i class="bi bi-check-lg mr-1"></i> 저장
+                    </button>
+                </div>
+            </header>
+            <form id="editor-form" class="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-y-auto">
+                <div class="lg:col-span-8 space-y-6">
+                    <input type="text" id="editor-title" name="title" placeholder="노트 제목" class="w-full text-3xl font-bold p-2 border-b-2 border-gray-300 focus:border-blue-500 focus:outline-none bg-transparent">
+                    <textarea id="editor-body" name="body" placeholder="본문 내용을 마크다운으로 입력하세요..." class="w-full h-[60vh] lg:h-[70vh] p-4 border border-gray-300 rounded-lg text-base leading-relaxed focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner"></textarea>
+                </div>
+                <div class="lg:col-span-4 space-y-6 bg-white p-6 rounded-lg shadow-sm border border-gray-200 h-fit sticky top-24">
+                    <div>
+                        <label for="editor-summary" class="block text-sm font-medium text-gray-700 mb-1">요약</label>
+                        <textarea id="editor-summary" name="summary" rows="3" placeholder="노트 요약..." class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+                    <div>
+                        <label for="editor-category" class="block text-sm font-medium text-gray-700 mb-1">폴더 (예: Work/ProjectA)</label>
+                        <input type="text" id="editor-category" name="category" placeholder="경로 입력 (없으면 미분류)" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" list="category-datalist">
+                        <datalist id="category-datalist"></datalist>
+                    </div>
+                    <div>
+                        <label for="editor-tags" class="block text-sm font-medium text-gray-700 mb-1">태그 (쉼표로 구분)</label>
+                        <input type="text" id="editor-tags" name="tags" placeholder="예: react, ai, javascript" class="w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" list="tag-datalist">
+                        <datalist id="tag-datalist"></datalist>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- V-03: 분류 관리 뷰 (태그 전용) - (기존과 동일) -->
+        <div id="view-management" class="hidden flex flex-col h-screen">
+            <!-- ... (V-03 내용은 기존과 동일) ... -->
+            <header class="flex-shrink-0 bg-white border-b border-gray-200 p-3 flex items-center shadow-sm">
+                <button id="btn-back-to-dashboard" class="flex items-center text-blue-600 px-3 py-2 rounded-lg hover:bg-blue-50 transition duration-150">
+                    <i class="bi bi-arrow-left mr-2"></i>
+                    대시보드로 돌아가기
+                </button>
+                <h1 class="text-xl font-semibold mx-auto">태그 관리</h1>
+            </header>
+            <main class="flex-1 p-6 overflow-y-auto bg-gray-50 flex justify-center">
+                <section class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 flex flex-col w-full max-w-2xl">
+                    <h2 class="text-xl font-semibold mb-4">태그 관리</h2>
+                    <div class="relative mb-4">
+                        <input type="text" id="c06-tag-manage-search" placeholder="태그 검색..." class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <i class="bi bi-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                    </div>
+                    <div id="management-tag-list" class="flex-1 overflow-y-auto divide-y divide-gray-100 pr-2">
+                        <!-- JS 렌더링 -->
+                    </div>
+                </section>
+            </main>
+        </div>
+        
+        <!-- 
+        ============================================================
+        📌 [MODIFIED] V-04: 설정 뷰 (Firebase 설정 및 인증)
+        ============================================================
+        -->
+        <div id="view-settings" class="hidden flex flex-col h-screen">
+            <!-- 상단 헤더 -->
+            <header class="flex-shrink-0 bg-white border-b border-gray-200 p-3 flex items-center shadow-sm">
+                <button id="settings-back-btn" class="flex items-center text-blue-600 px-3 py-2 rounded-lg hover:bg-blue-50 transition duration-150">
+                    <i class="bi bi-arrow-left mr-2"></i>
+                    대시보드로 돌아가기
+                </button>
+                <h1 class="text-xl font-semibold mx-auto">설정</h1>
+            </header>
+            <!-- 📌 [MODIFIED] 설정 폼 (2단 탭 레이아웃) -->
+            <main class="flex-1 p-6 md:p-10 overflow-y-auto bg-gray-50">
+                <div class="max-w-6xl mx-auto flex flex-col md:flex-row md:space-x-8">
+                    
+                    <!-- 1. 설정 탭 네비게이션 -->
+                    <nav id="settings-nav" class="md:w-1/4 flex-shrink-0 mb-6 md:mb-0">
+                        <div class="space-y-1">
+                            <button type="button" data-section="firebase" class="settings-nav-active">
+                                <i class="bi bi-fire w-5 mr-3"></i> Firebase
+                            </button>
+                            <button type="button" data-section="account">
+                                <i class="bi bi-person-circle w-5 mr-3"></i> 계정
+                            </button>
+                            <button type="button" data-section="ai">
+                                <i class="bi bi-robot w-5 mr-3"></i> AI / 프롬프트
+                            </button>
+                        </div>
+                    </nav>
+
+                    <!-- 2. 설정 컨텐트 영역 -->
+                    <div class="md:w-3/4 bg-white p-6 md:p-8 rounded-lg shadow-sm border border-gray-200">
+                        
+                        <!-- 2-A. Firebase 설정 탭 -->
+                        <section id="settings-section-firebase" class="settings-section space-y-6">
+                            <h2 class="text-2xl font-semibold text-gray-900 border-b pb-3">Firebase 설정</h2>
+                            <div>
+                                <label for="settings-firebase-config" class="block text-sm font-medium text-gray-700 mb-1">Firebase 설정 (JSON/JS)</label>
+                                <textarea id="settings-firebase-config" rows="10" class="w-full p-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Firebase 콘솔에서 복사한 'firebaseConfig' 변수 선언문(const firebaseConfig = {...}) 또는 JSON 객체를 그대로 붙여넣으세요..."></textarea>
+                                <p class="text-xs text-gray-500 mt-2">이 설정은 브라우저의 `localStorage`에 저장됩니다.</p>
+                                <button id="settings-save-firebase-config-btn" type="button" class="mt-3 bg-green-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-green-700 transition duration-150">
+                                    Firebase 설정 저장 (및 새로고침)
+                                </button>
+                            </div>
+                        </section>
+
+                        <!-- 2-B. 계정 설정 탭 -->
+                        <section id="settings-section-account" class="settings-section space-y-6 hidden">
+                            <h2 class="text-2xl font-semibold text-gray-900 border-b pb-3">계정 관리</h2>
+                            <div id="settings-auth-section" class="space-y-3">
+                                <div id="settings-user-info" class="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                                    <img id="settings-user-avatar" class="w-10 h-10 rounded-full" alt="User Avatar">
+                                    <div>
+                                        <div id="settings-user-name" class="font-semibold text-gray-800"></div>
+                                        <div id="settings-user-email" class="text-sm text-gray-600"></div>
+                                    </div>
+                                </div>
+                                <button id="settings-logout-btn" type="button" class="bg-red-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-red-700 transition duration-150">
+                                    로그아웃
+                                </button>
+                            </div>
+                        </section>
+                        
+                        <!-- 2-C. AI/프롬프트 설정 탭 (form 태그는 이 섹션만 감쌉니다) -->
+                        <form id="settings-form">
+                            <section id="settings-section-ai" class="settings-section space-y-6 hidden">
+                                <h2 class="text-2xl font-semibold text-gray-900 border-b pb-3">AI / 프롬프트 설정</h2>
+                                
+                                <!-- Gemini API 키 -->
+                                <div>
+                                    <div class="flex justify-between items-center mb-2">
+                                        <label class="block text-sm font-medium text-gray-700">Gemini API 키 (Firestore에 저장)</label>
+                                        <button type="button" id="settings-add-api-key-btn" class="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                                            <i class="bi bi-plus-circle-fill mr-1"></i> API 키 추가
+                                        </button>
+                                    </div>
+                                    <div id="settings-api-key-list" class="space-y-3">
+                                        <!-- JS로 동적 렌더링됨 -->
+                                    </div>
+                                    <p class="text-xs text-gray-500 mt-2">API 키는 **Firestore**의 사용자 문서에 암호화되지 않은 상태로 저장됩니다.</p>
+                                </div>
+        
+                                <!-- AI 시스템 프롬프트 -->
+                                <div>
+                                    <label for="settings-system-prompt" class="block text-sm font-medium text-gray-700 mb-1">AI 시스템 프롬프트</label>
+                                    <textarea id="settings-system-prompt" name="aiSystemPrompt" rows="12" class="w-full p-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                                </div>
+                                
+                                <!-- AI 사용자 프롬프트 템플릿 -->
+                                <div>
+                                    <label for="settings-user-prompt" class="block text-sm font-medium text-gray-700 mb-1">AI 사용자 프롬프트 템플릿</label>
+                                    <textarea id="settings-user-prompt" name="aiUserPromptTemplate" rows="14" class="w-full p-2 border border-gray-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                                    <p class="text-xs text-gray-500 mt-1">
+                                        사용 가능한 변수:
+                                        <code class="text-xs text-red-600 bg-gray-100 px-1 py-0.5 rounded">{{TITLE}}</code>,
+                                        <code class="text-xs text-red-600 bg-gray-100 px-1 py-0.5 rounded">{{BODY}}</code>,
+                                        <code class="text-xs text-red-600 bg-gray-100 px-1 py-0.5 rounded">{{OTHER_NOTES_JSON}}</code>,
+                                        <code class="text-xs text-red-600 bg-gray-100 px-1 py-0.5 rounded">{{VFS_STRUCTURE_JSON}}</code>
+                                    </p>
+                                </div>
+        
+                                <!-- 저장 버튼 -->
+                                <div class="flex justify-end pt-4 border-t">
+                                    <button id="settings-save-ai-btn" type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg shadow-sm hover:bg-blue-700 transition duration-150">
+                                        AI/프롬프트 설정 저장
+                                    </button>
+                                </div>
+                            </section>
+                        </form>
+                        
+                    </div>
+                </div>
+            </main>
+        </div>
+
+
+        <!-- C-13: Toast (Non-blocking Notification) - (기존과 동일) -->
+        <div id="c13-toast" class="hidden fixed bottom-10 left-1/2 -translate-x-1/2 px-6 py-3 rounded-lg shadow-lg text-white z-50 transition-all duration-300">
+            <!-- ... (Toast 내용은 기존과 동일) ... -->
+            <span id="c13-toast-icon" class="mr-2"></span>
+            <span id="c13-toast-message"></span>
+        </div>
+
+        <!-- C-14: Modal (입력 필드 추가) - (기존과 동일) -->
+        <div id="c14-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50 p-4">
+            <!-- ... (Modal 내용은 기존과 동일) ... -->
+            <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-sm">
+                <h3 id="c14-modal-title" class="text-lg font-semibold mb-2"></h3>
+                <p id="c14-modal-content" class="text-sm text-gray-700 mb-4"></p>
+                <input type="text" id="c14-modal-input" class="hidden w-full p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4" placeholder="">
+                <div class="flex justify-end space-x-3">
+                    <button id="c14-modal-cancel" class="text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-100 transition duration-150">취소</button>
+                    <button id="c14-modal-confirm" class="bg-blue-600 text-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-700 transition duration-150">확인</button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- 
+    ============================================================
+    애플리케이션 스크립트
+    ============================================================
+    📌 [MODIFIED] v8: 버그 수정 및 UI/UX 개선
+    - (v7) Firebase (Firestore, Auth) 연동
+    - (v8) 뷰어 가독성(타이포그래피) 대폭 개선
+    - (v8) 설정 탭 UI 개편
+    - (v8) 폴더 -> 폴더 드래그 앤 드롭 이동 기능
+    - (v8) AI 폴더 덮어쓰기 버그 수정
+    - (v8) '신규 폴더' 경로 직관성 개선
+    ============================================================
+    -->
+    <script type="module">
+        // 📌 [NEW] Firebase 글로벌 변수
+        let db, auth;
+        let currentUserId = null;
+        const FIREBASE_CONFIG_KEY = 'kb_firebaseConfig_v7'; // localStorage 키
+
+        // --- 1. DB (Firestore) 서비스 모듈 ---
+        const dbService = {
+            /**
+             * 📌 [MODIFIED] Firebase 초기화
+             * localStorage에서 config를 로드하여 Firebase 앱을 초기화합니다.
+             * @returns {boolean} 초기화 성공 여부
+             */
+            initDB: () => {
+                try {
+                    const configStr = localStorage.getItem(FIREBASE_CONFIG_KEY);
+                    if (!configStr) {
+                        console.warn("Firebase config가 localStorage에 없습니다.");
+                        return false;
+                    }
+                    const firebaseConfig = JSON.parse(configStr);
+                    firebase.initializeApp(firebaseConfig);
+                    db = firebase.firestore();
+                    auth = firebase.auth();
+                    console.log('Firebase가 성공적으로 초기화되었습니다.');
+                    return true;
+                } catch (error) {
+                    console.error('Firebase 초기화 오류:', error);
+                    localStorage.removeItem(FIREBASE_CONFIG_KEY); // 잘못된 config 제거
+                    return false;
+                }
+            },
+
+            /**
+             * 📌 [MODIFIED] Firebase Config 저장 (JS 객체 파싱)
+             * @param {string} configString - Firebase config JSON 또는 JS 객체 문자열
+             */
+            saveFirebaseConfig: (configString) => {
+                let configObj;
+                
+                // 1. Try parsing as strict JSON
+                try {
+                    configObj = JSON.parse(configString);
+                } catch (e1) {
+                    // 2. Try parsing as a JS object literal (e.g., { key: "value" })
+                    try {
+                        configObj = (new Function('return ' + configString))();
+                    } catch (e2) {
+                        // 3. Try parsing as a JS variable declaration (e.g., const firebaseConfig = { ... })
+                        try {
+                            // 'const config = ...' 또는 'var firebaseConfig = ...'와 같은 변수 이름 추출
+                            const varNameMatch = configString.match(/(?:const|let|var)\s+([\w$]+)\s*=/);
+                            if (varNameMatch && varNameMatch[1]) {
+                                const varName = varNameMatch[1];
+                                configObj = (new Function(configString + `; return ${varName};`))();
+                            } else {
+                                throw new Error("Not a recognized variable declaration.");
+                            }
+                        } catch (e3) {
+                            console.error("Firebase config parsing failed all methods:", e1, e2, e3);
+                            return false; // 모든 파싱 시도 실패
+                        }
+                    }
+                }
+
+                // 4. Validation and Storage
+                try {
+                    if (!configObj || !configObj.apiKey || !configObj.projectId) {
+                        throw new Error("필수 Firebase config 속성(apiKey, projectId)이 없습니다.");
+                    }
+                    // 📌 [MODIFIED] 항상 표준 JSON 문자열로 변환하여 저장
+                    localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(configObj));
+                    return true;
+                } catch (error) {
+                    console.error("Firebase config validation or storage failed:", error);
+                    ui.showToast(error.message, "error"); // 📌 사용자에게 피드백
+                    return false;
+                }
+            },
+
+            /**
+             * 📌 [NEW] Firebase Config 로드
+             * @returns {string} 저장된 config JSON 문자열
+             */
+            getFirebaseConfig: () => {
+                return localStorage.getItem(FIREBASE_CONFIG_KEY) || "";
+            },
+
+            /**
+             * 📌 [NEW] 인증 상태 리스너
+             * @param {function} onAuthStateChangedCallback - 인증 상태 변경 시 호출될 콜백 (user 객체 전달)
+             */
+            watchAuth: (onAuthStateChangedCallback) => {
+                if (!auth) return;
+                auth.onAuthStateChanged(onAuthStateChangedCallback);
+            },
+
+            /**
+             * 📌 [NEW] Google 로그인
+             */
+            loginWithGoogle: () => {
+                if (!auth) return;
+                const provider = new firebase.auth.GoogleAuthProvider();
+                return auth.signInWithPopup(provider);
+            },
+
+            /**
+             * 📌 [NEW] 로그아웃
+             */
+            logout: () => {
+                if (!auth) return;
+                return auth.signOut();
+            },
+
+            /**
+             * 📌 [NEW] 사용자별 Firestore 컬렉션 레퍼런스
+             * @param {string} collectionName - 컬렉션 이름 ('notes', 'vfs', 'settings')
+             * @returns {firebase.firestore.CollectionReference}
+             */
+            getCollection: (collectionName) => {
+                if (!currentUserId) {
+                    throw new Error("사용자가 로그인되어 있지 않습니다.");
+                }
+                // 모든 데이터를 사용자별로 분리
+                return db.collection('users').doc(currentUserId).collection(collectionName);
+            },
+            
+            // --- 📌 [MODIFIED] Notes CRUD ---
+            
+            /**
+             * @param {object} note - note 객체 (id 제외)
+             * @returns {Promise<string>} 새로 생성된 note ID
+             */
+            addNote: (note) => {
+                // Firestore는 'id'를 자동으로 생성/관리합니다.
+                const { id, ...noteData } = note;
+                return dbService.getCollection('notes').add(noteData)
+                    .then(docRef => docRef.id);
+            },
+            
+            /**
+             * @param {object} note - note 객체 (id 포함)
+             * @returns {Promise<void>}
+             */
+            updateNote: (note) => {
+                const noteId = note.id;
+                const { id, ...noteData } = note;
+                // .set()은 문서를 덮어쓰므로, 필드 병합을 위해 { merge: true } 사용
+                return dbService.getCollection('notes').doc(noteId).set(noteData, { merge: true });
+            },
+
+            deleteNote: (id) => {
+                return dbService.getCollection('notes').doc(id).delete();
+            },
+
+            getNote: (id) => {
+                return dbService.getCollection('notes').doc(id).get()
+                    .then(doc => doc.exists ? { id: doc.id, ...doc.data() } : null);
+            },
+
+            getAllNotes: () => {
+                return dbService.getCollection('notes').get()
+                    .then(snapshot => 
+                        snapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }))
+                    );
+            },
+
+            // --- 📌 [MODIFIED] VFS (Folders) CRUD ---
+
+            addVfsNode: (node) => {
+                // Firestore가 자동 ID를 생성하도록 `add` 사용
+                const { id, ...nodeData } = node;
+                return dbService.getCollection('vfs').add(nodeData)
+                    .then(docRef => docRef.id);
+            },
+            
+            updateVfsNode: (node) => {
+                const nodeId = node.id;
+                const { id, ...nodeData } = node;
+                return dbService.getCollection('vfs').doc(nodeId).set(nodeData, { merge: true });
+            },
+
+            deleteVfsNode: (id) => {
+                return dbService.getCollection('vfs').doc(id).delete();
+            },
+
+            getAllVfsNodes: () => {
+                return dbService.getCollection('vfs').get()
+                    .then(snapshot => 
+                        snapshot.docs.map(doc => ({
+                            id: doc.id,
+                            ...doc.data()
+                        }))
+                    );
+            },
+            
+            // --- 📌 [MODIFIED] Settings (AI Keys, Prompts) CRUD ---
+
+            getSettings: () => {
+                // 설정은 'default'라는 ID를 가진 단일 문서에 저장
+                return dbService.getCollection('settings').doc('default').get()
+                    .then(doc => doc.exists ? doc.data() : null);
+            },
+            
+            saveSettings: (settingsData) => {
+                return dbService.getCollection('settings').doc('default').set(settingsData, { merge: true });
+            },
+            
+            // --- 📌 [REMOVED] IndexedDB / 관계형 Tags 함수들 ---
+
+            // --- 📌 [MODIFIED] VFS 유틸리티 (Firestore ID 사용) ---
+            findOrCreateFolderPath: (path, allVfsNodes) => {
+                return new Promise(async (resolve, reject) => {
+                    let parentId = 'root';
+                    const parts = path.split('/').filter(Boolean);
+                    
+                    for (const part of parts) {
+                        // Firestore ID는 문자열이므로 find 로직 수정
+                        let node = allVfsNodes.find(n => n.name === part && n.parentId === parentId);
+                        
+                        if (!node) {
+                            const newNodeData = { name: part, parentId: parentId };
+                            // Firestore에 추가하고 새 ID를 받아옴
+                            const newId = await dbService.addVfsNode(newNodeData);
+                            node = { id: newId, ...newNodeData };
+                            allVfsNodes.push(node); // 로컬 캐시에도 추가
+                        }
+                        parentId = node.id; // 다음 부모 ID는 새 ID(문자열)
+                    }
+                    resolve(parentId); // 최종 폴더 ID(문자열) 반환
+                });
+            },
+
+            getFolderPath: (id, allVfsNodes) => {
+                if (id === 'root' || !id) return '';
+                const path = [];
+                let currentId = id;
+                let sanityCheck = 0;
+                while (currentId !== 'root' && sanityCheck < 10) {
+                    const node = allVfsNodes.find(n => n.id === currentId);
+                    if (!node) break;
+                    path.unshift(node.name);
+                    currentId = node.parentId;
+                    sanityCheck++;
+                }
+                return path.join('/');
+            },
+        };
+
+        // --- 2. 상태(State) 및 헬퍼(Helpers) 모듈 ---
+        const DEFAULT_SETTINGS = {
+            // 📌 [MODIFIED] 한국어 메타데이터 생성 지시
+            aiSystemPrompt: `당신은 전문 지식 관리 AI 어시스턴트입니다.
+제공되는 노트(제목, 본문), 다른 문서 목록, 현재 폴더 구조(VFS)를 분석해야 합니다.
+당신의 임무는 노트를 분석하여 *오직* 다음 JSON 스키마와 *정확히* 일치하는 유효한 JSON 객체만을 한국어로 응답하는 것입니다:
+{
+  "suggestedSummary": "노트 내용을 간결하게 요약한 문단입니다.",
+  "suggestedTags": ["태그1", "태그2", "핵심키워드3"],
+  "suggestedRelatedIds": ["noteId1", "noteId2", "noteId3"],
+  "suggestedFolderPath": "업무/프로젝트/AI"
+}
+지침:
+1.  suggestedSummary: [한국어]로 작성된 한 문단의 간결한 요약.
+2.  suggestedTags: [한국어]로 된 3-5개의 관련 핵심 키워드.
+3.  suggestedRelatedIds: '사용 가능한 문서' 목록에서 매우 관련성이 높은 문서의 *문자열 ID* 배열 (숫자 아님).
+4.  suggestedFolderPath: 노트 내용과 'VFS 구조'를 분석하여 *가장 논리적인* 폴더 경로를 제안. 기존 경로 또는 새 경로일 수 있음. 적절한 폴더가 없으면 "" 빈 문자열 반환. (폴더 경로는 영어를 유지해도 좋습니다.)`,
+            aiUserPromptTemplate: `---
+Available Documents (JSON):
+{{OTHER_NOTES_JSON}}
+---
+Current VFS Structure (JSON):
+{{VFS_STRUCTURE_JSON}}
+---
+Analyze this Note:
+Title: {{TITLE}}
+Body:
+{{BODY}}`,
+            // 📌 [NEW] Gemini API 키 설정 기본값
+            apiKeys: [] // { id, name, key }
+        };
+
+        let state = {
+            // 📌 [NEW] 인증/초기화 상태
+            isFirebaseReady: false,
+            isLoggedIn: false,
+            currentUser: null, // Firebase user 객체
+            
+            currentView: 'login',
+            notes: [],
+            vfsNodes: [],
+            tags: [], // {id, name} - 📌 [MODIFIED] notes에서 파생된 단순 배열
+            
+            settings: { ...DEFAULT_SETTINGS },
+            apiKeyIndex: 0,
+            
+            expandedFolders: new Set(),
+            currentFilter: { type: 'all', value: null }, 
+            selectedNoteId: null,
+            editingNoteId: null,
+            noteSearchTerm: '',
+            navSearchTerm: '',
+            toastTimeout: null,
+            modalConfirmCallback: null,
+        };
+
+        const helpers = {
+            // (formatDate, summarize, getAiStatusIcon, fetchWithBackoff - 기존과 동일)
+            formatDate: (isoString) => {
+                if (!isoString) return '';
+                // Firestore Timestamp 객체일 수 있으므로 .toDate()로 변환
+                const date = (isoString.toDate) ? isoString.toDate() : new Date(isoString);
+                return date.toLocaleDateString('ko-KR', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                });
+            },
+            summarize: (text, length = 70) => {
+                if (!text) return '요약 없음';
+                return text.length > length ? text.substring(0, length) + '...' : text;
+            },
+            getAiStatusIcon: (status) => {
+                switch (status) {
+                    case 'analyzing':
+                        return '<i class="bi bi-arrow-clockwise analyzing-spin text-blue-500" title="AI 분석 중..."></i>';
+                    case 'failed':
+                        return '<i class="bi bi-exclamation-triangle-fill text-red-500" title="AI 분석 실패"></i>';
+                    case 'complete':
+                    default:
+                        return '';
+                }
+            },
+            fetchWithBackoff: async (url, options, retries = 3, delay = 1000) => {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        if ((response.status === 429 || response.status >= 500) && retries > 0) { 
+                            await new Promise(res => setTimeout(res, delay));
+                            return helpers.fetchWithBackoff(url, options, retries - 1, delay * 2);
+                        }
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                } catch (error) {
+                    if (retries > 0) {
+                        await new Promise(res => setTimeout(res, delay));
+                        return helpers.fetchWithBackoff(url, options, retries - 1, delay * 2);
+                    }
+                    console.error("Fetch failed after retries:", error);
+                    throw error;
+                }
+            },
+
+            // 📌 [MODIFIED] 태그 파서 (기존과 동일하지만, 이제 배열을 반환)
+            sanitizeTags: (tagsString) => {
+                return tagsString.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+            },
+            sanitizeCategory: (categoryString) => {
+                return categoryString.trim() || null;
+            },
+
+            // 📌 [MODIFIED] 해시 파서 (ID가 이제 문자열임)
+            parseHash: (hash) => {
+                const parts = hash.replace(/^#\//, '').split('/');
+                const view = parts[0] || 'login'; // 기본 뷰를 'login'으로 변경
+                let id = null;
+                if (view === 'editor' && parts[1]) {
+                    id = parts[1]; // ID는 이제 문자열
+                } else if (view === 'dashboard' && parts[1] === 'note' && parts[2]) {
+                    id = parts[2]; // ID는 이제 문자열
+                }
+                return { view, id };
+            }
+        };
+
+        // --- 3. UI 렌더링(Rendering) 모듈 ---
+        const ui = {
+            /**
+             * 📌 [NEW] 뷰 전환 헬퍼
+             * @param {string} viewId - 'view-login', 'view-dashboard' 등
+             */
+            showView: (viewId) => {
+                document.getElementById('view-login').classList.add('hidden');
+                document.getElementById('view-dashboard').classList.add('hidden');
+                document.getElementById('view-editor').classList.add('hidden');
+                document.getElementById('view-management').classList.add('hidden');
+                document.getElementById('view-settings').classList.add('hidden');
+
+                const view = document.getElementById(viewId);
+                if (view) {
+                    view.classList.remove('hidden');
+                } else {
+                    document.getElementById('view-login').classList.remove('hidden');
+                }
+            },
+
+            // 📌 [MODIFIED] 라우팅 핸들러
+            handleRouting: () => {
+                // 1. Firebase 준비가 안됐으면 '설정'으로 강제 이동
+                if (!state.isFirebaseReady) {
+                    state.currentView = 'settings';
+                    ui.showView('view-settings');
+                    ui.renderSettings();
+                    // 📌 [MODIFIED] Firebase 준비가 안됐을 때 'firebase' 탭을 강제로 엽니다.
+                    ui.showSettingsSection('firebase');
+                    return;
+                }
+                
+                // 2. 로그인이 안됐으면 '로그인'으로 강제 이동 (단, 해시가 '설정'인 경우는 예외)
+                const parsedHash = helpers.parseHash(window.location.hash);
+                if (!state.isLoggedIn && parsedHash.view !== 'settings') {
+                    state.currentView = 'login';
+                    ui.showView('view-login');
+                    ui.renderLogin();
+                    return;
+                }
+                
+                // 3. 로그인 되었으면 해시 따라 렌더링
+                const { view, id } = parsedHash;
+                state.currentView = view;
+                
+                ui.showView(`view-${view}`);
+
+                if (view === 'dashboard') {
+                    state.selectedNoteId = id || null; 
+                    state.editingNoteId = null;
+                    ui.renderDashboard();
+                } else if (view === 'editor') {
+                    state.editingNoteId = id || null;
+                    ui.renderEditor();
+                } else if (view === 'management') {
+                    ui.renderManagement();
+                } else if (view === 'settings') {
+                    ui.renderSettings();
+                    // 📌 [NEW] 설정 뷰의 기본 탭을 엽니다.
+                    // Firebase 준비가 안됐거나 로그아웃 상태면 'firebase' 탭
+                    // 로그인 상태면 'account' 탭
+                    if (!state.isFirebaseReady || !state.isLoggedIn) {
+                        ui.showSettingsSection('firebase');
+                    } else {
+                        ui.showSettingsSection('account');
+                    }
+                } else if (view === 'login') {
+                    ui.renderLogin();
+                }
+            },
+
+            /**
+             * 📌 [NEW] 설정 뷰 내부 섹션 토글
+             * @param {string} sectionId - 'firebase', 'account', 'ai'
+             */
+            showSettingsSection: (sectionId) => {
+                // 1. 모든 섹션 숨기기
+                document.querySelectorAll('.settings-section').forEach(el => el.classList.add('hidden'));
+                // 2. 모든 네비게이션 버튼 비활성화
+                document.querySelectorAll('#settings-nav button').forEach(el => el.classList.remove('settings-nav-active'));
+
+                // 3. 대상 섹션 표시
+                const section = document.getElementById(`settings-section-${sectionId}`);
+                if (section) {
+                    section.classList.remove('hidden');
+                }
+                
+                // 4. 대상 네비게이션 버튼 활성화
+                const navBtn = document.querySelector(`#settings-nav button[data-section="${sectionId}"]`);
+                if (navBtn) {
+                    navBtn.classList.add('settings-nav-active');
+                }
+            },
+
+            /**
+             * 📌 [NEW] 로그인 뷰 렌더링
+             */
+            renderLogin: () => {
+                // 이 뷰는 정적이므로 특별히 렌더링할 데이터가 없음
+                ui.showView('view-login');
+            },
+
+            // --- V-01: 대시보드 렌더링 ---
+            renderDashboard: () => {
+                // 📌 [NEW] 사용자 정보 헤더 렌더링
+                const user = state.currentUser;
+                if (user) {
+                    document.getElementById('user-display-name').textContent = user.displayName;
+                    document.getElementById('user-avatar').src = user.photoURL;
+                    document.getElementById('user-display-name').classList.remove('hidden');
+                    document.getElementById('user-avatar').classList.remove('hidden');
+                }
+
+                // 📌 [NEW] Calculate counts for folders and tags
+                const folderNoteCounts = new Map();
+                const tagNoteCounts = new Map();
+
+                for (const note of state.notes) {
+                    // 1. Folder count (notes directly in the folder)
+                    const parentId = note.parentId || 'root'; // '미분류'는 'root'
+                    folderNoteCounts.set(parentId, (folderNoteCounts.get(parentId) || 0) + 1);
+
+                    // 2. Tag count
+                    (note.tags || []).forEach(tag => {
+                        tagNoteCounts.set(tag, (tagNoteCounts.get(tag) || 0) + 1);
+                    });
+                }
+                
+                // 3. '모든 노트' 카운트
+                folderNoteCounts.set('all', state.notes.length);
+                
+                ui.renderNavPane(folderNoteCounts, tagNoteCounts); // 📌 [MODIFIED]
+                ui.renderNoteListPane();
+                ui.renderViewerPane();
+            },
+            
+            // 📌 [MODIFIED] Nav Pane 렌더링 (단순화된 Tag 로직)
+            renderNavPane: (folderNoteCounts, tagNoteCounts) => {
+                const folderTreeContainer = document.getElementById('c01-folder-tree');
+                const tagListContainer = document.getElementById('c01-tag-list');
+                const searchTerm = state.navSearchTerm.toLowerCase();
+
+                // 📌 [NEW] '모든 노트' 및 '미분류' 카운트 표시
+                const allCount = folderNoteCounts.get('all') || 0;
+                const rootCount = folderNoteCounts.get('root') || 0;
+                const ul = document.querySelector('#c01-nav-pane .space-y-1'); // '모든 노트'가 포함된 <ul>
+                if (ul) {
+                    ul.innerHTML = `
+                        <li><a href="#" data-filter-type="all" class="nav-filter-btn flex justify-between items-center px-3 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium">
+                            <span class="flex items-center"><i class="bi bi-journal-text w-6 text-gray-600"></i> 모든 노트</span>
+                            <span class="text-gray-500 text-xs ml-1">(${allCount})</span>
+                        </a></li>
+                        <li><a href="#" data-filter-type="category" data-filter-value="root" class="nav-filter-btn flex justify-between items-center px-3 py-2 rounded-lg hover:bg-gray-200 text-sm font-medium" data-folder-id="root">
+                            <span class="flex items-center"><i class="bi bi-archive w-6 text-gray-600"></i> 미분류</span>
+                            <span class="text-gray-500 text-xs ml-1">(${rootCount})</span>
+                        </a></li>
+                    `;
+                }
+                
+                // VFS (폴더) 렌더링 (카운트 맵 전달)
+                if (folderTreeContainer) {
+                    const filteredNodes = state.vfsNodes.filter(n => n.name.toLowerCase().includes(searchTerm));
+                    folderTreeContainer.innerHTML = ui.buildVfsTreeHTML(filteredNodes, 'root', 0, folderNoteCounts); // 📌 [MODIFIED]
+                }
+                
+                // 📌 [MODIFIED] Tags 렌더링 (카운트 표시)
+                if (tagListContainer) {
+                    // state.tags는 {id: "name", name: "name"} 형태임
+                    const filteredTags = state.tags.filter(t => t.name.toLowerCase().includes(searchTerm));
+                    const tagsHtml = filteredTags.map(tag => {
+                        const count = tagNoteCounts.get(tag.name) || 0; // 📌 [NEW] Get count
+                        return `
+                        <li>
+                            <a href="#" data-filter-type="tag" data-filter-value="${tag.id}" 
+                               class="nav-filter-btn flex items-center justify-between px-3 py-1.5 rounded-lg hover:bg-gray-200 text-sm">
+                               <span class="flex items-center truncate"><i class="bi bi-hash w-6 text-gray-500"></i> <span class="truncate">${tag.name}</span></span>
+                               ${count > 0 ? `<span class="text-gray-500 text-xs ml-1 flex-shrink-0">(${count})</span>` : ''}
+                            </a>
+                        </li>
+                    `}).join('');
+                    tagListContainer.innerHTML = `<ul class="space-y-1">${tagsHtml}</ul>`;
+                }
+                // ... (활성 필터 UI 업데이트 로직 - 기존과 동일) ...
+                document.querySelectorAll('.nav-filter-btn').forEach(btn => {
+                    btn.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold');
+                    const type = btn.dataset.filterType;
+                    const value = btn.dataset.filterValue;
+                    if (type === state.currentFilter.type && value === String(state.currentFilter.value)) { // ID가 문자열일 수 있으므로 String() 비교
+                        btn.classList.add('bg-blue-100', 'text-blue-700', 'font-semibold');
+                    }
+                });
+            },
+            
+            // 📌 [MODIFIED] VFS Tree HTML 빌더 (폴더 카운트 추가)
+            buildVfsTreeHTML: (allNodes, parentId, level, folderNoteCounts) => {
+                const children = allNodes
+                    .filter(node => node.parentId === parentId)
+                    .sort((a, b) => a.name.localeCompare(b.name));
+                if (children.length === 0 && parentId === 'root') return '<p class="px-3 text-xs text-gray-500">폴더가 없습니다.</p>';
+                return children.map(node => {
+                    const isExpanded = state.expandedFolders.has(node.id);
+                    const hasChildren = allNodes.some(n => n.parentId === node.id);
+                    const count = folderNoteCounts.get(node.id) || 0; // 📌 [NEW]
+                    
+                    let html = `<div style="padding-left: ${level * 1}rem;">`;
+                    html += `
+                        <div class="folder-item flex items-center justify-between group">
+                            <a href="#" data-filter-type="category" data-filter-value="${node.id}"
+                               class="nav-filter-btn flex-1 flex items-center justify-between py-1.5 rounded-lg hover:bg-gray-200 text-sm truncate"
+                               data-folder-id="${node.id}"
+                               draggable="true" 
+                            >
+                                <span class="flex items-center truncate">
+                                    <i data-folder-id="${node.id}" class="folder-toggle-btn bi ${isExpanded ? 'bi-caret-down-fill' : (hasChildren ? 'bi-caret-right-fill' : 'bi-dot')} w-6 text-gray-500 cursor-pointer"></i>
+                                    <i class="bi bi-folder w-6 text-yellow-600"></i>
+                                    <span class="ml-1 truncate">${node.name}</span>
+                                </span>
+                                <!-- 📌 [NEW] Add count -->
+                                ${count > 0 ? `<span class="text-gray-500 text-xs ml-1 flex-shrink-0">(${count})</span>` : ''}
+                            </a>
+                            <div class="folder-actions flex-shrink-0 space-x-1.5 pr-2">
+                                <button data-id="${node.id}" class="rename-folder-btn c12-btn text-gray-500 hover:text-blue-600 p-0.5" title="이름 변경">
+                                    <i class="bi bi-pencil" style="font-size: 0.8rem;"></i>
+                                </button>
+                                <button data-id="${node.id}" class="delete-folder-btn c12-btn text-gray-500 hover:text-red-600 p-0.5" title="삭제">
+                                    <i class="bi bi-trash" style="font-size: 0.8rem;"></i>
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                    if (hasChildren && isExpanded) {
+                        html += ui.buildVfsTreeHTML(allNodes, node.id, level + 1);
+                    }
+                    html += `</div>`;
+                    return html;
+                }).join('');
+            },
+
+            // 📌 [MODIFIED] Note List Pane (Tag 필터 로직 수정)
+            renderNoteListPane: async () => {
+                const listContainer = document.getElementById('c02-note-list');
+                const header = document.getElementById('c02-header');
+                if (!listContainer || !header) return;
+                
+                let filteredNotes = state.notes;
+                const { type, value } = state.currentFilter;
+                
+                if (type === 'all') {
+                    header.textContent = '모든 노트';
+                } else if (type === 'category') {
+                    if (value === 'root') {
+                        header.textContent = '미분류';
+                        filteredNotes = filteredNotes.filter(n => !n.parentId || n.parentId === 'root');
+                    } else {
+                        const folder = state.vfsNodes.find(n => n.id === value);
+                        header.textContent = folder ? folder.name : '알 수 없는 폴더';
+                        filteredNotes = filteredNotes.filter(n => n.parentId === value);
+                    }
+                } else if (type === 'tag') {
+                    // 📌 [MODIFIED] 'value'는 이제 태그 이름(string)임
+                    const tagName = value; 
+                    header.textContent = `#${tagName}`;
+                    // 📌 [MODIFIED] note.tags 배열에서 직접 검색 (DB 호출 불필요)
+                    filteredNotes = filteredNotes.filter(n => n.tags && n.tags.includes(tagName));
+                }
+                
+                // ... (검색 및 정렬 로직 - 기존과 동일) ...
+                const searchTerm = state.noteSearchTerm.toLowerCase();
+                if (searchTerm) {
+                    filteredNotes = filteredNotes.filter(n => 
+                        n.title.toLowerCase().includes(searchTerm) ||
+                        n.body.toLowerCase().includes(searchTerm)
+                    );
+                }
+                
+                // 📌 [MODIFIED] Firestore Timestamp 정렬
+                filteredNotes.sort((a, b) => {
+                    const dateA = a.updatedAt?.toDate ? a.updatedAt.toDate() : new Date(a.updatedAt);
+                    const dateB = b.updatedAt?.toDate ? b.updatedAt.toDate() : new Date(b.updatedAt);
+                    return dateB - dateA;
+                });
+
+                // ... (리스트 렌더링 HTML - ID를 문자열로 사용) ...
+                if (filteredNotes.length === 0) {
+                    listContainer.innerHTML = '<p class="p-4 text-center text-gray-500 text-sm">노트가 없습니다.</p>';
+                    return;
+                }
+                
+                listContainer.innerHTML = filteredNotes.map(note => {
+                    const isActive = note.id === state.selectedNoteId;
+                    return `
+                        <div data-note-id="${note.id}" 
+                             class="note-item p-4 cursor-pointer hover:bg-gray-100 ${isActive ? 'note-item-active' : ''}"
+                             draggable="true"
+                        >
+                            <div class="flex justify-between items-center mb-1">
+                                <h3 class="font-semibold text-gray-800 truncate">${note.title || '제목 없음'}</h3>
+                                <span class="c08-ai-status flex-shrink-0 ml-2">
+                                    ${helpers.getAiStatusIcon(note.aiStatus)}
+                                </span>
+                            </div>
+                            <p class="text-sm text-gray-600 mb-2 truncate">${helpers.summarize(note.summary || note.body)}</p>
+                            <p class="text-xs text-gray-400">${helpers.formatDate(note.updatedAt)}</p>
+                        </div>
+                    `;
+                }).join('');
+            },
+
+            // 📌 [MODIFIED] Viewer Pane (Tag 로직 수정)
+            renderViewerPane: async () => {
+                const note = state.notes.find(n => n.id === state.selectedNoteId);
+                const welcomeScreen = document.getElementById('c03-welcome-screen');
+                const noteContent = document.getElementById('c03-note-content');
+                const header = document.getElementById('c09-viewer-header');
+                if (!welcomeScreen || !noteContent || !header) return; 
+
+                if (!note) {
+                    welcomeScreen.classList.remove('hidden');
+                    noteContent.classList.add('hidden');
+                    header.classList.add('hidden');
+                    return;
+                }
+                
+                // ... (헤더 렌더링 - 기존과 동일) ...
+                welcomeScreen.classList.add('hidden');
+                noteContent.classList.remove('hidden');
+                header.classList.remove('hidden');
+                
+                header.innerHTML = `
+                    <div class="flex justify-between items-center max-w-[75ch] mx-auto w-full">
+                        <h2 class="text-2xl font-bold text-gray-800 truncate pr-4">${note.title}</h2>
+                        <div class="flex items-center space-x-3 flex-shrink-0">
+                            <button id="viewer-re-analyze-btn" class="c12-btn text-sm text-gray-600 hover:text-blue-600 transition duration-150 flex items-center">
+                                <span class="c08-ai-status mr-1">${helpers.getAiStatusIcon(note.aiStatus)}</span>
+                                AI 재분석
+                            </button>
+                            <button id="viewer-delete-btn" class="c12-btn text-gray-600 hover:text-red-600 transition duration-150" title="삭제">
+                                <i class="bi bi-trash text-lg"></i>
+                            </button>
+                            <button id="viewer-edit-btn" class="c12-btn text-gray-600 hover:text-blue-600 transition duration-150" title="수정">
+                                <i class="bi bi-pencil text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+                
+                // ... (요약 렌더링 - 기존과 동일) ...
+                const summaryEl = document.getElementById('c03-summary');
+                if (summaryEl) {
+                    if (note.summary) {
+                        summaryEl.textContent = note.summary;
+                        summaryEl.classList.remove('hidden');
+                    } else {
+                        summaryEl.classList.add('hidden');
+                    }
+                }
+                
+                // 📌 [MODIFIED] Tags 렌더링 (note.tags 배열 사용)
+                const tagsTopContainer = document.getElementById('c03-tags-top');
+                if (tagsTopContainer) {
+                    const tags = note.tags || []; // DB 호출 불필요
+                    if (tags && tags.length > 0) {
+                        tagsTopContainer.innerHTML = tags.map(tagName => 
+                            `<span class="c10-tag-badge bg-gray-200 text-gray-700 px-3 py-1 rounded-full text-sm cursor-pointer hover:bg-gray-300">#${tagName}</span>`
+                        ).join('');
+                        tagsTopContainer.classList.remove('hidden');
+                    } else {
+                        tagsTopContainer.classList.add('hidden');
+                    }
+                }
+                
+                // ... (본문 렌더링 - 기존과 동일) ...
+                const bodyEl = document.getElementById('c03-body');
+                if (bodyEl) {
+                    bodyEl.innerHTML = marked.parse(note.body || '작성된 내용이 없습니다.');
+                }
+                
+                // ... (연관 문서 렌더링 - ID가 문자열임) ...
+                const relatedDocsEl = document.getElementById('c03-related-docs');
+                if (relatedDocsEl) {
+                    if (note.relatedIds && note.relatedIds.length > 0) { 
+                        const relatedNotes = note.relatedIds
+                            .map(id => state.notes.find(n => n.id === id)) // ID는 이제 문자열
+                            .filter(Boolean);
+                        
+                        relatedDocsEl.innerHTML = relatedNotes.map(n => 
+                            `<a href="#/dashboard/note/${n.id}" class="c10-tag-badge bg-blue-100 text-blue-700 px-3 py-1 rounded-full text-sm cursor-pointer hover:bg-blue-200">${n.title}</a>`
+                        ).join('');
+                    } else {
+                        relatedDocsEl.innerHTML = '<p class="text-sm text-gray-500">연관된 문서가 없습니다.</p>';
+                    }
+                }
+            },
+
+            // 📌 [MODIFIED] 에디터 뷰 렌더링 (Tag 로직 수정)
+            renderEditor: async () => {
+                const note = state.notes.find(n => n.id === state.editingNoteId);
+                const form = document.getElementById('editor-form');
+                const deleteBtn = document.getElementById('editor-delete-btn');
+                const saveBtn = document.getElementById('editor-save-btn');
+                if (!form || !deleteBtn || !saveBtn) return;
+                
+                if (note) {
+                    form.elements.title.value = note.title || '';
+                    form.elements.body.value = note.body || '';
+                    form.elements.summary.value = note.summary || '';
+                    form.elements.category.value = await dbService.getFolderPath(note.parentId, state.vfsNodes);
+                    // 📌 [MODIFIED] note.tags 배열을 쉼표로 구분된 문자열로 변환
+                    form.elements.tags.value = (note.tags || []).join(', ');
+                    deleteBtn.classList.remove('hidden');
+                } else {
+                    form.reset();
+                    if (state.currentFilter.type === 'category' && state.currentFilter.value !== 'root') {
+                        form.elements.category.value = await dbService.getFolderPath(state.currentFilter.value, state.vfsNodes);
+                    }
+                    deleteBtn.classList.add('hidden');
+                }
+
+                // ... (Datalist 렌더링 - state.tags가 단순 객체 배열임) ...
+                const categoryDatalist = document.getElementById('category-datalist');
+                if (categoryDatalist) {
+                    const paths = state.vfsNodes.map(n => dbService.getFolderPath(n.id, state.vfsNodes));
+                    categoryDatalist.innerHTML = [...new Set(paths)]
+                        .map(p => `<option value="${p}"></option>`).join('');
+                }
+                const tagDatalist = document.getElementById('tag-datalist');
+                if (tagDatalist) {
+                    tagDatalist.innerHTML = state.tags // state.tags는 {id, name}
+                        .map(t => `<option value="${t.name}"></option>`).join('');
+                }
+                
+                saveBtn.disabled = true;
+            },
+
+            // 📌 [MODIFIED] 관리 뷰 렌더링 (Tag 로직 수정)
+            renderManagement: async () => {
+                const tagList = document.getElementById('management-tag-list');
+                if (!tagList) return;
+                
+                const tagSearchEl = document.getElementById('c06-tag-manage-search');
+                const tagSearch = tagSearchEl ? tagSearchEl.value.toLowerCase() : '';
+                
+                const filteredTags = state.tags.filter(t => t.name.toLowerCase().includes(tagSearch));
+                
+                let tagsHtml = [];
+                for (const tag of filteredTags) {
+                    // 📌 [MODIFIED] 노트 카운트를 state.notes에서 직접 계산
+                    const count = state.notes.filter(n => n.tags && n.tags.includes(tag.name)).length;
+                    
+                    tagsHtml.push(`
+                        <div class="flex justify-between items-center py-3 group">
+                            <span class="text-gray-800">#${tag.name} <span class="text-gray-400 text-sm">(${count})</span></span>
+                            <button data-id="${tag.id}" data-name="${tag.name}" class="manage-delete-tag-btn c12-btn text-gray-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    `);
+                }
+                tagList.innerHTML = tagsHtml.join('');
+            },
+
+            // 📌 [MODIFIED] V-04: 설정 뷰 렌더링 (Firebase UI 분리)
+            renderSettings: () => {
+                const form = document.getElementById('settings-form');
+                if (!form) return;
+
+                // 1. Firebase Config 렌더링 (localStorage에서)
+                // 폼이 2-C 섹션(AI)에만 있으므로, firebase-config는 form.elements로 접근 불가
+                document.getElementById('settings-firebase-config').value = dbService.getFirebaseConfig();
+                
+                // 2. 인증/AI 섹션 표시 여부
+                if (state.isLoggedIn && state.currentUser) {
+                    
+                    // 3. 사용자 정보 표시
+                    document.getElementById('settings-user-avatar').src = state.currentUser.photoURL;
+                    document.getElementById('settings-user-name').textContent = state.currentUser.displayName;
+                    document.getElementById('settings-user-email').textContent = state.currentUser.email;
+
+                    // 4. AI 설정 렌더링 (Firestore state.settings에서)
+                    const keyListContainer = document.getElementById('settings-api-key-list');
+                    keyListContainer.innerHTML = ''; // 목록 비우기
+                    const apiKeys = state.settings.apiKeys || [];
+                
+                    if (apiKeys.length === 0) {
+                        keyListContainer.innerHTML = '<p class="text-sm text-gray-500 text-center p-2">API 키가 없습니다. "키 추가" 버튼을 눌러주세요.</p>';
+                    } else {
+                        apiKeys.forEach((key) => {
+                            const keyEl = document.createElement('div');
+                            keyEl.className = 'api-key-item relative flex items-center space-x-2';
+                            // 📌 [MODIFIED] ID를 랜덤 UUID로 사용
+                            keyEl.innerHTML = `
+                                <input type="hidden" class="api-key-id" value="${key.id}">
+                                <input type="text" class="api-key-name w-1/3 p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                                       placeholder="키 레이블 (예: 'Primary')" value="${key.name}">
+                                <input type="password" class="api-key-value w-2/3 p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                                       placeholder="sk-..." value="${key.key}">
+                                <button type="button" class="toggle-api-key-btn absolute inset-y-0 right-10 px-3 flex items-center text-gray-500 hover:text-blue-600" title="키 보기/숨기기">
+                                    <i class="bi bi-eye-fill"></i>
+                                </button>
+                                <button type="button" class="delete-api-key-btn flex-shrink-0 text-gray-400 hover:text-red-600" title="키 삭제">
+                                    <i class="bi bi-trash-fill"></i>
+                                </button>
+                            `;
+                            keyListContainer.appendChild(keyEl);
+                        });
+                    }
+
+                    // 5. 프롬프트 템플릿 채우기 (Firestore state.settings에서)
+                    form.elements.aiSystemPrompt.value = state.settings.aiSystemPrompt;
+                    form.elements.aiUserPromptTemplate.value = state.settings.aiUserPromptTemplate;
+
+                } else {
+                    // --- 비로그인/Firebase 준비 안된 경우 ---
+                    // (표시/숨김 로직 제거)
+                }
+            },
+            
+            // C-13: Toast (기존과 동일)
+            showToast: (message, type = 'success') => {
+                // ... (v5 Toast 로직 동일) ...
+                const toast = document.getElementById('c13-toast');
+                const icon = document.getElementById('c13-toast-icon');
+                const msg = document.getElementById('c13-toast-message');
+                if (!toast || !icon || !msg) return;
+                if (state.toastTimeout) clearTimeout(state.toastTimeout);
+                toast.classList.remove('bg-green-600', 'bg-red-600', 'bg-blue-600');
+                if (type === 'success') {
+                    toast.classList.add('bg-green-600');
+                    icon.innerHTML = '<i class="bi bi-check-circle-fill"></i>';
+                } else if (type === 'error') {
+                    toast.classList.add('bg-red-600');
+                    icon.innerHTML = '<i class="bi bi-exclamation-triangle-fill"></i>';
+                } else if (type === 'loading') {
+                    toast.classList.add('bg-blue-600');
+                    icon.innerHTML = '<i class="bi bi-arrow-clockwise analyzing-spin"></i>';
+                }
+                msg.textContent = message;
+                toast.classList.remove('hidden', 'opacity-0');
+                if (type !== 'loading') {
+                    state.toastTimeout = setTimeout(() => {
+                        toast.classList.add('opacity-0');
+                        setTimeout(() => toast.classList.add('hidden'), 300);
+                    }, 3000);
+                }
+            },
+            hideToast: () => {
+                const toast = document.getElementById('c13-toast');
+                if (toast) {
+                    toast.classList.add('opacity-0');
+                    setTimeout(() => toast.classList.add('hidden'), 300);
+                }
+            },
+            
+            // C-14: Modal (기존과 동일)
+            showModal: (title, content, onConfirm, options = {}) => {
+                // ... (v5 모달 로직 동일) ...
+                const { showInput = false, inputPlaceholder = '', inputValue = '', confirmText = '확인' } = options;
+                const modal = document.getElementById('c14-modal');
+                const modalTitle = document.getElementById('c14-modal-title');
+                const modalContent = document.getElementById('c14-modal-content');
+                const modalInput = document.getElementById('c14-modal-input');
+                const modalConfirm = document.getElementById('c14-modal-confirm');
+                if (!modal || !modalTitle || !modalContent || !modalInput || !modalConfirm) return;
+                modalTitle.textContent = title;
+                modalContent.textContent = content;
+                if (showInput) {
+                    modalInput.classList.remove('hidden');
+                    modalInput.placeholder = inputPlaceholder;
+                    modalInput.value = inputValue;
+                    modalInput.focus();
+                } else {
+                    modalInput.classList.add('hidden');
+                    modalInput.value = '';
+                }
+                modalConfirm.textContent = confirmText;
+                if (confirmText.includes('삭제')) {
+                     modalConfirm.classList.add('bg-red-600', 'hover:bg-red-700');
+                     modalConfirm.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                } else {
+                     modalConfirm.classList.remove('bg-red-600', 'hover:bg-red-700');
+                     modalConfirm.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                }
+                modal.classList.remove('hidden');
+                state.modalConfirmCallback = onConfirm;
+            },
+            hideModal: () => {
+                const modal = document.getElementById('c14-modal');
+                if (modal) {
+                    modal.classList.add('hidden');
+                }
+                state.modalConfirmCallback = null;
+            }
+        };
+
+        // --- 4. 이벤트 핸들러(Event Handlers) 및 라우팅 ---
+        const handlers = {
+            /**
+             * 📌 [NEW] 앱 진입점 (initApp -> initEvents)
+             * 앱 시작 시 모든 이벤트를 바인딩합니다.
+             */
+            initEvents: () => {
+                window.addEventListener('hashchange', ui.handleRouting);
+                
+                // V-00 로그인
+                document.getElementById('btn-google-login')?.addEventListener('click', handlers.handleLoginClick);
+                document.getElementById('btn-goto-settings-from-login')?.addEventListener('click', () => window.location.hash = '#/settings');
+                
+                // V-01 대시보드 (기존과 동일)
+                document.getElementById('btn-new-note')?.addEventListener('click', handlers.handleNewNoteClick);
+                document.getElementById('c01-nav-pane')?.addEventListener('click', handlers.handleNavPaneClick);
+                document.getElementById('c02-note-list')?.addEventListener('click', handlers.handleNoteItemClick);
+                document.getElementById('c03-viewer-pane')?.addEventListener('click', handlers.handleViewerActions);
+                document.getElementById('c06-nav-search')?.addEventListener('input', handlers.handleNavSearch);
+                document.getElementById('c02-note-search')?.addEventListener('input', handlers.handleNoteSearch);
+                document.getElementById('nav-new-folder-btn')?.addEventListener('click', handlers.handleNewFolderClick);
+                document.getElementById('c02-note-list')?.addEventListener('dragstart', handlers.handleNoteDragStart);
+                document.getElementById('c01-nav-pane')?.addEventListener('dragstart', handlers.handleVfsDragStart); // 📌 [NEW]
+                document.getElementById('c01-nav-pane')?.addEventListener('dragover', handlers.handleFolderDragOver);
+                document.getElementById('c01-nav-pane')?.addEventListener('dragleave', handlers.handleFolderDragLeave);
+                document.getElementById('c01-nav-pane')?.addEventListener('drop', handlers.handleFolderDrop);
+                
+                // V-02 에디터 (기존과 동일)
+                document.getElementById('editor-form')?.addEventListener('input', handlers.handleEditorFormChange);
+                document.getElementById('editor-save-btn')?.addEventListener('click', handlers.handleEditorSave);
+                document.getElementById('editor-cancel-btn')?.addEventListener('click', handlers.handleEditorCancel);
+                document.getElementById('editor-delete-btn')?.addEventListener('click', handlers.handleEditorDelete);
+                
+                // V-03 관리 (기존과 동일)
+                document.getElementById('btn-back-to-dashboard')?.addEventListener('click', handlers.handleManageBack);
+                document.getElementById('management-tag-list')?.addEventListener('click', handlers.handleManageDelete);
+                document.getElementById('c06-tag-manage-search')?.addEventListener('input', handlers.handleManageSearch);
+
+                
+                // V-04 설정 (📌 [MODIFIED] 저장 버튼 분리)
+                document.getElementById('settings-back-btn')?.addEventListener('click', handlers.handleSettingsBack);
+                document.getElementById('settings-nav')?.addEventListener('click', handlers.handleSettingsNavClick); // 📌 [NEW]
+                document.getElementById('settings-save-firebase-config-btn')?.addEventListener('click', handlers.handleFirebaseConfigSave);
+                document.getElementById('settings-form')?.addEventListener('submit', handlers.handleSettingsSave); // AI/프롬프트 저장
+                document.getElementById('settings-logout-btn')?.addEventListener('click', handlers.handleLogoutClick);
+                document.getElementById('settings-add-api-key-btn')?.addEventListener('click', handlers.handleSettingsAddApiKeyClick);
+                document.getElementById('settings-api-key-list')?.addEventListener('click', handlers.handleSettingsKeyListClick);
+                
+                // C-14 모달 (기존과 동일)
+                document.getElementById('c14-modal-cancel')?.addEventListener('click', handlers.handleModalCancel);
+                document.getElementById('c14-modal-confirm')?.addEventListener('click', handlers.handleModalConfirm);
+                
+                console.log('이벤트 리스너가 바인딩되었습니다.');
+            },
+
+            /**
+             * 📌 [NEW] 인증 상태 변경 핸들러 (핵심 로직)
+             * @param {firebase.User} user - Firebase user 객체
+             */
+            onAuthStateChanged: async (user) => {
+                if (user) {
+                    // --- 로그인 성공 ---
+                    console.log("로그인 성공:", user.uid);
+                    state.isLoggedIn = true;
+                    state.currentUser = {
+                        uid: user.uid,
+                        displayName: user.displayName,
+                        email: user.email,
+                        photoURL: user.photoURL
+                    };
+                    currentUserId = user.uid;
+                    
+                    ui.showToast(`${user.displayName}님 환영합니다.`, "success");
+                    await handlers.fetchAllDataAndRender();
+                    
+                    // 해시가 없거나 로그인/설정 뷰였다면 대시보드로 이동
+                    const currentHash = window.location.hash;
+                    if (!currentHash || currentHash === '#/' || currentHash === '#/login' || currentHash === '#/settings') {
+                        window.location.hash = '#/dashboard';
+                    } else {
+                        ui.handleRouting(); // 기존 해시 유지
+                    }
+
+                } else {
+                    // --- 로그아웃 또는 비로그인 ---
+                    console.log("로그아웃되었거나 로그인되지 않았습니다.");
+                    state.isLoggedIn = false;
+                    state.currentUser = null;
+                    currentUserId = null;
+                    
+                    // 로컬 상태 초기화
+                    state.notes = [];
+                    state.vfsNodes = [];
+                    state.tags = [];
+                    state.settings = { ...DEFAULT_SETTINGS };
+
+                    // 해시가 설정이 아니면 로그인 뷰로 강제 이동
+                    if (window.location.hash !== '#/settings') {
+                        window.location.hash = '#/login';
+                    } else {
+                        ui.handleRouting(); // 설정 뷰는 허용
+                    }
+                }
+            },
+
+            /**
+             * 📌 [MODIFIED] 데이터 로드 (Firestore 기반)
+             */
+            fetchAllDataAndRender: async () => {
+                if (!state.isLoggedIn) return; // 로그인 안됐으면 실행 안함
+                
+                ui.showToast("데이터 로드 중...", "loading");
+                try {
+                    const [notes, vfsNodes, dbSettings] = await Promise.all([
+                        dbService.getAllNotes(),
+                        dbService.getAllVfsNodes(),
+                        dbService.getSettings()
+                    ]);
+                    
+                    state.notes = notes;
+                    state.vfsNodes = vfsNodes;
+                    state.settings = { ...DEFAULT_SETTINGS, ...(dbSettings || {}) };
+
+                    // 📌 [NEW] Tag 상태 재생성 (비정규화)
+                    // state.notes에서 모든 태그를 수집하여 유니크한 state.tags 배열 생성
+                    const allTagNames = new Set();
+                    state.notes.forEach(note => {
+                        (note.tags || []).forEach(tag => allTagNames.add(tag));
+                    });
+                    state.tags = Array.from(allTagNames).sort().map(name => ({
+                        id: name, // 태그 관리를 위해 이름 자체를 ID로 사용
+                        name: name
+                    }));
+                    
+                    ui.hideToast();
+                    ui.handleRouting(); // 데이터 로드 후 현재 뷰 렌더링
+
+                } catch (error) {
+                    console.error("데이터 로딩 및 렌더링 실패:", error);
+                    ui.showToast("데이터 로딩 실패", "error");
+                }
+            },
+            
+            // --- V-00 / V-04 인증 핸들러 ---
+            handleLoginClick: () => {
+                dbService.loginWithGoogle().catch(error => {
+                    console.error("Google 로그인 실패:", error);
+                    ui.showToast(`로그인 실패: ${error.message}`, "error");
+                });
+            },
+            handleLogoutClick: () => {
+                dbService.logout();
+            },
+
+            // --- V-01 핸들러 (기존과 동일, ID는 이제 문자열) ---
+            handleNewNoteClick: () => {
+                window.location.hash = '#/editor';
+            },
+            handleNavPaneClick: (e) => {
+                // ... (폴더 토글/이름변경/삭제 로직 - 기존과 동일) ...
+                const folderToggle = e.target.closest('.folder-toggle-btn');
+                const renameBtn = e.target.closest('.rename-folder-btn');
+                const deleteBtn = e.target.closest('.delete-folder-btn');
+                if (folderToggle) {
+                    e.preventDefault(); e.stopPropagation();
+                    const path = folderToggle.dataset.folderId; // 문자열 ID
+                    if (state.expandedFolders.has(path)) {
+                        state.expandedFolders.delete(path);
+                    } else {
+                        state.expandedFolders.add(path);
+                    }
+                    ui.renderNavPane(); return;
+                }
+                if (renameBtn) {
+                    e.preventDefault(); e.stopPropagation();
+                    handlers.handleRenameFolder(renameBtn.dataset.id); return; // 문자열 ID
+                }
+                if (deleteBtn) {
+                    e.preventDefault(); e.stopPropagation();
+                    handlers.handleDeleteFolder(deleteBtn.dataset.id); return; // 문자열 ID
+                }
+                handlers.handleNavFilterClick(e);
+            },
+            handleNavFilterClick: (e) => {
+                const target = e.target.closest('.nav-filter-btn');
+                if (!target) return;
+                e.preventDefault();
+                state.currentFilter.type = target.dataset.filterType;
+                state.currentFilter.value = target.dataset.filterValue || null; // ID는 문자열
+                ui.renderNoteListPane();
+                document.querySelectorAll('.nav-filter-btn').forEach(btn => btn.classList.remove('bg-blue-100', 'text-blue-700', 'font-semibold'));
+                target.classList.add('bg-blue-100', 'text-blue-700', 'font-semibold');
+            },
+            handleNoteItemClick: (e) => {
+                const target = e.target.closest('.note-item');
+                if (!target) return;
+                const noteId = target.dataset.noteId; // 문자열 ID
+                window.location.hash = `#/dashboard/note/${noteId}`;
+            },
+            handleViewerActions: (e) => {
+                if (e.target.closest('#viewer-edit-btn')) {
+                    window.location.hash = `#/editor/${state.selectedNoteId}`;
+                }
+                else if (e.target.closest('#viewer-delete-btn')) {
+                    const note = state.notes.find(n => n.id === state.selectedNoteId);
+                    if (note) {
+                        ui.showModal(
+                            '노트 삭제',
+                            `'${note.title}' 노트를 정말 삭제하시겠습니까?`,
+                            async () => {
+                                await dbService.deleteNote(state.selectedNoteId);
+                                ui.hideModal();
+                                ui.showToast('노트가 삭제되었습니다.', 'success');
+                                
+                                // 📌 [MODIFIED] 전체 리페치 대신 로컬 상태에서 제거
+                                state.notes = state.notes.filter(n => n.id !== state.selectedNoteId);
+                                state.selectedNoteId = null;
+                                window.location.hash = '#/dashboard';
+                                ui.renderDashboard(); // 다시 렌더링
+                            },
+                            { confirmText: '삭제' } 
+                        );
+                    }
+                }
+                else if (e.target.closest('#viewer-re-analyze-btn')) {
+                    handlers.triggerAiAnalysis(state.selectedNoteId);
+                }
+            },
+
+            // 📌 [MODIFIED] Drag/Drop 핸들러 (JSON 데이터 사용)
+            handleNoteDragStart: (e) => {
+                const target = e.target.closest('.note-item');
+                if (target) {
+                    // 📌 [MODIFIED] 노트임을 명시하는 JSON 데이터로 변경
+                    e.dataTransfer.setData('application/json', JSON.stringify({
+                        type: 'note',
+                        id: target.dataset.noteId 
+                    }));
+                    e.dataTransfer.effectAllowed = 'move';
+                }
+            },
+            handleFolderDragOver: (e) => {
+                e.preventDefault();
+                const target = e.target.closest('.nav-filter-btn[data-folder-id]');
+                if (target) {
+                    document.querySelectorAll('.folder-drag-over').forEach(el => el.classList.remove('folder-drag-over'));
+                    target.classList.add('folder-drag-over');
+                    e.dataTransfer.dropEffect = 'move';
+                } else {
+                    e.dataTransfer.dropEffect = 'none';
+                }
+            },
+            handleFolderDragLeave: (e) => {
+                e.target.closest('.nav-filter-btn[data-folder-id]')?.classList.remove('folder-drag-over');
+            },
+            handleFolderDrop: async (e) => {
+                e.preventDefault();
+                document.querySelectorAll('.folder-drag-over').forEach(el => el.classList.remove('folder-drag-over'));
+                const target = e.target.closest('.nav-filter-btn[data-folder-id]');
+                if (!target) return;
+                
+                const newParentId = target.dataset.folderId; // The folder we are dropping ON
+                let data;
+                try {
+                    // 📌 [MODIFIED] JSON 데이터를 파싱
+                    data = JSON.parse(e.dataTransfer.getData('application/json'));
+                } catch (err) { return; }
+
+                if (!data || !data.id || !newParentId) return;
+
+                if (data.type === 'note') {
+                    // --- Case 1: Note Drop Logic (기존 로직) ---
+                    const noteId = data.id;
+                    const note = state.notes.find(n => n.id === noteId);
+                    if (note && note.parentId !== newParentId) {
+                        note.parentId = newParentId;
+                        await dbService.updateNote(note);
+                        ui.showToast(`'${note.title}' 노트를 이동했습니다.`, 'success');
+                        ui.renderDashboard(); // 노트 목록도 리프레시
+                    }
+                } else if (data.type === 'vfs') {
+                    // --- 📌 [NEW] Case 2: Folder Drop Logic ---
+                    const folderId = data.id; // 드래그한 폴더
+                    const folder = state.vfsNodes.find(n => n.id === folderId);
+                    
+                    // 유효성 검사:
+                    // 1. 자기 자신에게 드롭 불가
+                    // 2. 부모가 이미 동일한 경우
+                    if (!folder || folderId === newParentId || folder.parentId === newParentId) {
+                        return;
+                    }
+
+                    // 3. 자신의 하위 폴더로 이동 불가 (순환 참조 방지)
+                    let p = newParentId;
+                    while (p !== 'root' && p != null) {
+                        if (p === folderId) {
+                            ui.showToast("자신의 하위 폴더로 이동할 수 없습니다.", "error");
+                            return;
+                        }
+                        const parentNode = state.vfsNodes.find(n => n.id === p);
+                        p = parentNode ? parentNode.parentId : null;
+                    }
+
+                    // 모든 검사 통과: 폴더 이동
+                    folder.parentId = newParentId;
+                    await dbService.updateVfsNode(folder);
+                    ui.showToast(`'${folder.name}' 폴더를 이동했습니다.`, 'success');
+                    ui.renderNavPane(); // Nav Pane만 리프레시
+                }
+            },
+
+            /**
+             * 📌 [NEW] 폴더 드래그 시작 핸들러
+             */
+            handleVfsDragStart: (e) => {
+                const target = e.target.closest('.nav-filter-btn[data-folder-id]');
+                if (target) {
+                    const folderId = target.dataset.folderId;
+                    // '미분류(root)' 폴더는 드래그할 수 없음
+                    if (folderId === 'root') {
+                        e.preventDefault();
+                        return;
+                    }
+                    e.dataTransfer.setData('application/json', JSON.stringify({
+                        type: 'vfs',
+                        id: folderId
+                    }));
+                    e.dataTransfer.effectAllowed = 'move';
+                }
+            },
+
+            // --- V-02 핸들러 ---
+            handleEditorFormChange: () => {
+                const saveBtn = document.getElementById('editor-save-btn');
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                }
+            },
+            handleEditorCancel: () => {
+                // 📌 [MODIFIED] 뒤로 가기 (이전 뷰가 dashboard/note/ID 일 수 있음)
+                if (state.editingNoteId) {
+                    window.location.hash = `#/dashboard/note/${state.editingNoteId}`;
+                } else {
+                    window.location.hash = '#/dashboard';
+                }
+            },
+            
+            // 📌 [MODIFIED] 에디터 저장 (AI 폴더 덮어쓰기 방지)
+            handleEditorSave: async (e) => {
+                e.preventDefault();
+                ui.showToast("저장 중...", "loading");
+                const form = document.getElementById('editor-form');
+                if (!form) {
+                    ui.showToast("저장 실패: 폼을 찾을 수 없습니다.", "error");
+                    return;
+                }
+                
+                // Firestore Timestamp 사용
+                const now = firebase.firestore.FieldValue.serverTimestamp();
+                
+                const categoryString = helpers.sanitizeCategory(form.elements.category.value);
+                let parentId = 'root';
+                if (categoryString) {
+                    // VFS 노드는 state.vfsNodes (로컬 캐시)를 사용
+                    parentId = await dbService.findOrCreateFolderPath(categoryString, state.vfsNodes);
+                }
+                
+                // 📌 [NEW] Tags를 배열로 파싱
+                const tagNames = helpers.sanitizeTags(form.elements.tags.value);
+
+                const noteData = {
+                    title: form.elements.title.value || '제목 없음',
+                    body: form.elements.body.value,
+                    summary: form.elements.summary.value, 
+                    parentId: parentId,
+                    tags: tagNames, // 📌 [NEW] 태그 배열
+                    updatedAt: now,
+                    aiStatus: 'analyzing', 
+                    relatedIds: [] 
+                };
+
+                try {
+                    let savedNoteId;
+                    if (state.editingNoteId) {
+                        const originalNote = state.notes.find(n => n.id === state.editingNoteId);
+                        noteData.id = state.editingNoteId; // ID (문자열)
+                        noteData.createdAt = originalNote ? originalNote.createdAt : now; // 생성일 유지
+                        noteData.relatedIds = originalNote ? (originalNote.relatedIds || []) : [];
+                        await dbService.updateNote(noteData);
+                        savedNoteId = noteData.id;
+                    } else {
+                        noteData.createdAt = now;
+                        // 📌 [MODIFIED] addNote는 ID를 반환
+                        savedNoteId = await dbService.addNote(noteData);
+                    }
+                    
+                    ui.hideToast();
+                    ui.showToast("저장 완료! AI 분석을 시작합니다...", "loading");
+                    
+                    // 📌 [MODIFIED] DB에서 다시 로드 (Timestamp 등을 받아오기 위해)
+                    await handlers.fetchAllDataAndRender();
+                    window.location.hash = `#/dashboard/note/${savedNoteId}`;
+                    
+                    // 📌 [MODIFIED] AI 분석 시, 사용자가 수동으로 입력한 categoryString을 전달합니다.
+                    handlers.triggerAiAnalysis(savedNoteId, categoryString);
+
+                } catch (error) {
+                    console.error("저장 실패:", error);
+                    ui.showToast(`저장 실패: ${error.message}`, "error");
+                }
+            },
+            handleEditorDelete: () => {
+                const note = state.notes.find(n => n.id === state.editingNoteId);
+                if (note) {
+                    ui.showModal(
+                        '노트 삭제',
+                        `'${note.title}' 노트를 정말 삭제하시겠습니까?`,
+                        async () => {
+                            await dbService.deleteNote(state.editingNoteId);
+                            ui.hideModal();
+                            ui.showToast('노트가 삭제되었습니다.', 'success');
+                            
+                            // 📌 [MODIFIED] 로컬 상태 업데이트 및 대시보드로 이동
+                            state.notes = state.notes.filter(n => n.id !== state.editingNoteId);
+                            state.selectedNoteId = null;
+                            state.editingNoteId = null;
+                            window.location.hash = '#/dashboard';
+                            // ui.handleRouting(); // 해시 변경이 자동으로 라우팅 트리거
+                        },
+                        { confirmText: '삭제' }
+                    );
+                }
+            },
+            
+            // 📌 [MODIFIED] C-08 AI 분석 (AI 폴더 덮어쓰기 방지)
+            triggerAiAnalysis: async (noteId, userSpecifiedCategory = null) => {
+                if (typeof noteId !== 'string') return; // ID는 이제 문자열
+                
+                // 1. 📌 (v7: state.settings.apiKeys는 {id, name, key} 객체 배열)
+                const apiKeyStrings = (state.settings.apiKeys || []).map(k => k.key).filter(Boolean);
+                if (apiKeyStrings.length === 0) {
+                    console.error("Gemini API 키가 설정되지 않았습니다. '설정' 탭에서 키를 입력하세요.");
+                    ui.showToast("AI 분석 실패: API 키가 없습니다.", "error");
+                    try {
+                        const noteToUpdate = await dbService.getNote(noteId);
+                        if(noteToUpdate) {
+                            noteToUpdate.aiStatus = 'failed';
+                            await dbService.updateNote(noteToUpdate);
+                            if (state.currentView === 'dashboard') await handlers.fetchAllDataAndRender();
+                        }
+                    } catch(e) {}
+                    return;
+                }
+                
+                // 📌 키 순환
+                state.apiKeyIndex = (state.apiKeyIndex || 0) % apiKeyStrings.length;
+                const apiKey = apiKeyStrings[state.apiKeyIndex];
+                state.apiKeyIndex++;
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+
+                // 2. 노트 상태 변경 (기존과 동일)
+                let note;
+                try {
+                    note = await dbService.getNote(noteId); // DB에서 최신 노트 가져오기
+                    if (!note) return;
+                    if (note.aiStatus !== 'analyzing') {
+                        note.aiStatus = 'analyzing';
+                        await dbService.updateNote(note); // note 객체 전체 업데이트
+                        if (state.currentView === 'dashboard') {
+                             // 로컬 state도 업데이트하여 UI 즉시 반영
+                             const localNote = state.notes.find(n => n.id === noteId);
+                             if(localNote) localNote.aiStatus = 'analyzing';
+                             ui.renderDashboard();
+                        }
+                    }
+                } catch (error) {
+                    console.error("AI 분석 시작 실패 (DB):", error);
+                    ui.showToast("AI 분석 시작 실패", "error");
+                    return;
+                }
+
+                // 3. 프롬프트 데이터 준비 (ID가 문자열임)
+                const otherNotesMetadata = state.notes
+                    .filter(n => n.id !== noteId)
+                    .map(n => ({ id: n.id, title: n.title, summary: n.summary || helpers.summarize(n.body, 100) }))
+                    .slice(0, 30);
+                const vfsStructure = state.vfsNodes.map(n => ({ id: n.id, name: n.name, parentId: n.parentId }));
+                const systemPrompt = state.settings.aiSystemPrompt;
+                const userPrompt = state.settings.aiUserPromptTemplate
+                    .replace('{{TITLE}}', note.title)
+                    .replace('{{BODY}}', note.body)
+                    .replace('{{OTHER_NOTES_JSON}}', JSON.stringify(otherNotesMetadata, null, 2))
+                    .replace('{{VFS_STRUCTURE_JSON}}', JSON.stringify(vfsStructure, null, 2));
+                
+                // 4. Payload (📌 [MODIFIED] suggestedRelatedIds를 STRING 배열로 요청)
+                const payload = {
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    contents: [{ parts: [{ text: userPrompt }] }],
+                    generationConfig: {
+                        responseMimeType: "application/json",
+                        responseSchema: {
+                            type: "OBJECT",
+                            properties: {
+                                "suggestedSummary": { "type": "STRING" },
+                                "suggestedTags": { "type": "ARRAY", "items": { "type": "STRING" } },
+                                "suggestedRelatedIds": { "type": "ARRAY", "items": { "type": "STRING" } }, // 📌 ID가 문자열
+                                "suggestedFolderPath": { "type": "STRING" }
+                            },
+                            required: ["suggestedSummary", "suggestedTags", "suggestedRelatedIds", "suggestedFolderPath"]
+                        }
+                    }
+                };
+
+                // 5. API 호출 및 응답 처리 (📌 [MODIFIED] Tag 저장 로직)
+                try {
+                    const result = await helpers.fetchWithBackoff(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const jsonText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!jsonText) throw new Error("Invalid AI response structure.");
+                    
+                    const aiResponse = JSON.parse(jsonText);
+                    const latestNote = await dbService.getNote(noteId); // DB에서 다시 가져오기
+                    latestNote.summary = latestNote.summary || aiResponse.suggestedSummary;
+                    
+                    // 📌 [MODIFIED] 비정규화된 Tag 저장
+                    const suggestedTagNames = (aiResponse.suggestedTags || [])
+                        .map(tag => tag.toLowerCase().trim().replace(/#/g, ''))
+                        .filter(Boolean);
+                    if (suggestedTagNames.length > 0) {
+                        const existingTagNames = latestNote.tags || [];
+                        // Set을 사용하여 중복 제거 및 병합
+                        latestNote.tags = Array.from(new Set([...existingTagNames, ...suggestedTagNames]));
+                    }
+                    
+                    latestNote.relatedIds = aiResponse.suggestedRelatedIds || []; // ID는 이미 문자열
+                    
+                    // 📌 [MODIFIED] AI 폴더 제안 로직 (버그 수정)
+                    if (userSpecifiedCategory === null && aiResponse.suggestedFolderPath) {
+                        try {
+                            // state.vfsNodes를 최신으로 유지하며 폴더 생성
+                            const newParentId = await dbService.findOrCreateFolderPath(aiResponse.suggestedFolderPath, state.vfsNodes);
+                            latestNote.parentId = newParentId;
+                        } catch (folderError) {
+                            console.error("AI 제안 폴더 생성 실패:", folderError);
+                        }
+                    }
+                    // else: 사용자가 폴더를 수동으로 지정했으므로(userSpecifiedCategory가 null이 아님), AI 제안을 무시합니다.
+                    
+                    latestNote.aiStatus = 'complete';
+                    await dbService.updateNote(latestNote);
+                    ui.showToast("AI 분석 완료!", "success");
+
+                } catch (error) {
+                    console.error("AI 분석 API 호출 실패:", error);
+                    ui.showToast(`AI 분석 실패 (키 인덱스: ${state.apiKeyIndex - 1})`, "error");
+                    try {
+                        const noteToUpdate = await dbService.getNote(noteId);
+                        if (noteToUpdate) {
+                            noteToUpdate.aiStatus = 'failed';
+                            await dbService.updateNote(noteToUpdate);
+                        }
+                    } catch (dbError) {}
+                } finally {
+                    // 📌 [MODIFIED] AI 분석 완료 후 전체 데이터 다시 로드
+                    await handlers.fetchAllDataAndRender();
+                }
+            },
+
+            // --- V-03 핸들러 ---
+            handleManageBack: () => {
+                window.location.hash = '#/dashboard';
+            },
+            
+            // 📌 [MODIFIED] 태그 삭제 핸들러
+            handleManageDelete: async (e) => {
+                const deleteTagBtn = e.target.closest('.manage-delete-tag-btn');
+                if (deleteTagBtn) {
+                    const tagId = deleteTagBtn.dataset.id; // 태그 이름
+                    const tagName = deleteTagBtn.dataset.name; // 태그 이름
+                    if (!tagName) return;
+                    
+                    // 📌 [MODIFIED] 카운트
+                    const notesWithTag = state.notes.filter(n => n.tags && n.tags.includes(tagName));
+                    
+                    ui.showModal(
+                        '태그 삭제',
+                        `'${tagName}' 태그를 삭제하시겠습니까? ${notesWithTag.length}개 노트에서 이 태그가 제거됩니다.`,
+                        async () => {
+                            ui.showToast("태그 삭제 중...", "loading");
+                            try {
+                                // 📌 [MODIFIED] 이 태그를 포함하는 모든 노트를 업데이트
+                                for (const note of notesWithTag) {
+                                    note.tags = note.tags.filter(t => t !== tagName);
+                                    await dbService.updateNote(note);
+                                }
+                                ui.hideModal();
+                                ui.showToast('태그가 삭제되었습니다.', 'success');
+                                // 📌 [MODIFIED] DB에서 다시 로드
+                                await handlers.fetchAllDataAndRender();
+                            } catch (error) {
+                                ui.showToast("태그 삭제 실패", "error");
+                            }
+                        },
+                        { confirmText: '삭제' }
+                    );
+                }
+            },
+
+            // --- VFS 폴더 액션 핸들러 (기존과 동일, ID는 문자열) ---
+            handleNewFolderClick: async () => {
+                // 📌 [MODIFIED] 이 버튼은 사용자의 혼란을 방지하기 위해 항상 최상위(root)에 폴더를 생성합니다.
+                const parentId = 'root';
+                ui.showModal(
+                    '신규 폴더 생성',
+                    '새 폴더의 이름을 입력하세요:',
+                    async (newName) => { 
+                        if (newName) {
+                            const newNodeData = { name: newName, parentId: parentId };
+                            // 📌 [MODIFIED] addVfsNode는 ID를 반환
+                            const newId = await dbService.addVfsNode(newNodeData);
+                            // 로컬 캐시에 즉시 반영
+                            state.vfsNodes.push({ id: newId, ...newNodeData });
+                            state.expandedFolders.add(parentId); 
+                            ui.renderDashboard(); // 📌 [FIX] Re-render entire dashboard to recalc counts
+                            ui.hideModal();
+                        } else if (newName === '') {
+                             ui.showToast('폴더 이름이 필요합니다.', 'error');
+                        }
+                    },
+                    { showInput: true, inputPlaceholder: 'New Folder', confirmText: '생성' }
+                );
+            },
+            handleRenameFolder: async (id) => {
+                const node = state.vfsNodes.find(n => n.id === id);
+                if (!node) return;
+                ui.showModal(
+                    '폴더 이름 변경',
+                    `"${node.name}" 폴더의 새 이름을 입력하세요:`,
+                    async (newName) => { 
+                        if (newName && newName !== node.name) {
+                            node.name = newName;
+                            await dbService.updateVfsNode(node);
+                            ui.renderDashboard(); // 📌 [FIX] Re-render entire dashboard to recalc counts
+                            ui.hideModal();
+                        } else if (newName === '') {
+                            ui.showToast('폴더 이름이 필요합니다.', 'error');
+                        }
+                    },
+                    { showInput: true, inputValue: node.name, confirmText: '변경' }
+                );
+            },
+            handleDeleteFolder: async (id) => {
+                const node = state.vfsNodes.find(n => n.id === id);
+                if (!node) return;
+                const hasChildFolders = state.vfsNodes.some(n => n.parentId === id);
+                const hasChildNotes = state.notes.some(n => n.parentId === id);
+                if (hasChildFolders || hasChildNotes) {
+                    ui.showToast("폴더가 비어있지 않습니다. 하위 항목을 먼저 이동/삭제하세요.", "error");
+                    return;
+                }
+                ui.showModal(
+                    '폴더 삭제',
+                    `'${node.name}' 폴더를 정말 삭제하시겠습니까?`,
+                    async () => {
+                        await dbService.deleteVfsNode(id);
+                        ui.hideModal();
+                        ui.showToast('폴더가 삭제되었습니다.', 'success');
+                        // 📌 [MODIFIED] 로컬 상태 업데이트 및 리렌더
+                        state.vfsNodes = state.vfsNodes.filter(n => n.id !== id);
+                        ui.renderDashboard(); // 📌 [FIX] Re-render entire dashboard to recalc counts
+                    },
+                    { confirmText: '삭제' }
+                );
+            },
+
+            // --- 📌 [NEW] V-04 설정 핸들러 (저장 로직 분리) ---
+            handleSettingsBack: () => {
+                // 📌 [MODIFIED] 로그인 상태에 따라 대시보드 또는 로그인 뷰로 이동
+                if (state.isLoggedIn) {
+                    window.location.hash = '#/dashboard';
+                } else {
+                    window.location.hash = '#/login';
+                }
+            },
+            
+            /**
+             * 📌 [NEW] Firebase Config 저장 핸들러
+             */
+            handleFirebaseConfigSave: (e) => {
+                e.preventDefault();
+                const configJson = document.getElementById('settings-firebase-config').value;
+                if (!configJson) {
+                    ui.showToast("Firebase 설정 JSON을 입력하세요.", "error");
+                    return;
+                }
+                
+                if (dbService.saveFirebaseConfig(configJson)) {
+                    ui.showToast("Firebase 설정이 저장되었습니다. 앱을 새로고침합니다...", "success");
+                    setTimeout(() => window.location.reload(), 2000);
+                } else {
+                    ui.showToast("유효하지 않은 JSON 형식입니다. 저장에 실패했습니다.", "error");
+                }
+            },
+
+            /**
+             * 📌 [NEW] 설정 탭 네비게이션 클릭 핸들러
+             */
+            handleSettingsNavClick: (e) => {
+                const navBtn = e.target.closest('button[data-section]');
+                if (!navBtn) return;
+                
+                const sectionId = navBtn.dataset.section;
+                ui.showSettingsSection(sectionId);
+            },
+
+            /**
+             * 📌 [MODIFIED] AI/프롬프트 설정 저장 핸들러 (Firestore에 저장)
+             */
+            handleSettingsSave: async (e) => {
+                e.preventDefault();
+                ui.showToast("설정 저장 중...", "loading");
+                
+                const form = document.getElementById('settings-form');
+                if (!form) return;
+
+                const keyDomItems = document.querySelectorAll('#settings-api-key-list .api-key-item');
+                const newApiKeys = [];
+                
+                try {
+                    // 1. API 키 (DOM에서 읽기)
+                    for (const item of keyDomItems) {
+                        const id = item.querySelector('.api-key-id').value || crypto.randomUUID(); // 새 키는 UUID 생성
+                        const name = item.querySelector('.api-key-name').value.trim();
+                        const key = item.querySelector('.api-key-value').value.trim();
+
+                        if (!name || !key) {
+                            ui.showToast("키 레이블과 키 값은 비워둘 수 없습니다.", "error");
+                            continue; // 이 키는 저장하지 않음
+                        }
+                        newApiKeys.push({ id, name, key });
+                    }
+                    
+                    // 2. 프롬프트/설정 객체 생성
+                    const newSettings = {
+                        aiSystemPrompt: form.elements.aiSystemPrompt.value,
+                        aiUserPromptTemplate: form.elements.aiUserPromptTemplate.value,
+                        apiKeys: newApiKeys // 📌 API 키 배열을 settings 객체에 포함
+                    };
+                    
+                    // 3. Firestore에 저장
+                    await dbService.saveSettings(newSettings);
+                    
+                    // 4. 로컬 state 업데이트
+                    state.settings = { ...state.settings, ...newSettings };
+                    
+                    ui.showToast('설정이 저장되었습니다.', 'success');
+
+                } catch (error) {
+                    console.error("설정 저장 실패:", error);
+                    ui.showToast('설정 저장에 실패했습니다.', 'error');
+                }
+            },
+            
+            // 📌 [MODIFIED] Gemini API 키 추가 (DOM만 조작)
+            handleSettingsAddApiKeyClick: () => {
+                const keyListContainer = document.getElementById('settings-api-key-list');
+                const noKeyMsg = keyListContainer.querySelector('p');
+                if (noKeyMsg) noKeyMsg.remove();
+                
+                const keyEl = document.createElement('div');
+                keyEl.className = 'api-key-item relative flex items-center space-x-2';
+                keyEl.innerHTML = `
+                    <input type="hidden" class="api-key-id" value="">
+                    <input type="text" class="api-key-name w-1/3 p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                           placeholder="키 레이블 (예: 'Primary')">
+                    <input type="password" class="api-key-value w-2/3 p-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" 
+                           placeholder="sk-...">
+                    <button type="button" class="toggle-api-key-btn absolute inset-y-0 right-10 px-3 flex items-center text-gray-500 hover:text-blue-600" title="키 보기/숨기기">
+                        <i class="bi bi-eye-fill"></i>
+                    </button>
+                    <button type="button" class="delete-api-key-btn flex-shrink-0 text-gray-400 hover:text-red-600" title="키 삭제">
+                        <i class="bi bi-trash-fill"></i>
+                    </button>
+                `;
+                keyListContainer.appendChild(keyEl);
+                keyEl.querySelector('.api-key-name')?.focus();
+            },
+            
+            // 📌 [MODIFIED] Gemini API 키 토글/삭제 (DOM만 조작)
+            handleSettingsKeyListClick: (e) => {
+                const toggleBtn = e.target.closest('.toggle-api-key-btn');
+                const deleteBtn = e.target.closest('.delete-api-key-btn');
+                
+                if (toggleBtn) {
+                    const input = toggleBtn.closest('.api-key-item').querySelector('.api-key-value');
+                    const icon = toggleBtn.querySelector('i');
+                    if (input.type === 'password') {
+                        input.type = 'text';
+                        icon.classList.remove('bi-eye-fill');
+                        icon.classList.add('bi-eye-slash-fill');
+                    } else {
+                        input.type = 'password';
+                        icon.classList.remove('bi-eye-slash-fill');
+                        icon.classList.add('bi-eye-fill');
+                    }
+                }
+                
+                if (deleteBtn) {
+                    deleteBtn.closest('.api-key-item').remove();
+                }
+            },
+
+            // --- C-14 Modal 핸들러 (기존과 동일) ---
+            handleModalCancel: () => {
+                ui.hideModal();
+            },
+            handleModalConfirm: () => {
+                if (state.modalConfirmCallback) {
+                    try {
+                        const modalInput = document.getElementById('c14-modal-input');
+                        const inputValue = modalInput.classList.contains('hidden') ? null : modalInput.value;
+                        if (inputValue !== null) {
+                            state.modalConfirmCallback(inputValue);
+                        } else {
+                            state.modalConfirmCallback();
+                        }
+                    } catch (error) {
+                        console.error("Modal confirm callback error:", error);
+                    }
+                }
+            },
+
+            // --- 검색 핸들러 (기존과 동일) ---
+            handleNavSearch: (e) => {
+                state.navSearchTerm = e.target.value;
+                ui.renderNavPane();
+            },
+            handleNoteSearch: (e) => {
+                state.noteSearchTerm = e.target.value;
+                ui.renderNoteListPane();
+            },
+            handleManageSearch: () => {
+                ui.renderManagement();
+            }
+        };
+
+        // --- 5. 애플리케이션 초기화(Initialization) ---
+        /**
+         * 📌 [NEW] 앱 시작 메인 함수
+         */
+        function initApp() {
+             try {
+                // 1. 모든 이벤트 리스너를 먼저 바인딩합니다.
+                handlers.initEvents();
+                
+                // 2. localStorage에서 Firebase Config를 읽어 초기화를 시도합니다.
+                const isFirebaseReady = dbService.initDB();
+                
+                if (isFirebaseReady) {
+                    // 3. 초기화 성공: Firebase Auth 상태 변경을 감지합니다.
+                    console.log("Firebase 준비 완료. 인증 상태 확인 중...");
+                    state.isFirebaseReady = true;
+                    dbService.watchAuth(handlers.onAuthStateChanged);
+                } else {
+                    // 4. 초기화 실패 (Config 없음): '설정' 뷰로 강제 이동
+                    console.log("Firebase 준비 안됨. 설정 뷰로 이동.");
+                    state.isFirebaseReady = false;
+                    window.location.hash = '#/settings';
+                    ui.handleRouting(); // 라우터가 '설정' 뷰를 렌더링하도록 함
+                }
+                
+                // (이전 'fetchAllDataAndRender' 호출은 watchAuth 내부로 이동됨)
+                
+            } catch (error) {
+                console.error('애플리케이션 시작 실패:', error);
+                document.body.innerHTML = '<p class="text-center text-red-500 p-10">애플리케이션을 시작하지 못했습니다. 콘솔을 확인하세요.</p>';
+            }
+        }
+        
+        // DOM 로드 완료 후 앱 시작
+        document.addEventListener('DOMContentLoaded', initApp);
+    </script>
+</body>
+</html>
+
