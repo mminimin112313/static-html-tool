@@ -67,6 +67,11 @@
         #suggestion-box {
             max-height: 600px; /* 추천 목록 최대 높이를 조정 */
             overflow-y: auto;
+            /* [신규] 가로 뱃지 레이아웃을 위한 flex 설정 */
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px; /* 뱃지 사이의 간격 */
+            padding: 8px; /* 컨테이너 내부 여백 */
         }
         .suggestion-item-selected {
             background-color: #e2e8f0; /* slate-200 */
@@ -308,7 +313,7 @@
             <div class="bg-white/80 backdrop-blur-xl rounded-xl shadow-2xl shadow-slate-400/20 ring-1 ring-slate-900/5 flex flex-col">
                 <div id="suggestion-box"></div>
                 <div id="dynamic-form-container" class="p-4 grid gap-4"></div>
-                <input type="text" id="command-bar-input" placeholder="+ 지금 무엇을 기록할까요?" class="w-full h-14 px-5 text-base bg-transparent border-0 focus:ring-0 placeholder-slate-400">
+                <input type="text" id="command-bar-input" placeholder="+ 지금 무엇을 기록할까요?" class="w-full h-14 px-5 text-base bg-transparent border-0 focus:ring-0 placeholder-slate-400" autocomplete="off">
             </div>
         </div>
     </footer>
@@ -1192,24 +1197,52 @@ const firebaseUtils = {
                 return a.name.localeCompare(b.name);
             });
 
-            // 4. HTML 렌더링 (기존 로직 유지)
-            let html = `<button class="flex items-center gap-3 w-full text-left px-4 py-2.5 text-base hover:bg-slate-100 transition-colors" data-type="journal"><i data-lucide="book-pen" class="w-5 h-5 text-slate-500"></i><span class="font-medium">일기 쓰기</span></button>`;
+            // 4. HTML 렌더링 (스타일 수정)
+            let html = `<button class="flex items-center gap-1.5 w-auto text-left px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors" data-type="journal"><i data-lucide="book-pen" class="w-3.5 h-3.5 text-slate-500"></i><span class="font-medium">일기 쓰기</span></button>`;
             
             html += filtered.map(def => {
                 const count = logCountsToday[def.id] || 0;
                 const isLoggedToday = count > 0;
                 
-                const textClass = isLoggedToday ? 'text-slate-400' : 'text-slate-800';
-                const countBadge = isLoggedToday ? `<span class="ml-auto text-xs font-semibold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">${count}회</span>` : '';
+                // [수정] 뱃지 스타일 및 'ml-auto' 제거
+                const textClass = isLoggedToday ? 'text-slate-500' : 'text-slate-800';
+                const buttonBg = isLoggedToday ? 'bg-slate-100 hover:bg-slate-200' : 'bg-white hover:bg-slate-100 border border-slate-200 shadow-sm';
+                const countBadge = isLoggedToday ? `<span class="ml-1 text-xs font-semibold bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded-full">${count}회</span>` : '';
                 
                 const breadcrumbPath = logic.getBreadcrumbPath(def.id);
-                const breadcrumbText = breadcrumbPath.map(d => d.name).join('<span class="mx-1 font-normal text-slate-400">/</span>');
-                const iconHtml = def.icon ? `<span class="text-xl w-6 text-center">${def.icon}</span>` : `<i data-lucide="pencil-ruler" class="w-5 h-5 text-slate-500"></i>`;
+                const breadcrumbText = breadcrumbPath.map(d => d.name).join('<span class="mx-0.5 font-normal text-slate-400">/</span>');
+                
+                // [수정] 아이콘 크기 축소
+                const iconHtml = def.icon ? `<span class="text-sm w-4 text-center">${def.icon}</span>` : `<i data-lucide="pencil-ruler" class="w-3.5 h-3.5 text-slate-500"></i>`;
 
-                return `<button class="flex items-center gap-3 w-full text-left px-4 py-2.5 text-base hover:bg-slate-100 transition-colors" data-type="log" data-id="${def.id}">
+                // [수정] 버튼 클래스 변경 (w-full, px-4, py-2.5, text-base 등 제거)
+                return `<button class="flex items-center gap-1.5 w-auto text-left px-2.5 py-1 text-xs font-semibold rounded-full ${buttonBg} transition-colors" data-type="log" data-id="${def.id}">
                             ${iconHtml}
                             <span class="font-medium ${textClass}">${breadcrumbText}</span>
                             ${countBadge}
+                        </button>`;
+            }).join('');
+            
+            elements.suggestionBox.innerHTML = html;
+            ui.refreshIcons();
+        },
+        showTodoSuggestions: (query) => {
+            const lowerQuery = query.toLowerCase();
+            const filtered = state.definitions.filter(def => def.name.toLowerCase().includes(lowerQuery));
+
+            // 이름순 정렬
+            filtered.sort((a, b) => a.name.localeCompare(b.name));
+
+            let html = '';
+            html += filtered.map(def => {
+                const breadcrumbPath = logic.getBreadcrumbPath(def.id);
+                const breadcrumbText = breadcrumbPath.map(d => d.name).join('<span class="mx-0.5 font-normal text-slate-400">/</span>');
+                const iconHtml = def.icon ? `<span class="text-sm w-4 text-center">${def.icon}</span>` : `<i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-slate-500"></i>`;
+
+                // '할 일 추가'용 버튼 (data-type="add-todo-linked")
+                return `<button class="flex items-center gap-1.5 w-auto text-left px-2.5 py-1 text-xs font-semibold rounded-full bg-white hover:bg-slate-100 border border-slate-200 shadow-sm transition-colors" data-type="add-todo-linked" data-id="${def.id}">
+                            ${iconHtml}
+                            <span class="font-medium text-slate-800">할 일 추가: ${breadcrumbText}</span>
                         </button>`;
             }).join('');
             
@@ -3035,6 +3068,27 @@ const firebaseUtils = {
                 ui.refreshIcons();
             } else if (action === 'remove-field') target.closest('.field-row').remove();
             else if (action === 'save-widget') logic.saveWidget(id);
+            
+            // [신규] '할 일 목록' 모달 내의 액션 핸들러 추가 (Req 3)
+            else if (action === 'edit-todo') {
+                const todo = state.todos.find(t => t.id === id);
+                if (todo) {
+                    ui.closeModal('todo-list-modal'); // 목록 모달 닫기
+                    ui.showTodoForm(todo, todo.linkedDefId); // 수정 모달 열기
+                }
+            }
+            else if (action === 'complete-todo') {
+                if (confirm('이 할 일을 "완료" 처리하시겠습니까?')) {
+                    logic.updateTodoStatus(id, 'completed');
+                    ui.closeModal('todo-list-modal'); // 목록 모달 닫기
+                }
+            }
+            else if (action === 'terminate-todo') {
+                if (confirm('이 할 일을 "종료"(포기/중단) 처리하시겠습니까?')) {
+                    logic.updateTodoStatus(id, 'terminated');
+                    ui.closeModal('todo-list-modal'); // 목록 모달 닫기
+                }
+            }
         },
         handleWidgetFormClicks: (e) => {
             const target = e.target.closest('[data-action="select-chart-type"]');
@@ -3141,10 +3195,30 @@ const firebaseUtils = {
             }
         },
         handleCommandBarFocus: () => ui.showSuggestions(''),
-        handleCommandBarInput: (e) => ui.showSuggestions(e.target.value),
+        handleCommandBarInput: (e) => {
+            const query = e.target.value;
+            if (query.startsWith('@')) {
+                // [신규] @ 입력 시 '할 일' 추천 (Req 2)
+                ui.showTodoSuggestions(query.substring(1));
+            } else {
+                ui.showSuggestions(query);
+            }
+        },
         handleSuggestionClick: (e) => {
             const button = e.target.closest('button');
-            if (button) ui.showDynamicForm(button.dataset.type, button.dataset.id ? parseInt(button.dataset.id) : null);
+            if (!button) return;
+            
+            const type = button.dataset.type;
+            const id = button.dataset.id ? parseInt(button.dataset.id) : null;
+
+            if (type === 'log' || type === 'journal') {
+                ui.showDynamicForm(type, id);
+            } else if (type === 'add-todo-linked') {
+                // [신규] '할 일' 바로 추가 폼 열기 (Req 2)
+                ui.showTodoForm(null, id); 
+                ui.clearSuggestions();
+                elements.commandBarInput.value = '';
+            }
         },
         handleFormActionClick: async (e) => {
              const target = e.target.closest('[data-action]');
