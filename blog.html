@@ -1,1347 +1,1403 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 블로그 어시스턴트 (v3.9 - Cover Gen)</title> <!-- v3.9로 버전 업데이트 -->
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Lucide 아이콘 -->
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
-    <!-- Dexie.js (IndexedDB 래퍼) -->
-    <script src="https://unpkg.com/dexie@3/dist/dexie.js"></script>
-    <!-- JSZip -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <!-- html2canvas (표지 이미지 저장을 위해 추가) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gemini 블로그 글 대량 생성기 (v9 - Refactored)</title>
+  <!-- Tailwind CSS 로드 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Inter & Noto Sans KR 폰트 로드 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+  
+  <style>
+    body {
+      font-family: 'Inter', 'Noto Sans KR', sans-serif;
+      background-color: #f8f9fa;
+      padding-bottom: 60px; /* 하단 푸터 공간 확보 */
+    }
+    /* 토스트 알림 */
+    #toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      padding: 1rem 1.5rem;
+      border-radius: 0.5rem;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      transition: all 0.3s ease;
+      opacity: 0;
+      transform: translateY(20px);
+      z-index: 1000;
+    }
+    #toast.show { opacity: 1; transform: translateY(0); }
+    #toast.success { background-color: #10B981; color: white; }
+    #toast.error { background-color: #EF4444; color: white; }
+    #toast.info { background-color: #3B82F6; color: white; }
+
+    /* 모달 스타일 */
+    #modal-overlay { transition: opacity 0.3s ease-in-out; }
+    #modal-container { transition: all 0.3s ease-in-out; }
     
-    <style>
-        /* ... 기존 스타일 ... */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
-        /* Noto Sans KR 폰트 (표지 생성을 위해 추가) */
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
+    /* 아이콘 버튼 스타일 */
+    .icon-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 1.25rem; /* 20px */
+      color: #4B5563; /* text-gray-600 */
+      transition: color 0.2s, transform 0.2s;
+      padding: 4px;
+      border-radius: 50%;
+    }
+    .icon-btn:hover { 
+      color: #1D4ED8; /* text-blue-700 */
+      transform: scale(1.1);
+    }
+    .icon-btn-danger:hover { 
+      color: #DC2626; /* text-red-600 */
+    }
+    .icon-btn-purple:hover {
+      color: #7E22CE; /* text-purple-700 */
+    }
+    .icon-btn-retry {
+      color: #2563EB; /* text-blue-600 */
+    }
+    .icon-btn-retry:hover {
+      color: #1D4ED8; /* text-blue-700 */
+      transform: scale(1.1);
+    }
 
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .spinner { border: 2px solid #e5e7eb; border-top-color: #3b82f6; animation: spin 1s linear infinite; }
-        .toast { visibility: hidden; opacity: 0; transform: translateY(20px); transition: all 0.3s ease-out; }
-        .toast.show { visibility: visible; opacity: 1; transform: translateY(0); }
-        .modal-backdrop { background-color: rgba(0, 0, 0, 0.5); }
-        textarea[readonly] { background-color: #f1f5f9; cursor: default; }
-        
-        .tab-button[aria-selected="true"] { border-color: #3b82f6; color: #2563eb; font-weight: 600; }
-        .tab-button[aria-selected="false"] { border-color: transparent; color: #64748b; font-weight: 500; }
-        .count-badge { display: none; margin-left: 4px; font-size: 0.8rem; font-weight: 500; color: #64748b; padding: 0px 6px; border-radius: 99px; background-color: #e2e8f0; }
-        .tab-button[aria-selected="true"] .count-badge { color: #2563eb; background-color: #dbeafe; }
-        
-        .data-file-item[data-active="true"] { background-color: #f0f9ff; border-left-color: #3b82f6; }
-        .data-file-item[data-active="false"] { background-color: #ffffff; border-left-color: #e5e7eb; }
-        .data-file-item.selected { background-color: #dbeafe; border-left-color: #2563eb; }
-
-        .switch { position: relative; display: inline-block; width: 40px; height: 24px; }
-        .switch input { opacity: 0; width: 0; height: 0; }
-        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 34px; }
-        .slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
-        input:checked + .slider { background-color: #3b82f6; }
-        input:checked + .slider:before { transform: translateX(16px); }
-
-        /* API 키 목록 스타일 */
-        .api-key-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #e5e7eb; }
-        .api-key-item:last-child { border-bottom: none; }
-        .api-key-name { font-weight: 500; }
-        .api-key-value { color: #64748b; font-family: monospace; font-size: 0.9em; }
-
-        /* --- 표지 생성기 전용 스타일 --- */
-        .cover-font {
-            font-family: 'Noto Sans KR', "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
-        }
-        .cover-font .font-medium { font-weight: 500; }
-        .cover-font .font-bold { font-weight: 700; }
-        
-        .square-container {
-            width: 100%;
-            padding-top: 100%; /* 높이를 너비와 동일하게 설정 */
-            position: relative;
-        }
-        .square-content {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: space-between; /* 요소들을 상하로 균등하게 배치 */
-            cursor: pointer; /* 클릭 가능 표시 */
-        }
-        /* 표지 제목 자동 크기 조절을 위한 스타일 */
-        #cover-title-container {
-            flex-grow: 1; /* 남은 공간을 채움 */
-            display: flex;
-            flex-direction: column;
-            justify-content: center; /* 세로 중앙 정렬 */
-            min-height: 0; /* flex-shrink가 올바르게 작동하도록 함 */
-            height: 7rem; /* 112px 고정 높이 (h-28) */
-            overflow: hidden; /* 넘치는 부분 숨김 */
-        }
-        #cover-mainTitle {
-            /* 기본 폰트 크기 삭제 - 스크립트에서 설정 */
-            line-height: 1.3; /* 라인 간격 조절 */
-            word-break: keep-all; /* 단어 단위 줄바꿈 */
-        }
-    </style>
+    /* 하단 작업 푸터 */
+    #job-footer-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background-color: #1F2937; /* bg-gray-800 */
+      color: white;
+      padding: 0.75rem 1.5rem;
+      box-shadow: 0 -4px 10px rgba(0,0,0,0.1);
+      z-index: 900;
+      transform: translateY(100%);
+      transition: transform 0.3s ease-in-out;
+    }
+    #job-footer-bar.show {
+      transform: translateY(0);
+    }
+    #processing-list .processing-item {
+      background-color: #4B5563; /* bg-gray-600 */
+      padding: 0.25rem 0.75rem;
+      border-radius: 9999px; /* rounded-full */
+      font-size: 0.875rem; /* text-sm */
+      display: flex;
+      align-items: center;
+      margin-right: 0.5rem; /* mr-2 */
+    }
+    #processing-list .spinner-sm {
+      width: 1rem; /* w-4 */
+      height: 1rem; /* h-4 */
+      border-width: 2px;
+      margin-right: 0.5rem; /* mr-2 */
+    }
+  </style>
 </head>
-<body class="text-slate-800">
+<body class="text-gray-900">
 
-    <!-- V-01: 메인 앱 뷰 (셸) -->
-    <div class="container mx-auto max-w-4xl p-4 md:p-6 min-h-screen">
+  <!-- 
+   *** 모달 (전체 보기) ***
+  -->
+  <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-70 z-40 flex items-center justify-center p-4 hidden">
+    <div id="modal-container" class="bg-white rounded-lg shadow-2xl max-w-4xl w-full m-auto transition-all transform scale-95 opacity-0" onclick="event.stopPropagation()">
+      <!-- 모달 헤더 -->
+      <div class="flex justify-between items-center p-4 border-b border-gray-200">
+        <h3 id="modal-title" class="text-xl font-semibold text-gray-800"></h3>
+        <button id="modal-close-btn" class="text-gray-400 hover:text-gray-600">
+          <i class="bi bi-x-lg text-2xl"></i>
+        </button>
+      </div>
+      <!-- 모달 본문 -->
+      <div id="modal-content-wrapper" class="p-6 max-h-[70vh] overflow-y-auto">
+        <!-- 원본 글 -->
+        <h4 class="text-lg font-semibold text-gray-700 mb-2">원본 글</h4>
+        <div id="modal-content" class="p-4 bg-gray-50 rounded-md whitespace-pre-wrap text-gray-700 leading-relaxed"></div>
         
-        <!-- === 헤더: 탭 및 설정 버튼 === -->
-        <header class="flex justify-between items-center mb-4 border-b border-slate-200">
-            <!-- C-01: 탭 네비게이션 (v3.9: '표지 생성' 탭 추가) -->
-            <div class="flex space-x-1" role="tablist">
-                <button id="tab-create" role="tab" aria-selected="true" class="tab-button px-4 py-3 border-b-2">
-                    글 생성
-                </button>
-                <!-- '표지 생성' 탭 버튼 추가 -->
-                <button id="tab-cover" role="tab" aria-selected="false" class="tab-button px-4 py-3 border-b-2">
-                    표지 생성
-                </button>
-                <button id="tab-data" role="tab" aria-selected="false" class="tab-button px-4 py-3 border-b-2">
-                    데이터 <span id="data-count" class="count-badge"></span>
-                </button>
-                <button id="tab-progress" role="tab" aria-selected="false" class="tab-button px-4 py-3 border-b-2">
-                    진행 중 <span id="progress-count" class="count-badge"></span>
-                </button>
-                <button id="tab-saved" role="tab" aria-selected="false" class="tab-button px-4 py-3 border-b-2">
-                    저장된 글 <span id="saved-count" class="count-badge"></span>
-                </button>
+        <!-- 후속 작업 결과 (있을 경우) -->
+        <div id="modal-followup-wrapper" class="hidden mt-6">
+          <h4 class="text-lg font-semibold text-gray-700 mb-2">후속 작업 결과</h4>
+          <div id="modal-followup-content" class="p-4 bg-blue-50 rounded-md whitespace-pre-wrap text-gray-800 leading-relaxed"></div>
+        </div>
+      </div>
+      <!-- 모달 푸터 -->
+      <div class="flex justify-end p-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+        <button id="modal-close-footer-btn" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300 transition">
+          닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- 
+   *** 메인 앱 컨테이너 ***
+  -->
+  <div id="app-container" class="max-w-7xl mx-auto p-4 sm:p-8">
+    <!-- 헤더 및 탭 네비게이션 -->
+    <header class="mb-6">
+      <h1 class="text-3xl font-bold text-gray-800">Gemini 블로그 글 대량 생성기</h1>
+      <p class="text-gray-600 mt-1">Firestore 기반 작업 큐 및 후속 작업 관리 (v9 - Refactored)</p>
+      <div class="mt-4 border-b border-gray-300 flex space-x-4">
+        <button id="nav-workspace" class="py-2 px-4 font-semibold border-b-2 border-blue-600 text-blue-600" onclick="window.app.ui.showView('workspace')">워크스페이스</button>
+        <button id="nav-settings" class="py-2 px-4 font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400 transition" onclick="window.app.ui.showView('settings')">설정</button>
+      </div>
+      <div id="user-id-display" class="mt-2 text-xs text-gray-500"></div>
+    </header>
+
+    <!-- 1. 워크스페이스 뷰 (탭 구조) -->
+    <main id="workspace-view" class="">
+      <!-- 워크스페이스 탭 네비게이션 -->
+      <div class="mb-4 border-b border-gray-300 flex space-x-4">
+        <button id="nav-workspace-input" class="py-2 px-4 font-semibold border-b-2 border-blue-600 text-blue-600" onclick="window.app.ui.showWorkspaceView('input')">
+          <i class="bi bi-pencil-square mr-1"></i> 입력
+        </button>
+        <button id="nav-workspace-results" class="py-2 px-4 font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400 transition" onclick="window.app.ui.showWorkspaceView('results')">
+          <i class="bi bi-card-list mr-1"></i> 결과
+        </button>
+      </div>
+
+      <!-- 워크스페이스 탭 패널 -->
+      <div>
+        <!-- 1-1. 입력 패널 -->
+        <div id="workspace-input-panel" class="">
+          <div class="bg-white p-6 rounded-lg shadow-lg max-w-3xl mx-auto">
+            <h2 class="text-xl font-semibold mb-5 text-gray-800">입력 설정</h2>
+            <div class="space-y-5">
+              <!-- 1. 템플릿 선택 -->
+              <div>
+                <label for="template-select" class="block text-sm font-medium text-gray-700 mb-1">1. 기본 템플릿 선택</label>
+                <select id="template-select" class="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-500 transition"></select>
+              </div>
+              <!-- 2. 참고 자료 -->
+              <div>
+                <label for="file-input" class="block text-sm font-medium text-gray-700 mb-1">2. 참고 자료 (선택)</label>
+                <input type="file" id="file-input" accept=".txt,.md,.json" class="w-full text-sm text-gray-600
+                  file:mr-4 file:py-2 file:px-4
+                  file:rounded-lg file:border-0
+                  file:text-sm file:font-semibold
+                  file:bg-blue-50 file:text-blue-700
+                  hover:file:bg-blue-100 transition cursor-pointer
+                "/>
+              </div>
+              <!-- 3. 블로그 주제 -->
+              <div>
+                <label for="topics-input" class="block text-sm font-medium text-gray-700 mb-1">3. 블로그 주제 (한 줄에 하나)</label>
+                <textarea id="topics-input" rows="8" class="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-500 transition" placeholder="예: 2025년 최고의 AI 트렌드&#10;예: Gemini API 활용법 5가지"></textarea>
+              </div>
+              <!-- 생성 버튼 -->
+              <button id="generate-button" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-700 shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center">
+                <svg id="generate-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span id="generate-button-text">생성하기</span>
+              </button>
             </div>
-            <!-- C-07: 아이콘 버튼 (설정) -->
-            <button id="open-settings-button" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="설정 열기">
-                <i data-lucide="settings" class="w-5 h-5"></i>
+            <div id="status-message" class="mt-4 text-sm text-center text-gray-600 h-10"></div>
+          </div>
+        </div>
+
+        <!-- 1-2. 출력 패널 -->
+        <div id="workspace-results-panel" class="hidden">
+          <div class="bg-white p-6 rounded-lg shadow-lg">
+            <h2 class="text-xl font-semibold mb-5 text-gray-800">작업 결과물</h2>
+            
+            <!-- 필터 및 정렬 컨트롤 -->
+            <div class="flex justify-end space-x-2 mb-4">
+              <select id="filter-followup-status" class="p-2 border border-gray-300 rounded-md text-sm focus:ring-blue-300 focus:border-blue-500">
+                <option value="all">필터: 모두</option>
+                <option value="complete">필터: 후속 작업 완료</option>
+                <option value="incomplete">필터: 후속 작업 대기</option>
+                <option value="failed">필터: 실패</option>
+              </select>
+              <select id="sort-creation-date" class="p-2 border border-gray-300 rounded-md text-sm focus:ring-blue-300 focus:border-blue-500">
+                <option value="newest">정렬: 최신순</option>
+                <option value="oldest">정렬: 오래된순</option>
+              </select>
+            </div>
+        
+            <div id="results-container" class="space-y-4 h-[600px] overflow-y-auto pr-2">
+              <p class="text-gray-500">아직 생성된 글이 없습니다.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 2. 설정 뷰 (4열 그리드) -->
+    <main id="settings-view" class="hidden">
+      <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+        
+        <!-- 2-1. Firebase 설정 패널 -->
+        <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-1">
+          <h2 class="text-xl font-semibold mb-4">Firebase 설정</h2>
+          <p class="text-sm text-gray-600 mb-2">Firebase 콘솔에서 '웹 앱'을 등록한 후 `firebaseConfig` 객체(JSON)를 붙여넣으세요.</p>
+          <textarea id="firebase-config-input" rows="10" class="w-full p-2 font-mono text-xs border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition" placeholder="{&#10;  apiKey: &quot;...&quot;,&#10;  authDomain: &quot;...&quot;,&#10;  projectId: &quot;...&quot;,&#10;  ...&#10;}"></textarea>
+          <button id="save-firebase-config-button" class="mt-2 w-full bg-red-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-red-700 shadow-sm hover:shadow-md transition">
+            <i class="bi bi-save mr-1"></i> 설정 저장 (페이지 새로고침)
+          </button>
+        </div>
+
+        <!-- 2-2. 인증 및 API 키 관리 패널 -->
+        <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-1">
+          <h2 class="text-xl font-semibold mb-4">인증 및 API 키</h2>
+          
+          <!-- 인증 버튼 -->
+          <div class="space-y-2 mb-4">
+            <button id="google-login-button" class="w-full bg-white text-gray-700 font-semibold py-2 px-4 rounded-md border border-gray-300 hover:bg-gray-50 shadow-sm transition flex items-center justify-center">
+              <i class="bi bi-google mr-2 text-red-500"></i> Google 계정으로 로그인
             </button>
-        </header>
+            <button id="anonymous-login-button" class="w-full bg-gray-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-700 shadow-sm transition flex items-center justify-center">
+              <i class="bi bi-person-stealth mr-2"></i> 익명으로 로그인
+            </button>
+            <button id="logout-button" class="w-full bg-red-500 text-white font-semibold py-2 px-4 rounded-md hover:bg-red-600 shadow-sm transition hidden items-center justify-center">
+              <i class="bi bi-box-arrow-right mr-2"></i> 로그아웃
+            </button>
+          </div>
 
-        <!-- === 메인 콘텐츠 영역 === -->
-        <main>
-            <!-- V-01_Content: '글 생성' 탭 -->
-            <div id="content-create" role="tabpanel">
-                <div class="space-y-6 max-w-3xl mx-auto">
-                    <!-- 주제 입력 -->
-                    <div>
-                        <label for="topic-input" class="block text-sm font-medium text-slate-700 mb-1">주제 (한 줄에 하나씩 입력)</label>
-                        <textarea id="topic-input" rows="8" class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="블로그 글의 주제를 한 줄에 하나씩 입력하세요..."></textarea>
-                    </div>
-                    <!-- 생성 버튼 -->
-                    <div class="flex items-center space-x-3">
-                        <button id="generate-button" class="inline-flex items-center px-6 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed">
-                            <i data-lucide="send" class="w-4 h-4 mr-2"></i>
-                            <span id="generate-button-text">작업 요청</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- V-0X_Content: '표지 생성' 탭 (v3.9 신규 추가) -->
-            <div id="content-cover" role="tabpanel" class="hidden">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <!-- 1. 표지 제목 입력 UI -->
-                    <div class="md:col-span-1">
-                        <div class="max-w-md mx-auto p-6 bg-white rounded-xl shadow-lg">
-                            <h2 class="text-2xl font-bold text-gray-800 mb-4 cover-font">표지 제목 생성기</h2>
-                            <div class="mb-4">
-                                <label for="cover-titleInput" class="block text-sm font-medium text-gray-700 mb-2 cover-font">
-                                    제목 입력 (여러 줄 입력 가능):
-                                </label>
-                                <textarea id="cover-titleInput" rows="3" class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-600 focus:border-transparent transition cover-font" placeholder="외국 시민권자&#10;상속포기 한정승인"></textarea>
-                            </div>
-                            <button id="cover-updateButton" class="w-full bg-blue-700 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-800 transition-colors duration-300 shadow-md mb-3 cover-font">
-                                제목 적용
-                            </button>
-                            <button id="cover-saveImageButton" class="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors duration-300 shadow-md cover-font">
-                                이미지로 저장
-                            </button>
-                             <p class="text-xs text-slate-500 mt-2 text-center cover-font">미리보기 영역을 클릭하면 이미지가 클립보드에 복사됩니다.</p>
-                        </div>
-                    </div>
-                    
-                    <!-- 2. 생성될 배너 템플릿 (정사각형 컨테이너) -->
-                    <div class="md:col-span-2 flex justify-center items-start">
-                        <div class="max-w-xs w-full mb-8"> <!-- 전체 배너의 최대 너비를 제한하여 정사각형 유지 -->
-                            <div class="square-container cover-font">
-                                <!-- 'banner-preview' ID는 이미지 저장 및 클립보드 복사 스크립트에서 사용됩니다. -->
-                                <div id="banner-preview" class="square-content bg-white overflow-hidden" title="클릭하여 이미지 복사">
-                                    <!-- 상단 파란색 삼각형 -->
-                                    <div class="w-0 h-0 border-l-[100px] border-l-transparent border-r-[100px] border-r-transparent border-t-[25px] border-t-[#0b3d91] mx-auto mt-4"></div>
-
-                                    <!-- 본문 (파란색 테두리) -->
-                                    <div class="flex-grow flex flex-col justify-between items-center border-2 border-[#0b3d91] mx-3 mt-3 md:mx-4 md:mt-4 p-3 md:p-5 text-center min-h-0">
-                                        
-                                        <!-- 상단 그룹 (아이콘, 부제목) -->
-                                        <div class="text-center">
-                                            <!-- 1. 아이콘 (인라인 SVG) - 크기 축소 (w-8/h-8) -->
-                                            <svg class="w-8 h-8 md:w-10 md:h-10 mx-auto text-gray-700 mb-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M12 2.5L2 7h20L12 2.5z"></path> <!-- 페디먼트 (지붕) -->
-                                                <path d="M4 8v10h2.5V8H4z"></path> <!-- 기둥 1 -->
-                                                <path d="M10.75 8v10h2.5V8h-2.5z"></path> <!-- 기둥 2 -->
-                                                <path d="M17.5 8v10h2.5V8h-2.5z"></path> <!-- 기둥 3 -->
-                                                <path d="M2 19h20v2H2v-2z"></path> <!-- 받침대 -->
-                                            </svg>
-
-                                            <!-- 2. 부제목 - 크기 축소 (text-xs/text-sm) -->
-                                            <p class="text-xs md:text-sm text-gray-600 font-normal leading-none">
-                                                법률상담은 김무관 법무사
-                                            </p>
-                                        </div>
-
-                                        <!-- 3. 메인 제목 (이 부분이 변경됩니다) - 고정 높이 컨테이너 -->
-                                        <div id="cover-title-container" class="w-full my-2 h-28 overflow-hidden flex items-center justify-center">
-                                            <h1 id="cover-mainTitle" class="font-medium text-gray-900 leading-snug">
-                                                <!-- 내용은 스크립트로 채워짐 -->
-                                            </h1>
-                                        </div>
-
-                                        <!-- 4. 하단 버튼 (이 버튼이 박스 하단에 붙습니다) - 크기 축소 (text-xs/text-sm) -->
-                                        <div class="inline-block bg-[#333333] text-white py-2 px-16 rounded-full font-bold text-xs md:text-sm shadow-md">
-                                            법무사 김무관
-                                        </div>
-
-                                    </div>
-
-                                    <!-- 하단 파란색 막대 - 두께 축소 (h-5/h-6) -->
-                                    <div class="h-5 md:h-6 bg-[#0b3d91]"></div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- V-02_Content: '데이터' 탭 -->
-            <div id="content-data" role="tabpanel" class="hidden">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <!-- 파일 목록 -->
-                    <div class="md:col-span-1 space-y-3">
-                        <div class="flex space-x-2">
-                            <button id="data-new-file" class="flex-1 inline-flex items-center justify-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm hover:bg-slate-50">
-                                <i data-lucide="file-plus" class="w-4 h-4 mr-2"></i>새 파일
-                            </button>
-                            <input type="file" id="data-upload-file" accept=".txt" class="hidden">
-                            <label for="data-upload-file" class="flex-1 inline-flex items-center justify-center px-3 py-2 border border-slate-300 text-sm font-medium rounded-md shadow-sm hover:bg-slate-50 cursor-pointer">
-                                <i data-lucide="upload-cloud" class="w-4 h-4 mr-2"></i>업로드
-                            </label>
-                        </div>
-                        <div id="data-file-list" class="space-y-2 max-h-[60vh] overflow-y-auto pr-2"></div>
-                    </div>
-                    <!-- 파일 편집기 -->
-                    <div class="md:col-span-2">
-                        <div class="flex justify-between items-center mb-2">
-                            <input id="data-editor-filename" type="text" class="text-lg font-semibold border-b-2 border-transparent focus:border-blue-500 focus:outline-none" value="파일을 선택하세요" disabled>
-                            <button id="data-save-file" class="px-4 py-1 bg-blue-600 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-blue-700 disabled:opacity-50" disabled>
-                                저장
-                            </button>
-                        </div>
-                        <textarea id="data-editor-content" rows="18" class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="파일을 선택하여 내용을 편집하세요..." disabled></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <!-- V-03_Content: '진행 중' 탭 -->
-            <div id="content-progress" role="tabpanel" class="hidden">
-                <div id="progress-list" class="space-y-3 max-w-3xl mx-auto">
-                    <p class="text-slate-500 text-center py-6">진행 중인 작업이 없습니다.</p>
-                </div>
-            </div>
-
-            <!-- V-04_Content: '저장된 글' 탭 -->
-            <div id="content-saved" role="tabpanel" class="hidden">
-                 <!-- v3.7: Export Button -->
-                <div class="flex justify-end mb-4">
-                    <button id="export-posts-button" class="inline-flex items-center px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i data-lucide="download" class="w-4 h-4 mr-2"></i>
-                        전체 글 내보내기 (ZIP)
-                    </button>
-                </div>
-                <div id="saved-posts-list" class="space-y-3 max-w-3xl mx-auto">
-                    <p class="text-slate-500 text-center py-6">저장된 글이 없습니다.</p>
-                </div>
-            </div>
-        </main>
-    </div>
-
-    <!-- === 모달 영역 === -->
-
-    <!-- V-05: 설정 뷰 (모달) -->
-    <div id="settings-modal" class="modal-backdrop fixed inset-0 z-40 flex items-center justify-center p-4 hidden">
-        <div class="bg-white w-full max-w-lg rounded-lg shadow-xl overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-            <header class="flex justify-between items-center p-4 border-b">
-                <h2 id="settings-title" class="text-lg font-semibold">설정</h2>
-                <button id="close-settings-button" class="p-1 rounded-full text-slate-400 hover:bg-slate-100 hover:text-slate-600" aria-label="설정 닫기">
-                    <i data-lucide="x" class="w-5 h-5"></i>
-                </button>
-            </header>
-            <div class="p-6 space-y-4 overflow-y-auto max-h-[70vh]">
-                <!-- AI 모델 선택 -->
-                <div>
-                    <label for="model-select-input" class="block text-sm font-medium text-slate-700 mb-1">AI 모델 선택</label>
-                    <select id="model-select-input" class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <option value="gemini-2.5-flash-preview-09-2025">Flash (10 RPM)</option>
-                        <option value="gemini-2.5-pro">Pro (2 RPM)</option>
-                    </select>
-                    <p class="text-xs text-slate-500 mt-1">'Pro' 모델은 아래 API 키 목록에 유효한 키가 하나 이상 등록되어 있어야 합니다.</p>
-                </div>
-                
-                <!-- API 키 관리 -->
-                <div class="space-y-3">
-                    <label class="block text-sm font-medium text-slate-700">Gemini API 키 관리</label>
-                    <div class="flex space-x-2">
-                        <input type="text" id="api-key-name-input" placeholder="키 이름 (예: 개인용)" class="flex-1 px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    </div>
-                    <div class="flex space-x-2">
-                        <input type="password" id="api-key-value-input" placeholder="API 키 값" class="flex-1 px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                        <button id="add-api-key-button" class="px-4 py-2 bg-blue-500 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-blue-600">추가</button>
-                    </div>
-                    <div id="api-key-list" class="mt-2 border border-slate-200 rounded-md p-3 bg-slate-50 max-h-40 overflow-y-auto">
-                        <p class="text-sm text-slate-500 text-center">등록된 API 키가 없습니다.</p>
-                    </div>
-                     <p class="text-xs text-slate-500 mt-1">
-                        등록된 키가 없으면 Canvas 기본 키가 사용됩니다 (Flash 모델 전용). Pro 모델 사용 시 키를 등록해야 합니다.
-                    </p>
-                </div>
-                <!-- 데이터 관리 -->
-                <div class="space-y-3">
-                    <label class="block text-sm font-medium text-slate-700">데이터 관리</label>
-                    <p class="text-xs text-slate-500 mt-1">
-                        전체 프로젝트 데이터(설정, 데이터 파일, 저장된 글)를 JSON 파일로 내보내거나 가져옵니다.
-                    </p>
-                    <div class="flex space-x-2">
-                        <button id="export-all-data-button" class="flex-1 inline-flex items-center justify-center px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-green-700">
-                            <i data-lucide="download" class="w-4 h-4 mr-2"></i>전체 내보내기
-                        </button>
-                        <input type="file" id="import-all-data-input" class="hidden" accept=".json">
-                        <label for="import-all-data-input" class="flex-1 inline-flex items-center justify-center px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-md shadow-sm hover:bg-blue-700 cursor-pointer">
-                            <i data-lucide="upload" class="w-4 h-4 mr-2"></i>가져오기 (JSON)
-                        </label>
-                    </div>
-                </div>
-                <!-- 프롬프트 템플릿 -->
-                <div>
-                    <label for="prompt-template-input" class="block text-sm font-medium text-slate-700 mb-1">프롬프트 템플릿</label>
-                    <p class="text-xs text-slate-500 mb-2">`{{주제}}` 및 `{{데이터}}` 치환자를 사용하세요.</p>
-                    <textarea id="prompt-template-input" rows="12" class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
-                </div>
-            </div>
-            <footer class="flex justify-end p-4 bg-slate-50 border-t">
-                <button id="save-settings-button" class="px-5 py-2 bg-blue-600 text-white font-semibold rounded-md shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                    저장하기
-                </button>
-            </footer>
+          <hr class="my-4">
+          
+          <!-- API 키 관리 -->
+          <h3 class="text-lg font-semibold mb-3">Gemini API 키 관리</h3>
+          <div class="flex space-x-2 mb-4">
+            <input type="password" id="api-key-input" placeholder="새 Gemini API 키" class="flex-grow p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition">
+            <button id="add-key-button" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 shadow-sm hover:shadow-md transition">추가</button>
+          </div>
+          <div id="api-keys-list" class="space-y-2"></div>
         </div>
-    </div>
 
-    <!-- V-06: 저장된 글 상세 뷰 (모달) -->
-    <div id="post-detail-modal" class="modal-backdrop fixed inset-0 z-50 flex items-center justify-center p-4 hidden">
-        <div class="bg-white w-full max-w-3xl h-[90vh] flex flex-col rounded-lg shadow-xl overflow-hidden" role="dialog" aria-modal="true" aria-labelledby="post-detail-title">
-            <header class="flex justify-between items-center p-4 border-b flex-shrink-0">
-                <button id="close-detail-button" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="목록으로 돌아가기">
-                    <i data-lucide="arrow-left" class="w-5 h-5"></i>
-                </button>
-                <h2 id="post-detail-title" class="text-lg font-semibold truncate px-4">...</h2>
-                <div class="flex space-x-2">
-                    <button id="copy-post-button" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="본문 복사하기">
-                        <i data-lucide="copy" class="w-5 h-5"></i>
-                    </button>
-                    <button id="delete-post-button" class="p-2 rounded-full text-red-500 hover:bg-red-100" aria-label="글 삭제하기">
-                        <i data-lucide="trash-2" class="w-5 h-5"></i>
-                    </button>
-                </div>
-            </header>
-            <div class="p-6 space-y-4 overflow-y-auto">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">주제</label>
-                    <textarea id="detail-topic" rows="1" readonly class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm"></textarea>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">사용된 데이터 (XML 형식)</label>
-                    <textarea id="detail-data" rows="4" readonly class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm"></textarea>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">생성된 글</label>
-                    <textarea id="detail-result" rows="20" readonly class="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm"></textarea>
-                </div>
-            </div>
+        <!-- 2-3. 기본 템플릿 관리 -->
+        <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-1">
+          <h2 class="text-xl font-semibold mb-4">기본 템플릿 관리</h2>
+          <div class="space-y-4">
+            <input type="text" id="template-name" placeholder="템플릿 이름" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition">
+            <textarea id="template-content" rows="8" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition" placeholder="변수: {주제}, {자료}"></textarea>
+            <input type="hidden" id="template-id-hidden">
+            <button id="save-template-button" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-700 shadow-sm hover:shadow-md transition">저장/새로 만들기</button>
+          </div>
+          <h3 class="text-lg font-semibold mt-6 mb-2">저장된 템플릿</h3>
+          <div id="templates-list" class="space-y-2"></div>
         </div>
+        
+        <!-- 2-4. 후속 작업 템플릿 (단일) -->
+        <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-1">
+          <h2 class="text-xl font-semibold mb-4">후속 작업 템플릿 (단일)</h2>
+          <p class="text-sm text-gray-600 mb-4">여기에 저장된 템플릿이 모든 글의 후속 작업으로 자동 사용됩니다.</p>
+          <div class="space-y-4">
+            <input type="text" id="followup-template-name-single" placeholder="후속 작업 이름 (예: 도표 요약)" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition">
+            <textarea id="followup-template-content-single" rows="8" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition" placeholder="필수 변수: {글}
+예: 다음 {글}을 마크다운 테이블로 요약해줘."></textarea>
+            <button id="save-followup-template-single-button" class="w-full bg-purple-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-purple-700 shadow-sm hover:shadow-md transition">단일 후속 템플릿 저장</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 하단 작업 푸터 -->
+  <div id="job-footer-bar" class="flex items-center justify-between">
+    <div class="flex items-center">
+      <span class="text-sm font-medium mr-4">작업 현황</span>
+      <div id="processing-list" class="flex items-center">
+      </div>
     </div>
+    <div id="queue-status-display" class="text-sm font-medium text-gray-300">
+    </div>
+  </div>
 
-    <!-- C-08: 토스트 알림 컨테이너 -->
-    <div id="toast-container" class="fixed bottom-6 right-6 z-50"></div>
+  <!-- 토스트 알림 컨테이너 -->
+  <div id="toast" class=""></div>
 
+  <!-- Firebase SDK 및 앱 초기화 -->
+  <script type="module">
+    // Firebase 모듈 임포트
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { 
+      getAuth, 
+      signInAnonymously, 
+      signInWithPopup, 
+      GoogleAuthProvider, 
+      signOut, 
+      onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { 
+      getFirestore, doc, addDoc, setDoc, updateDoc, deleteDoc, 
+      onSnapshot, collection, query, serverTimestamp, setLogLevel
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    <!-- v3.9: 로컬 DB 및 앱 로직 (Cover Gen 통합) -->
-    <script type="module">
-        
-        // --- 기본 프롬프트 템플릿 (V-02) ---
-        const DEFAULT_PROMPT_TEMPLATE = `당신은 전문 블로그 작가입니다. 다음 프롬프트 템플릿에 따라 블로그 글을 작성해주세요.
+    
+    /**
+     * ================================================================
+     * 클래스 1: UIManager - UI 상호작용 및 렌더링 전담
+     * (Axiom: Separation of Concerns)
+     * ================================================================
+     */
+    class UIManager {
+      constructor() {
+        this.elements = this.queryElements();
+        this.currentFilter = 'all';
+        this.currentSort = 'newest';
+      }
 
-[주제]: {{주제}}
-
-[데이터]:
-{{데이터}}
-
-위 내용을 바탕으로, SEO에 최적화된 매력적인 제목과 본문을 포함한 완결된 블로그 포스트를 Markdown 형식으로 작성해주세요.`;
-
-        // --- 기본 모델 ---
-        const DEFAULT_MODEL = "gemini-2.5-flash-preview-09-2025";
-        
-        // --- v3.6: Smart Rate Limiting & 429 Handling 로직 ---
-        let isDispatcherRunning = false; // 큐 디스패처 전역 잠금
-        const apiKeyLastUsed = new Map(); // Map<string(apiKey.key or ""), number(timestamp)> RPM 관리
-        const apiKeyCooldownUntil = new Map(); // Map<string(apiKey.key or ""), number(timestamp)> 429 관리
-        const processingJobs = new Set(); // Set<number(jobId)> 현재 API 호출 중인 작업 ID
-        
-        // 사용자 정의 오류 타입 (429 식별용)
-        class RateLimitError extends Error {
-            constructor(message, apiKey) {
-                super(message);
-                this.name = "RateLimitError";
-                this.apiKey = apiKey; // 어떤 키가 429를 받았는지 저장
-            }
-        }
-
-        // --- Dexie (IndexedDB) 초기화 ---
-        const db = new Dexie('aiBlogAssistantDB');
-        db.version(2).stores({
-            settings: 'id', 
-            dataFiles: '++id, name, isActive',
-            jobs: '++id, status, createdAt', 
-            posts: '++id, createdAt'
-        }).upgrade(tx => {
-            return tx.settings.toCollection().modify(setting => {
-                if (setting.apiKey && !setting.apiKeys) {
-                    setting.apiKeys = [{ name: '기본 키', key: setting.apiKey }];
-                } else if (!setting.apiKeys) {
-                     setting.apiKeys = [];
-                }
-                delete setting.apiKey; 
-            });
+      // 1. 모든 DOM 요소를 한 번에 찾아 객체로 관리
+      queryElements() {
+        const els = {};
+        const ids = [
+          'workspace-view', 'settings-view', 'nav-workspace', 'nav-settings',
+          'status-message', 'generate-button', 'generate-button-text', 'generate-spinner',
+          'user-id-display', 'modal-overlay', 'modal-container', 'modal-title',
+          'modal-content', 'modal-followup-wrapper', 'modal-followup-content',
+          'modal-close-btn', 'modal-close-footer-btn',
+          'workspace-input-panel', 'workspace-results-panel', 'nav-workspace-input', 'nav-workspace-results',
+          'job-footer-bar', 'processing-list', 'queue-status-display', 'toast',
+          'firebase-config-input', 'save-firebase-config-button',
+          'google-login-button', 'anonymous-login-button', 'logout-button',
+          'api-key-input', 'add-key-button', 'api-keys-list',
+          'template-select', 'file-input', 'topics-input',
+          'template-name', 'template-content', 'template-id-hidden', 'save-template-button', 'templates-list',
+          'followup-template-name-single', 'followup-template-content-single', 'save-followup-template-single-button',
+          'filter-followup-status', 'sort-creation-date', 'results-container'
+        ];
+        ids.forEach(id => {
+          els[id.replace(/-(\w)/g, (match, p1) => p1.toUpperCase())] = document.getElementById(id);
         });
-         db.version(1).stores({ 
-            settings: 'id',
-            dataFiles: '++id, name, isActive',
-            jobs: '++id, status, createdAt',
-            posts: '++id, createdAt'
-        });
+        return els;
+      }
 
+      // 2. 이벤트 리스너 바인딩
+      bindEvents(app) {
+        // 전역
+        window.app = app; // 전역에서 app 객체 접근 허용 (HTML onclick 등)
+        
+        // 뷰 전환
+        // this.elements.navWorkspace.onclick = () => this.showView('workspace'); // HTML onclick으로 대체
+        // this.elements.navSettings.onclick = () => this.showView('settings'); // HTML onclick으로 대체
+        // this.elements.navWorkspaceInput.onclick = () => this.showWorkspaceView('input'); // HTML onclick으로 대체
+        // this.elements.navWorkspaceResults.onclick = () => this.showWorkspaceView('results'); // HTML onclick으로 대체
 
-        // --- 앱 상태 변수 ---
-        let currentDataFileId = null;
-        let currentDetailPostId = null; 
+        // 설정
+        this.elements.saveFirebaseConfigButton.onclick = () => app.handleSaveConfig(this.elements.firebaseConfigInput.value);
+        this.elements.googleLoginButton.onclick = () => app.firebase.handleGoogleLogin();
+        this.elements.anonymousLoginButton.onclick = () => app.firebase.handleAnonymousLogin();
+        this.elements.logoutButton.onclick = () => app.firebase.handleLogout();
 
-        // --- DOM 요소 참조 ---
-        const tabs = { 
-            create: document.getElementById('tab-create'), 
-            cover: document.getElementById('tab-cover'), // v3.9
-            data: document.getElementById('tab-data'), 
-            progress: document.getElementById('tab-progress'), 
-            saved: document.getElementById('tab-saved') 
+        // API 키
+        this.elements.addKeyButton.onclick = () => {
+          const key = this.elements.apiKeyInput.value;
+          app.firebase.addApiKey(key).then(() => {
+            this.elements.apiKeyInput.value = '';
+          });
         };
-        const contents = { 
-            create: document.getElementById('content-create'), 
-            cover: document.getElementById('content-cover'), // v3.9
-            data: document.getElementById('content-data'), 
-            progress: document.getElementById('content-progress'), 
-            saved: document.getElementById('content-saved') 
+
+        // 기본 템플릿
+        this.elements.saveTemplateButton.onclick = () => {
+          const id = this.elements.templateIdHidden.value;
+          const name = this.elements.templateName.value;
+          const content = this.elements.templateContent.value;
+          app.firebase.saveTemplate(id, name, content).then(() => {
+            this.elements.templateIdHidden.value = '';
+            this.elements.templateName.value = '';
+            this.elements.templateContent.value = '';
+          });
         };
-        const dataCountEl = document.getElementById('data-count');
-        const progressCountEl = document.getElementById('progress-count');
-        const savedCountEl = document.getElementById('saved-count');
-        const openSettingsBtn = document.getElementById('open-settings-button');
-        const settingsModal = document.getElementById('settings-modal');
-        const closeSettingsBtn = document.getElementById('close-settings-button');
-        const saveSettingsBtn = document.getElementById('save-settings-button');
-        const modelSelectInput = document.getElementById('model-select-input');
-        const apiKeyNameInput = document.getElementById('api-key-name-input'); 
-        const apiKeyValueInput = document.getElementById('api-key-value-input'); 
-        const addApiKeyBtn = document.getElementById('add-api-key-button'); 
-        const apiKeyListDiv = document.getElementById('api-key-list'); 
-        const promptTemplateInput = document.getElementById('prompt-template-input');
-        const generateBtn = document.getElementById('generate-button');
-        const generateBtnText = document.getElementById('generate-button-text');
-        const topicInput = document.getElementById('topic-input');
-        const dataNewFileBtn = document.getElementById('data-new-file');
-        const dataUploadInput = document.getElementById('data-upload-file');
-        const dataFileList = document.getElementById('data-file-list');
-        const dataEditorFilename = document.getElementById('data-editor-filename');
-        const dataEditorContent = document.getElementById('data-editor-content');
-        const dataSaveFileBtn = document.getElementById('data-save-file');
-        const progressList = document.getElementById('progress-list');
-        const savedPostsList = document.getElementById('saved-posts-list');
-        const exportPostsBtn = document.getElementById('export-posts-button'); // v3.7
-        const postDetailModal = document.getElementById('post-detail-modal');
-        const closeDetailBtn = document.getElementById('close-detail-button');
-        const postDetailTitle = document.getElementById('post-detail-title');
-        const copyPostBtn = document.getElementById('copy-post-button');
-        const deletePostBtn = document.getElementById('delete-post-button');
-        const detailTopic = document.getElementById('detail-topic');
-        const detailData = document.getElementById('detail-data');
-        const detailResult = document.getElementById('detail-result');
-        const toastContainer = document.getElementById('toast-container');
-        const exportAllDataBtn = document.getElementById('export-all-data-button');
-        const importAllDataInput = document.getElementById('import-all-data-input');
 
-        // --- v3.9: 표지 생성기 DOM 요소 ---
-        const coverTitleInput = document.getElementById('cover-titleInput');
-        const coverUpdateButton = document.getElementById('cover-updateButton');
-        const coverSaveImageButton = document.getElementById('cover-saveImageButton');
-        const coverMainTitle = document.getElementById('cover-mainTitle');
-        const coverTitleContainer = document.getElementById('cover-title-container');
-        const bannerPreview = document.getElementById('banner-preview'); // 클립보드 복사용
+        // 후속 템플릿
+        this.elements.saveFollowupTemplateSingleButton.onclick = () => {
+          const name = this.elements.followupTemplateNameSingle.value;
+          const content = this.elements.followupTemplateContentSingle.value;
+          app.firebase.saveSingleFollowUpTemplate(name, content);
+        };
 
-        // --- 1. 로컬 DB 초기화 및 데이터 로드 ---
-        async function initializeLocalDB() {
-            try {
-                await db.open();
-                console.log("IndexedDB (Dexie)가 성공적으로 열렸습니다.");
-                await loadAndRenderSettings(); 
-                await loadAndRenderDataFiles();
-                await loadAndRenderProgressList();
-                await loadAndRenderPostsList();
-                const initialJobsCount = await db.jobs.where('status').equals('queued').count();
-                 if (initialJobsCount > 0) {
-                     console.log(`초기화: 대기 중인 작업 ${initialJobsCount}개 발견. 큐 처리 시작.`);
-                     triggerProcessJobQueue();
-                 }
-            } catch (error) {
-                console.error("IndexedDB 초기화 실패:", error);
-                showToast("로컬 데이터베이스 초기화에 실패했습니다.", true);
-            }
+        // 워크스페이스
+        this.elements.fileInput.onchange = (e) => app.handleFileSelect(e);
+        this.elements.generateButton.onclick = () => {
+          const templateId = this.elements.templateSelect.value;
+          const topics = this.elements.topicsInput.value;
+          app.handleGenerateClick(templateId, topics);
+        };
+        this.elements.topicsInput.oninput = () => {
+          if (this.elements.topicsInput.value === '') {
+            this.setButtonLoading(false);
+          }
+        };
+
+
+        // 결과 뷰
+        this.elements.filterFollowupStatus.onchange = (e) => {
+          this.currentFilter = e.target.value;
+          app.renderLocalData();
+        };
+        this.elements.sortCreationDate.onchange = (e) => {
+          this.currentSort = e.target.value;
+          app.renderLocalData();
+        };
+
+        // 모달
+        this.elements.modalOverlay.onclick = () => this.closeModal();
+        this.elements.modalCloseBtn.onclick = () => this.closeModal();
+        this.elements.modalCloseFooterBtn.onclick = () => this.closeModal();
+      }
+
+      // 3. UI 상태 변경 메서드
+      showView(viewName) {
+        this.elements.workspaceView.classList.toggle('hidden', viewName !== 'workspace');
+        this.elements.settingsView.classList.toggle('hidden', viewName === 'workspace');
+        ['navWorkspace', 'navSettings'].forEach(navId => {
+          const el = this.elements[navId];
+          const isActive = (navId === 'navWorkspace' && viewName === 'workspace') || (navId === 'navSettings' && viewName !== 'workspace');
+          el.classList.toggle('border-blue-600', isActive);
+          el.classList.toggle('text-blue-600', isActive);
+          el.classList.toggle('border-transparent', !isActive);
+          el.classList.toggle('text-gray-500', !isActive);
+        });
+      }
+
+      showWorkspaceView(viewName) {
+        this.elements.workspaceInputPanel.classList.toggle('hidden', viewName !== 'input');
+        this.elements.workspaceResultsPanel.classList.toggle('hidden', viewName === 'input');
+        ['navWorkspaceInput', 'navWorkspaceResults'].forEach(navId => {
+          const el = this.elements[navId];
+          const isActive = (navId === 'navWorkspaceInput' && viewName === 'input') || (navId === 'navWorkspaceResults' && viewName !== 'input');
+          el.classList.toggle('border-blue-600', isActive);
+          el.classList.toggle('text-blue-600', isActive);
+          el.classList.toggle('border-transparent', !isActive);
+          el.classList.toggle('text-gray-500', !isActive);
+        });
+      }
+
+      updateLoginStatus(user) {
+        if (user) {
+          this.elements.userIdDisplay.textContent = user.isAnonymous ? `익명 로그인됨 (ID: ${user.uid.substring(0, 6)}...)` : `로그인됨: ${user.email}`;
+          this.elements.googleLoginButton.classList.add('hidden');
+          this.elements.anonymousLoginButton.classList.add('hidden');
+          this.elements.logoutButton.classList.remove('hidden');
+          this.elements.navWorkspace.disabled = false;
+          this.elements.navWorkspace.classList.remove('opacity-50', 'cursor-not-allowed');
+        } else {
+          this.elements.userIdDisplay.textContent = "로그아웃 상태입니다. '설정' 탭에서 로그인하세요.";
+          this.elements.googleLoginButton.classList.remove('hidden');
+          this.elements.anonymousLoginButton.classList.remove('hidden');
+          this.elements.logoutButton.classList.add('hidden');
+          this.elements.navWorkspace.disabled = true;
+          this.elements.navWorkspace.classList.add('opacity-50', 'cursor-not-allowed');
+          this.showView('settings');
         }
+      }
 
-        // --- 2. 렌더링 및 데이터 로드 함수 ---
-        async function loadAndRenderSettings() {
-            let settings = await db.settings.get('config');
-            if (!settings) {
-                settings = { id: 'config', apiKeys: [], modelName: DEFAULT_MODEL, promptTemplate: DEFAULT_PROMPT_TEMPLATE };
-                await db.settings.put(settings);
-            }
-            modelSelectInput.value = settings.modelName || DEFAULT_MODEL;
-            promptTemplateInput.value = settings.promptTemplate || DEFAULT_PROMPT_TEMPLATE;
-            renderApiKeyList(settings.apiKeys || []);
+      showToast(message, type = 'success') {
+        const toast = this.elements.toast;
+        if (!toast) return;
+        toast.textContent = message;
+        toast.className = type;
+        toast.classList.add('show');
+        setTimeout(() => { toast.classList.remove('show'); }, 3000);
+      }
+
+      setButtonLoading(isLoading, text = "생성하기") {
+        this.elements.generateButtonText.textContent = text;
+        this.elements.generateSpinner.classList.toggle('hidden', !isLoading);
+      }
+
+      updateStatusMessage(message) {
+        this.elements.statusMessage.textContent = message;
+      }
+      
+      setFirebaseConfigInput(config) {
+        if (!config) return;
+        try {
+          this.elements.firebaseConfigInput.value = JSON.stringify(JSON.parse(config), null, 2);
+        } catch(e) { 
+          this.elements.firebaseConfigInput.value = config;
         }
+      }
+      
+      clearTopicsInput() {
+        this.elements.topicsInput.value = '';
+      }
 
-        function renderApiKeyList(apiKeys = []) {
-            apiKeyListDiv.innerHTML = ''; 
-            if (apiKeys.length === 0) {
-                apiKeyListDiv.innerHTML = `<p class="text-sm text-slate-500 text-center">등록된 API 키가 없습니다.</p>`;
-                return;
-            }
-            apiKeys.forEach((keyObj, index) => {
-                const item = document.createElement('div');
-                item.className = 'api-key-item';
-                const maskedKey = keyObj.key.length > 8 ? `${keyObj.key.substring(0, 4)}...${keyObj.key.substring(keyObj.key.length - 4)}` : keyObj.key;
-                item.innerHTML = `
-                    <div><span class="api-key-name">${escapeHTML(keyObj.name)}</span> <span class="api-key-value">(${maskedKey})</span></div>
-                    <button data-index="${index}" data-action="delete-key" class="p-1 rounded-full text-red-500 hover:bg-red-100" aria-label="API 키 삭제"><i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i></button>`;
-                apiKeyListDiv.appendChild(item);
-            });
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-        }
+      // 4. 렌더링 메서드
+      renderApiKeys(apiKeys = []) {
+        const list = this.elements.apiKeysList;
+        list.innerHTML = '';
+        if (apiKeys.length === 0) { list.innerHTML = '<p class="text-gray-500">추가된 API 키가 없습니다.</p>'; return; }
+        
+        const sortedKeys = [...apiKeys].sort((a, b) => (a.createdAt?.toMillis() || 0) - (b.createdAt?.toMillis() || 0));
+        
+        sortedKeys.forEach(key => {
+          let s = { color: 'text-gray-500', text: key.status || '알 수 없음' };
+          if (key.status === 'ready') { s = { color: 'text-green-500', text: '준비' }; }
+          if (key.status === 'busy') { s = { color: 'text-yellow-600', text: '사용중' }; }
+          if (key.status === 'cooldown') { s = { color: 'text-blue-500', text: '쿨다운' }; }
+          if (key.status === 'rate_limited') { s = { color: 'text-red-500', text: `대기중 (Lv: ${key.backoffLevel || 1})` }; }
+          
+          const el = this.createDOMElement('div', 'flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded-md', `
+            <span class="font-mono text-sm"><span class="font-bold ${s.color}">[${s.text}]</span> ...${key.key.slice(-4)}</span>
+            <button class="icon-btn icon-btn-danger" title="삭제"><i class="bi bi-trash"></i></button>
+          `);
+          el.querySelector('button').onclick = () => window.app.firebase.deleteApiKey(key.id);
+          list.appendChild(el);
+        });
+      }
 
-        async function loadAndRenderDataFiles() {
-            const files = await db.dataFiles.toArray();
-            if (!files.some(f => f.name === 'global_data.txt')) {
-                await db.dataFiles.add({ name: 'global_data.txt', content: '모든 프롬프트에 공통으로 적용될 톤앤매너, 지시어 등을 여기에 입력하세요.', isActive: true, isGlobal: true });
-                const updatedFiles = await db.dataFiles.toArray();
-                renderDataFileList(updatedFiles); return;
-            }
-            renderDataFileList(files);
+      renderTemplates(templates = []) {
+        const list = this.elements.templatesList;
+        const select = this.elements.templateSelect;
+        list.innerHTML = ''; select.innerHTML = '';
+        
+        if (templates.length === 0) {
+          list.innerHTML = '<p class="text-gray-500">템플릿 없음</p>';
+          select.innerHTML = '<option>템플릿 없음</option>';
+          return;
         }
         
-        function renderDataFileList(files) {
-             dataFileList.innerHTML = "";
-             files.sort((a, b) => { if (a.isGlobal) return -1; if (b.isGlobal) return 1; return a.name.localeCompare(b.name); });
-             if (files.length === 0) { dataFileList.innerHTML = `<p class="text-slate-500 text-center text-sm p-4">파일이 없습니다.</p>`; } 
-             else {
-                 files.forEach(file => {
-                     const fileEl = document.createElement('div');
-                     fileEl.className = `data-file-item p-3 border-l-4 cursor-pointer hover:bg-slate-50 flex justify-between items-center ${file.id === currentDataFileId ? 'selected' : ''}`;
-                     fileEl.setAttribute('data-id', file.id); fileEl.setAttribute('data-active', file.isActive.toString());
-                     fileEl.innerHTML = `
-                         <div class="flex-1 min-w-0" data-action="select">
-                             <span class="font-medium text-slate-800 truncate block">${escapeHTML(file.name)}</span>
-                             <span class="text-xs text-slate-500">${file.isGlobal ? '전역 데이터' : '개별 데이터'}</span>
-                         </div>
-                         <div class="flex items-center space-x-2 ml-2">
-                             <label class="switch" data-action="toggle" aria-label="활성화 토글">
-                                 <input type="checkbox" class="pointer-events-none" ${file.isActive ? 'checked' : ''}>
-                                 <span class="slider pointer-events-none"></span>
-                             </label>
-                             <button data-action="delete" class="p-1 rounded-full text-red-500 hover:bg-red-100 ${file.isGlobal ? 'hidden' : ''}" aria-label="파일 삭제">
-                                 <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
-                             </button>
-                         </div>`;
-                     dataFileList.appendChild(fileEl);
-                 });
-             }
-             const activeCount = files.filter(f => f.isActive).length;
-             dataCountEl.textContent = `(${activeCount})`; dataCountEl.style.display = activeCount > 0 ? 'inline-block' : 'none';
-             if (typeof lucide !== 'undefined') lucide.createIcons();
-        }
-
-        async function loadAndRenderProgressList() {
-            const jobs = await db.jobs.filter(job => ['queued', 'processing', 'failed'].includes(job.status)).sortBy('createdAt');
-            const count = jobs.length;
-            progressCountEl.textContent = `(${count})`; progressCountEl.style.display = count > 0 ? 'inline-block' : 'none';
-            if (count === 0) { progressList.innerHTML = `<p class="text-slate-500 text-center py-6">진행 중인 작업이 없습니다.</p>`; return; }
-            progressList.innerHTML = "";
-            jobs.forEach(job => {
-                const jobElement = document.createElement('div');
-                jobElement.className = "p-4 bg-white border border-slate-200 rounded-lg shadow-sm flex justify-between items-center";
-                jobElement.setAttribute('data-job-id', job.id);
-                let statusHtml = '';
-                switch (job.status) {
-                    case 'processing': statusHtml = `<div class="flex items-center space-x-2 text-blue-600"><div class="spinner w-4 h-4 rounded-full"></div><span>처리 중...</span></div>`; break;
-                    case 'failed': statusHtml = `<div class="flex-1 min-w-0"><div class="flex items-center space-x-2 text-red-600"><i data-lucide="alert-circle" class="w-4 h-4"></i><span>오류</span></div><p class="text-xs text-slate-500 truncate" title="${escapeHTML(job.error)}">${escapeHTML(job.error)}</p></div><button data-action="retry" data-id="${job.id}" class="ml-4 p-2 rounded-full hover:bg-slate-100 text-slate-600" aria-label="재시도"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>`; break;
-                    default: statusHtml = `<div class="flex items-center space-x-2 text-slate-500"><i data-lucide="clock" class="w-4 h-4"></i><span>대기 중</span></div>`; break;
-                }
-                 jobElement.innerHTML = `
-                     <div class="flex-1 min-w-0 mr-4">
-                         <h3 class="font-semibold text-slate-800 truncate" title="${escapeHTML(job.topic)}">${escapeHTML(job.topic)}</h3>
-                         <div class="text-sm mt-1 flex items-center">
-                             ${statusHtml.includes('data-action="retry"') ? statusHtml : `<div class="flex-1">${statusHtml}</div>`}
-                         </div>
-                     </div>
-                     ${!statusHtml.includes('data-action="retry"') ? `<button data-action="delete-job" data-id="${job.id}" class="p-2 rounded-full text-red-500 hover:bg-red-100" aria-label="작업 삭제"><i data-lucide="trash-2" class="w-4 h-4"></i></button>` : ''}`;
-                progressList.appendChild(jobElement);
-            });
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-        }
-
-        // V-04: 저장된 글 로드 및 렌더링 (v3.9: 표지 생성 버튼 추가)
-        async function loadAndRenderPostsList() {
-            const posts = await db.posts.orderBy('createdAt').reverse().toArray();
-            const count = posts.length;
-            savedCountEl.textContent = `(${count})`; savedCountEl.style.display = count > 0 ? 'inline-block' : 'none';
-            exportPostsBtn.disabled = (count === 0); 
-            if (count === 0) { savedPostsList.innerHTML = `<p class="text-slate-500 text-center py-6">저장된 글이 없습니다.</p>`; return; }
-            savedPostsList.innerHTML = "";
-            posts.forEach(post => {
-                const postDate = new Date(post.createdAt).toLocaleString('ko-KR');
-                const postElement = document.createElement('div');
-                postElement.className = "post-item p-4 bg-white border border-slate-200 rounded-lg shadow-sm hover:shadow-md hover:border-slate-300 flex justify-between items-center transition-all";
-                postElement.innerHTML = `
-                    <div class="flex-1 min-w-0 cursor-pointer" data-action="view-detail" data-id="${post.id}">
-                        <h3 class="font-semibold text-slate-800 truncate pointer-events-none" title="${escapeHTML(post.title)}">${escapeHTML(post.title || "제목 없음")}</h3>
-                        <p class="text-sm text-slate-500 pointer-events-none">생성일: ${postDate}</p>
-                    </div>
-                    <div class="flex items-center space-x-1 ml-2"> 
-                         <!-- v3.9: 표지 생성 버튼 추가 -->
-                         <button data-action="create-cover" data-id="${post.id}" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="표지 생성하기">
-                            <i data-lucide="image" class="w-4 h-4 pointer-events-none"></i>
-                         </button>
-                         <button data-action="copy-list-item" data-id="${post.id}" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-700" aria-label="본문 복사하기">
-                            <i data-lucide="copy" class="w-4 h-4 pointer-events-none"></i>
-                         </button>
-                         <button data-action="delete-list-item" data-id="${post.id}" class="p-2 rounded-full text-red-500 hover:bg-red-100" aria-label="글 삭제하기">
-                            <i data-lucide="trash-2" class="w-4 h-4 pointer-events-none"></i>
-                         </button>
-                         <i data-lucide="chevron-right" class="w-5 h-5 text-slate-400 pointer-events-none" data-action="view-detail" data-id="${post.id}"></i>
-                    </div>`;
-                savedPostsList.appendChild(postElement);
-            });
-            if (typeof lucide !== 'undefined') lucide.createIcons();
-        }
-
-
-        // --- 3. 핵심 로직 ---
-
-        // V-01: '생성 요청' 버튼 핸들러
-        async function handleGenerateJobs() {
-            const topicsRaw = topicInput.value.trim();
-            if (!topicsRaw) { showToast("주제를 한 줄 이상 입력해주세요.", true); return; }
-            const topics = topicsRaw.split('\n').filter(t => t.trim() !== '');
-            if (topics.length === 0) { showToast("유효한 주제가 없습니다.", true); return; }
-            try {
-                const newJobs = topics.map(topic => ({ topic: topic.trim(), status: 'queued', createdAt: new Date(), error: null }));
-                await db.jobs.bulkAdd(newJobs); 
-                showToast(`${topics.length}개의 작업을 큐에 추가했습니다.`, false);
-                topicInput.value = ""; updateGenerateButton(0);
-                await loadAndRenderProgressList(); 
-                triggerProcessJobQueue(); 
-            } catch (error) { console.error("작업 추가 오류:", error); showToast("작업 큐 추가 중 오류 발생", true); }
-        }
-
-        // v3.5: 큐 처리 시작 함수 (중복 실행 방지)
-        function triggerProcessJobQueue() { if (!isDispatcherRunning) { processJobQueue(); } else { console.log("Dispatcher가 이미 실행 중..."); } }
-
-        // v3.6: Smart Rate-Limited 큐 디스패처 (Handle 429 Error)
-        async function processJobQueue() {
-            if (isDispatcherRunning) return; 
-            console.log("Dispatcher 시작..."); isDispatcherRunning = true;
-            try {
-                while (true) {
-                     const queuedJobs = await db.jobs.filter(job => job.status === 'queued' && !processingJobs.has(job.id)).sortBy('createdAt');
-                    if (queuedJobs.length === 0) {
-                         const currentlyProcessing = processingJobs.size;
-                          if (currentlyProcessing > 0) { console.log(`처리할 새 작업 없음. 현재 ${currentlyProcessing}개 처리 중... 대기.`); await sleep(2000); continue; } 
-                         else { console.log("처리할 작업 & 진행 중 작업 없음. Dispatcher 중지."); break; }
-                    }
-                    const job = queuedJobs[0]; 
-                    const currentSettings = await db.settings.get('config');
-                    let targetModel = currentSettings?.modelName || DEFAULT_MODEL;
-                    const apiKeys = currentSettings?.apiKeys || [];
-                    let modelForThisJob = targetModel;
-                    if (targetModel.includes("pro") && apiKeys.length === 0) { console.warn(`[Job ${job.id}] API 키 없어 '${targetModel}' 대신 'Flash' 사용.`); modelForThisJob = DEFAULT_MODEL; }
-                    const requiredDelay = getDelayForModel(modelForThisJob); 
-                    const now = Date.now();
-                    let availableKeyInfo = null; let earliestNextAvailableTime = Infinity;
-                    const potentialKeys = [...apiKeys.map((k, idx) => ({ ...k, index: idx })), { key: "", name: "Canvas 기본 키", index: -1 }];
-                    for (const keyInfo of potentialKeys) {
-                        if (modelForThisJob.includes("pro") && keyInfo.key === "") continue; 
-                        const lastUsed = apiKeyLastUsed.get(keyInfo.key) || 0;
-                        const cooldownUntil = apiKeyCooldownUntil.get(keyInfo.key) || 0;
-                        const timeUntilNextAvailable = Math.max(0, (lastUsed + requiredDelay) - now);
-                        const timeUntilCooldownEnd = Math.max(0, cooldownUntil - now);
-                        if (timeUntilNextAvailable === 0 && timeUntilCooldownEnd === 0) { availableKeyInfo = keyInfo; break; } 
-                        else { earliestNextAvailableTime = Math.min(earliestNextAvailableTime, now + Math.max(timeUntilNextAvailable, timeUntilCooldownEnd)); }
-                    }
-                    if (availableKeyInfo) {
-                        console.log(`[Job ${job.id}] 사용 키: ${availableKeyInfo.name}. 실행.`);
-                        processingJobs.add(job.id); 
-                        apiKeyLastUsed.set(availableKeyInfo.key, now); 
-                        executeJob(job, currentSettings, availableKeyInfo.key, modelForThisJob).catch(err => { console.error(`[Job ${job.id}] executeJob 예상치 못한 오류:`, err); }).finally(() => {}); // finally 로직은 executeJob 자체에서 처리
-                        await sleep(100); continue; 
-                    } else {
-                        const waitTime = Math.max(100, earliestNextAvailableTime - now); 
-                        console.log(`[Job ${job.id}] 사용 가능한 키 없음. ${Math.round(waitTime/1000)}초 후 재시도...`);
-                        await sleep(waitTime);
-                    }
-                } 
-            } catch (error) { console.error("Dispatcher 루프 오류:", error); showToast("작업 큐 처리에 심각한 오류 발생.", true); } 
-            finally {
-                isDispatcherRunning = false; console.log("Dispatcher 중지됨.");
-                const remainingJobs = await db.jobs.where('status').equals('queued').count();
-                if (remainingJobs > 0) { console.log("대기 작업 존재. 5초 후 재시작 시도."); setTimeout(triggerProcessJobQueue, 5000); }
-            }
-        }
-
-        // v3.7: '작업 큐' 워커 (Advanced Text Processing 추가)
-        async function executeJob(job, settings, chosenApiKey, actualModel) {
-            let generatedDataString = ""; 
-            try {
-                await db.jobs.update(job.id, { status: 'processing', error: null }); 
-                await loadAndRenderProgressList(); 
-
-                const activeFiles = await db.dataFiles.where('isActive').equals(1).toArray();
-                generatedDataString = activeFiles.map(file => {
-                    const tagName = file.name.replace(/\.txt$/i, '').replace(/[^a-zA-Z0-9_]/g, '_');
-                    const safeTagName = tagName.match(/^[a-zA-Z_]/) ? tagName : `_${tagName}`;
-                    return `<${safeTagName}>\n${file.content}\n</${safeTagName}>`;
-                }).join('\n\n');
-                
-                const promptTemplate = settings?.promptTemplate || DEFAULT_PROMPT_TEMPLATE;
-                const userPrompt = promptTemplate.replace('{{주제}}', job.topic).replace('{{데이터}}', generatedDataString || "<!-- 데이터 없음 -->");
-
-                const generatedText = await callGeminiAPIWithRetry(userPrompt, actualModel, chosenApiKey);
-                
-                // v3.7: Advanced Text Processing
-                const finalText = processGeneratedText(generatedText);
-
-                await db.posts.add({
-                    title: job.topic, 
-                    topic: job.topic,
-                    data: generatedDataString,
-                    result: finalText, // 최종 처리된 텍스트 저장
-                    createdAt: new Date()
-                });
-                
-                await db.jobs.delete(job.id);
-                console.log(`[Job ${job.id}] 작업 성공 및 삭제: ${job.topic}`);
-
-            } catch (error) {
-                 if (error instanceof RateLimitError) {
-                     const cooldownDuration = 61 * 1000; 
-                     const cooldownEndTime = Date.now() + cooldownDuration;
-                     apiKeyCooldownUntil.set(error.apiKey, cooldownEndTime);
-                     console.warn(`[Job ${job.id}] Rate limit (429). 키 ${error.apiKey ? `"${error.apiKey.substring(0,4)}..."` : '기본 키'} ${Math.round(cooldownDuration/1000)}초 휴면.`);
-                     await db.jobs.update(job.id, { status: 'queued', error: `API Rate Limit 초과 (키 휴면)` });
-                 } else {
-                     console.error(`[Job ${job.id}] 작업 실패: ${job.topic}`, error);
-                     await db.jobs.update(job.id, { status: 'failed', error: error.message || "알 수 없는 오류 발생" });
-                 }
-            } finally {
-                processingJobs.delete(job.id); 
-                await loadAndRenderProgressList(); 
-                await loadAndRenderPostsList(); 
-                triggerProcessJobQueue(); 
-            }
-        }
-
-        // --- v3.7: Advanced Text Processing Functions ---
-
-        // 메인 처리 함수
-        function processGeneratedText(rawText) {
-            console.log("[Text Processing] 시작...");
-            let cleanedText = cleanText(rawText);
-            console.log("[Text Processing] 1단계 Clean 완료.");
-            let lines = cleanedText.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-            const initialLineCount = lines.length;
-            lines = removeDuplicateBlocks(lines); 
-            const removedLineCount = initialLineCount - lines.length;
-            console.log(`[Text Processing] 2단계 Duplicates 완료. ${removedLineCount}줄 제거됨.`);
-            let finalText = formatFinalOutput(lines);
-            console.log("[Text Processing] 3단계 Format 완료.");
-            return finalText.trim(); 
-        }
-
-        // 1단계: HTML, Markdown, 사용자 정의 규칙 제거 및 공백 정규화
-        function cleanText(text) {
-            let cleaned = text;
-            const entities = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'", '&nbsp;': ' ' };
-            cleaned = cleaned.replace(/&amp;|&lt;|&gt;|&quot;|&#39;|&nbsp;/g, match => entities[match]);
-            cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
-            cleaned = cleaned.replace(/<[^>]*>/g, '');
-            cleaned = cleaned.replace(/!\[.*?\]\(.*?\)/g, ''); 
-            cleaned = cleaned.replace(/\[(.*?)\]\(.*?\)/g, '$1'); 
-            cleaned = cleaned.replace(/(\*\*|__)(.*?)\1/g, '$2'); 
-            cleaned = cleaned.replace(/(\*|_)(.*?)\1/g, '$2'); 
-            cleaned = cleaned.replace(/`(.*?)`/g, '$1'); 
-            cleaned = cleaned.replace(/^#{1,6}\s+/gm, ''); 
-            cleaned = cleaned.replace(/^[\*\-\+]\s+/gm, ''); 
-            cleaned = cleaned.replace(/^\d+\.\s+/gm, ''); 
-            cleaned = cleaned.replace(/^>\s+/gm, ''); 
-            cleaned = cleaned.replace(/\[\d+\]/g, ''); 
-            cleaned = cleaned.replace(/대표사진 삭제링크AI 활용 설정/g, '');
-            cleaned = cleaned.replace(/사진 설명을 입력하세요/g, '');
-            cleaned = cleaned.replace(/김무관법무사사무소/g, ''); 
-            cleaned = cleaned.replace(/^\s*#.*/gm, ''); 
-            cleaned = cleaned.replace(/[\s\u00A0\u1680\u2000-\u200A\u202F\u205F\u3000\uFEFF]+/g, ' ');
-            return cleaned;
-        }
+        const sorted = [...templates].sort((a, b) => a.name.localeCompare(b.name));
         
-        // 2단계: 중복 블록 제거 (롤링 해시)
-        function removeDuplicateBlocks(lines, minLines = 5, minRepeats = 3) {
-            if (!lines || lines.length < minLines * minRepeats) { return lines; }
-            const prime = 101; const base = 256; 
-            const calculateHash = (blockLines) => { let hash = 0; const blockText = blockLines.join('\n'); for (let i = 0; i < blockText.length; i++) { hash = (hash * base + blockText.charCodeAt(i)) % prime; } return hash; };
-            const linesToRemove = new Set(); 
-            for (let blockSize = Math.min(20, lines.length -1); blockSize >= minLines; blockSize--) {
-                const hashes = new Map(); 
-                for (let i = 0; i <= lines.length - blockSize; i++) {
-                    let skip = false; for (let j = 0; j < blockSize; j++) { if (linesToRemove.has(i + j)) { skip = true; break; } } if (skip) continue;
-                    const block = lines.slice(i, i + blockSize); const hash = calculateHash(block);
-                    if (!hashes.has(hash)) { hashes.set(hash, []); } hashes.get(hash).push({ startIndex: i, lines: block }); 
-                }
-                for (const [hash, blocks] of hashes.entries()) {
-                     if (blocks.length < minRepeats) continue;
-                     const groups = {}; blocks.forEach(blockInfo => { const blockKey = blockInfo.lines.join('\n'); if (!groups[blockKey]) groups[blockKey] = []; groups[blockKey].push(blockInfo.startIndex); });
-                     for (const blockKey in groups) {
-                         if (groups[blockKey].length >= minRepeats) { console.log(`[Text Processing] 중복 블록 발견 (크기: ${blockSize}, 반복: ${groups[blockKey].length}회)`); groups[blockKey].forEach(startIndex => { for (let k = 0; k < blockSize; k++) { linesToRemove.add(startIndex + k); } }); }
-                     }
-                }
-            }
-            return lines.filter((_, index) => !linesToRemove.has(index));
+        sorted.forEach(t => {
+          select.innerHTML += `<option value="${t.id}">${t.name}</option>`;
+          const el = this.createDOMElement('div', 'flex items-center justify-between p-2 bg-gray-50 border border-gray-200 rounded-md', `
+            <span class="font-medium text-gray-700">${t.name}</span>
+            <div class="space-x-2">
+              <button class="icon-btn" title="수정"><i class="bi bi-pencil-square"></i></button>
+              <button class="icon-btn icon-btn-danger" title="삭제"><i class="bi bi-trash"></i></button>
+            </div>
+          `);
+          el.querySelector('button.icon-btn').onclick = () => this.loadTemplateForEdit(t);
+          el.querySelector('button.icon-btn-danger').onclick = () => window.app.firebase.deleteTemplate(t.id);
+          list.appendChild(el);
+        });
+      }
+      
+      loadTemplateForEdit(template) {
+        this.elements.templateIdHidden.value = template.id;
+        this.elements.templateName.value = template.name;
+        this.elements.templateContent.value = template.content;
+        this.showToast("템플릿 불러옴.", "info");
+      }
+
+      renderFollowUpTemplate(template) {
+        if (template) {
+          this.elements.followupTemplateNameSingle.value = template.name;
+          this.elements.followupTemplateContentSingle.value = template.content;
+        } else {
+          this.elements.followupTemplateNameSingle.value = '';
+          this.elements.followupTemplateContentSingle.value = '';
         }
+      }
 
-        // 3단계: 최종 출력 서식 적용
-        function formatFinalOutput(lines) {
-            if (!lines || lines.length === 0) return "";
-            const formattedLines = [];
-            lines.forEach(line => { const trimmedLine = line.trim(); if (trimmedLine.length > 0) { let prefix = ""; if (trimmedLine.endsWith('?')) { prefix = "\n"; } formattedLines.push(prefix + trimmedLine); } });
-            return formattedLines.join('\n\n'); 
-        }
+      renderResults(posts = [], hasFollowUpTemplate) {
+        const container = this.elements.resultsContainer;
+        container.innerHTML = '';
 
-        // V-03: '재시도' 및 '작업 삭제' 버튼 핸들러 (이벤트 위임)
-        async function handleProgressListClick(event) {
-            const button = event.target.closest('button[data-id]'); if (!button) return;
-            const jobId = parseInt(button.getAttribute('data-id'), 10); if (!jobId) return;
-            const action = button.getAttribute('data-action');
-            if (action === 'retry') { try { await db.jobs.update(jobId, { status: 'queued', error: null }); showToast("재시도.", false); await loadAndRenderProgressList(); triggerProcessJobQueue(); } catch (error) { console.error("재시도 오류:", error); showToast("재시도 설정 오류.", true); } } 
-            else if (action === 'delete-job') { if (confirm("작업 삭제?")) { try { await db.jobs.delete(jobId); processingJobs.delete(jobId); showToast("삭제됨.", false); await loadAndRenderProgressList(); } catch (error) { console.error("작업 삭제 오류:", error); showToast("작업 삭제 오류.", true); } } }
-        }
-
-        // v3.6: Gemini API 호출 (429 오류 처리 추가)
-        async function callGeminiAPIWithRetry(prompt, modelName, apiKeyForCall, maxRetries = 3) {
-            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKeyForCall}`;
-            const payload = { contents: [{ "role": "user", "parts": [{ "text": prompt }] }], safetySettings: [ { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_MEDIUM_AND_ABOVE" }, ] };
-            for (let i = 0; i < maxRetries; i++) {
-                let response;
-                try {
-                    response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-                    if (response.status === 429) { throw new RateLimitError(`API Error 429: Too Many Requests`, apiKeyForCall); }
-                    if (!response.ok) { const errorData = await response.json(); throw new Error(`API Error ${response.status}: ${errorData.error?.message || response.statusText}`); }
-                    const result = await response.json();
-                    if (result.candidates?.[0]?.content?.parts?.[0]?.text) { return result.candidates[0].content.parts[0].text; } 
-                    else if (result.candidates?.[0]?.finishReason) { console.error(`콘텐츠 생성 실패 (Reason: ${result.candidates[0].finishReason})`, result); let errorMessage = `콘텐츠 생성 실패 (Reason: ${result.candidates[0].finishReason})`; if (result.promptFeedback?.blockReason) { errorMessage += ` - ${result.promptFeedback.blockReason}`; } throw new Error(errorMessage); } 
-                    else { console.error("Unexpected API response format:", result); throw new Error("API 응답 형식이 올바르지 않습니다."); }
-                } catch (error) {
-                    if (error instanceof RateLimitError) { throw error; }
-                    console.warn(`API 호출 실패 (시도 ${i+1}/${maxRetries}): ${error.message}`);
-                    if (i === maxRetries - 1) throw error; 
-                    await sleep(Math.pow(2, i) * 1000 + Math.random() * 1000); 
-                }
-            }
-            throw new Error("API 호출 재시도 모두 실패 (알 수 없는 원인)");
-        }
-        
-        // --- 5. UI 이벤트 핸들러 ---
-        async function handleSaveSettings() {
-             try {
-                 const currentSettings = await db.settings.get('config') || {};
-                 await db.settings.put({ ...currentSettings, id: 'config', modelName: modelSelectInput.value, promptTemplate: promptTemplateInput.value.trim() || DEFAULT_PROMPT_TEMPLATE });
-                 showToast("설정 저장됨.", false); settingsModal.classList.add('hidden');
-             } catch (error) { console.error("설정 저장 오류:", error); showToast("설정 저장 오류.", true); }
-        }
-        async function handleAddApiKey() {
-            const name = apiKeyNameInput.value.trim(); const key = apiKeyValueInput.value.trim();
-            if (!name || !key) { showToast("이름과 키 값 필요.", true); return; }
-            try {
-                await db.transaction('rw', db.settings, async () => {
-                    const settings = await db.settings.get('config') || { id: 'config', apiKeys: [] };
-                    if (settings.apiKeys?.some(k => k.name === name)) { showToast(`'${name}' 이름 중복.`, true); throw new Error("Duplicate key name"); }
-                    const newApiKeys = [...(settings.apiKeys || []), { name, key }];
-                    await db.settings.put({ ...settings, apiKeys: newApiKeys }); renderApiKeyList(newApiKeys); 
-                });
-                apiKeyNameInput.value = ''; apiKeyValueInput.value = ''; showToast(`'${name}' 키 추가됨.`, false);
-            } catch (error) { if (error.message !== "Duplicate key name") { console.error("API 키 추가 오류:", error); showToast("API 키 추가 오류.", true); } }
-        }
-        async function handleDeleteApiKey(event) {
-            const deleteButton = event.target.closest('[data-action="delete-key"]'); if (!deleteButton) return;
-            const indexToDelete = parseInt(deleteButton.getAttribute('data-index'), 10); if (isNaN(indexToDelete)) return;
-             const settings = await db.settings.get('config') || { apiKeys: [] };
-             const keyNameToDelete = settings.apiKeys?.[indexToDelete]?.name;
-            if (!confirm(`'${keyNameToDelete || '선택한'}' API 키 삭제?`)) return;
-            try {
-                 await db.transaction('rw', db.settings, async () => {
-                    const currentSettings = await db.settings.get('config') || { id: 'config', apiKeys: [] };
-                    const newApiKeys = (currentSettings.apiKeys || []).filter((_, index) => index !== indexToDelete);
-                    await db.settings.put({ ...currentSettings, apiKeys: newApiKeys }); renderApiKeyList(newApiKeys); 
-                 }); showToast("API 키 삭제됨.", false);
-            } catch (error) { console.error("API 키 삭제 오류:", error); showToast("API 키 삭제 오류.", true); }
-        }
-        async function handleDataNewFile() {
-            const fileName = prompt("새 파일 이름 (.txt 제외):", `new_file_${Date.now()}`); if (!fileName) return;
-            const nameWithExt = fileName.toLowerCase().endsWith('.txt') ? fileName : `${fileName}.txt`;
-             const existingFile = await db.dataFiles.where('name').equalsIgnoreCase(nameWithExt).first();
-             if (existingFile) { showToast(`'${nameWithExt}' 이름 중복.`, true); return; }
-            await db.dataFiles.add({ name: nameWithExt, content: '', isActive: false, isGlobal: false }); await loadAndRenderDataFiles();
-        }
-        async function handleDataUpload(event) {
-            const file = event.target.files[0]; if (!file) return;
-             if (!file.name.toLowerCase().endsWith('.txt')) { showToast(".txt 파일만 가능.", true); event.target.value = null; return; }
-             const existingFile = await db.dataFiles.where('name').equalsIgnoreCase(file.name).first();
-             if (existingFile && !confirm(`'${file.name}' 덮어쓰기?`)) { event.target.value = null; return; }
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    if (existingFile) { await db.dataFiles.update(existingFile.id, { content: e.target.result }); showToast(`${file.name} 덮어씀.`, false); if (currentDataFileId === existingFile.id) { dataEditorContent.value = e.target.result; } } 
-                    else { await db.dataFiles.add({ name: file.name, content: e.target.result, isActive: false, isGlobal: false }); showToast(`${file.name} 업로드됨.`, false); }
-                    await loadAndRenderDataFiles();
-                } catch (error) { showToast("파일 저장 오류.", true); }
-            }; reader.readAsText(file); event.target.value = null; 
-        }
-        
-        // v3.9: 목록 클릭 핸들러 (표지 생성 분기 추가)
-        async function handleSavedListClick(event) {
-            const actionTarget = event.target.closest('[data-action]');
-            if (!actionTarget) return;
-
-            const action = actionTarget.getAttribute('data-action');
-            const postId = parseInt(actionTarget.getAttribute('data-id'), 10);
-            if (!postId) return;
-
-            if (action === 'view-detail') {
-                 handlePostItemClick(postId); // 상세 보기 로직 호출
-            } else if (action === 'copy-list-item') {
-                 handleCopyListItem(postId); // 목록 복사 로직 호출
-            } else if (action === 'create-cover') { // v3.9: 신규
-                 handleCreateCoverFromPost(postId); 
-            } else if (action === 'delete-list-item') {
-                 handleDeleteListItem(postId);
-            }
-        }
-
-        // v3.8: 목록 복사 로직
-        async function handleCopyListItem(postId) {
-             try {
-                 const post = await db.posts.get(postId);
-                 if (post && post.result) {
-                     copyToClipboard(post.result);
-                     showToast("글 내용이 복사되었습니다.", false);
-                 } else {
-                     showToast("글 내용을 찾을 수 없습니다.", true);
-                 }
-             } catch (error) {
-                 console.error("목록 복사 오류:", error);
-                 showToast("복사 중 오류 발생", true);
-             }
-        }
-
-        async function handleDeleteListItem(postId) {
-            if (!confirm("이 글을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) return;
-            try {
-                await db.posts.delete(postId);
-                showToast("삭제되었습니다.", false);
-                await loadAndRenderPostsList(); // 목록 새로고침
-            } catch (error) {
-                console.error("목록 삭제 오류:", error);
-                showToast("삭제 중 오류 발생", true);
-            }
-        }
-
-        // v3.8: 상세 보기 로직 (ID만 받도록 수정)
-        async function handlePostItemClick(postId) {
-            const post = await db.posts.get(postId);
-            if (post) { 
-                currentDetailPostId = post.id; 
-                postDetailTitle.textContent = post.title || "제목 없음"; 
-                detailTopic.value = post.topic || ""; 
-                detailData.value = post.data || ""; 
-                detailResult.value = post.result || ""; 
-                postDetailModal.classList.remove('hidden'); 
-            }
-        }
-
-        // v3.9: '저장된 글'에서 표지 생성 로직
-        async function handleCreateCoverFromPost(postId) {
-            try {
-                const post = await db.posts.get(postId);
-                if (post && post.topic) {
-                    coverTitleInput.value = post.topic; // 텍스트 영역에 주제 설정
-                    updateCoverTitle(); // 표지 미리보기 업데이트
-                    
-                    // '표지 생성' 탭으로 강제 이동
-                    handleTabClick(null, 'tab-cover'); 
-                    
-                    showToast(`'${post.topic}' 표지 생성을 시작합니다.`, false);
-                } else {
-                    showToast("글 주제를 찾을 수 없습니다.", true);
-                }
-            } catch (error) {
-                console.error("표지 생성 이동 오류:", error);
-                showToast("표지 생성으로 이동 중 오류 발생", true);
-            }
-        }
-
-        async function handleDataFileListClick(event) {
-            const target = event.target; const fileItem = target.closest('.data-file-item'); if (!fileItem) return;
-            const fileId = parseInt(fileItem.getAttribute('data-id'), 10); const action = target.closest('[data-action]')?.getAttribute('data-action');
-            if (action === 'toggle') { const checkbox = fileItem.querySelector('input[type="checkbox"]'); if (!checkbox) return; const newState = checkbox.checked; await db.dataFiles.update(fileId, { isActive: newState }); await loadAndRenderDataFiles(); } 
-            else if (action === 'delete') { const fileToDelete = await db.dataFiles.get(fileId); if (fileToDelete?.isGlobal) { showToast("전역 파일 삭제 불가.", true); return; } if (confirm(`'${fileToDelete?.name}' 삭제?`)) { await db.dataFiles.delete(fileId); await loadAndRenderDataFiles(); if (currentDataFileId === fileId) resetDataEditor(); } } 
-            else { currentDataFileId = fileId; const file = await db.dataFiles.get(fileId); if(file) { dataEditorFilename.value = file.name; dataEditorContent.value = file.content; dataEditorFilename.disabled = file.isGlobal; dataEditorContent.disabled = false; dataSaveFileBtn.disabled = false; document.querySelectorAll('.data-file-item').forEach(el => el.classList.remove('selected')); fileItem.classList.add('selected'); } else { resetDataEditor(); } }
-        }
-        function resetDataEditor() { currentDataFileId = null; dataEditorFilename.value = "파일 선택"; dataEditorContent.value = ""; dataEditorFilename.disabled = true; dataEditorContent.disabled = true; dataSaveFileBtn.disabled = true; document.querySelectorAll('.data-file-item').forEach(el => el.classList.remove('selected')); }
-        async function handleDataSaveFile() {
-            if (!currentDataFileId) return;
-            const newName = dataEditorFilename.value.trim(); if (!newName.toLowerCase().endsWith('.txt')) { showToast(".txt로 끝나야 함.", true); const originalFile = await db.dataFiles.get(currentDataFileId); if (originalFile) dataEditorFilename.value = originalFile.name; return; }
-             const existingFile = await db.dataFiles.where('name').equalsIgnoreCase(newName).first(); if (existingFile && existingFile.id !== currentDataFileId) { showToast(`'${newName}' 이름 중복.`, true); const originalFile = await db.dataFiles.get(currentDataFileId); if (originalFile) dataEditorFilename.value = originalFile.name; return; }
-            await db.dataFiles.update(currentDataFileId, { name: newName, content: dataEditorContent.value }); await loadAndRenderDataFiles(); showToast(`${newName} 저장됨.`, false);
-        }
-        
-        async function handleDeletePost() {
-            if (!currentDetailPostId || !confirm("저장된 글 삭제?")) return;
-            try { await db.posts.delete(currentDetailPostId); showToast("삭제됨.", false); closePostDetailModal(); await loadAndRenderPostsList(); } 
-            catch (error) { console.error("글 삭제 오류:", error); showToast("글 삭제 오류.", true); }
-        }
-
-        // --- v3.9: 표지 생성기 함수 ---
-        function updateCoverTitle() {
-            let inputText = coverTitleInput.value;
-            if (inputText.trim() === "") {
-                inputText = "외국 시민권자\n상속포기 한정승인";
-            }
-            let formattedText = inputText.replace(/\n/g, '<br>');
-            coverMainTitle.innerHTML = formattedText;
-
-            // 자동 폰트 크기 조절 로직
-            adjustCoverFontSize();
-        }
-
-        // 최대 폰트 크기 찾는 로직으로 수정
-        function adjustCoverFontSize() {
-            const containerHeight = coverTitleContainer.clientHeight;
-            let bestSize = 1; // 최소 1px
-
-            // 임시로 스타일을 적용하여 높이를 측정
-            const tempTitle = coverMainTitle.cloneNode(true);
-            tempTitle.style.visibility = 'hidden';
-            tempTitle.style.position = 'absolute';
-            tempTitle.style.width = coverTitleContainer.clientWidth + 'px'; // 너비 고정
-            document.body.appendChild(tempTitle);
-
-            for (let currentSize = 1; currentSize <= 100; currentSize++) { // 100px까지 시도
-                tempTitle.style.fontSize = `${currentSize}px`;
-                if (tempTitle.scrollHeight <= containerHeight) {
-                    bestSize = currentSize;
-                } else {
-                    break; // 넘치면 중단
-                }
-            }
-            document.body.removeChild(tempTitle); // 임시 요소 제거
-            
-            // 최종 찾은 크기로 설정
-            coverMainTitle.style.fontSize = `${bestSize}px`;
-        }
-
-
-        function saveCoverAsImage() {
-            if (!bannerPreview) {
-                showToast("표지 미리보기 요소를 찾을 수 없습니다.", true);
-                return;
-            }
-            
-            // (그림자 제거/복원 로직이 삭제되었습니다)
-
-            html2canvas(bannerPreview, {
-                scale: 3, // 3배수 크기로 캡처하여 고해상도 이미지 생성
-                useCORS: true,
-                backgroundColor: null // 배경 투명도 유지
-            }).then(canvas => {
-                // (그림자 복원 로직이 삭제되었습니다)
-                
-                // 다운로드 링크 생성
-                const link = document.createElement('a');
-                link.download = 'cover_image.png'; // 파일 이름
-                link.href = canvas.toDataURL('image/png'); // 캔버스 데이터를 PNG 이미지로 변경
-                link.click(); // 링크 클릭 자동 실행 (다운로드)
-            }).catch(err => {
-                console.error("이미지 저장 오류:", err);
-                showToast("이미지 저장 중 오류가 발생했습니다.", true);
-                // (그림자 복원 로직이 삭제되었습니다)
-            });
-        }
-
-        // v3.9: 클립보드 복사 함수 추가
-        async function copyCoverToClipboard() {
-            if (!bannerPreview) {
-                 showToast("표지 미리보기 요소를 찾을 수 없습니다.", true);
-                 return;
-            }
-            
-            // (그림자 제거/복원 로직이 삭제되었습니다)
-
-            try {
-                const canvas = await html2canvas(bannerPreview, { 
-                    scale: 2, // 복사용은 2배수로 충분
-                    useCORS: true, 
-                    backgroundColor: null 
-                });
-                // (그림자 복원 로직이 삭제되었습니다)
-
-                canvas.toBlob(async (blob) => {
-                    if (blob) {
-                        try {
-                            await navigator.clipboard.write([
-                                new ClipboardItem({
-                                    [blob.type]: blob
-                                })
-                            ]);
-                            showToast("표지 이미지가 클립보드에 복사되었습니다.", false);
-                        } catch (err) {
-                            console.error('클립보드 복사 실패:', err);
-                            showToast("클립보드 복사 실패. 브라우저 호환성 문제일 수 있습니다.", true);
-                        }
-                    } else {
-                        throw new Error('Canvas to Blob 변환 실패');
-                    }
-                }, 'image/png'); // PNG 형식으로 Blob 생성
-            } catch (err) {
-                console.error("이미지 클립보드 복사 오류:", err);
-                showToast("이미지 복사 중 오류 발생.", true);
-                // (그림자 복원 로직이 삭제되었습니다)
-            }
-        }
-        
-        // --- 6. 유틸리티 함수 ---
-        function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
-        function getDelayForModel(modelName) { const bufferMs = 100; return modelName.includes('pro') ? 30000 + bufferMs : 6000 + bufferMs; }
-        function handleTabClick(event, forceTabId = null) { 
-            let clickedTabId = forceTabId || event.currentTarget.id; 
-            Object.values(tabs).forEach(tab => tab.setAttribute('aria-selected', (tab.id === clickedTabId).toString())); 
-            Object.entries(contents).forEach(([key, content]) => { 
-                content.classList.toggle('hidden', key !== clickedTabId.replace('tab-', '')); 
-            }); 
-            // 표지 탭이 선택되면 폰트 크기 강제 조절 (레이아웃이 잡힌 후)
-            if (clickedTabId === 'tab-cover') {
-                setTimeout(adjustCoverFontSize, 50); // 약간의 딜레이 추가
-            }
-        }
-        function updateGenerateButton(count = null) { let topicCount = count; if (topicCount === null) { const topicsRaw = topicInput.value.trim(); topicCount = topicsRaw ? topicsRaw.split('\n').filter(t => t.trim() !== '').length : 0; } generateBtnText.textContent = (topicCount > 0) ? `${topicCount}개 생성 요청` : "작업 요청"; generateBtn.disabled = (topicCount === 0); }
-        function closePostDetailModal() { postDetailModal.classList.add('hidden'); currentDetailPostId = null; }
-        function handleCopyPost() { copyToClipboard(detailResult.value); showToast("클립보드에 복사됨.", false); }
-        function showToast(message, isError = false) { const toastId = `toast-${Date.now()}`; const toast = document.createElement('div'); toast.id = toastId; toast.className = `toast p-4 rounded-lg shadow-lg text-white font-medium ${isError ? 'bg-red-500' : 'bg-green-500'}`; toast.textContent = message; toastContainer.appendChild(toast); toast.offsetHeight; toast.classList.add('show'); setTimeout(() => { toast.classList.remove('show'); toast.addEventListener('transitionend', () => toast.remove(), { once: true }); }, 3000); }
-        function escapeHTML(str) { if (typeof str !== 'string') return ''; const element = document.createElement('div'); element.innerText = str; return element.innerHTML; }
-        function copyToClipboard(text) { if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).catch(err => { console.error('클립보드 복사 실패 (async):', err); legacyCopyToClipboard(text); }); } else { legacyCopyToClipboard(text); } }
-        function legacyCopyToClipboard(text) { const textarea = document.createElement('textarea'); textarea.value = text; textarea.style.position = 'fixed'; textarea.style.opacity = '0'; textarea.style.left = '-9999px'; document.body.appendChild(textarea); textarea.select(); try { const successful = document.execCommand('copy'); if (!successful) { console.error('클립보드 복사 실패 (execCommand)'); showToast('복사 실패.', true); } } catch (err) { console.error('클립보드 복사 오류:', err); showToast('복사 오류.', true); } document.body.removeChild(textarea); }
-
-        // --- 7. 이벤트 리스너 바인딩 ---
-        function setupEventListeners() {
-            Object.values(tabs).forEach(tab => tab.addEventListener('click', handleTabClick));
-            openSettingsBtn.addEventListener('click', async () => { await loadAndRenderSettings(); settingsModal.classList.remove('hidden'); });
-            closeSettingsBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
-            saveSettingsBtn.addEventListener('click', handleSaveSettings);
-            addApiKeyBtn.addEventListener('click', handleAddApiKey); 
-            apiKeyListDiv.addEventListener('click', handleDeleteApiKey); 
-            generateBtn.addEventListener('click', handleGenerateJobs);
-            topicInput.addEventListener('input', () => updateGenerateButton(null));
-            exportAllDataBtn.addEventListener('click', handleExportAllData);
-            importAllDataInput.addEventListener('change', handleImportAllData);
-            dataNewFileBtn.addEventListener('click', handleDataNewFile);
-            dataUploadInput.addEventListener('change', handleDataUpload);
-            dataFileList.addEventListener('click', handleDataFileListClick);
-            dataSaveFileBtn.addEventListener('click', handleDataSaveFile);
-            dataEditorFilename.addEventListener('blur', () => { if (!dataEditorFilename.disabled && currentDataFileId) { handleDataSaveFile(); } });
-            progressList.addEventListener('click', handleProgressListClick);
-            // v3.8: 저장된 글 목록 이벤트 리스너 통합
-            savedPostsList.addEventListener('click', handleSavedListClick); 
-            exportPostsBtn.addEventListener('click', handleExportPosts); 
-            closeDetailBtn.addEventListener('click', closePostDetailModal);
-            copyPostBtn.addEventListener('click', handleCopyPost);
-            deletePostBtn.addEventListener('click', handleDeletePost);
-
-            // v3.9: 표지 생성기 이벤트 리스너
-            coverUpdateButton.addEventListener('click', updateCoverTitle);
-            coverSaveImageButton.addEventListener('click', saveCoverAsImage);
-            // 텍스트 입력 시 실시간 폰트 조절 (선택 사항)
-            coverTitleInput.addEventListener('input', updateCoverTitle);
-            // 클립보드 복사 이벤트 리스너 추가
-            bannerPreview.addEventListener('click', copyCoverToClipboard);
-        }
-
-        // v3.7: Export Posts Functionality
-        async function handleExportPosts() {
-            const posts = await db.posts.toArray();
-            if (posts.length === 0) { showToast("내보낼 글 없음.", true); return; }
-            exportPostsBtn.disabled = true; exportPostsBtn.innerHTML = `<div class="spinner w-4 h-4 mr-2 inline-block"></div> 내보내는 중...`;
-            try {
-                const zip = new JSZip();
-                posts.forEach(post => { let filename = (post.title || `post_${post.id}`).replace(/[<>:"/\\|?*]/g, '_'); filename = `${filename}_${post.id}.txt`; zip.file(filename, post.result || ""); });
-                const blob = await zip.generateAsync({ type: "blob" });
-                const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = `ai_blog_posts_${new Date().toISOString().slice(0,10)}.zip`; document.body.appendChild(link); link.click(); document.body.removeChild(link); URL.revokeObjectURL(link.href);
-                showToast(`총 ${posts.length}개 글 내보냄.`, false);
-            } catch (error) { console.error("ZIP 오류:", error); showToast("내보내기 오류.", true); } 
-            finally { exportPostsBtn.disabled = false; exportPostsBtn.innerHTML = `<i data-lucide="download" class="w-4 h-4 mr-2"></i> 전체 글 내보내기 (ZIP)`; if (typeof lucide !== 'undefined') lucide.createIcons(); }
-        }
-
-        async function handleExportAllData() {
-            if (!confirm("전체 프로젝트 데이터를 내보내시겠습니까?\n(API 키, 데이터 파일, 저장된 글)")) return;
-
-            try {
-                const settings = await db.settings.toArray();
-                const dataFiles = await db.dataFiles.toArray();
-                const posts = await db.posts.toArray();
-                
-                const exportData = {
-                    version: 3.9, // Versioning
-                    exportedAt: new Date().toISOString(),
-                    data: {
-                        settings,
-                        dataFiles,
-                        posts
-                    }
-                };
-                
-                const dataStr = JSON.stringify(exportData, null, 2);
-                const blob = new Blob([dataStr], { type: "application/json" });
-                const link = document.createElement("a");
-                link.href = URL.createObjectURL(blob);
-                link.download = `ai_blog_assistant_backup_${new Date().toISOString().slice(0,10)}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(link.href);
-                
-                showToast("전체 데이터 내보내기 성공.", false);
-            } catch (error) {
-                console.error("전체 데이터 내보내기 오류:", error);
-                showToast("전체 데이터 내보내기 실패.", true);
-            }
-        }
-
-        // --- v3.9: Import All Project Data ---
-        async function handleImportAllData(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-
-            if (!file.name.toLowerCase().endsWith('.json')) {
-                showToast(".json 파일만 가져올 수 있습니다.", true);
-                event.target.value = null; // Reset input
-                return;
-            }
-
-            if (!confirm("경고: 데이터를 가져오면 현재 모든 프로젝트 데이터(설정, 파일, 저장된 글)가 삭제되고 덮어쓰기 됩니다.\n\n정말로 진행하시겠습니까?")) {
-                event.target.value = null; // Reset input
-                return;
-            }
-
-            const reader = new FileReader();
-            reader.onload = async (e) => {
-                try {
-                    const importData = JSON.parse(e.target.result);
-                    
-                    if (!importData.data || !importData.data.settings || !importData.data.dataFiles || !importData.data.posts) {
-                        throw new Error("유효하지 않은 백업 파일 형식입니다.");
-                    }
-
-                    // Destructive operation: clear existing data
-                    await db.transaction('rw', db.settings, db.dataFiles, db.posts, async () => {
-                        await db.settings.clear();
-                        await db.dataFiles.clear();
-                        await db.posts.clear();
-
-                        // Bulk add new data
-                        // settings 'id' is 'config', so it's fine.
-                        // dataFiles/posts 'id' is '++id', must be removed for bulkAdd to generate new keys.
-                        
-                        const settingsToImport = importData.data.settings;
-                        const dataFilesToImport = importData.data.dataFiles.map(file => {
-                            delete file.id; // Remove auto-incrementing key
-                            return file;
-                        });
-                        const postsToImport = importData.data.posts.map(post => {
-                            delete post.id; // Remove auto-incrementing key
-                            return post;
-                        });
-
-                        await db.settings.bulkAdd(settingsToImport);
-                        await db.dataFiles.bulkAdd(dataFilesToImport);
-                        await db.posts.bulkAdd(postsToImport);
-                    });
-
-                    showToast("데이터 가져오기 성공. 앱을 새로고침합니다.", false);
-                    
-                    // Reload the app to reflect all changes
-                    setTimeout(() => {
-                        location.reload();
-                    }, 1500);
-
-                } catch (error) {
-                    console.error("데이터 가져오기 오류:", error);
-                    showToast(`가져오기 실패: ${error.message}`, true);
-                } finally {
-                    event.target.value = null; // Reset input
-                }
-            };
-            reader.readAsText(file);
-        }
-
-
-        // --- 앱 시작 ---
-        document.addEventListener('DOMContentLoaded', () => {
-            if (typeof lucide !== 'undefined') { lucide.createIcons(); } else { console.warn("Lucide library not loaded."); }
-            updateGenerateButton(0); 
-            resetDataEditor();
-            setupEventListeners(); 
-            initializeLocalDB(); 
-            
-            // v3.9: 표지 생성기 초기화
-            updateCoverTitle(); 
-            // 탭 로드 후 약간의 시간차를 두고 폰트 크기 재조정 (정확한 계산 위함)
-            setTimeout(adjustCoverFontSize, 100); 
+        // 1. 필터링
+        let filteredPosts = posts.filter(post => {
+          if (this.currentFilter === 'all') return true;
+          if (this.currentFilter === 'complete') return post.isFollowUpComplete === true && !post.followUpError;
+          if (this.currentFilter === 'incomplete') return !post.isFollowUpComplete && !post.error;
+          if (this.currentFilter === 'failed') return post.error === true || post.followUpError === true;
+          return true;
         });
 
-    </script>
+        // 2. 정렬
+        const sortedPosts = filteredPosts.sort((a, b) => {
+          const timeA = a.createdAt?.toMillis() || 0;
+          const timeB = b.createdAt?.toMillis() || 0;
+          return (this.currentSort === 'newest') ? timeB - timeA : timeA - timeB;
+        });
+
+        // 3. 렌더링
+        if (sortedPosts.length === 0) {
+          container.innerHTML = `<p class="text-gray-500">${(this.currentFilter === 'all') ? '아직 생성된 글이 없습니다.' : '일치하는 항목이 없습니다.'}</p>`;
+          return;
+        }
+        
+        sortedPosts.forEach(post => {
+          const contentPreview = post.error 
+            ? `<p class="text-red-600 font-medium">${post.content}</p>` 
+            : `<p class="text-gray-700 whitespace-pre-wrap">${post.content.substring(0, 100)}...</p>`;
+          
+          let buttons = [];
+          if (post.isFollowUpComplete) {
+            buttons.push(this.createActionButton('bi-arrows-fullscreen', '', `window.app.ui.openModal('${post.id}')`, "전체 보기"));
+            buttons.push(this.createActionButton('bi-clipboard', '', `window.app.copyToClipboard('${post.id}', 'content')`, "원본 복사"));
+            if (post.followUpError) {
+              buttons.push(this.createActionButton('bi-arrow-clockwise', 'icon-btn-retry', `window.app.retryFollowUpJob('${post.id}')`, "재시도"));
+            } else {
+              buttons.push(this.createActionButton('bi-clipboard-check', 'icon-btn-purple', `window.app.copyToClipboard('${post.id}', 'followUp')`, "결과 복사"));
+            }
+          } else if (post.error) {
+            buttons.push(this.createActionButton('bi-exclamation-triangle', '', `window.app.ui.openModal('${post.id}')`, "실패 사유 보기"));
+            buttons.push(this.createActionButton('bi-arrow-clockwise', 'icon-btn-retry', `window.app.retryJob('${post.id}')`, "재시도"));
+          } else {
+            buttons.push(this.createActionButton('bi-arrows-fullscreen', '', `window.app.ui.openModal('${post.id}')`, "전체 보기"));
+            buttons.push(this.createActionButton('bi-clipboard', '', `window.app.copyToClipboard('${post.id}', 'content')`, "원본 복사"));
+            if (hasFollowUpTemplate) {
+              buttons.push(this.createActionButton('bi-magic', 'icon-btn-purple', `window.app.handleFollowUpClick('${post.id}')`, "후속 작업 실행"));
+            }
+          }
+          buttons.push(this.createActionButton('bi-trash', 'icon-btn-danger', `window.app.firebase.deleteGeneratedPost('${post.id}')`, "삭제"));
+
+          const el = this.createDOMElement('div', 'bg-white p-3 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 border border-gray-200', `
+            <h4 class="font-semibold text-gray-800">${post.topic}</h4>
+            <div class="mt-2 mb-3 text-sm cursor-pointer" onclick="window.app.ui.openModal('${post.id}')">${contentPreview}</div>
+            <div class="flex items-center justify-end space-x-3 pt-2 border-t border-gray-100">${buttons.join('')}</div>
+          `);
+          container.appendChild(el);
+        });
+      }
+      
+      createActionButton(icon, extraClass, onclick, title) {
+        return `<button class="icon-btn ${extraClass}" onclick="${onclick}" title="${title}"><i class="bi ${icon}"></i></button>`;
+      }
+
+      openModal(postId) {
+        const post = window.app.localState.generatedPosts.find(p => p.id === postId);
+        if (!post) return;
+        
+        this.elements.modalTitle.textContent = post.topic;
+        this.elements.modalContent.textContent = post.content;
+        
+        if (post.isFollowUpComplete && post.followUpResult) {
+          this.elements.modalFollowupContent.textContent = post.followUpResult;
+          this.elements.modalFollowupWrapper.classList.remove('hidden');
+          this.elements.modalFollowupContent.classList.toggle('bg-red-50', post.followUpError);
+          this.elements.modalFollowupContent.classList.toggle('text-red-700', post.followUpError);
+          this.elements.modalFollowupContent.classList.toggle('bg-blue-50', !post.followUpError);
+          this.elements.modalFollowupContent.classList.toggle('text-gray-800', !post.followUpError);
+        } else {
+          this.elements.modalFollowupWrapper.classList.add('hidden');
+        }
+        
+        this.elements.modalOverlay.classList.remove('hidden');
+        setTimeout(() => {
+          this.elements.modalOverlay.classList.remove('opacity-0');
+          this.elements.modalContainer.classList.remove('scale-95', 'opacity-0');
+        }, 10);
+      }
+
+      closeModal() {
+        this.elements.modalContainer.classList.add('scale-95', 'opacity-0');
+        this.elements.modalOverlay.classList.add('opacity-0');
+        setTimeout(() => { this.elements.modalOverlay.classList.add('hidden'); }, 300);
+      }
+      
+      updateJobFooter(activelyProcessingJobs, jobQueueLength) {
+        const activeJobs = Array.from(activelyProcessingJobs.values());
+        
+        if (activeJobs.length === 0 && jobQueueLength === 0) {
+          this.elements.jobFooterBar.classList.remove('show');
+          return;
+        }
+        
+        this.elements.jobFooterBar.classList.add('show');
+        const list = this.elements.processingList;
+        list.innerHTML = '';
+        
+        let count = 0;
+        for (const job of activeJobs) {
+          if (count >= 3) {
+            list.innerHTML += `<span class="processing-item">...외 ${activeJobs.length - count}개</span>`;
+            break;
+          }
+          list.appendChild(this.createDOMElement('span', 'processing-item', `
+            <svg class="animate-spin spinner-sm text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            ${job.topic.substring(0, 20)}...
+          `));
+          count++;
+        }
+        
+        this.elements.queueStatusDisplay.textContent = (jobQueueLength > 0) ? `대기열: ${jobQueueLength}개` : `대기열 없음`;
+      }
+
+      // 5. 유틸리티
+      createDOMElement(tag, className, html = '') {
+        const el = document.createElement(tag);
+        el.className = className;
+        el.innerHTML = html;
+        return el;
+      }
+    }
+
+    /**
+     * ================================================================
+     * 클래스 2: FirebaseService - Firebase 인증 및 Firestore 전담
+     * (Axiom: Single Responsibility Principle)
+     * ================================================================
+     */
+    class FirebaseService {
+      constructor(config, onAuthChangeCallback) {
+        this.app = initializeApp(config);
+        this.db = getFirestore(this.app);
+        this.auth = getAuth(this.app);
+        setLogLevel('debug');
+        
+        this.config = config;
+        this.userId = null;
+        this.collections = {};
+        
+        this.listeners = {}; // Firestore 리스너 구독 해제용
+        
+        onAuthStateChanged(this.auth, (user) => {
+          this.userId = user ? user.uid : null;
+          if (user) {
+            this.setCollectionRefs();
+          }
+          onAuthChangeCallback(user);
+        });
+      }
+
+      setCollectionRefs() {
+        const appId = this.config?.appId || 'default-app-id';
+        if (!this.userId || !appId) return;
+        const userBasePath = `artifacts/${appId}/users/${this.userId}`;
+        this.collections = {
+          keysCol: collection(this.db, `${userBasePath}/apiKeys`),
+          templatesCol: collection(this.db, `${userBasePath}/templates`),
+          followUpTemplatesCol: collection(this.db, `${userBasePath}/followUpTemplates`),
+          postsCol: collection(this.db, `${userBasePath}/generatedPosts`)
+        };
+      }
+      
+      // 1. 인증
+      async handleGoogleLogin() {
+        const provider = new GoogleAuthProvider();
+        try { await signInWithPopup(this.auth, provider); } 
+        catch (error) { console.error("Google 로그인 실패:", error); throw error; }
+      }
+
+      async handleAnonymousLogin() {
+        try { await signInAnonymously(this.auth); } 
+        catch (error) { console.error("익명 로그인 실패:", error); throw error; }
+      }
+
+      async handleLogout() {
+        try { await signOut(this.auth); } 
+        catch (error) { console.error("로그아웃 실패:", error); throw error; }
+      }
+      
+      // 2. 리스너 (데이터 실시간 감지)
+      listenToData(collectionName, callback) {
+        const col = this.collections[collectionName];
+        if (!col) return;
+        
+        // 기존 리스너가 있다면 구독 해제
+        if (this.listeners[collectionName]) {
+          this.listeners[collectionName]();
+        }
+        
+        this.listeners[collectionName] = onSnapshot(query(col), (snapshot) => {
+          const data = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+          callback(data);
+        }, (e) => console.error(`${collectionName} 로드 실패:`, e));
+      }
+      
+      stopAllListeners() {
+        for (const unsub of Object.values(this.listeners)) {
+          unsub();
+        }
+        this.listeners = {};
+      }
+
+      // 3. API 키 CRUD
+      async addApiKey(key) {
+        if (!key) throw new Error("API 키를 입력하세요.");
+        await addDoc(this.collections.keysCol, { 
+          key: key, status: 'ready', lastUsed: null, 
+          createdAt: serverTimestamp(), backoffLevel: 0
+        });
+      }
+      async deleteApiKey(id) { await deleteDoc(doc(this.db, this.collections.keysCol.path, id)); }
+      async updateApiKeyStatus(id, status, extraData = {}) {
+        const keyDoc = doc(this.db, this.collections.keysCol.path, id);
+        const updateData = { status: status, ...extraData };
+        if (['busy', 'rate_limited', 'cooldown'].includes(status)) {
+          updateData.lastUsed = serverTimestamp();
+        }
+        await updateDoc(keyDoc, updateData);
+      }
+
+      // 4. 템플릿 CRUD
+      async saveTemplate(id, name, content) {
+        if (!name || !content) throw new Error("이름과 내용을 모두 입력하세요.");
+        const data = { name, content };
+        if (id) { await setDoc(doc(this.db, this.collections.templatesCol.path, id), data, { merge: true }); }
+        else { await addDoc(this.collections.templatesCol, data); }
+      }
+      async deleteTemplate(id) { await deleteDoc(doc(this.db, this.collections.templatesCol.path, id)); }
+
+      // 5. 후속 템플릿 (단일) CRUD
+      async saveSingleFollowUpTemplate(name, content, existingTemplate) {
+        if (!name || !content) {
+          if (existingTemplate) {
+            await deleteDoc(doc(this.db, this.collections.followUpTemplatesCol.path, existingTemplate.id));
+            return 'deleted';
+          }
+          throw new Error("이름과 내용을 모두 입력하세요.");
+        }
+        if (!content.includes('{글}')) throw new Error("템플릿에 {글} 변수가 포함되어야 합니다.");
+        
+        const data = { name, content };
+        if (existingTemplate) {
+          await setDoc(doc(this.db, this.collections.followUpTemplatesCol.path, existingTemplate.id), data, { merge: true });
+          return 'updated';
+        } else {
+          await addDoc(this.collections.followUpTemplatesCol, data);
+          return 'created';
+        }
+      }
+      
+      // 6. 결과물 CRUD
+      async saveGeneratedPost(job, content, error = false) {
+        await addDoc(this.collections.postsCol, { 
+          topic: job.topic, content, error, createdAt: serverTimestamp(), 
+          isFollowUpComplete: false, followUpResult: null, followUpError: false,
+          originalJob: { type: job.type, prompt: job.prompt }
+        }); 
+      }
+      async updatePostWithFollowUp(job, resultText, isError = false) {
+        const postDoc = doc(this.db, this.collections.postsCol.path, job.originalPostId);
+        await updateDoc(postDoc, { 
+          followUpResult: resultText, isFollowUpComplete: true, followUpError: isError,
+          originalFollowUpJob: { type: job.type, prompt: job.prompt }
+        });
+      }
+      async updatePostAfterRetry(postId) {
+        const postDoc = doc(this.db, this.collections.postsCol.path, postId);
+        await updateDoc(postDoc, { 
+          isFollowUpComplete: false, followUpError: false, followUpResult: null 
+        });
+      }
+      async deleteGeneratedPost(id) { await deleteDoc(doc(this.db, this.collections.postsCol.path, id)); }
+    }
+
+    /**
+     * ================================================================
+     * 클래스 3: JobManager - 작업 큐, API 키 상태, API 호출 전담
+     * (Axiom: Algorithmic Efficiency, SOLID Architecture)
+     * ================================================================
+     */
+    class JobManager {
+      constructor(app) {
+        this.app = app;
+        this.jobQueue = [];
+        this.apiKeys = []; // Firebase로부터 실시간 동기화됨
+        this.activelyProcessingJobs = new Map();
+        
+        this.jobDispatcherInterval = null;
+        this.totalJobsAtStart = 0;
+        this.jobIdCounter = 0;
+        
+        this.KEY_COOLDOWN_MS = 30000; // 30초 (분당 2회)
+        this.BASE_BACKOFF_MS = 60000; // 1분
+      }
+      
+      // 1. 작업 큐 관리
+      addJobs(jobs) {
+        this.jobQueue.push(...jobs);
+        this.totalJobsAtStart += jobs.length;
+        this.updateUIStatus();
+      }
+      
+      addRetryJob(job, isFollowUp = false) {
+        this.jobQueue.push(job); // 실패한 작업은 우선순위가 낮게 뒤로 감
+        this.totalJobsAtStart++;
+        this.updateUIStatus();
+      }
+      
+      getNextJob() {
+        return this.jobQueue.shift();
+      }
+      
+      // 2. API 키 상태 관리
+      updateApiKeys(keys) {
+        this.apiKeys = keys;
+      }
+      
+      getAvailableKeys() {
+        // 여러 키가 준비/쿨다운 상태일 수 있으므로, 사용 가능한 모든 키를 반환
+        return this.apiKeys.filter(k => k.status === 'ready');
+      }
+
+      // 3. 디스패처 (메인 루프)
+      start() {
+        if (this.jobDispatcherInterval) return;
+        console.log("JobManager 시작됨.");
+        this.jobDispatcherInterval = setInterval(() => this.dispatchJobs(), 1000);
+      }
+      
+      stop() {
+        clearInterval(this.jobDispatcherInterval);
+        this.jobDispatcherInterval = null;
+        console.log("JobManager 중지됨.");
+      }
+      
+      async dispatchJobs() {
+        this.updateUIStatus();
+        
+        if (this.jobQueue.length === 0) {
+          if (this.totalJobsAtStart > 0 && this.activelyProcessingJobs.size === 0) {
+            this.app.ui.updateStatusMessage("모든 작업 완료!");
+            this.totalJobsAtStart = 0;
+          }
+          return;
+        }
+
+        const availableKeys = this.getAvailableKeys();
+        if (availableKeys.length === 0) {
+          return; // 사용 가능한 키 없음
+        }
+
+        // 사용 가능한 키 만큼 동시에 작업 처리
+        const jobsToDispatch = Math.min(this.jobQueue.length, availableKeys.length);
+        
+        for (let i = 0; i < jobsToDispatch; i++) {
+          const key = availableKeys[i];
+          const job = this.getNextJob(); 
+
+          // 상태 즉시 변경 (중복 할당 방지)
+          key.status = 'busy'; // 로컬 상태 즉시 변경
+          this.activelyProcessingJobs.set(job.jobId, job);
+          this.updateUIStatus();
+
+          this.app.ui.updateStatusMessage(`'${job.topic}' 작업 시작 (Key: ...${key.key.slice(-4)})...`);
+
+          // executeJob은 비동기지만 await하지 않음 (병렬 실행)
+          this.executeJob(job, key); 
+        }
+      }
+
+      // 4. 개별 작업 실행기 (Worker)
+      async executeJob(job, key) {
+        let apiResponse = null;
+        try {
+          await this.app.firebase.updateApiKeyStatus(key.id, 'busy');
+          apiResponse = await this.callGeminiAPI(job.prompt, key.key);
+
+          if (apiResponse.success) {
+            this.app.ui.showToast(`'${job.topic}' 완료 (Key: ...${key.key.slice(-4)})`, "success");
+            
+            // 요구사항 5: 후속 작업(도표 등)은 원본 텍스트(마크다운)를 그대로 저장
+            if (job.type === 'initial') {
+              await this.app.firebase.saveGeneratedPost(job, apiResponse.text, false);
+            } else if (job.type === 'follow-up') {
+              await this.app.firebase.updatePostWithFollowUp(job, apiResponse.text, false);
+            }
+            
+            // 성공 시 백오프 레벨 초기화 (있었다면)
+            const extraData = (key.backoffLevel && key.backoffLevel > 0) ? { backoffLevel: 0 } : {};
+            await this.app.firebase.updateApiKeyStatus(key.id, 'cooldown', extraData);
+            setTimeout(() => this.app.firebase.updateApiKeyStatus(key.id, 'ready'), this.KEY_COOLDOWN_MS);
+
+          } else if (apiResponse.isRateLimit) {
+            // 429 속도 제한 처리
+            const currentBackoff = (key.backoffLevel || 0);
+            const newBackoffLevel = currentBackoff + 1;
+            const delayMinutes = (2 ** currentBackoff); // 1, 2, 4, 8... 분
+            const delayMs = delayMinutes * this.BASE_BACKOFF_MS;
+
+            this.app.ui.showToast(`API 키 ${key.key.slice(-4)}가 속도 제한입니다. ${delayMinutes}분 대기합니다.`, "info");
+            
+            await this.app.firebase.updateApiKeyStatus(key.id, 'rate_limited', { backoffLevel: newBackoffLevel });
+            this.jobQueue.push(job); // 작업을 큐에 다시 넣음
+            
+            setTimeout(() => this.app.firebase.updateApiKeyStatus(key.id, 'ready'), delayMs);
+
+          } else {
+            // 429가 아닌 4xx, 5xx 등 기타 API 오류
+            this.app.ui.showToast(`'${job.topic}' 작업 실패: ${apiResponse.error}`, "error");
+            if (job.type === 'initial') {
+              await this.app.firebase.saveGeneratedPost(job, `작업 실패: ${apiResponse.error}`, true);
+            } else if (job.type === 'follow-up') {
+              await this.app.firebase.updatePostWithFollowUp(job, `작G업 실패: ${apiResponse.error}`, true);
+            }
+            
+            await this.app.firebase.updateApiKeyStatus(key.id, 'cooldown');
+            setTimeout(() => this.app.firebase.updateApiKeyStatus(key.id, 'ready'), this.KEY_COOLDOWN_MS);
+          }
+        } catch (error) {
+          // 네트워크 오류 등 예외 처리
+          console.error("큐 처리 중 예외 발생:", error);
+          this.app.ui.showToast(`'${job.topic}' 네트워크 오류: ${error.message}`, "error");
+          try {
+            if (job.type === 'initial') {
+              await this.app.firebase.saveGeneratedPost(job, `작업 실패: ${error.message}`, true);
+            } else if (job.type === 'follow-up') {
+              await this.app.firebase.updatePostWithFollowUp(job, `작업 실패: ${error.message}`, true);
+            }
+          } catch (saveError) { console.error("실패 상태 저장 중 오류:", saveError); }
+          
+          await this.app.firebase.updateApiKeyStatus(key.id, 'cooldown');
+          setTimeout(() => this.app.firebase.updateApiKeyStatus(key.id, 'ready'), this.KEY_COOLDOWN_MS);
+          
+        } finally {
+          this.activelyProcessingJobs.delete(job.jobId);
+          this.updateUIStatus();
+        }
+      }
+      
+      // 5. API 호출 (Fetch)
+      async callGeminiAPI(prompt, apiKey) {
+        //const MODEL_ID = "gemini-2.5-flash-preview-09-2025";
+        const MODEL_ID = "gemini-2.5-pro";
+        const API_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${apiKey}`; 
+        
+        const payload = {
+          contents: [{ role: "user", parts: [{ "text": prompt }] }],
+          // 요구사항 3: 빠른 응답을 위해 Google Search Tool 사용
+          tools: [] 
+        };
+        
+        try {
+          const response = await this.fetchWithBackoff(API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
+
+          if (response.status === 429) {
+            return { success: false, error: 'API 속도 제한 (429)', isRateLimit: true };
+          }
+          if (!response.ok) {
+            const errBody = await response.text();
+            let errMessage = `API 오류 (${response.status})`;
+            try { errMessage = JSON.parse(errBody).error?.message || errBody; } 
+            catch (e) { errMessage = errBody.substring(0, 100) || 'Unknown API Error'; }
+            return { success: false, error: errMessage, isRateLimit: false };
+          }
+
+          const result = await response.json();
+          // console.log("--- Gemini API Raw Response ---", result);
+          
+          if (!result.candidates || result.candidates.length === 0) {
+            const blockReason = result.promptFeedback?.blockReason;
+            const finishReason = result.candidates?.[0]?.finishReason;
+            let error = 'API 응답에 후보 없음';
+            if (blockReason) { error = `콘텐츠 생성 차단 (${blockReason})`; }
+            else if (finishReason && finishReason !== 'STOP') { error = `생성 중단 (${finishReason})`; }
+            return { success: false, error: error, isRateLimit: false };
+          }
+
+          const text = result.candidates[0].content?.parts?.[0]?.text;
+          if (typeof text !== 'string') {
+             const finishReason = result.candidates[0].finishReason;
+             return { success: false, error: `API가 텍스트를 반환하지 않음 (이유: ${finishReason})`, isRateLimit: false };
+          }
+          
+          return { success: true, text: text };
+        } catch (error) { 
+          return { success: false, error: `네트워크 또는 Fetch 오류: ${error.message}`, isRateLimit: false }; 
+        }
+      }
+      
+      // 6. 5xx 서버 오류 재시도
+      async fetchWithBackoff(url, options, retries = 3, delay = 1000) {
+        try {
+          const response = await fetch(url, options);
+          if (response.status === 429) { return response; }
+          if (response.status >= 500 && retries > 0) {
+            throw new Error(`Server error ${response.status}`);
+          }
+          return response;
+        } catch (error) {
+          if (retries > 0 && error.message.includes('Server error')) {
+            this.app.ui.updateStatusMessage(`서버 오류(${error.message.split(' ')[2] || ''}), ${delay / 1000}초 후 재시도...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.fetchWithBackoff(url, options, retries - 1, delay * 2);
+          }
+          throw error;
+        }
+      }
+      
+      // 7. UI 상태 업데이트
+      updateUIStatus() {
+        this.app.ui.updateJobFooter(this.activelyProcessingJobs, this.jobQueue.length);
+
+        if (this.app.ui.elements.statusMessage) {
+          const done = this.totalJobsAtStart - this.jobQueue.length - this.activelyProcessingJobs.size;
+          if (this.totalJobsAtStart > 0) {
+              this.app.ui.updateStatusMessage(`총 ${this.totalJobsAtStart}개 중 ${done}개 완료 (처리중: ${this.activelyProcessingJobs.size}, 대기: ${this.jobQueue.length})`);
+          } else {
+              this.app.ui.updateStatusMessage('');
+          }
+        }
+      }
+      
+      // 8. Job ID 생성
+      getNextJobId() {
+        this.jobIdCounter++;
+        return `job-${Date.now()}-${this.jobIdCounter}`;
+      }
+    }
+
+
+    /**
+     * ================================================================
+     * 클래스 4: App - 메인 컨트롤러 (모든 클래스 연결)
+     * ================================================================
+     */
+    class App {
+      constructor() {
+        this.ui = new UIManager();
+        this.firebase = null; // Firebase는 설정 로드 후 초기화
+        this.jobManager = new JobManager(this);
+        
+        // 로컬 상태 (UI 렌더링용)
+        this.localState = {
+          apiKeys: [],
+          templates: [],
+          followUpTemplates: [],
+          generatedPosts: []
+        };
+        
+        this.referenceFileContent = "";
+      }
+      
+      // 1. 앱 초기화 (설정 로드 후)
+      init(config) {
+        try {
+          this.firebase = new FirebaseService(config, (user) => this.onAuthStateChange(user));
+          this.ui.bindEvents(this);
+        } catch (e) {
+          console.error("Firebase 초기화 오류:", e.message);
+          this.ui.showToast(`Firebase 초기화 오류: ${e.message}`, "error");
+          this.ui.showView('settings');
+        }
+      }
+      
+      // 2. 인증 상태 변경 콜백
+      onAuthStateChange(user) {
+        this.ui.updateLoginStatus(user);
+        if (user) {
+          this.jobManager.start();
+          this.setupDataListeners();
+        } else {
+          this.jobManager.stop();
+          if (this.firebase) this.firebase.stopAllListeners();
+        }
+      }
+
+      // 3. 데이터 리스너 설정
+      setupDataListeners() {
+        this.firebase.listenToData('keysCol', (data) => {
+          this.localState.apiKeys = data;
+          this.jobManager.updateApiKeys(data); // JobManager에 키 상태 실시간 동기화
+          this.ui.renderApiKeys(data);
+        });
+        this.firebase.listenToData('templatesCol', (data) => {
+          this.localState.templates = data;
+          this.ui.renderTemplates(data);
+        });
+        this.firebase.listenToData('followUpTemplatesCol', (data) => {
+          this.localState.followUpTemplates = data;
+          this.ui.renderFollowUpTemplate(data.length > 0 ? data[0] : null);
+          this.renderLocalData(); // 후속 템플릿 유무에 따라 결과창 버튼이 달라지므로
+        });
+        this.firebase.listenToData('postsCol', (data) => {
+          this.localState.generatedPosts = data;
+          this.renderLocalData();
+        });
+      }
+      
+      // 4. UI 렌더링 트리거
+      renderLocalData() {
+        this.ui.renderResults(this.localState.generatedPosts, this.localState.followUpTemplates.length > 0);
+      }
+      
+      // 5. 이벤트 핸들러 (UI -> 로직)
+      handleSaveConfig(configText) {
+        if (!configText) {
+          this.ui.showToast("설정(JSON)을 입력하세요.", "error");
+          return;
+        }
+        try {
+          let processedConfigText = configText.replace(/([\{,]\s*)(\w+)(\s*:)/g, '$1"$2"$3');
+          const config = JSON.parse(processedConfigText);
+          if (!config.apiKey || !config.projectId || !config.authDomain) {
+            throw new Error("apiKey, projectId, authDomain은 필수입니다.");
+          }
+          localStorage.setItem('firebaseConfig', processedConfigText);
+          this.ui.showToast("Firebase 설정이 저장되었습니다. 페이지를 새로고침합니다.", "success");
+          setTimeout(() => location.reload(), 1000);
+        } catch (e) {
+          console.error("Firebase 설정 저장 실패:", e);
+          this.ui.showToast(`잘못된 JSON 형식입니다: ${e.message}`, "error");
+        }
+      }
+      
+      handleFileSelect(event) {
+        const file = event.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (e) => { 
+            this.referenceFileContent = e.target.result; 
+            this.ui.showToast(`파일 '${file.name}' 로드 완료.`, "success"); 
+          };
+          reader.readAsText(file);
+        }
+      }
+
+      handleGenerateClick(templateId, topicsText) {
+        const template = this.localState.templates.find(t => t.id === templateId);
+        if (!template) { this.ui.showToast("유효한 기본 템플릿을 선택하세요.", "error"); return; }
+        
+        const topics = topicsText.split('\n').map(t => t.trim()).filter(t => t.length > 0);
+        if (topics.length === 0) { this.ui.showToast("하나 이상의 주제를 입력하세요.", "error"); return; }
+        if (this.localState.apiKeys.length === 0) { this.ui.showToast("설정에서 API 키를 먼저 추가하세요.", "error"); return; }
+
+        const newJobs = topics.map(topic => ({
+          jobId: this.jobManager.getNextJobId(),
+          type: 'initial',
+          topic: topic,
+          prompt: template.content.replace('{주제}', topic).replace('{자료}', this.referenceFileContent || "참고 자료 없음")
+        }));
+        
+        this.jobManager.addJobs(newJobs);
+        this.ui.showToast(`${newJobs.length}개의 작업을 큐에 추가합니다.`, "info");
+        this.ui.showWorkspaceView('results');
+        this.ui.setButtonLoading(true, `(${this.jobManager.jobQueue.length}개 작업 대기 중)`);
+        setTimeout(() => this.ui.setButtonLoading(false), 2000);
+        this.ui.clearTopicsInput();
+      }
+
+      handleFollowUpClick(postId) {
+        const post = this.localState.generatedPosts.find(p => p.id === postId);
+        if (!post) return;
+        
+        if (this.localState.followUpTemplates.length === 0) {
+          this.ui.showToast("후속 작업 템플릿이 없습니다. 설정 탭에서 템플릿을 저장하세요.", "error");
+          return;
+        }
+        const template = this.localState.followUpTemplates[0];
+        const newJob = { 
+          jobId: this.jobManager.getNextJobId(),
+          type: 'follow-up', 
+          originalPostId: postId, 
+          prompt: template.content.replace('{글}', post.content), 
+          topic: `[${template.name}] ${post.topic.replace(/\[.*?\] /g, '')}` 
+        };
+        
+        this.jobManager.addJobs([newJob]); // addJobs는 배열을 받음
+        this.ui.showToast(`'${template.name}' 작업을 큐에 추가했습니다.`, "info");
+      }
+      
+      async retryJob(postId) {
+        const post = this.localState.generatedPosts.find(p => p.id === postId);
+        if (!post) { this.ui.showToast("실패한 작업을 찾을 수 없습니다.", "error"); return; }
+        
+        const templateId = this.ui.elements.templateSelect.value;
+        const template = this.localState.templates.find(t => t.id === templateId);
+        if (!template) { this.ui.showToast("재시도를 위해 유효한 기본 템플릿을 선택하세요.", "error"); return; }
+
+        const newJob = { 
+          jobId: this.jobManager.getNextJobId(),
+          type: 'initial', 
+          topic: post.topic, 
+          prompt: template.content.replace('{주제}', post.topic).replace('{자료}', this.referenceFileContent || "참고 자료 없음")
+        };
+        
+        this.jobManager.addRetryJob(newJob);
+        this.ui.showToast(`'${post.topic}' 작업을 큐에 다시 추가했습니다.`, "info");
+        await this.firebase.deleteGeneratedPost(postId); // 기존 실패 내역 삭제
+      }
+
+      async retryFollowUpJob(postId) {
+        const post = this.localState.generatedPosts.find(p => p.id === postId);
+        if (!post || !post.content) { this.ui.showToast("원본 글을 찾을 수 없습니다.", "error"); return; }
+
+        const template = this.localState.followUpTemplates[0];
+        if (!template) { this.ui.showToast("후속 작업 템플릿이 없습니다.", "error"); return; }
+
+        const newJob = { 
+          jobId: this.jobManager.getNextJobId(),
+          type: 'follow-up', 
+          originalPostId: postId, 
+          prompt: template.content.replace('{글}', post.content), 
+          topic: `[${template.name}] ${post.topic.replace(/\[.*?\] /g, '')}` 
+        };
+        
+        this.jobManager.addRetryJob(newJob, true);
+        this.ui.showToast(`'${template.name}' 작업을 큐에 다시 추가했습니다.`, "info");
+        await this.firebase.updatePostAfterRetry(postId); // 후속 작업 상태 초기화
+      }
+      
+      copyToClipboard(postId, type) {
+        const post = this.localState.generatedPosts.find(p => p.id === postId);
+        if (!post) return;
+        
+        let textToCopy = '', toastMessage = '';
+        if (type === 'content') { 
+          textToCopy = post.content; toastMessage = "원본 글이 복사되었습니다."; 
+        }
+        else if (type === 'followUp' && post.isFollowUpComplete && !post.followUpError) { 
+          textToCopy = post.followUpResult; toastMessage = "후속 작업 결과가 복사되었습니다."; 
+        }
+        else { this.ui.showToast("복사할 내용이 없습니다.", "error"); return; }
+        
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(textToCopy)
+            .then(() => this.ui.showToast(toastMessage, "success"))
+            .catch(err => this.ui.showToast("클립보드 복사 실패.", "error"));
+        } else {
+          const ta = document.createElement('textarea');
+          ta.value = textToCopy; ta.style.position = 'absolute'; ta.style.left = '-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); this.ui.showToast(toastMessage, "success"); } 
+          catch (err) { this.ui.showToast("복사에 실패했습니다.", "error"); }
+          document.body.removeChild(ta);
+        }
+      }
+    }
+
+
+    /**
+     * ================================================================
+     * === 애플리케이션 시작점 ===
+     * ================================================================
+     */
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      const app = new App();
+      window.app = app; // 전역 스코프에 할당
+      
+      const configString = localStorage.getItem('firebaseConfig');
+      
+      if (!configString) {
+        const errorMsg = "Firebase 설정이 없습니다. '설정' 탭에서 입력해주세요.";
+        console.warn(errorMsg);
+        app.ui.showToast(errorMsg, "info"); 
+        app.ui.showView('settings'); 
+        app.ui.elements.navWorkspace.disabled = true;
+        app.ui.elements.navWorkspace.classList.add('opacity-50', 'cursor-not-allowed');
+      } else {
+        try {
+          const firebaseConfig = JSON.parse(configString);
+          app.ui.setFirebaseConfigInput(configString);
+          app.init(firebaseConfig); // App 초기화
+        } catch (e) {
+          console.error("Firebase 설정 파싱 오류:", e.message);
+          app.ui.showToast("저장된 Firebase 설정이 잘못되었습니다. 다시 입력해주세요.", "error");
+          localStorage.removeItem('firebaseConfig');
+          app.ui.showView('settings'); 
+          app.ui.elements.navWorkspace.disabled = true;
+          app.ui.elements.navWorkspace.classList.add('opacity-50', 'cursor-not-allowed');
+        }
+      }
+    });
+
+  </script>
 </body>
 </html>
-
