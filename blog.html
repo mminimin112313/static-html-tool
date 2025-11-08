@@ -12,7 +12,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
   <!-- Bootstrap Icons -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-  
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
   <style>
     body {
       font-family: 'Inter', 'Noto Sans KR', sans-serif;
@@ -102,6 +103,20 @@
       border-width: 2px;
       margin-right: 0.5rem; /* mr-2 */
     }
+
+    /* 드래그 앤 드롭 드롭존 스타일 */
+    .dropzone {
+      position: absolute;
+      inset: 0; /* top/left/right/bottom = 0 */
+      z-index: 10; /* 콘텐츠(z-20)보다 뒤에 위치 */
+      border-radius: 0.5rem; /* rounded-lg */
+      transition: all 0.2s ease-out;
+      background-color: transparent;
+    }
+    .dropzone-active {
+      background-color: rgba(59, 130, 246, 0.1); /* bg-blue-500/10 */
+      border: 2px dashed #3B82F6; /* border-blue-500 */
+    }
   </style>
 </head>
 <body class="text-gray-900">
@@ -120,15 +135,21 @@
       </div>
       <!-- 모달 본문 -->
       <div id="modal-content-wrapper" class="p-6 max-h-[70vh] overflow-y-auto">
-        <!-- 원본 글 -->
+        
+        <div id="modal-image-gallery-wrapper" class="hidden mb-6">
+          <h4 class="text-lg font-semibold text-gray-700 mb-2">이미지 갤러리</h4>
+          <div id="modal-image-gallery" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-md">
+            </div>
+        </div>
+        
         <h4 class="text-lg font-semibold text-gray-700 mb-2">원본 글</h4>
         <div id="modal-content" class="p-4 bg-gray-50 rounded-md whitespace-pre-wrap text-gray-700 leading-relaxed"></div>
         
-        <!-- 후속 작업 결과 (있을 경우) -->
         <div id="modal-followup-wrapper" class="hidden mt-6">
           <h4 class="text-lg font-semibold text-gray-700 mb-2">후속 작업 결과</h4>
           <div id="modal-followup-content" class="p-4 bg-blue-50 rounded-md whitespace-pre-wrap text-gray-800 leading-relaxed"></div>
         </div>
+
       </div>
       <!-- 모달 푸터 -->
       <div class="flex justify-end p-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
@@ -361,6 +382,7 @@
           'modal-close-btn', 'modal-close-footer-btn',
           'workspace-input-panel', 'workspace-results-panel', 'nav-workspace-input', 'nav-workspace-results',
           'job-footer-bar', 'processing-list', 'queue-status-display', 'toast',
+          'modal-image-gallery-wrapper', 'modal-image-gallery',
           'firebase-config-input', 'save-firebase-config-button',
           'google-login-button', 'anonymous-login-button', 'logout-button',
           'api-key-input', 'add-key-button', 'api-keys-list',
@@ -607,6 +629,9 @@
       renderResults(posts = [], hasFollowUpTemplate) {
         const container = this.elements.resultsContainer;
         container.innerHTML = '';
+        
+        // [수정] 그리드 레이아웃 및 정렬 스타일 적용
+        container.className = 'h-[600px] overflow-y-auto pr-2 grid gap-4 grid-cols-[repeat(auto-fill,minmax(300px,1fr))] items-start';
 
         // 1. 필터링
         let filteredPosts = posts.filter(post => {
@@ -635,33 +660,107 @@
             ? `<p class="text-red-600 font-medium">${post.content}</p>` 
             : `<p class="text-gray-700 whitespace-pre-wrap">${post.content.substring(0, 100)}...</p>`;
           
-          let buttons = [];
+          // --- 버튼 로직 수정 ---
+          const buttonsContainer = this.createDOMElement('div', 'flex items-center justify-end space-x-3 pt-2 border-t border-gray-100');
+          
+          // [신규] 이미지 갯수 뱃지 플레이스홀더 (좌측 정렬)
+          buttonsContainer.innerHTML += `<span id="image-count-${post.id}" class="hidden text-sm text-gray-500 mr-auto"></span>`;
+          // 1. 파일 입력 (숨김) - DOM 노드 생성 및 핸들러 연결
+          // (아직 DOM에 추가하지 않음)
+          const imageInputId = `image-input-${post.id}`;
+          const imageInput = this.createDOMElement('input', 'hidden', '');
+          imageInput.type = 'file';
+          imageInput.accept = 'image/*';
+          imageInput.id = imageInputId;
+          imageInput.onchange = (e) => window.app.handleImageUpload(post.id, e.target.files[0]);
+          
+          const zipInputId = `zip-input-${post.id}`;
+          const zipInput = this.createDOMElement('input', 'hidden', '');
+          zipInput.type = 'file';
+          zipInput.accept = '.zip';
+          zipInput.id = zipInputId;
+          zipInput.onchange = (e) => window.app.handleZipImageUpload(post.id, e.target.files[0]);
+
+          // 2. 버튼 생성 (HTML 문자열)
           if (post.isFollowUpComplete) {
-            buttons.push(this.createActionButton('bi-arrows-fullscreen', '', `window.app.ui.openModal('${post.id}')`, "전체 보기"));
-            buttons.push(this.createActionButton('bi-clipboard', '', `window.app.copyToClipboard('${post.id}', 'content')`, "원본 복사"));
+            buttonsContainer.innerHTML += this.createActionButton('bi-arrows-fullscreen', '', `window.app.ui.openModal('${post.id}')`, "전체 보기");
+            buttonsContainer.innerHTML += this.createActionButton('bi-clipboard', '', `window.app.copyToClipboard('${post.id}', 'content')`, "원본 복사");
             if (post.followUpError) {
-              buttons.push(this.createActionButton('bi-arrow-clockwise', 'icon-btn-retry', `window.app.retryFollowUpJob('${post.id}')`, "재시도"));
+              buttonsContainer.innerHTML += this.createActionButton('bi-arrow-clockwise', 'icon-btn-retry', `window.app.retryFollowUpJob('${post.id}')`, "재시도");
             } else {
-              buttons.push(this.createActionButton('bi-clipboard-check', 'icon-btn-purple', `window.app.copyToClipboard('${post.id}', 'followUp')`, "결과 복사"));
+              buttonsContainer.innerHTML += this.createActionButton('bi-clipboard-check', 'icon-btn-purple', `window.app.copyToClipboard('${post.id}', 'followUp')`, "결과 복사");
             }
           } else if (post.error) {
-            buttons.push(this.createActionButton('bi-exclamation-triangle', '', `window.app.ui.openModal('${post.id}')`, "실패 사유 보기"));
-            buttons.push(this.createActionButton('bi-arrow-clockwise', 'icon-btn-retry', `window.app.retryJob('${post.id}')`, "재시도"));
+            buttonsContainer.innerHTML += this.createActionButton('bi-exclamation-triangle', '', `window.app.ui.openModal('${post.id}')`, "실패 사유 보기");
+            buttonsContainer.innerHTML += this.createActionButton('bi-arrow-clockwise', 'icon-btn-retry', `window.app.retryJob('${post.id}')`, "재시도");
           } else {
-            buttons.push(this.createActionButton('bi-arrows-fullscreen', '', `window.app.ui.openModal('${post.id}')`, "전체 보기"));
-            buttons.push(this.createActionButton('bi-clipboard', '', `window.app.copyToClipboard('${post.id}', 'content')`, "원본 복사"));
+            buttonsContainer.innerHTML += this.createActionButton('bi-arrows-fullscreen', '', `window.app.ui.openModal('${post.id}')`, "전체 보기");
+            buttonsContainer.innerHTML += this.createActionButton('bi-clipboard', '', `window.app.copyToClipboard('${post.id}', 'content')`, "원본 복사");
             if (hasFollowUpTemplate) {
-              buttons.push(this.createActionButton('bi-magic', 'icon-btn-purple', `window.app.handleFollowUpClick('${post.id}')`, "후속 작업 실행"));
+              buttonsContainer.innerHTML += this.createActionButton('bi-magic', 'icon-btn-purple', `window.app.handleFollowUpClick('${post.id}')`, "후속 작업 실행");
             }
           }
-          buttons.push(this.createActionButton('bi-trash', 'icon-btn-danger', `window.app.firebase.deleteGeneratedPost('${post.id}')`, "삭제"));
 
-          const el = this.createDOMElement('div', 'bg-white p-3 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 border border-gray-200', `
+          // 3. 신규 버튼 (HTML 문자열) - 파일 입력을 트리거
+          buttonsContainer.insertAdjacentHTML('beforeend', this.createActionButton('bi-image', '', `document.getElementById('${imageInputId}').click()`, "개별 이미지 추가"));
+          buttonsContainer.insertAdjacentHTML('beforeend', this.createActionButton('bi-file-earmark-zip', '', `document.getElementById('${zipInputId}').click()`, "ZIP 이미지 추가"));
+          
+          // 4. 삭제 버튼 (HTML 문자열)
+          buttonsContainer.insertAdjacentHTML('beforeend', this.createActionButton('bi-trash', 'icon-btn-danger', `window.app.deletePost('${post.id}')`, "삭제"));
+          
+          // 5. [수정됨] 모든 HTML 문자열 조작이 끝난 후, 이벤트 리스너가 연결된 DOM 노드를 추가
+          buttonsContainer.appendChild(imageInput);
+          buttonsContainer.appendChild(zipInput);
+
+          const contentWrapper = this.createDOMElement('div', 'relative z-20', `
             <h4 class="font-semibold text-gray-800">${post.topic}</h4>
             <div class="mt-2 mb-3 text-sm cursor-pointer" onclick="window.app.ui.openModal('${post.id}')">${contentPreview}</div>
-            <div class="flex items-center justify-end space-x-3 pt-2 border-t border-gray-100">${buttons.join('')}</div>
           `);
+          contentWrapper.appendChild(buttonsContainer); // 버튼도 래퍼에 포함
+
+          // 2. [수정] 메인 카드(`el`)에 relative 추가 및 contentWrapper 삽입
+          const el = this.createDOMElement('div', 'relative bg-white p-3 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-200 border border-gray-200', '');
+          el.appendChild(contentWrapper);
+
+          // 3. [신규] 드롭존 생성 및 이벤트 바인딩
+          const dropZone = this.createDOMElement('div', 'dropzone', '');
+          
+          const dragHandler = (e, isActive) => {
+            e.preventDefault();
+            e.stopPropagation();
+            dropZone.classList.toggle('dropzone-active', isActive);
+          };
+
+          dropZone.ondragover = (e) => dragHandler(e, true);
+          dropZone.ondragleave = (e) => dragHandler(e, false);
+          
+          dropZone.ondrop = (e) => {
+            dragHandler(e, false); // 비활성화
+            
+            const files = e.dataTransfer.files;
+            if (!files || files.length === 0) return;
+
+            this.showToast(`'${post.topic}'에 ${files.length}개 파일 드롭 감지.`, "info");
+
+            // 모든 드롭된 파일을 순회하며 처리
+            for (const file of files) {
+              if (file.type === 'application/zip' || file.name.endsWith('.zip')) {
+                window.app.handleZipImageUpload(post.id, file);
+              } else if (file.type.startsWith('image/')) {
+                window.app.handleImageUpload(post.id, file);
+              } else {
+                this.showToast(`지원하지 않는 파일 형식: ${file.name}`, "error");
+              }
+            }
+          };
+          
+          el.appendChild(dropZone); // 드롭존을 메인 카드에 추가 (z-10)
+          
+          // --- 로직 수정 끝 ---
           container.appendChild(el);
+          
+          // [신규] 생성된 카드의 이미지 갯수를 비동기적으로 업데이트
+          this.updateImageCount(post.id);
         });
       }
       
@@ -687,6 +786,12 @@
           this.elements.modalFollowupWrapper.classList.add('hidden');
         }
         
+        // --- 신규: 이미지 갤러리 로드 ---
+        this.renderModalGallery(postId);
+        // --- 신규 로직 끝 ---
+
+        this.elements.modalOverlay.classList.remove('hidden');
+        
         this.elements.modalOverlay.classList.remove('hidden');
         setTimeout(() => {
           this.elements.modalOverlay.classList.remove('opacity-0');
@@ -698,6 +803,61 @@
         this.elements.modalContainer.classList.add('scale-95', 'opacity-0');
         this.elements.modalOverlay.classList.add('opacity-0');
         setTimeout(() => { this.elements.modalOverlay.classList.add('hidden'); }, 300);
+      }
+      
+      async renderModalGallery(postId) {
+        const gallery = this.elements.modalImageGallery;
+        const wrapper = this.elements.modalImageGalleryWrapper;
+        gallery.innerHTML = '<p class="text-gray-500 col-span-full">이미지 로드 중...</p>';
+        wrapper.classList.remove('hidden');
+        
+        try {
+          const images = await window.app.imageDB.getImagesForPost(postId);
+          if (images.length === 0) {
+            gallery.innerHTML = '<p class="text-gray-500 col-span-full">업로드된 이미지가 없습니다.</p>';
+            return;
+          }
+          
+          gallery.innerHTML = ''; // 로딩 메시지 제거
+          images.forEach(imgData => {
+            const url = URL.createObjectURL(imgData.blob);
+            
+            // 1. 이미지 감싸는 래퍼 생성
+            const wrapper = this.createDOMElement('div', 'relative group shadow-sm rounded-md overflow-hidden', '');
+            
+            // 2. 이미지 엘리먼트
+            const imgEl = this.createDOMElement('img', 'w-full h-auto object-cover cursor-pointer', '');
+            imgEl.src = url;
+            imgEl.style.minWidth = '300px'; 
+            imgEl.title = `(${imgData.type}) 클릭하여 복사`;
+            imgEl.onload = () => URL.revokeObjectURL(url); 
+            imgEl.onclick = () => {
+              window.app.imageDB.copyImageToClipboard(imgData.blob)
+                .then(() => this.showToast("이미지가 클립보드에 복사되었습니다.", "success"))
+                .catch(e => this.showToast(e.message, "error"));
+            };
+
+            // 3. 삭제 버튼
+            const deleteBtn = this.createDOMElement('button', 
+              'absolute top-1.5 right-1.5 p-1 bg-red-600 text-white rounded-full leading-none opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-700', 
+              '<i class="bi bi-trash" style="font-size: 0.75rem; vertical-align: middle;"></i>'
+            );
+            deleteBtn.title = "이미지 삭제";
+            deleteBtn.onclick = (e) => {
+              e.stopPropagation(); // 이미지 복사 이벤트 방지
+              // App의 새 핸들러 호출 (imgData.id는 DB의 기본 키)
+              window.app.handleDeleteImage(imgData.id, postId); 
+            };
+            
+            wrapper.appendChild(imgEl);
+            wrapper.appendChild(deleteBtn);
+            gallery.appendChild(wrapper);
+          });
+          
+        } catch (e) {
+          console.error("이미지 갤러리 로드 실패:", e);
+          gallery.innerHTML = '<p class="text-red-500 col-span-full">이미지 로드 중 오류가 발생했습니다.</p>';
+        }
       }
       
       updateJobFooter(activelyProcessingJobs, jobQueueLength) {
@@ -737,6 +897,26 @@
         el.className = className;
         el.innerHTML = html;
         return el;
+      }
+      
+      // [신규] 이미지 갯수 뱃지 업데이트 헬퍼
+      async updateImageCount(postId) {
+        try {
+          // imageDB에서 직접 카운트 조회
+          const images = await window.app.imageDB.getImagesForPost(postId);
+          const badge = document.getElementById(`image-count-${postId}`);
+          if (badge) {
+            if (images.length > 0) {
+              badge.textContent = `${images.length}개 이미지`;
+              badge.classList.remove('hidden');
+            } else {
+              badge.textContent = '';
+              badge.classList.add('hidden');
+            }
+          }
+        } catch (e) {
+          console.warn(`Image count update failed for ${postId}`, e);
+        }
       }
     }
 
@@ -883,8 +1063,9 @@
         await addDoc(this.collections.postsCol, { 
           topic: job.topic, content, error, createdAt: serverTimestamp(), 
           isFollowUpComplete: false, followUpResult: null, followUpError: false,
+          hasCoverImage: false, // <-- 신규
           originalJob: { type: job.type, prompt: job.prompt }
-        }); 
+        });
       }
       async updatePostWithFollowUp(job, resultText, isError = false) {
         const postDoc = doc(this.db, this.collections.postsCol.path, job.originalPostId);
@@ -1154,9 +1335,183 @@
     }
 
 
+
     /**
      * ================================================================
-     * 클래스 4: App - 메인 컨트롤러 (모든 클래스 연결)
+     * 클래스 4: ImageDB - IndexedDB 이미지 스토리지
+     * (Axiom: Separation of Concerns)
+     * ================================================================
+     */
+    class ImageDB {
+      constructor() {
+        this.db = null;
+        this.dbName = 'BlogImageStore';
+        this.storeName = 'images';
+      }
+
+      async init() {
+        return new Promise((resolve, reject) => {
+          if (this.db) return resolve(this.db);
+          
+          const request = indexedDB.open(this.dbName, 1);
+          
+          request.onerror = (e) => reject(`IndexedDB 오류: ${e.target.errorCode}`);
+          request.onsuccess = (e) => {
+            this.db = e.target.result;
+            resolve(this.db);
+          };
+          request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains(this.storeName)) {
+              const store = db.createObjectStore(this.storeName, { autoIncrement: true });
+              store.createIndex('postId', 'postId', { unique: false });
+            }
+          };
+        });
+      }
+
+      async addImage(postId, type, blob) {
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+          const tx = this.db.transaction(this.storeName, 'readwrite');
+          const store = tx.objectStore(this.storeName);
+          store.add({ postId, type, blob, createdAt: new Date() });
+          tx.oncomplete = () => resolve();
+          tx.onerror = (e) => reject(`이미지 저장 실패: ${e.target.error}`);
+        });
+      }
+
+      async getImagesForPost(postId) {
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+          const images = [];
+          const tx = this.db.transaction(this.storeName, 'readonly');
+          const store = tx.objectStore(this.storeName);
+          const index = store.index('postId');
+          const request = index.openCursor(IDBKeyRange.only(postId)); // getAll 대신 커서 사용
+          
+          request.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              // 값과 함께 기본 키(id)도 반환
+              images.push({ id: cursor.primaryKey, ...cursor.value });
+              cursor.continue();
+            } else {
+              resolve(images); // 커서 종료 시 배열 반환
+            }
+          };
+          request.onerror = (e) => reject(`이미지 조회 실패: ${e.target.error}`);
+        });
+      }
+
+      async deleteImage(imageId) { // <-- 신규 메서드
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+          const tx = this.db.transaction(this.storeName, 'readwrite');
+          const store = tx.objectStore(this.storeName);
+          const request = store.delete(imageId); // 기본 키로 삭제
+          
+          tx.oncomplete = () => resolve();
+          tx.onerror = (e) => reject(`이미지 삭제 실패: ${e.target.error}`);
+        });
+      }
+      
+      async deleteImagesForPost(postId) {
+        if (!this.db) await this.init();
+        return new Promise((resolve, reject) => {
+          const tx = this.db.transaction(this.storeName, 'readwrite');
+          const store = tx.objectStore(this.storeName);
+          const index = store.index('postId');
+          const request = index.openKeyCursor(postId); // 키 커서 사용
+          
+          request.onsuccess = (e) => {
+            const cursor = e.target.result;
+            if (cursor) {
+              store.delete(cursor.primaryKey); // 해당 키의 레코드 삭제
+              cursor.continue();
+            }
+          };
+          
+          tx.oncomplete = () => resolve();
+          tx.onerror = (e) => reject(`이미지 삭제 실패: ${e.target.error}`);
+        });
+      }
+      
+      async copyImageToClipboard(blob) {
+        try {
+          if (!navigator.clipboard || !window.ClipboardItem) {
+            throw new Error("브라우저가 클립보드 복사를 지원하지 않습니다.");
+          }
+          const item = new ClipboardItem({ [blob.type]: blob });
+          await navigator.clipboard.write([item]);
+        } catch (e) {
+          console.error("클립보드 복사 실패:", e);
+          throw new Error("클립보드 복사 실패. (HTTP 환경에서는 작동하지 않을 수 있습니다)");
+        }
+      }
+    }
+    
+    /**
+     * ================================================================
+     * 클래스 5: ImageProcessor - Canvas 기반 이미지 처리
+     * (Axiom: Pragmatic Implementation)
+     * ================================================================
+     */
+    class ImageProcessor {
+      async processImage(file) {
+        // OffscreenCanvas가 지원되지 않는 경우를 대비해 일반 Canvas 사용
+        const bmp = await createImageBitmap(file);
+        const canvas = document.createElement('canvas');
+        canvas.width = bmp.width;
+        canvas.height = bmp.height;
+        const ctx = canvas.getContext('2d');
+        
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close();
+        
+        // 1. 노이즈 추가 (요구사항 3)
+        this.applyNoise(ctx, canvas.width, canvas.height);
+        
+        // 2. 1px 랜덤 노이즈 테두리 (요구사항 3)
+        this.applyNoiseBorder(ctx, canvas.width, canvas.height);
+        
+        return new Promise(resolve => {
+            canvas.toBlob(resolve, 'image/webp', 0.9);
+        });
+      }
+      
+      applyNoise(ctx, width, height, intensity = 3) {
+        const imageData = ctx.getImageData(0, 0, width, height);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const noise = (Math.random() - 0.5) * intensity;
+          data[i]   += noise; // R
+          data[i+1] += noise; // G
+          data[i+2] += noise; // B
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
+      
+      applyNoiseBorder(ctx, width, height) {
+        ctx.fillStyle = '#f9f9f9'; // 검은색
+        
+        // Top, Bottom
+        for (let x = 0; x < width; x++) {
+          if (Math.random() > 0.5) ctx.fillRect(x, 0, 1, 1); // Top
+          if (Math.random() > 0.5) ctx.fillRect(x, height - 1, 1, 1); // Bottom
+        }
+        // Left, Right
+        for (let y = 0; y < height; y++) {
+          if (Math.random() > 0.5) ctx.fillRect(0, y, 1, 1); // Left
+          if (Math.random() > 0.5) ctx.fillRect(width - 1, y, 1, 1); // Right
+        }
+      }
+    }
+
+
+    /**
+     * ================================================================
+     * 클래스 6: App - 메인 컨트롤러 (모든 클래스 연결) (기존 클래스 4)
      * ================================================================
      */
     class App {
@@ -1164,6 +1519,8 @@
         this.ui = new UIManager();
         this.firebase = null; // Firebase는 설정 로드 후 초기화
         this.jobManager = new JobManager(this);
+        this.imageDB = new ImageDB(); // <-- 신규
+        this.imageProcessor = new ImageProcessor(); // <-- 신규
         
         // 로컬 상태 (UI 렌더링용)
         this.localState = {
@@ -1181,6 +1538,10 @@
         try {
           this.firebase = new FirebaseService(config, (user) => this.onAuthStateChange(user));
           this.ui.bindEvents(this);
+          this.imageDB.init().catch(e => { // <-- 신규
+            console.error("ImageDB 초기화 실패", e);
+            this.ui.showToast("이미지 저장소(IndexedDB) 초기화에 실패했습니다.", "error");
+          });
         } catch (e) {
           console.error("Firebase 초기화 오류:", e.message);
           this.ui.showToast(`Firebase 초기화 오류: ${e.message}`, "error");
@@ -1343,6 +1704,101 @@
         this.ui.showToast(`'${template.name}' 작업을 큐에 다시 추가했습니다.`, "info");
         await this.firebase.updatePostAfterRetry(postId); // 후속 작업 상태 초기화
       }
+
+      // --- 신규 이미지 핸들러 ---
+      
+      async handleImageUpload(postId, file) {
+        console.log(`[DEBUG] handleImageUpload A - PostID: ${postId}, 파일 수신:`, file); // <-- 디버깅 코드
+        
+        if (!file) return;
+        this.ui.showToast("이미지 처리 중...", "info");
+        try {
+          const processedBlob = await this.imageProcessor.processImage(file);
+          await this.imageDB.addImage(postId, 'image', processedBlob); // 'cover' -> 'image'
+          
+          // Firestore updateDoc 로직 제거 (요구사항 반영)
+          
+          this.ui.showToast("이미지가 저장되었습니다.", "success");
+        } catch (e) {
+          console.error("이미지 처리 실패:", e);
+          this.ui.showToast(`이미지 오류: ${e.message}`, "error");
+        }
+      }
+      
+      async handleZipImageUpload(postId, file) {
+        console.log(`[DEBUG] handleZipImageUpload A - PostID: ${postId}, 파일 수신:`, file); // <-- 디버깅 코드
+        if (!file) return;
+        if (typeof JSZip === 'undefined') {
+            this.ui.showToast("JSZip 라이브러리가 로드되지 않았습니다.", "error");
+            return;
+        }
+        this.ui.showToast(`'${file.name}' ZIP 파일 처리 중...`, "info");
+        
+        try {
+          const jszip = new JSZip();
+          const zip = await jszip.loadAsync(file);
+          
+          const imageFiles = [];
+          zip.forEach((relativePath, zipEntry) => {
+            // 이미지 파일만 필터링 (확장자 기준, 폴더 제외)
+            if (!zipEntry.dir && /\.(jpe?g|png|gif|webp)$/i.test(zipEntry.name)) {
+              imageFiles.push(zipEntry.async('blob'));
+            }
+          });
+          
+          if (imageFiles.length === 0) {
+            this.ui.showToast("ZIP 파일에 유효한 이미지가 없습니다.", "error");
+            return;
+          }
+          
+          this.ui.showToast(`${imageFiles.length}개의 이미지 처리 시작...`, "info");
+
+          let successCount = 0;
+          await Promise.all(imageFiles.map(async (blobPromise) => {
+            const blob = await blobPromise;
+            const processedBlob = await this.imageProcessor.processImage(blob);
+            await this.imageDB.addImage(postId, 'zip', processedBlob);
+            successCount++;
+          }));
+          
+          this.ui.showToast(`${successCount}개의 이미지가 저장되었습니다.`, "success");
+
+        } catch (e) {
+          console.error("ZIP 파일 처리 실패:", e);
+          this.ui.showToast(`ZIP 파일 오류: ${e.message}`, "error");
+        }
+      }
+      
+      async handleDeleteImage(imageId, postId) { // <-- 신규 메서드
+        if (!confirm("이 이미지를 영구히 삭제하시겠습니까?")) return;
+        try {
+          await this.imageDB.deleteImage(imageId);
+          this.ui.showToast("이미지가 삭제되었습니다.", "success");
+          // 모달 갤러리 즉시 새로고침
+          await this.ui.renderModalGallery(postId); 
+        } catch (e) {
+          console.error("이미지 삭제 실패:", e);
+          this.ui.showToast(`이미지 삭제 실패: ${e.message}`, "error");
+        }
+      }
+      
+      async deletePost(postId) {
+        if (!confirm("이 항목을 삭제하시겠습니까? 저장된 이미지도 함께 삭제됩니다.")) {
+          return;
+        }
+        try {
+          // 1. Firestore에서 삭제
+          await this.firebase.deleteGeneratedPost(postId);
+          
+          // 2. IndexedDB에서 관련 이미지 삭제
+          await this.imageDB.deleteImagesForPost(postId);
+          
+          this.ui.showToast("항목이 삭제되었습니다.", "success");
+        } catch (e) {
+          console.error("삭제 실패:", e);
+          this.ui.showToast(`삭제 실패: ${e.message}`, "error");
+        }
+      }
       
       copyToClipboard(postId, type) {
         const post = this.localState.generatedPosts.find(p => p.id === postId);
@@ -1374,6 +1830,7 @@
     }
 
 
+
     /**
      * ================================================================
      * === 애플리케이션 시작점 ===
@@ -1382,6 +1839,7 @@
     
     document.addEventListener('DOMContentLoaded', () => {
       const app = new App();
+
       window.app = app; // 전역 스코프에 할당
       
       const configString = localStorage.getItem('firebaseConfig');
