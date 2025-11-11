@@ -192,29 +192,37 @@
             border-style: solid;
             border-color: #1e293b transparent transparent transparent;
         }
+        /* (기존 .vis-tooltip 부터 .vis-time-axis .vis-grid.vis-major 까지의 모든 CSS를 아래 내용으로 교체) */
         .vis-tooltip {
+            /* [수정] 툴팁을 심플 팝업 스타일로 변경 (Req 2) */
+            background: white !important;
             border: none !important;
-            padding: 0 !important;
-            border-radius: 0 !important;
-            box-shadow: none !important;
-            color: inherit !important;
-            font-size: inherit !important;
-            font-family: inherit !important;
+            border-radius: 0.5rem !important; /* rounded-lg */
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1) !important; /* shadow-xl */
+            color: #111827 !important; /* text-gray-900 */
+            padding: 0 !important; /* 내부 컨테이너가 패딩을 갖도록 함 */
+            font-family: 'Pretendard', sans-serif !important;
+            width: auto !important; /* [수정] 너비 자동 */
+            max-width: 320px !important; /* [수정] 최대 너비 */
+            pointer-events: none;
         }
         /* 툴팁 화살표 숨기기 */
-        .vis-tooltip::before {
-            display: none !important;
-        }
+        .vis-tooltip::before { display: none !important; }
 
-        .vis-item.vis-point {
-            border-width: 0 !important; /* 줄기를 그리는 테두리 제거 */
+        /* [신규] vis-timeline 아이템 스타일 (Req 1) */
+        .vis-item.vis-box {
+            border-width: 0 !important; /* [수정] 테두리 제거 */
+            border-radius: 4px !important;
+            font-size: 0.8rem !important; /* 13px */
+            font-weight: 500 !important;
+            padding: 5px 8px !important;
         }
-
-        /* [신규] 툴팁 컨테이너 자체의 너비를 고정 (Req 1, 2) */
-        .vis-tooltip {
-            width: 208px !important;     /* 208px = w-52 */
-            max-width: 208px !important;
-            pointer-events: none;      /* 툴팁이 마우스 이벤트를 막지 않도록 함 */
+        .vis-item .vis-item-content {
+            padding: 0 !important;
+            display: block !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
         }
         
         /* Y축 (그룹) 패널 디자인 */
@@ -253,6 +261,7 @@
         .vis-time-axis .vis-grid.vis-major {
              border-color: #e2e8f0; /* slate-200 */
         }
+
     </style>
 </head>
 <body class="bg-slate-50 text-slate-800">
@@ -2849,20 +2858,23 @@ const firebaseUtils = {
                 return {
                     id: log.id,
                     group: log.definitionId,
-                    // [수정] '바'에 표시될 컨텐츠 (아이콘 + 텍스트)
-                    content: `<span class="vis-item-content">${icon}${barContent}</span>`, 
+                    // [수정] '바'에 표시될 컨텐츠 (아이콘 + 대상명)
+                    // (근거: Axiom of Minimum Cognitive Load - image_e78942.png 스타일)
+                    content: `<span class="vis-item-content">${icon}${def ? def.name : barContent}</span>`, 
                     start: log.timestamp,
-                    type: 'box', // [수정] 'point' -> 'box' (점을 바로 변경)
-                    
-                    // [수정] '바' 스타일 (흰 배경, 유색 테두리)
-                    style: `background-color: white; border: 1px solid ${def?.color || '#3b82f6'}; color: #334155;`,
-                    
-                    // [유지] 툴팁 활성화 '트리거'
+                    type: 'box', 
+
+                    // [수정] '바' 스타일 (단색 배경, 흰색 텍스트)
+                    // (근거: Axiom of Minimum Cognitive Load - Req 1)
+                    style: `background-color: ${def?.color || '#3b82f6'}; color: white;`,
+
+                    // 툴팁 활성화 '트리거'
                     title: ' ', 
-                    
+
                     // [수정] 툴팁 및 클릭 핸들러용 데이터
                     defName: def ? def.name : '알 수 없음',
-                    popupSubtitle: popupSubtitle, // [신규] 툴팁용 부제목
+                    // [수정] 툴팁 부제목을 신규 헬퍼 함수로 생성 (Req 3)
+                    popupSubtitle: logic.getConciseLogSummary(log, def), 
                 };
             })
         );
@@ -2895,10 +2907,10 @@ const firebaseUtils = {
 
                     // [수정] 'image_e717ed.png'와 유사한 심플 팝업 스타일
                     return `
-                      <div class="vis-tooltip-custom w-auto max-w-xs p-4 bg-white rounded-lg shadow-xl relative ring-1 ring-slate-900/5">
+                    <div class="vis-tooltip-custom w-auto max-w-xs p-3">
                         <h3 class="text-sm font-semibold mb-0.5 text-gray-900">${itemData.defName}</h3>
-                        <p class="text-sm text-gray-500">${itemData.popupSubtitle}</p>
-                      </div>`;
+                        <p class="text-sm text-gray-600">${itemData.popupSubtitle}</p>
+                    </div>`;
                 }
             }
         };
@@ -2913,6 +2925,29 @@ const firebaseUtils = {
                 logic.editEntry(properties.item);
             }
         });
+    },
+
+    /**
+     * [신규] 로그 항목의 간결한 요약 문자열을 생성합니다. (툴팁용)
+     */
+    getConciseLogSummary: (log, def) => {
+        if (!def || !log.values) return `${dayjs(log.timestamp).format('HH:mm')} 기록`;
+        
+        // 1. 첫 번째 텍스트 필드를 찾습니다.
+        const primaryField = def.fields.find(f => (f.fieldType === 'Text' || f.fieldType === 'Textarea') && log.values[f.fieldName]);
+        if (primaryField) {
+            return String(log.values[primaryField.fieldName]).split('\n')[0].substring(0, 50); // 50자 제한
+        }
+
+        // 2. 텍스트 필드가 없으면, 다른 값들 (숫자, 체크박스)을 요약합니다.
+        const otherValues = def.fields.map(f => {
+            const val = log.values[f.fieldName];
+            if (f.fieldType === 'Checkbox' && val === true) return f.fieldName;
+            if (f.fieldType === 'Number' && val) return `${f.fieldName}: ${val}`;
+            return '';
+        }).filter(Boolean).join(', ');
+
+        return otherValues || `${dayjs(log.timestamp).format('HH:mm')} 기록`;
     },
    
     renderGanttRows: () => {
