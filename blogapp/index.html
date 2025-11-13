@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+ <meta charset="UTF-8">
+ <meta name="viewport" content="width=device-width, initial-scale=1.0">
+ <title>Gemini 블로그 글 대량 생성기 (v10 - Modularized)</title>
+
+ <script src="https://cdn.tailwindcss.com"></script>
+
+ <link rel="preconnect" href="https://fonts.googleapis.com">
+ <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+ <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+
+ <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+ <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+ <link rel="stylesheet" href="style.css">
+</head>
+<body class="text-gray-900">
+
+ <div id="modal-overlay" class="fixed inset-0 bg-black bg-opacity-70 z-40 flex items-center justify-center p-4 hidden">
+  <div id="modal-container" class="bg-white rounded-lg shadow-2xl max-w-4xl w-full m-auto transition-all transform scale-95 opacity-0" onclick="event.stopPropagation()">
+   <div class="flex justify-between items-center p-4 border-b border-gray-200">
+    <h3 id="modal-title" class="text-xl font-semibold text-gray-800"></h3>
+    <button id="modal-close-btn" class="text-gray-400 hover:text-gray-600">
+     <i class="bi bi-x-lg text-2xl"></i>
+    </button>
+   </div>
+   <div id="modal-content-wrapper" class="p-6 max-h-[70vh] overflow-y-auto">
+   
+    <div id="modal-video-wrapper" class="hidden mb-6">
+     <h4 class="text-lg font-semibold text-gray-700 mb-2">동영상</h4>
+     <div class="relative group bg-black rounded-md overflow-hidden">
+      <video id="modal-video-player" class="w-full" controls preload="metadata"></video>
+      <button id="modal-video-delete-btn" class="absolute top-1.5 right-1.5 p-1 bg-red-600 text-white rounded-full leading-none opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-700" title="동영상 삭제">
+       <i class="bi bi-trash" style="font-size: 0.75rem;
+vertical-align: middle;"></i>
+      </button>
+     </div>
+    </div>
+   
+    <div id="modal-image-gallery-wrapper" class="hidden mb-6">
+     <h4 class="text-lg font-semibold text-gray-700 mb-2">이미지 갤러리</h4>
+     <div id="modal-image-gallery" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-md">
+      </div>
+    </div>
+   
+    <h4 class="text-lg font-semibold text-gray-700 mb-2">원본 글</h4>
+    <div id="modal-content" class="p-4 bg-gray-50 rounded-md whitespace-pre-wrap text-gray-700 leading-relaxed"></div>
+   
+    <div id="modal-followup-wrapper" class="hidden mt-6">
+     <h4 class="text-lg 
+font-semibold text-gray-700 mb-2">후속 작업 결과</h4>
+     <div id="modal-followup-content" class="p-4 bg-blue-50 rounded-md whitespace-pre-wrap text-gray-800 leading-relaxed"></div>
+    </div>
+
+   </div>
+   <div class="flex justify-end p-4 bg-gray-50 border-t border-gray-200 rounded-b-lg">
+    <button id="modal-close-footer-btn" class="bg-gray-200 text-gray-700 font-semibold py-2 px-4 rounded-md hover:bg-gray-300 transition">
+     닫기
+    </button>
+   </div>
+  </div>
+ </div>
+
+ <div id="video-modal-overlay" class="fixed inset-0 bg-black bg-opacity-80 z-40 flex items-center justify-center p-4 hidden" onclick="window.app.ui.closeVideoModal()">
+  <div id="video-modal-container" class="bg-gray-900 rounded-lg shadow-2xl max-w-4xl w-full m-auto transition-all transform scale-95 opacity-0" onclick="event.stopPropagation()">
+   <div class="flex justify-between items-center p-3 border-b border-gray-700">
+   
+ <h3 class="text-xl font-semibold text-white">동영상 미리보기</h3>
+    <button id="video-modal-close-btn" class="text-gray-400 hover:text-gray-200" onclick="window.app.ui.closeVideoModal()">
+     <i class="bi bi-x-lg text-2xl"></i>
+    </button>
+   </div>
+   <div class="p-4 bg-black">
+    <video id="video-preview-player" class="w-full max-h-[70vh]" controls autoplay muted playsinline></video>
+   </div>
+  </div>
+ </div>
+
+
+ <div id="app-container" class="max-w-7xl mx-auto p-4 sm:p-8">
+ <header class="mb-6">
+  <div class="flex justify-between items-center mb-4">
+    <div>
+      <h1 class="text-3xl font-bold text-gray-800">Gemini 블로그 글 대량 생성기</h1>
+      <p class="text-gray-600 mt-1">Firestore 기반 작업 큐 및 후속 작업 관리 (v10 - Modularized)</p>
+ 
+   </div>
+    <div id="user-id-display" class="mt-2 text-xs text-right text-gray-500"></div>
+  </div>
+  
+  <div class="border-b border-gray-300 flex space-x-4">
+    <button id="nav-input" class="py-2 px-4 font-semibold border-b-2 border-blue-600 text-blue-600">
+      <i class="bi bi-pencil-square mr-1"></i> 입력
+    </button>
+    <button id="nav-results" class="py-2 px-4 font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400 transition">
+      <i class="bi bi-card-list mr-1"></i> 결과
+    </button>
+    <button id="nav-settings" class="py-2 px-4 font-semibold border-b-2 border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-400 transition">
+      <i class="bi bi-gear mr-1"></i> 설정
+ 
+   </button>
+  </div>
+ </header>
+
+ <main id="workspace-view" class="">
+
+   <div>
+    <div id="workspace-input-panel" class="">
+     <div class="bg-white p-6 rounded-lg shadow-lg max-w-3xl mx-auto">
+      <h2 class="text-xl font-semibold mb-5 text-gray-800">입력 설정</h2>
+      <div class="space-y-5">
+       <div>
+        <label for="template-select" class="block text-sm font-medium text-gray-700 mb-1">1.
+기본 템플릿 선택</label>
+        <select id="template-select" class="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-500 transition"></select>
+       </div>
+       <div>
+        <label for="file-input" class="block text-sm font-medium text-gray-700 mb-1">2.
+참고 자료 (선택)</label>
+        <input type="file" id="file-input" accept=".txt,.md,.json" class="w-full text-sm text-gray-600
+         file:mr-4 file:py-2 file:px-4
+         file:rounded-lg file:border-0
+         file:text-sm file:font-semibold
+         file:bg-blue-50 file:text-blue-700
+         hover:file:bg-blue-100 transition cursor-pointer
+        "/>
+       </div>
+       
+       <div>
+        <label for="default-image-input" class="block text-sm font-medium text-gray-700 mb-1">3. 기본 이미지 (선택)</label>
+        <p class="text-xs text-gray-500 mb-2">여기에 등록된 이미지는 '생성하기' 클릭 시 모든 새 게시물에 자동으로 복제되어 추가됩니다.</p>
+        <input type="file" id="default-image-input" accept="image/*" multiple class="w-full text-sm text-gray-600
+         file:mr-4 file:py-2 file:px-4
+         file:rounded-lg file:border-0
+         file:text-sm file:font-semibold
+         file:bg-blue-50 file:text-blue-700
+         hover:file:bg-blue-100 transition cursor-pointer mb-2
+        "/>
+        <div id="default-image-gallery" class="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 p-2 bg-gray-50 rounded-md min-h-[50px]">
+         </div>
+       </div>
+
+       <div>
+        <label for="topics-input" 
+class="block text-sm font-medium text-gray-700 mb-1">4. 블로그 주제 (한 줄에 하나)</label>
+        <textarea id="topics-input" rows="8" class="w-full p-2.5 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 focus:border-blue-500 transition" placeholder="예: 2025년 최고의 AI 트렌드&#10;예: Gemini API 활용법 5가지"></textarea>
+       </div>
+       <button id="generate-button" class="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-md hover:bg-blue-700 shadow-md hover:shadow-lg transition-all duration-200 flex items-center justify-center">
+        <svg id="generate-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+         <circle 
+class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+         <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span id="generate-button-text">생성하기</span>
+       </button>
+      </div>
+      <div id="status-message" class="mt-4 text-sm text-center text-gray-600 h-10"></div>
+     </div>
+    </div>
+
+    <div id="workspace-results-panel" class="hidden">
+     <div class="bg-white 
+p-6 rounded-lg shadow-lg">
+      <div class="flex justify-between items-center mb-5">
+       <h2 class="text-xl font-semibold text-gray-800">작업 결과물</h2>
+       <select id="sort-creation-date" class="p-2 border border-gray-300 rounded-md text-sm focus:ring-blue-300 focus:border-blue-500">
+        <option value="newest">정렬: 최신순</option>
+        <option value="oldest">정렬: 오래된순</option>
+       </select>
+      </div>
+     
+      <div id="filter-container" class="space-y-3 mb-4">
+       <div class="filter-row">
+       
+ <label class="filter-row-label">작업 상태</label>
+        <div id="filter-group-status" class="filter-options-container">
+         </div>
+       </div>
+       <div class="filter-row">
+        <label class="filter-row-label">동영상</label>
+        <div id="filter-group-video" class="filter-options-container">
+         </div>
+       </div>
+       <div class="filter-row">
+        <label class="filter-row-label">이미지</label>
+        <div id="filter-group-image" class="filter-options-container">
+ 
+        </div>
+       </div>
+      </div>
+     
+      <div id="filter-tag-container" class="flex flex-wrap gap-2 py-3 border-t border-b border-gray-200 mb-4 min-h-[2.5rem]">
+       </div>
+   
+      <div id="results-container" class="space-y-4 h-[600px] overflow-y-auto pr-2">
+       <p class="text-gray-500">아직 생성된 글이 없습니다.</p>
+      </div>
+     </div>
+    </div>
+   </div>
+  </main>
+
+  <main id="settings-view" class="hidden">
+  
+ <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+   
+    <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-1">
+     <h2 class="text-xl font-semibold mb-4">Firebase 설정</h2>
+     <p class="text-sm text-gray-600 mb-2">Firebase 콘솔에서 '웹 앱'을 등록한 후 `firebaseConfig` 객체(JSON)를 붙여넣으세요.</p>
+     <textarea id="firebase-config-input" rows="10" class="w-full p-2 font-mono text-xs border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition" placeholder="{&#10;
+apiKey: &quot;...&quot;,&#10; authDomain: &quot;...&quot;,&#10; projectId: &quot;...&quot;,&#10; ...&#10;}"></textarea>
+     <button id="save-firebase-config-button" class="mt-2 w-full bg-red-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-red-700 shadow-sm hover:shadow-md transition">
+      <i class="bi bi-save mr-1"></i> 설정 저장 (페이지 새로고침)
+     </button>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-1">
+     <h2 class="text-xl font-semibold mb-4">인증 및 API 키</h2>
+    
+     <div class="space-y-2 mb-4">
+      <button id="google-login-button" class="w-full bg-white text-gray-700 font-semibold py-2 px-4 rounded-md border border-gray-300 hover:bg-gray-50 shadow-sm transition flex items-center justify-center">
+ 
+      <i class="bi bi-google mr-2 text-red-500"></i> Google 계정으로 로그인
+      </button>
+      <button id="anonymous-login-button" class="w-full bg-gray-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-700 shadow-sm transition flex items-center justify-center">
+       <i class="bi bi-person-stealth mr-2"></i> 익명으로 로그인
+      </button>
+      <button id="logout-button" class="w-full bg-red-500 text-white font-semibold py-2 px-4 rounded-md hover:bg-red-600 shadow-sm transition hidden items-center justify-center">
+       <i class="bi bi-box-arrow-right mr-2"></i> 로그아웃
+      </button>
+     </div>
+
+ 
+    <hr class="my-4">
+    
+     <h3 class="text-lg font-semibold mb-3">Gemini API 키 관리</h3>
+     <div class="flex space-x-2 mb-4">
+      <input type="password" id="api-key-input" placeholder="새 Gemini API 키" class="flex-grow p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition">
+      <button id="add-key-button" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 shadow-sm hover:shadow-md transition">추가</button>
+     </div>
+     <div id="api-keys-list" class="space-y-2"></div>
+    </div>
+
+    <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-1">
+     <h2 class="text-xl font-semibold mb-4">기본 
+템플릿 관리</h2>
+     <div class="space-y-4">
+      <input type="text" id="template-name" placeholder="템플릿 이름" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition">
+      <textarea id="template-content" rows="8" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition" placeholder="변수: {주제}, {자료}"></textarea>
+      <input type="hidden" id="template-id-hidden">
+      <button id="save-template-button" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-700 shadow-sm hover:shadow-md transition">저장/새로 만들기</button>
+     </div>
+     <h3 class="text-lg font-semibold mt-6 mb-2">저장된 템플릿</h3>
+     <div id="templates-list" class="space-y-2"></div>
+    </div>
+ 
+  
+    <div class="bg-white p-6 rounded-lg shadow-md lg:col-span-1">
+     <h2 class="text-xl font-semibold mb-4">후속 작업 템플릿 (단일)</h2>
+     <p class="text-sm text-gray-600 mb-4">여기에 저장된 템플릿이 모든 글의 후속 작업으로 자동 사용됩니다.</p>
+     <div class="space-y-4">
+      <input type="text" id="followup-template-name-single" placeholder="후속 작업 이름 (예: 도표 요약)" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition">
+      <textarea id="followup-template-content-single" rows="8" class="w-full p-2 border border-gray-300 rounded-md shadow-sm focus:ring-2 focus:ring-blue-300 transition" placeholder="필수 변수: {글}
+예: 다음 {글}을 마크다운 테이블로 요약해줘."></textarea>
+      <button id="save-followup-template-single-button" 
+class="w-full bg-purple-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-purple-700 shadow-sm hover:shadow-md transition">단일 후속 템플릿 저장</button>
+     </div>
+    
+     <hr class="my-6 border-gray-200">
+
+     <h2 class="text-xl font-semibold mb-4">동영상 BGM 설정</h2>
+     <p class="text-sm text-gray-600 mb-4">게시물 이미지로 동영상을 생성할 때 사용할 배경음악(MP3)을 등록합니다.</p>
+     <div class="space-y-3">
+      <input type="file" id="bgm-file-input" accept=".mp3" class="w-full text-sm text-gray-600
+       file:mr-4 file:py-2 file:px-4
+       file:rounded-lg file:border-0
+       file:text-sm file:font-semibold
+   
+    file:bg-blue-50 file:text-blue-700
+       hover:file:bg-blue-100 transition cursor-pointer
+      "/>
+      <button id="save-bgm-button" class="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-700 shadow-sm hover:shadow-md transition">
+       <i class="bi bi-music-note-beamed mr-1"></i> BGM 저장
+      </button>
+      
+      <div id="bgm-status-container" class="mt-3 p-3 bg-gray-50 rounded-md border border-gray-200 min-h-[50px]">
+       </div>
+
+     </div>
+    
+    </div>
+   </div>
+  </main>
+ </div>
+
+ <div id="job-footer-bar" class="flex items-center justify-between">
+  <div class="flex items-center">
+   <span class="text-sm font-medium mr-4">작업 현황</span>
+   <div id="processing-list" class="flex items-center">
+   
+</div>
+  </div>
+  <div id="queue-status-display" class="text-sm font-medium text-gray-300">
+  </div>
+ </div>
+
+ <div id="toast" class=""></div>
+
+ <script type="module" src="js/main.js"></script>
+
+</body>
+</html>
