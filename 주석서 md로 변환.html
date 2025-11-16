@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML to Markdown ZIP 변환기</title>
+    <!-- Tailwind CSS 로드 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- JSZip 라이브러리 로드 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- Turndown (HTML to Markdown) 라이브러리 로드 -->
+    <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
+    <style>
+        /* 간단한 로딩 스피너 스타일 */
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #4f46e5;
+            border-radius: 50%;
+            width: 16px;
+            height: 16px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4 sm:p-8 font-sans">
+    <div class="bg-white rounded-lg shadow-xl p-6 sm:p-8 w-full max-w-2xl">
+        
+        <header class="mb-6 text-center">
+            <h1 class="text-2xl sm:text-3xl font-bold text-gray-800">HTML to Markdown 변환기 (ZIP)</h1>
+            <p class="text-gray-600 mt-2">ZIP 파일 속 HTML을 Markdown으로 변환하고 링크와 각주를 수정합니다.</p>
+        </header>
+
+        <!-- 파일 업로드 영역 -->
+        <div class="mb-6">
+            <label for="zipUploader" class="block text-sm font-medium text-gray-700 mb-2">ZIP 파일 업로드:</label>
+            <div id="dropZone" class="flex justify-center items-center w-full px-6 py-10 border-2 border-gray-300 border-dashed rounded-lg bg-gray-50 text-center cursor-pointer hover:bg-gray-100 transition-colors">
+                <div class="text-gray-600">
+                    <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true">
+                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8a4 4 0 01-4 4H28m0-28l-8 8-8-8m16 0V4m0 4v4m0-4h4m-4 0H12m16 12v8m-16-4h16m8-8H20M8 20v12a4 4 0 004 4h12m0-32v4m0 4v4m0 0l-8 8-8-8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                    </svg>
+                    <span class="mt-2 block font-medium">여기에 ZIP 파일을 드래그 앤 드롭하세요.</span>
+                    <span class="text-sm text-gray-500">또는 클릭해서 파일 선택 (여러 개 가능)</span>
+                </div>
+                <input type="file" id="zipUploader" multiple accept=".zip,application/zip" class="hidden">
+            </div>
+            <!-- 선택된 파일 목록 -->
+            <div id="fileList" class="mt-3 text-sm text-gray-700"></div>
+        </div>
+
+        <!-- 변환 버튼 -->
+        <button id="convertBtn" class="w-full bg-indigo-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all disabled:opacity-50" disabled>
+            변환 시작
+        </button>
+
+        <!-- 처리 상태 영역 -->
+        <div id="statusArea" class="mt-6 space-y-3">
+            <!-- 상태 메시지가 여기에 동적으로 추가됩니다 -->
+        </div>
+
+        <!-- 다운로드 영역 -->
+        <div id="downloadArea" class="mt-6 space-y-3">
+            <!-- 다운로드 링크가 여기에 동적으로 추가됩니다 -->
+        </div>
+
+    </div>
+
+    <script>
+        // DOM 요소 가져오기
+        const zipUploader = document.getElementById('zipUploader');
+        const convertBtn = document.getElementById('convertBtn');
+        const statusArea = document.getElementById('statusArea');
+        const downloadArea = document.getElementById('downloadArea');
+        const dropZone = document.getElementById('dropZone');
+        const fileList = document.getElementById('fileList');
+
+        let filesToProcess = [];
+
+        // Turndown 서비스 인스턴스 초기화 (전역 또는 함수 내)
+        let turndownService = null;
+
+        // --- Turndown 규칙 설정 ---
+        function configureTurndown(service) {
+            
+            // 1. 링크 변환 규칙 (Core Task 2)
+            service.addRule('userLinks', {
+                filter: (node) => node.nodeName === 'A' && node.getAttribute('href'),
+                replacement: (content, node) => {
+                    let href = node.getAttribute('href') || '';
+                    if (href.startsWith('/v2/')) {
+                        href = 'https://lbox.kr' + href;
+                    }
+                    // 링크 내용이 비어있으면 href에서 파일명 등을 추측 (예: 상법#제269조)
+                    let text = content.trim();
+                    if (text === '') {
+                        try {
+                            const pathParts = href.split('/');
+                            const lastPart = pathParts[pathParts.length - 1] || 'link';
+                            text = lastPart.split('#')[0] || 'link';
+                        } catch (e) {
+                            text = 'link';
+                        }
+                    }
+                    return `[${text}](${href})`;
+                }
+            });
+
+            // 2. 각주 참조 변환 규칙 (Core Task 3 - <sup>)
+            service.addRule('footnoteRef', {
+                filter: (node) => node.nodeName === 'SUP' && node.id && node.id.startsWith('footnote-ref-'),
+                replacement: (content) => `[^${content.trim()}]`
+            });
+
+            // 3. 각주 정의 변환 규칙 (Core Task 3 - <li>)
+            service.addRule('footnoteDef', {
+                filter: (node) => node.nodeName === 'LI' && node.id && node.id.startsWith('lbox-footnote-'),
+                replacement: (content, node) => {
+                    const defNum = node.getAttribute('data-footnote-def');
+                    // <li> 안의 <button>1</button><span>...</span> 구조에서 내용(span)만 추출
+                    const contentSpan = node.querySelector('span > span');
+                    let textContent = content; // Fallback
+                    
+                    if (contentSpan) {
+                        // contentSpan의 innerHTML을 turndown으로 재변환하여 내부의 링크 등 보존
+                        textContent = turndownService.turndown(contentSpan.innerHTML);
+                    } else {
+                        // Fallback: 버튼 텍스트를 제거하려고 시도
+                        const button = node.querySelector('button');
+                        if (button) {
+                            textContent = content.replace(button.textContent, '').trim();
+                        }
+                    }
+                    return `[^${defNum}]: ${textContent.trim()}\n`;
+                }
+            });
+
+            // 4. <span>으로 된 부제목 변환 (샘플 HTML 기반)
+            service.addRule('headingSpan', {
+                filter: (node) => node.nodeName === 'SPAN' && node.id.startsWith('lbox-paragraph-') && (node.classList.contains('text-[20px]') || node.style.fontSize === '20px'),
+                replacement: (content) => `\n## ${content.trim()}\n\n`
+            });
+
+            // 5. 워터마크 등 불필요한 div 제거
+            service.addRule('removeJunkDivs', {
+                filter: (node) => node.nodeName === 'DIV' && (node.classList.contains('pointer-events-none') || node.classList.contains('lds2-desktop:p-[120px_32px]')),
+                replacement: (content) => content // div 자체는 제거하고 내용물만 남김
+            });
+            
+            // 6. 각주 목록 (ul) 앞의 <hr> 제거
+             service.addRule('removeFootnoteHR', {
+                filter: (node) => {
+                    return node.nodeName === 'HR' && 
+                           node.nextElementSibling && 
+                           node.nextElementSibling.nodeName === 'UL' &&
+                           node.nextElementSibling.querySelector('li[id^="lbox-footnote-"]');
+                },
+                replacement: () => '\n' // <hr> 대신 줄바꿈만 추가
+            });
+
+            // 7. 각주 목록 ul은 변환하지 않고 내용물만 처리
+            service.addRule('unwrapFootnoteUl', {
+                filter: (node) => {
+                    return node.nodeName === 'UL' &&
+                           node.querySelector('li[id^="lbox-footnote-"]');
+                },
+                replacement: (content) => `\n${content}\n` // ul 태그 제거
+            });
+        }
+
+
+        // --- 이벤트 리스너 ---
+
+        // 드래그 앤 드롭 이벤트
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.add('bg-indigo-100', 'border-indigo-500'), false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, () => dropZone.classList.remove('bg-indigo-100', 'border-indigo-500'), false);
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            zipUploader.files = e.dataTransfer.files;
+            updateFileList();
+        }, false);
+
+        dropZone.addEventListener('click', () => {
+            zipUploader.click();
+        });
+
+        zipUploader.addEventListener('change', updateFileList);
+
+        function updateFileList() {
+            filesToProcess = Array.from(zipUploader.files);
+            if (filesToProcess.length > 0) {
+                fileList.innerHTML = filesToProcess
+                    .map(f => `<div class="p-2 bg-gray-100 rounded-md">${f.name} (${(f.size / 1024).toFixed(1)} KB)</div>`)
+                    .join('');
+                convertBtn.disabled = false;
+            } else {
+                fileList.innerHTML = '';
+                convertBtn.disabled = true;
+            }
+        }
+
+        // 변환 버튼 클릭 이벤트
+        convertBtn.addEventListener('click', async () => {
+            if (filesToProcess.length === 0) {
+                addStatus("처리할 파일이 없습니다. ZIP 파일을 업로드하세요.", 'error');
+                return;
+            }
+
+            // UI 초기화
+            statusArea.innerHTML = '';
+            downloadArea.innerHTML = '';
+            convertBtn.disabled = true;
+            convertBtn.textContent = '처리 중...';
+
+            // Turndown 서비스 초기화 (규칙 포함)
+            turndownService = new TurndownService({ 
+                headingStyle: 'atx', 
+                hr: '---',
+                codeBlockStyle: 'fenced'
+            });
+            configureTurndown(turndownService);
+
+            // 모든 파일을 순차적 또는 병렬로 처리
+            const processingPromises = filesToProcess.map(file => processZipFile(file));
+            await Promise.allSettled(processingPromises);
+
+            convertBtn.disabled = false;
+            convertBtn.textContent = '변환 시작';
+        });
+
+        // --- 핵심 로직 ---
+
+        async function processZipFile(file) {
+            const statusId = `status-${Date.now()}-${Math.random()}`;
+            addStatus(`
+                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg shadow-sm">
+                    <span class="font-medium text-gray-700">[${file.name}] 처리 시작...</span>
+                    <div class="spinner"></div>
+                </div>
+            `, 'info', statusId);
+
+            try {
+                const zip = new JSZip();
+                const outputZip = new JSZip();
+                
+                // 1. ZIP 파일 로드
+                const content = await file.arrayBuffer();
+                const loadedZip = await zip.loadAsync(content);
+
+                const htmlFileEntries = [];
+                loadedZip.forEach((relativePath, zipEntry) => {
+                    if (!zipEntry.dir && (relativePath.endsWith('.html') || relativePath.endsWith('.htm'))) {
+                        htmlFileEntries.push(zipEntry);
+                    }
+                });
+
+                if (htmlFileEntries.length === 0) {
+                    throw new Error("ZIP 파일 내에 HTML 파일이 없습니다.");
+                }
+
+                // 2. 각 HTML 파일 변환
+                for (const zipEntry of htmlFileEntries) {
+                    const htmlContent = await zipEntry.async('string');
+                    
+                    // DOMParser를 사용해 HTML 파싱
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(htmlContent, 'text/html');
+                    
+                    // body의 내용만 추출 (head 등 불필요한 부분 제외)
+                    // 샘플 파일의 경우 h1과 내용 div가 body 바로 아래에 있음
+                    const bodyContent = doc.body.innerHTML;
+
+                    // 3. Turndown으로 Markdown 변환
+                    const mdContent = turndownService.turndown(bodyContent);
+
+                    // 4. 새 ZIP 파일에 추가
+                    const mdFileName = zipEntry.name.replace(/\.html?$/i, '.md');
+                    outputZip.file(mdFileName, mdContent);
+                }
+
+                // 5. 변환된 ZIP 파일 생성
+                const outputBlob = await outputZip.generateAsync({ type: 'blob' });
+
+                // 6. 다운로드 링크 생성
+                createDownloadLink(outputBlob, file.name);
+                
+                updateStatus(statusId, `
+                    <div class="flex items-center justify-between p-3 bg-green-50 rounded-lg shadow-sm">
+                        <span class="font-medium text-green-700">[${file.name}] 변환 완료.</span>
+                        <svg class="w-5 h-5 text-green-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
+                    </div>
+                `);
+
+            } catch (e) {
+                console.error(`[${file.name}] 처리 오류:`, e);
+                updateStatus(statusId, `
+                    <div class="flex items-center justify-between p-3 bg-red-50 rounded-lg shadow-sm">
+                        <span class="font-medium text-red-700">[${file.name}] 오류: ${e.message}</span>
+                        <svg class="w-5 h-5 text-red-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>
+                    </div>
+                `);
+            }
+        }
+
+        // --- 유틸리티 함수 ---
+
+        function addStatus(message, type = 'info', id = null) {
+            const statusElement = document.createElement('div');
+            if (id) {
+                statusElement.id = id;
+            }
+            statusElement.innerHTML = message;
+            statusArea.appendChild(statusElement);
+        }
+
+        function updateStatus(id, message) {
+            const statusElement = document.getElementById(id);
+            if (statusElement) {
+                statusElement.innerHTML = message;
+            }
+        }
+
+        function createDownloadLink(blob, originalFileName) {
+            const downloadUrl = URL.createObjectURL(blob);
+            const newZipName = originalFileName.replace(/\.zip$/i, '_converted.zip');
+            
+            const linkElement = document.createElement('a');
+            linkElement.href = downloadUrl;
+            linkElement.download = newZipName;
+            linkElement.className = "block w-full text-center bg-blue-500 text-white font-medium py-2.5 px-5 rounded-lg hover:bg-blue-600 transition-all";
+            linkElement.textContent = `다운로드: ${newZipName} (${(blob.size / 1024).toFixed(1)} KB)`;
+            
+            downloadArea.appendChild(linkElement);
+        }
+
+    </script>
+</body>
+</html>
