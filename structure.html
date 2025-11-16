@@ -53,12 +53,13 @@
         const logArea = document.getElementById('log-area');
         const spinner = document.getElementById('spinner');
 
-        // 드래그 이벤트 처리
+        // 드래그 이벤트 처리 (변경 없음)
         dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault(); // 기본 동작 방지
+            e.preventDefault();
             dropZone.classList.add('drag-over');
         });
 
+        // 드래그 이벤트 처리 (변경 없음)
         dropZone.addEventListener('dragleave', (e) => {
             e.preventDefault();
             dropZone.classList.remove('drag-over');
@@ -84,12 +85,12 @@
                     throw new Error('폴더가 아닌 파일이 드롭되었습니다. 폴더를 드롭해주세요.');
                 }
 
-                // 폴더 처리 시작
                 const rootEntry = item;
                 let rootPath = rootEntry.name + '/';
                 let rootTree = '📁 ' + rootEntry.name + '\n';
 
                 // 재귀적으로 폴더 스캔
+                // processFolder가 이제 {fileTree: string, fileContents: string[]} 를 반환합니다.
                 const { fileTree, fileContents } = await processFolder(rootEntry, rootPath, '  ');
                 
                 rootTree += fileTree;
@@ -98,18 +99,24 @@
                 logArea.textContent = rootTree;
                 logArea.classList.remove('hidden');
 
-                // 2. 최종 TXT 파일 생성
-                const combinedOutput = `--- FILE STRUCTURE ---\n\n${rootTree}\n\n--- FILE CONTENTS ---\n\n${fileContents}`;
-                
-                // 3. 파일 다운로드
-                downloadAsText(combinedOutput, rootEntry.name + "_export.txt");
+                // 2. 최종 TXT 파일 생성 (Blob 파트 배열 사용)
+                //    하나의 거대한 문자열 대신, 문자열 조각들의 '배열'을 만듭니다.
+                const blobParts = [
+                    `--- FILE STRUCTURE ---\n\n${rootTree}\n\n--- FILE CONTENTS ---\n\n`
+                ];
+
+                // fileContents는 이제 문자열 배열이므로 concat으로 병합합니다.
+                const combinedBlobParts = blobParts.concat(fileContents); // <-- 변경됨
+
+                // 3. 파일 다운로드 (Blob 파트 배열을 전달)
+                downloadAsText(combinedBlobParts, rootEntry.name + "_export.txt"); // <-- 변경됨
 
             } catch (err) {
                 console.error(err);
                 logArea.textContent = `오류 발생: ${err.message}`;
                 logArea.classList.remove('hidden');
             } finally {
-                spinner.classList.add('hidden'); // 스피너 숨기기
+                spinner.classList.add('hidden');
             }
         });
 
@@ -118,15 +125,14 @@
          * @param {FileSystemDirectoryEntry} directoryEntry - 스캔할 디렉터리 엔트리
          * @param {string} pathPrefix - 현재 파일 경로 (예: "MyProject/src/")
          * @param {string} indent - 들여쓰기 문자 (예: "  ")
-         * @returns {Promise<{fileTree: string, fileContents: string}>}
+         * @returns {Promise<{fileTree: string, fileContents: string[]}>} // <-- 반환 타입 변경됨 (string[])
          */
         async function processFolder(directoryEntry, pathPrefix, indent) {
             let fileTree = '';
-            let fileContents = '';
+            let fileContents = []; // <-- 변경됨: 문자열이 아닌 '배열'로 시작
 
             const entries = await readDirectoryEntries(directoryEntry);
             
-            // 일관된 순서를 위해 정렬 (폴더 우선, 그 다음 이름순)
             entries.sort((a, b) => {
                 if (a.isDirectory && !b.isDirectory) return -1;
                 if (!a.isDirectory && b.isDirectory) return 1;
@@ -142,10 +148,10 @@
                         indent + '  '
                     );
                     fileTree += subTree;
-                    fileContents += subContents;
+                    fileContents = fileContents.concat(subContents); // <-- 변경됨: 배열 병합
                 } else if (entry.isFile) {
                     fileTree += `${indent}📄 ${entry.name}\n`;
-                    fileContents += await processFile(entry, pathPrefix + entry.name);
+                    fileContents.push(await processFile(entry, pathPrefix + entry.name)); // <-- 변경됨: 배열에 push
                 }
             }
 
@@ -154,6 +160,7 @@
 
         /**
          * 파일 엔트리를 처리하여 XML 태그로 감싼 문자열을 반환합니다.
+         * (이 함수는 변경할 필요 없음)
          * @param {FileSystemFileEntry} fileEntry - 읽을 파일 엔트리
          * @param {string} path - 파일의 전체 경로
          * @returns {Promise<string>}
@@ -162,12 +169,11 @@
             const file = await new Promise((resolve, reject) => fileEntry.file(resolve, reject));
             let content = '';
 
-            // 텍스트 기반 파일인지 간단히 확인
             const isTextBased = file.type.startsWith('text/') || 
                                 /\.(txt|js|css|html|xml|json|md|py|java|c|cpp|cs|go|rs|sh)$/i.test(file.name) ||
-                                !file.type; // MIME 타입이 없는 경우 일단 텍스트로 시도
+                                !file.type; 
 
-            if (isTextBased && file.size < 5 * 1024 * 1024) { // 5MB 미만 텍스트 파일만 읽기
+            if (isTextBased && file.size < 5 * 1024 * 1024) { 
                 try {
                     content = await file.text();
                 } catch (e) {
@@ -179,12 +185,11 @@
                 content = `[Binary file: ${file.type}, size: ${file.size} bytes. Content not included.]`;
             }
 
-            // XML 태그로 감싸기. CDATA를 사용하여 특수 문자가 있어도 문제 없도록 함.
             return `<file path="${path}">\n<![CDATA[\n${content}\n]]>\n</file>\n\n`;
         }
 
         /**
-         * 디렉터리의 모든 엔트리를 읽어오는 래퍼 함수 (readEntries가 비동기 콜백 방식이라)
+         * 디렉터리의 모든 엔트리를 읽어오는 래퍼 함수 (변경 없음)
          * @param {FileSystemDirectoryEntry} directoryEntry
          * @returns {Promise<FileSystemEntry[]>}
          */
@@ -198,9 +203,9 @@
                         (entries) => {
                             if (entries.length > 0) {
                                 allEntries = allEntries.concat(entries);
-                                readBatch(); // 다음 배치를 읽음
+                                readBatch();
                             } else {
-                                resolve(allEntries); // 모든 엔트리를 읽음
+                                resolve(allEntries);
                             }
                         },
                         (err) => reject(err)
@@ -213,11 +218,12 @@
 
         /**
          * 텍스트를 .txt 파일로 다운로드합니다.
-         * @param {string} text - 파일 내용
+         * @param {string[]} blobParts - <-- 변경됨: 단일 텍스트가 아닌 Blob 파트 '배열'을 받음
          * @param {string} filename - 파일 이름
          */
-        function downloadAsText(text, filename) {
-            const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        function downloadAsText(blobParts, filename) { // <-- 변경됨: 매개변수 이름 변경 (text -> blobParts)
+            // Blob 생성자에 문자열 배열(blobParts)을 바로 전달합니다.
+            const blob = new Blob(blobParts, { type: 'text/plain;charset=utf-8' }); // <-- 변경됨
             const url = URL.createObjectURL(blob);
             
             const a = document.createElement('a');
@@ -225,13 +231,13 @@
             a.download = filename;
             
             document.body.appendChild(a);
-            a.click(); // 다운로드 트리거
+            a.click();
             
-            // 정리
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
         }
 
     </script>
 </body>
+
 </html>
