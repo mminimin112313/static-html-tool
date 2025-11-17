@@ -485,7 +485,7 @@
             </div>
             <div class="download-area">
                 <button id="downloadButton" class="btn btn-primary">선택 항목 ZIP 다운로드</button>
-                <div id="actualDownloadContainer"></div>
+                <button id="downloadJsonButton" class="btn btn-secondary">선택 항목 JSON 다운로드</button> <div id="actualDownloadContainer"></div>
             </div>
         </div>
     </div>
@@ -584,9 +584,13 @@
         function toggleDownloadControlsDisabled(disabled) {
             downloadButton.disabled = disabled;
             clearSelectionButton.disabled = disabled;
-            if (selectAllButton) { // 🏛️ 신규 버튼 비활성화 추가
+            if (selectAllButton) {
                 selectAllButton.disabled = disabled;
             }
+            // ✨ 신규 버튼 제어 로직 추가 (아래 2줄)
+            const jsonBtn = document.getElementById('downloadJsonButton');
+            if (jsonBtn) jsonBtn.disabled = disabled;
+            
             resultsList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = disabled);
         }
 
@@ -813,7 +817,8 @@
 
             // 🏛️ 모든 버튼의 상태를 새 로직에 따라 업데이트
             downloadButton.disabled = !(hasResults && count > 0);
-            clearSelectionButton.disabled = !(hasResults && count > 0);
+            const jsonBtn = document.getElementById('downloadJsonButton');
+            if (jsonBtn) jsonBtn.disabled = !(hasResults && count > 0);
             
             if (selectAllButton) { // Ensure it exists
                 selectAllButton.disabled = !hasResults || allSelected;
@@ -1149,6 +1154,185 @@
             }
         });
 
+
+        // 🏛️ --- JSON 다운로드 로직 시작 --- 🏛️
+        const downloadJsonButton = document.getElementById('downloadJsonButton');
+
+        if (downloadJsonButton) {
+            downloadJsonButton.addEventListener('click', async () => {
+                if (typeof JSZip === 'undefined') {
+                    setStatus("ZIP 라이브러리를 로드할 수 없습니다. 페이지를 새로고침 해주세요.", 'error');
+                    return;
+                }
+                actualDownloadContainer.innerHTML = ''; // Clear download link
+
+                const selectedItems = [];
+                resultsList.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)').forEach(cb => {
+                    selectedItems.push({ 
+                        id: cb.dataset.docId, 
+                        type: cb.dataset.docType, 
+                        name: cb.dataset.docName,
+                        typeDisplay: cb.dataset.docTypeDisplay
+                    });
+                });
+
+                if (selectedItems.length === 0) {
+                    setStatus("다운로드할 항목을 선택해주세요.", 'error');
+                    return;
+                }
+
+                setStatus(`선택된 ${selectedItems.length}개 항목 JSON 데이터 처리 시작...`, 'info');
+                toggleDownloadControlsDisabled(true); toggleInputsDisabled(true);
+
+                let successfulFetches = 0;
+                let totalErrorOccurred = false;
+                const CHUNK_SIZE = 5;
+                const resultsMap = new Map();
+                let authErrorDuringDownload = false;
+
+                for (let i = 0; i < selectedItems.length; i += CHUNK_SIZE) {
+                    if (authErrorDuringDownload) break;
+                    const chunkSelectedItems = selectedItems.slice(i, i + CHUNK_SIZE);
+                    const chunkIndices = Array.from({ length: chunkSelectedItems.length }, (_, k) => i + k);
+                    setStatus(`항목 ${i + 1}부터 ${Math.min(i + CHUNK_SIZE, selectedItems.length)}/${selectedItems.length} JSON 상세 정보 가져오는 중...`, 'info');
+
+                    const chunkPromises = chunkSelectedItems.map(async (item, localIndex) => {
+                        const originalIndex = chunkIndices[localIndex];
+                        const itemTypeDisplay = item.typeDisplay || (item.type === 'law' ? '법령' : '행정규칙');
+                        try {
+                            let rawFullData; // 원본 JSON 응답을 저장할 변수
+                            if (item.type === 'law') {
+                                const jsonData = await makeApiRequest("lawService.do", { "target": "law", "MST": item.id }, item.name, itemTypeDisplay);
+                                rawFullData = jsonData;
+                            } else if (item.type === 'admrul') {
+                                const data = await makeApiRequest("lawService.do", { "target": "admrul", "ID": item.id }, item.name, itemTypeDisplay);
+                                rawFullData = data;
+                            } else {
+                                throw new Error(`알 수 없는 항목 타입: ${item.type}`);
+                            }
+                            
+                            // ✨ JSON 수정: 가공된 텍스트 대신 원본 JSON 데이터(rawFullData)를 반환
+                            return { originalIndex, success: true, content: rawFullData, name: item.name };
+
+                        } catch (error) {
+                            if (error.isAuthError) authErrorDuringDownload = true;
+                            let userFriendlyErrorMsg = error.message || "알 수 없는 오류";
+                            if (error.message?.includes("상세 정보 가져오기 실패")) {
+                                 userFriendlyErrorMsg = error.message.substring(error.message.indexOf(":") + 2).trim();
+                            } else if (error.isTimeout) userFriendlyErrorMsg = `요청 시간 초과로 실패했습니다 (재시도 포함).`;
+                            else if (error.isAuthError) userFriendlyErrorMsg = `API 인증 오류가 발생했습니다. API 키를 확인해주세요.`;
+                            
+                            return { originalIndex, success: false, errorContent: `--- ${item.name} (${itemTypeDisplay}, ID: ${item.id}) ---\n[오류: ${userFriendlyErrorMsg}]\n\n`, name: item.name };
+                        }
+                    });
+                    const chunkPromiseResults = await Promise.all(chunkPromises);
+                    for (const result of chunkPromiseResults) {
+                        resultsMap.set(result.originalIndex, result);
+                    }
+                    if (authErrorDuringDownload) {
+                        setStatus("API 인증 오류가 발생하여 다운로드를 중단합니다. API 키를 확인해주세요.", "error");
+                        break;
+                    }
+                }
+
+                if (!authErrorDuringDownload) {
+                    const zip = new JSZip();
+                    let filesAdded = 0;
+
+                    for (let i = 0; i < selectedItems.length; i++) {
+                        const result = resultsMap.get(i);
+                        const item = selectedItems[i];
+                        
+                        let baseFileName = item.name.replace(/[\\/*?:"<>|]/g, "_").substring(0, 60).trim() || `[${item.id}]`;
+                        let finalFileName = "";
+                        let fileContent = "";
+
+                        if (result) {
+                            if (result.success) {
+                                // ✨ JSON 수정: 성공 시, content는 JSON 객체이므로 stringify 처리
+                                fileContent = JSON.stringify(result.content, null, 2);
+                                finalFileName = `[${item.typeDisplay}] ${baseFileName}.json`; // 확장자 .json
+                                successfulFetches++;
+                            } else {
+                                // 오류 시, errorContent는 문자열
+                                fileContent = result.errorContent;
+                                finalFileName = `[오류] [${item.typeDisplay}] ${baseFileName}.txt`; // 확장자 .txt
+                                totalErrorOccurred = true;
+                            }
+                        } else {
+                            fileContent = `--- ${item.name} (ID: ${item.id}) ---\n[결과 처리 중 알 수 없는 누락 발생]\n\n`;
+                            finalFileName = `[누락] [${item.typeDisplay}] ${baseFileName}.txt`;
+                            totalErrorOccurred = true;
+                        }
+                        
+                        zip.file(finalFileName, fileContent);
+                        filesAdded++;
+                    }
+
+                    if (filesAdded > 0) {
+                        setStatus("JSON ZIP 파일 생성 중...", "info");
+                        
+                        // ✨ JSON 수정: 파일명 변경
+                        let zipFileName = "법령_JSON_통합본.zip";
+                        if (selectedItems.length === 1) {
+                            let baseName = selectedItems[0].name.replace(/[\\/*?:"<>|]/g, "_").substring(0, 60).trim();
+                            zipFileName = `[${selectedItems[0].typeDisplay}]_${baseName}_JSON.zip`;
+                        } else {
+                            zipFileName = `법령_JSON_${selectedItems.length}건.zip`;
+                        }
+
+                        zip.generateAsync({ type: "blob" })
+                            .then(function(blob) {
+                                const blobUrl = URL.createObjectURL(blob);
+                                const downloadLink = document.createElement('a');
+                                downloadLink.href = blobUrl;
+                                downloadLink.download = zipFileName;
+                                downloadLink.textContent = `JSON ZIP 다운로드 (${zipFileName})`; // ✨ 버튼 텍스트 수정
+                                downloadLink.className = "btn btn-primary";
+                                actualDownloadContainer.innerHTML = '';
+                                actualDownloadContainer.appendChild(downloadLink);
+
+                                let downloadOutcomeMsg = "";
+                                let downloadOutcomeType = 'info';
+                                if (successfulFetches > 0 && !totalErrorOccurred) {
+                                    downloadOutcomeMsg = `JSON ZIP 파일 '${zipFileName}' 준비 완료! 아래 버튼을 클릭하여 다운로드하세요. (${successfulFetches}개 항목 성공)`;
+                                    downloadOutcomeType = 'success';
+                                } else if (successfulFetches > 0 && totalErrorOccurred) {
+                                    downloadOutcomeMsg = `일부 항목 오류와 함께 JSON ZIP '${zipFileName}' 준비 완료. (성공: ${successfulFetches}/${selectedItems.length}개).`;
+                                    downloadOutcomeType = 'error';
+                                } else {
+                                    downloadOutcomeMsg = `모든 항목 처리 중 오류 발생. '${zipFileName}' 파일이 생성되었으나 내용이 오류 정보일 수 있습니다.`;
+                                    downloadOutcomeType = 'error';
+                                }
+                                setStatus(downloadOutcomeMsg, downloadOutcomeType);
+                            })
+                            .catch(function (err) {
+                                setStatus(`JSON ZIP 파일 생성 오류: ${err.message}`, "error");
+                            })
+                            .finally(() => { 
+                                toggleDownloadControlsDisabled(false);
+                                toggleInputsDisabled(false);
+                                updateSelectedCount();
+                            });
+
+                    } else {
+                         if (selectedItems.length > 0) {
+                            setStatus(`선택된 ${selectedItems.length}개 항목에 대해 다운로드할 JSON 내용이 없거나 모든 항목 처리 중 오류가 발생했습니다.`, 'error');
+                         } else {
+                            setStatus("다운로드할 항목이 없습니다.", "error");
+                         }
+                         toggleDownloadControlsDisabled(false);
+                         toggleInputsDisabled(false);
+                         updateSelectedCount();
+                    }
+                } else {
+                     toggleDownloadControlsDisabled(false);
+                     toggleInputsDisabled(false);
+                     updateSelectedCount();
+                }
+            });
+        }
+        
         if (statusMessage) {
              setStatus("API 키와 검색어를 입력 후 검색하세요. 검색 결과에서 '조문 탐색' 버튼으로 탐색기를 이용할 수 있습니다.", 'info');
         }
