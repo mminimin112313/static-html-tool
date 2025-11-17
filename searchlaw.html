@@ -119,6 +119,10 @@
             margin-bottom: calc(var(--spacing-base) * 2.5);
             border-bottom: 1px solid var(--color-border-subtle);
         }
+        .section-title-actions {
+            display: flex;
+            gap: calc(var(--spacing-base) * 1);
+        }
         .section-title {
             font-size: var(--font-size-lg);
             font-weight: var(--font-weight-medium);
@@ -202,6 +206,7 @@
         .icon-btn svg { width: calc(var(--font-size-md) * 1.1); height: calc(var(--font-size-md) * 1.1); fill: currentColor; }
         .icon-btn:hover:not(:disabled) { background-color: var(--color-background-elevated-2); color: var(--color-accent-primary); }
 
+        /* */
         /* Search Results List */
         #results-list {
             list-style: none; padding: 0;
@@ -213,19 +218,21 @@
             border-radius: var(--radius-sm);
             padding: calc(var(--spacing-base) * 1.25) calc(var(--spacing-base) * 1.5);
             display: grid;
-            grid-template-columns: auto 1fr;
-            grid-template-areas:
-                "checkbox main"
-                "checkbox actions";
-            align-items: start;
-            gap: calc(var(--spacing-base) * 0.5) calc(var(--spacing-base) * 1.25);
+            grid-template-columns: auto 1fr auto; /* Checkbox | Main | Actions */
+            grid-template-areas: "checkbox main actions";
+            align-items: center; /* Vertically center */
+            gap: 0 calc(var(--spacing-base) * 1.5); /* No row gap, col gap */
             border: 1px solid var(--color-border-subtle);
             transition: var(--transition-fast);
             box-shadow: var(--shadow-sm);
+            cursor: pointer; /* Req 2: Make clickable area obvious */
         }
         #results-list li:hover { border-color: var(--color-border-interactive); background-color: var(--color-background-elevated-2); transform: translateY(-1px); }
 
-        .result-item-checkbox-wrapper { grid-area: checkbox; padding-top: calc(var(--spacing-base) * 0.25); }
+        .result-item-checkbox-wrapper { 
+            grid-area: checkbox; 
+            /* padding-top: calc(var(--spacing-base) * 0.25); REMOVED for centering */
+        }
         #results-list input[type="checkbox"] {
             accent-color: var(--color-accent-primary);
             width: var(--font-size-lg); height: var(--font-size-lg);
@@ -249,14 +256,21 @@
             color: var(--color-text-secondary);
         }
 
+        /* */
         .result-item-actions {
             grid-area: actions;
             display: flex;
             align-items: center;
-            gap: calc(var(--spacing-base) * 1);
-            margin-top: calc(var(--spacing-base) * 1);
-            padding-left: 0;
+            gap: calc(var(--spacing-base) * 0.5); /* Reduced gap */
+            margin-top: 0; /* REMOVED margin-top */
+            padding-left: calc(var(--spacing-base) * 1);
+            cursor: default; /* Override li cursor */
         }
+        /* 🏛️ Req 2: Ensure buttons inside actions are still clickable */
+        .result-item-actions .btn, .result-item-actions .icon-btn {
+            cursor: pointer;
+        }
+
         .btn-explore {
             font-size: var(--font-size-xs);
             padding: calc(var(--spacing-base)*0.5) calc(var(--spacing-base)*1);
@@ -428,7 +442,6 @@
     <div class="app-container">
         <h1 class="app-title">법령/행정규칙 통합 다운로더 및 조문 탐색기</h1>
 
-        <!-- 검색 섹션 -->
         <div class="section">
             <div class="section-title-area">
                 <h2 class="section-title">
@@ -452,7 +465,6 @@
             </div>
         </div>
 
-        <!-- 검색 결과 섹션 -->
         <div class="section">
             <div class="section-title-area">
                 <h2 class="section-title">
@@ -462,20 +474,22 @@
                     </svg>
                     검색 결과 (<span id="selectedCount">0</span>개 선택됨)
                 </h2>
-                <button id="clearSelectionButton" class="btn btn-secondary">선택 해제</button>
+                <div class="section-title-actions">
+                    <button id="selectAllButton" class="btn btn-secondary">모두 선택</button>
+                    <button id="clearSelectionButton" class="btn btn-secondary">선택 해제</button>
+                </div>
             </div>
             <ul id="results-list"></ul>
             <div id="statusMessage" class="status-message" role="status">
                 검색어를 입력하고 검색 버튼을 누르세요.
             </div>
             <div class="download-area">
-                <button id="downloadButton" class="btn btn-primary">선택 항목 다운로드</button>
+                <button id="downloadButton" class="btn btn-primary">선택 항목 ZIP 다운로드</button>
                 <div id="actualDownloadContainer"></div>
             </div>
         </div>
     </div>
 
-    <!-- Law Explorer Modal -->
     <div id="lawExplorerModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -487,7 +501,6 @@
         </div>
     </div>
 
-    <!-- JSON Modal -->
     <div id="jsonModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -498,6 +511,7 @@
         </div>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script>
         // 상단 변수 및 함수 유지 (검색, 다운로드 부분)
         const apiKeyInput = document.getElementById('apiKey');
@@ -507,6 +521,7 @@
         const resultsList = document.getElementById('results-list');
         const statusMessage = document.getElementById('statusMessage');
         const downloadButton = document.getElementById('downloadButton');
+        const selectAllButton = document.getElementById('selectAllButton');
         const clearSelectionButton = document.getElementById('clearSelectionButton');
         const selectedCountSpan = document.getElementById('selectedCount');
         const actualDownloadContainer = document.getElementById('actualDownloadContainer');
@@ -569,6 +584,9 @@
         function toggleDownloadControlsDisabled(disabled) {
             downloadButton.disabled = disabled;
             clearSelectionButton.disabled = disabled;
+            if (selectAllButton) { // 🏛️ 신규 버튼 비활성화 추가
+                selectAllButton.disabled = disabled;
+            }
             resultsList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = disabled);
         }
 
@@ -781,11 +799,25 @@
         });
 
         function updateSelectedCount() {
-            const count = resultsList.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)').length;
+            // 🏛️ 전체 항목과 선택된 항목 수를 정확히 계산
+            const allCheckboxes = resultsList.querySelectorAll('input[type="checkbox"]:not(:disabled)');
+            const checkedCheckboxes = resultsList.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)');
+            
+            const count = checkedCheckboxes.length;
+            const total = allCheckboxes.length;
+
             selectedCountSpan.textContent = count;
-            const hasResults = currentResults && currentResults.length > 0;
+            
+            const hasResults = total > 0;
+            const allSelected = hasResults && count === total;
+
+            // 🏛️ 모든 버튼의 상태를 새 로직에 따라 업데이트
             downloadButton.disabled = !(hasResults && count > 0);
             clearSelectionButton.disabled = !(hasResults && count > 0);
+            
+            if (selectAllButton) { // Ensure it exists
+                selectAllButton.disabled = !hasResults || allSelected;
+            }
         }
         resultsList.addEventListener('change', updateSelectedCount);
 
@@ -804,6 +836,7 @@
                 checkbox.dataset.docId = item.id;
                 checkbox.dataset.docType = item.type;
                 checkbox.dataset.docName = item.name;
+                checkbox.dataset.docTypeDisplay = item.typeDisplay; // 🏛️ ZIP 기능 위해 typeDisplay 추가
                 checkbox.setAttribute('aria-labelledby', `item-name-${index}`);
                 checkboxWrapper.appendChild(checkbox);
 
@@ -865,9 +898,11 @@
 
                 li.appendChild(checkboxWrapper);
                 li.appendChild(mainContentDiv);
-                mainContentDiv.appendChild(actionsDiv);
+                li.appendChild(actionsDiv); // Actions moved to be a direct child
 
+                // 🏛️ Req 2: 클릭 이벤트 로직 (기존 로직 유지, CSS 개선으로 보완됨)
                 li.addEventListener('click', (e) => {
+                    // Check if the click target is NOT the checkbox AND not inside the actions div
                     if (e.target !== checkbox && !actionsDiv.contains(e.target) && !checkbox.disabled) {
                         checkbox.checked = !checkbox.checked;
                         checkbox.dispatchEvent(new Event('change', { bubbles: true }));
@@ -881,17 +916,38 @@
         clearSelectionButton.addEventListener('click', () => {
             if (clearSelectionButton.disabled) return;
             resultsList.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach(cb => {
-                cb.checked = false; cb.dispatchEvent(new Event('change', { bubbles: true }));
+                cb.checked = false;
+                // cb.dispatchEvent(new Event('change', { bubbles: true })); // 🏛️ 비효율적이므로 제거
             });
+            updateSelectedCount(); // 🏛️ 여기에서 한 번만 호출
         });
 
-        // 다운로드 로직 (기존 그대로)
+        selectAllButton.addEventListener('click', () => {
+            if (selectAllButton.disabled) return;
+            resultsList.querySelectorAll('input[type="checkbox"]:not(:disabled)').forEach(cb => {
+                cb.checked = true;
+            });
+            updateSelectedCount(); // 🏛️ 상태 갱신을 위해 한 번만 호출
+        });
+        
+        /*
+        */
+        // 다운로드 로직 (JSZip으로 교체)
         downloadButton.addEventListener('click', async () => {
+            if (typeof JSZip === 'undefined') {
+                setStatus("ZIP 라이브러리를 로드할 수 없습니다. 페이지를 새로고침 해주세요.", 'error');
+                return;
+            }
             actualDownloadContainer.innerHTML = '';
 
             const selectedItems = [];
             resultsList.querySelectorAll('input[type="checkbox"]:checked:not(:disabled)').forEach(cb => {
-                selectedItems.push({ id: cb.dataset.docId, type: cb.dataset.docType, name: cb.dataset.docName });
+                selectedItems.push({ 
+                    id: cb.dataset.docId, 
+                    type: cb.dataset.docType, 
+                    name: cb.dataset.docName,
+                    typeDisplay: cb.dataset.docTypeDisplay // 🏛️ Get typeDisplay from checkbox
+                });
             });
 
             if (selectedItems.length === 0) {
@@ -902,9 +958,8 @@
             setStatus(`선택된 ${selectedItems.length}개 항목 처리 시작...`, 'info');
             toggleDownloadControlsDisabled(true); toggleInputsDisabled(true);
 
-            let 통합본문 = "";
-            let fileNames = [];
-            let totalErrorOccurred = false, successfulFetches = 0;
+            let successfulFetches = 0;
+            let totalErrorOccurred = false;
             const CHUNK_SIZE = 5;
             const resultsMap = new Map();
             let authErrorDuringDownload = false;
@@ -917,7 +972,7 @@
 
                 const chunkPromises = chunkSelectedItems.map(async (item, localIndex) => {
                     const originalIndex = chunkIndices[localIndex];
-                    const itemTypeDisplay = item.type === 'law' ? '법령' : '행정규칙';
+                    const itemTypeDisplay = item.typeDisplay || (item.type === 'law' ? '법령' : '행정규칙'); // Fallback
                     try {
                         let detailDataRoot;
                         if (item.type === 'law') {
@@ -971,7 +1026,7 @@
                                 if (이유내용) 본문내용섹션 += "## 제개정 이유\n" + flattenContentForDisplay(이유내용) + "\n\n";
                             }
                         }
-                        return { originalIndex, success: true, content: 본문내용섹션.trimEnd() + "\n\n@@@@\n\n", name: item.name };
+                        return { originalIndex, success: true, content: 본문내용섹션.trimEnd() + "\n\n", name: item.name }; // @@@@ separator 제거
                     } catch (error) {
                         if (error.isAuthError) authErrorDuringDownload = true;
                         let userFriendlyErrorMsg = error.message || "알 수 없는 오류";
@@ -979,7 +1034,7 @@
                              userFriendlyErrorMsg = error.message.substring(error.message.indexOf(":") + 2).trim();
                         } else if (error.isTimeout) userFriendlyErrorMsg = `요청 시간 초과로 실패했습니다 (재시도 포함).`;
                         else if (error.isAuthError) userFriendlyErrorMsg = `API 인증 오류가 발생했습니다. API 키를 확인해주세요.`;
-                        return { originalIndex, success: false, errorContent: `--- ${item.name} (${itemTypeDisplay}, ID: ${item.id}) ---\n[오류: ${userFriendlyErrorMsg}]\n\n@@@@\n\n`, name: item.name };
+                        return { originalIndex, success: false, errorContent: `--- ${item.name} (${itemTypeDisplay}, ID: ${item.id}) ---\n[오류: ${userFriendlyErrorMsg}]\n\n`, name: item.name }; // @@@@ separator 제거
                     }
                 });
                 const chunkPromiseResults = await Promise.all(chunkPromises);
@@ -992,70 +1047,106 @@
                 }
             }
 
+            // 🏛️ ZIP 생성 로직 시작
             if (!authErrorDuringDownload) {
+                const zip = new JSZip(); // 🏛️ Rule R2.1.x (Axiom of Pragmatic Tooling)
+                let filesAdded = 0;
+
                 for (let i = 0; i < selectedItems.length; i++) {
                     const result = resultsMap.get(i);
+                    const item = selectedItems[i]; // Get original item info
+                    
+                    let content = "";
+                    // 🏛️ Rule R2.4.x (Axiom of SOLID Architecture) - Clean, reusable filename logic
+                    let baseFileName = item.name.replace(/[\\/*?:"<>|]/g, "_").substring(0, 60).trim() || `[${item.id}]`;
+                    let finalFileName = "";
+
                     if (result) {
                         if (result.success) {
-                            통합본문 += result.content;
-                            fileNames.push(result.name.replace(/[\\/*?:"<>|]/g, "").substring(0, 20).trim());
+                            content = result.content; // Already cleaned
+                            finalFileName = `[${item.typeDisplay}] ${baseFileName}.txt`;
                             successfulFetches++;
                         } else {
-                            통합본문 += result.errorContent;
-                            fileNames.push(result.name.replace(/[\\/*?:"<>|]/g, "").substring(0, 20).trim() + "_오류");
+                            content = result.errorContent; // Already cleaned
+                            finalFileName = `[오류] [${item.typeDisplay}] ${baseFileName}.txt`;
                             totalErrorOccurred = true;
                         }
                     } else {
-                        const item = selectedItems[i];
-                        통합본문 += `--- ${item.name} (ID: ${item.id}) ---\n[결과 처리 중 알 수 없는 누락 발생]\n\n@@@@\n\n`;
-                        fileNames.push(item.name.replace(/[\\/*?:"<>|]/g, "").substring(0, 20).trim() + "_누락");
+                        content = `--- ${item.name} (ID: ${item.id}) ---\n[결과 처리 중 알 수 없는 누락 발생]\n\n`;
+                        finalFileName = `[누락] [${item.typeDisplay}] ${baseFileName}.txt`;
                         totalErrorOccurred = true;
                     }
+                    
+                    // Add file to zip
+                    zip.file(finalFileName, content);
+                    filesAdded++;
                 }
 
-                if (통합본문.endsWith("\n\n@@@@\n\n")) 통합본문 = 통합본문.slice(0, -"\n\n@@@@\n\n".length + 2);
-                else if (통합본문.endsWith("@@@@\n\n")) 통합본문 = 통합본문.slice(0, -"\n\n@@@@\n\n".length);
-
-                if (통합본문.trim().length === 0 && successfulFetches === 0 && selectedItems.length > 0) {
-                    setStatus(`선택된 ${selectedItems.length}개 항목에 대해 다운로드할 내용이 없거나 모든 항목 처리 중 오류가 발생했습니다. 콘솔 로그를 확인해주세요.`, 'error');
-                    totalErrorOccurred = true;
-                } else {
-                    let finalFileName = fileNames.filter(Boolean).join("_").substring(0, 100).trim() || "통합문서";
-                    finalFileName = finalFileName.replace(/__+/g, '_') + ".txt";
-
-                    const blob = new Blob([통합본문], { type: 'text/plain;charset=utf-8' });
-                    const blobUrl = URL.createObjectURL(blob);
-
-                    const downloadLink = document.createElement('a');
-                    downloadLink.href = blobUrl;
-                    downloadLink.download = finalFileName;
-                    downloadLink.textContent = "다운로드";
-                    downloadLink.className = "btn btn-primary";
-                    actualDownloadContainer.appendChild(downloadLink);
-
-                    let downloadOutcomeMsg = "";
-                    let downloadOutcomeType = 'info';
-                    if (successfulFetches > 0 && !totalErrorOccurred) {
-                        downloadOutcomeMsg = `통합 파일 '${finalFileName}' 준비 완료! 아래 버튼을 클릭하여 다운로드하세요. (${successfulFetches}개 항목 성공)`;
-                        downloadOutcomeType = 'success';
-                    } else if (successfulFetches > 0 && totalErrorOccurred) {
-                        downloadOutcomeMsg = `일부 항목 오류와 함께 '${finalFileName}' 준비 완료되었습니다. (성공: ${successfulFetches}/${selectedItems.length}개). 아래 버튼으로 다운로드하세요.`;
-                        downloadOutcomeType = 'error';
-                    } else if (successfulFetches === 0 && totalErrorOccurred) {
-                        downloadOutcomeMsg = `모든 항목 처리 중 오류 발생. '${finalFileName}' 파일이 생성되었지만 내용이 오류 정보일 수 있습니다. 아래 버튼으로 다운로드하세요.`;
-                        downloadOutcomeType = 'error';
-                    } else if (successfulFetches === 0 && !totalErrorOccurred && selectedItems.length > 0) {
-                        downloadOutcomeMsg = `'${finalFileName}' 파일 준비 완료. 모든 항목이 비어있거나 내용이 없습니다. (${successfulFetches}/${selectedItems.length}개 처리). 아래 버튼으로 다운로드하세요.`;
-                        downloadOutcomeType = 'info';
+                if (filesAdded > 0) {
+                    setStatus("ZIP 파일 생성 중... (항목이 많으면 시간이 걸릴 수 있습니다)", "info");
+                    
+                    // Generate final filename for the ZIP
+                    let zipFileName = "법령_행정규칙_통합본.zip";
+                    if (selectedItems.length === 1) {
+                        let baseName = selectedItems[0].name.replace(/[\\/*?:"<>|]/g, "_").substring(0, 60).trim();
+                        zipFileName = `[${selectedItems[0].typeDisplay}] ${baseName}.zip`;
+                    } else {
+                        zipFileName = `법령_통합_${selectedItems.length}건.zip`;
                     }
 
-                    setStatus(downloadOutcomeMsg, downloadOutcomeType);
-                }
-            }
+                    // 🏛️ Axiom of Systemic Scalability - Use async generation
+                    zip.generateAsync({ type: "blob" })
+                        .then(function(blob) {
+                            const blobUrl = URL.createObjectURL(blob);
+                            const downloadLink = document.createElement('a');
+                            downloadLink.href = blobUrl;
+                            downloadLink.download = zipFileName;
+                            downloadLink.textContent = `ZIP 다운로드 (${zipFileName})`;
+                            downloadLink.className = "btn btn-primary";
+                            actualDownloadContainer.innerHTML = ''; // Clear previous
+                            actualDownloadContainer.appendChild(downloadLink);
 
-            toggleDownloadControlsDisabled(false);
-            toggleInputsDisabled(false);
-            updateSelectedCount();
+                            let downloadOutcomeMsg = "";
+                            let downloadOutcomeType = 'info';
+                            if (successfulFetches > 0 && !totalErrorOccurred) {
+                                downloadOutcomeMsg = `ZIP 파일 '${zipFileName}' 준비 완료! 아래 버튼을 클릭하여 다운로드하세요. (${successfulFetches}개 항목 성공)`;
+                                downloadOutcomeType = 'success';
+                            } else if (successfulFetches > 0 && totalErrorOccurred) {
+                                downloadOutcomeMsg = `일부 항목 오류와 함께 '${zipFileName}' 준비 완료. (성공: ${successfulFetches}/${selectedItems.length}개). 아래 버튼으로 다운로드하세요.`;
+                                downloadOutcomeType = 'error';
+                            } else {
+                                downloadOutcomeMsg = `모든 항목 처리 중 오류 발생. '${zipFileName}' 파일이 생성되었지만 내용이 오류 정보일 수 있습니다.`;
+                                downloadOutcomeType = 'error';
+                            }
+                            setStatus(downloadOutcomeMsg, downloadOutcomeType);
+                        })
+                        .catch(function (err) {
+                            setStatus(`ZIP 파일 생성 오류: ${err.message}`, "error");
+                        })
+                        .finally(() => { 
+                            // 🏛️ Axiom of Systemic Scalability - Ensure UI is re-enabled after async op
+                            toggleDownloadControlsDisabled(false);
+                            toggleInputsDisabled(false);
+                            updateSelectedCount();
+                        });
+
+                } else {
+                     if (selectedItems.length > 0) {
+                        setStatus(`선택된 ${selectedItems.length}개 항목에 대해 다운로드할 내용이 없거나 모든 항목 처리 중 오류가 발생했습니다.`, 'error');
+                     } else {
+                        setStatus("다운로드할 항목이 없습니다.", "error");
+                     }
+                     // Re-enable controls immediately if nothing to zip
+                     toggleDownloadControlsDisabled(false);
+                     toggleInputsDisabled(false);
+                     updateSelectedCount();
+                }
+            } else { // if (authErrorDuringDownload)
+                 // Re-enable controls if auth error stopped process
+                 toggleDownloadControlsDisabled(false);
+                 toggleInputsDisabled(false);
+                 updateSelectedCount();
+            }
         });
 
         if (statusMessage) {
