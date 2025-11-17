@@ -1,1590 +1,1704 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-
-// --- Firebase (ESM 모듈 임포트) ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
-import { 
-    getFirestore, doc, addDoc, updateDoc, deleteDoc, 
-    onSnapshot, collection, query, writeBatch, getDocs,
-    arrayUnion, orderBy, Timestamp
-} from 'firebase/firestore';
-
-// --- 상태 관리 (Zustand) ---
-// npm install zustand
-import { create } from 'zustand';
-
-// --- UI 라이브러리 ---
-// npm install lucide-react
-import { 
-    LayoutGrid, FileText, Plus, Trash2, Edit2, 
-    CornerDownRight, ChevronRight, ChevronDown, BrainCircuit, 
-    FileUp, Link, StickyNote, Book, Loader2, Wand2, X, Sparkles, FolderArchive,
-    Send, Check,
-    Clock, 
-    ArrowDownAZ, 
-    ArrowDownWideNarrow, 
-    ArrowUpWideNarrow,
-    Pilcrow, // '더 길게'
-    WrapText, // '더 짧게'
-    Home, // [NEW] 대시보드 아이콘
-    Briefcase // [NEW] 프로젝트 아이콘
-} from 'lucide-react';
-
-// npm install react-resizable-panels
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-
-// --- Firebase 설정 (Canvas 환경 변수) ---
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfigStr = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-const firebaseConfig = JSON.parse(firebaseConfigStr);
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-
-// --- 전역 상태 (Zustand Store) ---
-const MAX_CONCURRENT_JOBS = 5; // 동시 작업 수 5로 설정
-
-const useAppStore = create((set, get) => ({
-    // Data
-    projects: [], // [NEW]
-    toc: [],      
-    sources: [],      
-    // Firebase
-    db: null,
-    auth: null,
-    userId: null,
-    // App State
-    loading: true,
-    globalLoadingMessage: '앱 초기화 중...',
-    selectedId: null,  // toc-id or source-id
-    selectedProjectId: null, // [NEW]
-    leftSidebarTab: 'outline',  
-    purpose: '', // AI 컨텍스트를 위한 전역 목적
-    isCreateModalOpen: false, // [NEW]
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Knowledge Workbench</title>
     
-    // Background Job Queue (동시 5개)
-    processingQueue: [], // 처리 대기열 (sourceId[])
-    activeJobs: [],      // 현재 처리 중인 (sourceId[])
-    
-    // Actions
-    setFirebaseInstances: (db, auth, userId) => set({ db, auth, userId }),
-    setLoading: (loading, message = '') => set({ loading, globalLoadingMessage: message }),
-    setProjects: (projects) => set({ projects }), // [NEW]
-    setTOC: (toc) => set({ toc }),
-    setSources: (sources) => set({ sources }),
-    setSelectedId: (selectedId) => set({ selectedId }),
-    setLeftSidebarTab: (tab) => set({ leftSidebarTab: tab }),
-    setPurpose: (purpose) => set({ purpose }),  
-    setCreateModalOpen: (isOpen) => set({ isCreateModalOpen: isOpen }), // [NEW]
+    <!-- 1. Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
 
-    // [MODIFIED] 프로젝트 선택/이동
-    selectProject: (projectId) => set({
-        selectedProjectId: projectId,
-        selectedId: null,
-        toc: [],
-        sources: [],
-        leftSidebarTab: 'outline',
-        purpose: get().projects.find(p => p.id === projectId)?.purpose || "" // [NEW] 프로젝트별 purpose 로드
-    }),
-    goToDashboard: () => set({
-        selectedProjectId: null,
-        selectedId: null,
-        toc: [],
-        sources: []
-    }),
-    
-    // Job Queue Actions
-    addJobToQueue: (sourceId) => set((state) => {
-        if (state.activeJobs.includes(sourceId) || state.processingQueue.includes(sourceId)) {
-            return state;  
+    <!-- 2. React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+
+    <!-- 3. Babel (JSX Transpiler) -->
+    <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+    <!-- 4. Firebase (Global SDKs) -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js"></script>
+
+    <!-- 5. Libraries (UMD for global access) -->
+    <!-- Lucide-React -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide-react@0.378.0/dist/lucide-react.umd.js"></script>
+    <!-- Zustand -->
+    <script src="https://cdn.jsdelivr.net/npm/zustand@4.5.2/dist/zustand.umd.js"></script>
+    <!-- React Resizable Panels -->
+    <script src="https://cdn.jsdelivr.net/npm/react-resizable-panels@2.0.19/dist/index.umd.js"></script>
+
+    <style>
+        /* react-resizable-panels 핸들 스타일 (테일윈드가 적용되지 않을 경우 대비) */
+        [data-panel-resize-handle] {
+            background-color: #e5e7eb; /* bg-gray-200 */
+            width: 6px; /* w-1.5 */
+            transition: background-color 0.2s;
         }
-        return { processingQueue: [...state.processingQueue, sourceId] };
-    }),
-    
-    _startJobs: (jobIds) => set((state) => {
-        const newQueue = state.processingQueue.filter(id => !jobIds.includes(id));
-        const newActive = [...state.activeJobs, ...jobIds];
-        return {
-            processingQueue: newQueue,
-            activeJobs: newActive
+        [data-panel-resize-handle]:hover {
+            background-color: #a5b4fc; /* hover:bg-indigo-300 */
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <!-- React 앱이 렌더링될 루트 요소 -->
+    <div id="root"></div>
+
+    <!-- Canvas 환경 변수 (HTML 전역 변수로 주입) -->
+    <script>
+        var __app_id = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        var __firebase_config = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+        var __initial_auth_token = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+    </script>
+
+    <!-- 
+      메인 애플리케이션 스크립트 
+      type="text/babel"로 설정하여 Babel이 이 스크립트 태그를 변환하도록 함
+    -->
+    <script type="text/babel">
+        // --- 1. 라이브러리 전역 변수에서 가져오기 ---
+        // React
+        const { useState, useEffect, useRef, useMemo } = React;
+        // Zustand
+        const { create } = zustand;
+        // Lucide-React (전역 'LucideReact' 객체에서 아이콘들 구조분해)
+        const {
+            LayoutGrid, FileText, Plus, Trash2, Edit2,
+            CornerDownRight, ChevronRight, ChevronDown, BrainCircuit,
+            FileUp, Link, StickyNote, Book, Loader2, Wand2, X, Sparkles, FolderArchive,
+            Send, Check, Clock, ArrowDownAZ, ArrowDownWideNarrow, ArrowUpWideNarrow,
+            Pilcrow, WrapText, Home, Briefcase
+        } = LucideReact;
+        // React Resizable Panels
+        const { Panel, PanelGroup, PanelResizeHandle } = ReactResizablePanels;
+
+        // --- 2. Firebase SDK 전역 변수에서 가져오기 ---
+        // 전역 'firebase' 객체에서 필요한 함수들 구조분해
+        const { initializeApp } = firebase.app;
+        const { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } = firebase.auth;
+        const {
+            getFirestore, doc, addDoc, updateDoc, deleteDoc,
+            onSnapshot, collection, query, writeBatch, getDocs,
+            arrayUnion, orderBy, Timestamp
+        } = firebase.firestore;
+
+        // --- 3. 사용자 코드 (import/export 구문 제외) ---
+        // 원본 코드의 'import' 문은 위에서 처리했으므로 여기서는 제거됩니다.
+
+        // --- Firebase 설정 (Canvas 환경 변수) ---
+        // 'const' 대신 'var'로 선언된 전역 변수를 사용합니다.
+        const appId = __app_id;
+        const firebaseConfigStr = __firebase_config;
+        const firebaseConfig = JSON.parse(firebaseConfigStr);
+        const initialAuthToken = __initial_auth_token;
+
+        // --- 전역 상태 (Zustand Store) ---
+        const MAX_CONCURRENT_JOBS = 5; // 동시 작업 수 5로 설정
+
+        const useAppStore = create((set, get) => ({
+            // Data
+            projects: [], // [NEW]
+            toc: [],      
+            sources: [],      
+            // Firebase
+            db: null,
+            auth: null,
+            userId: null,
+            // App State
+            loading: true,
+            globalLoadingMessage: '앱 초기화 중...',
+            selectedId: null,  // toc-id or source-id
+            selectedProjectId: null, // [NEW]
+            leftSidebarTab: 'outline',  
+            purpose: '', // AI 컨텍스트를 위한 전역 목적
+            isCreateModalOpen: false, // [NEW]
+            
+            // Background Job Queue (동시 5개)
+            processingQueue: [], // 처리 대기열 (sourceId[])
+            activeJobs: [],      // 현재 처리 중인 (sourceId[])
+            
+            // Actions
+            setFirebaseInstances: (db, auth, userId) => set({ db, auth, userId }),
+            setLoading: (loading, message = '') => set({ loading, globalLoadingMessage: message }),
+            setProjects: (projects) => set({ projects }), // [NEW]
+            setTOC: (toc) => set({ toc }),
+            setSources: (sources) => set({ sources }),
+            setSelectedId: (selectedId) => set({ selectedId }),
+            setLeftSidebarTab: (tab) => set({ leftSidebarTab: tab }),
+            setPurpose: (purpose) => set({ purpose }),  
+            setCreateModalOpen: (isOpen) => set({ isCreateModalOpen: isOpen }), // [NEW]
+
+            // [MODIFIED] 프로젝트 선택/이동
+            selectProject: (projectId) => set({
+                selectedProjectId: projectId,
+                selectedId: null,
+                toc: [],
+                sources: [],
+                leftSidebarTab: 'outline',
+                purpose: get().projects.find(p => p.id === projectId)?.purpose || "" // [NEW] 프로젝트별 purpose 로드
+            }),
+            goToDashboard: () => set({
+                selectedProjectId: null,
+                selectedId: null,
+                toc: [],
+                sources: []
+            }),
+            
+            // Job Queue Actions
+            addJobToQueue: (sourceId) => set((state) => {
+                if (state.activeJobs.includes(sourceId) || state.processingQueue.includes(sourceId)) {
+                    return state;  
+                }
+                return { processingQueue: [...state.processingQueue, sourceId] };
+            }),
+            
+            _startJobs: (jobIds) => set((state) => {
+                const newQueue = state.processingQueue.filter(id => !jobIds.includes(id));
+                const newActive = [...state.activeJobs, ...jobIds];
+                return {
+                    processingQueue: newQueue,
+                    activeJobs: newActive
+                };
+            }),
+
+            finishJob: (sourceId) => set((state) => {
+                return {
+                    activeJobs: state.activeJobs.filter(id => id !== sourceId)
+                };
+            }),
+        }));
+
+        // --- AI 엔진 클래스 (Gemini API) ---
+        class AIEngine {
+            // ... (이전 코드와 동일)
+            constructor() {
+                this.model = "gemini-2.5-flash-preview-09-2025";
+                this.apiKey = ""; // Canvas에서 자동 제공
+                this.apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+            }
+
+            async exponentialBackoff(maxRetries, fn) {
+                let delay = 1000;
+                for (let i = 0; i < maxRetries; i++) {
+                    try {
+                        return await fn();
+                    } catch (e) {
+                        if (i === maxRetries - 1) throw e;
+                        console.warn(`API 호출 실패 (재시도 ${i + 1}/${maxRetries}):`, e.message);
+                        await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+                    }
+                }
+            }
+
+            async callGeminiAPI(payload) {
+                return this.exponentialBackoff(3, async () => {
+                    const response = await fetch(this.apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) throw new Error("API로부터 유효한 텍스트 응답을 받지 못했습니다.");
+                    return text;
+                });
+            }
+
+            async generateTOCFromPurpose(purpose) {
+                // ... (이전 코드와 동일)
+                const persona = "전문적인 보고서 작성자 및 기획자";
+                const context = "사용자가 입력한 '목적'을 기반으로 논리적이고 체계적인 목차(TOC) 초안을 생성해야 합니다.";
+                const task = `사용자 목적: "${purpose}"\n이 목적을 달성하기 위한 상세한 보고서 목차를 생성해주십시오.`;
+                const schema = { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, children: { type: "ARRAY", items: { "$ref": "#" } } }, required: ["text", "children"] } };
+                
+                const payload = {
+                    contents: [{ parts: [{ text: task }] }],
+                    systemInstruction: { parts: [{ text: `Persona: ${persona}\nContext: ${context}\nTask: ${task}` }] },
+                    generationConfig: { responseMimeType: "application/json", responseSchema: schema }
+                };
+                
+                console.log("--- AI 프롬프트 (목차 생성) ---", payload);
+                const responseText = await this.callGeminiAPI(payload);
+                return JSON.parse(responseText);
+            }
+
+            async findExcerptsFromSource(tocJson, source, purpose) {
+                // [MODIFIED] (이전 수정과 동일)
+                const persona = "숙련된 리서치 조교";
+                const context = `
+                    [지침 1: 자료 성질 판단]
+                    당신은 '단일 소스 문서'의 성질(예: 법률 판례, 통계 보고서, 학술 논문, 의견 기사)을 먼저 판단해야 합니다. 이 자료의 *의도*가 무엇인지 파악하십시오.
+                    [지침 2: 목적 기반 발췌]
+                    사용자가 제공한 '전체 목차(TOC)'와 '단일 소스 문서'를 분석합니다.
+                    전체 목적: "${purpose}"
+                    당신의 임무는, [지침 1]에서 파악한 자료의 성질과 의도를 바탕으로, 목차의 *각* 노드(섹션)와 *가장 관련성 높은* 내용을 '단일 소스 문서'에서 찾는 것입니다.
+                    
+                    [지침 3: 완결된 카드 생성 (원문 + 분석)]
+                    '발췌문(excerpt)'은 AI가 요약하거나 재작성한 글이 아니라, 소스 원문의 *정확한 복사본*이어야 합니다.
+                    [중요] 각 발췌문에 대해, 이 발췌문이 '왜' 해당 목차 노드(nodeId)와 관련이 있는지, 그리고 이 자료가 어떤 맥락(예: 출처, 저자, 핵심 주장)을 가졌는지 설명하는 '분석(analysis)'을 *반드시* 작성해야 합니다.
+                    '분석'은 사용자가 원본을 보지 않아도 될 정도로 완결된 형태여야 합니다.
+                    [중요] 당신의 목표는 *다양한* 증거를 제공하는 것입니다. 만약 의미상 매우 유사하거나 중복되는 발췌문을 여러 개 찾았다면, 그 중 *가장 포괄적이고 대표적인 하나만* 반환하십시오.
+                `;
+                const task = `
+                    **TOC (JSON with IDs):** ${JSON.stringify(tocJson)}
+                    **Single Source Document (ID: ${source.id}, Title: ${source.title}):**
+                    ---
+                    ${source.content.substring(0, 10000)}... 
+                    ---
+                    
+                    위 TOC의 각 노드를 검토하고, 위 단일 소스 문서에서 각 노드와 관련된 *대표적이고, 의미상 구별되는* 완결된 카드 데이터(cards)를 찾아 아래 JSON 포맷으로 반환하십시오.
+                    - 'nodeId'는 TOC의 고유 ID여야 합니다.
+                    - 'cards'는 아래 'properties'를 포함한 객체의 배열이어야 합니다.
+                    - 만약 특정 노드에 해당하는 발췌문이 소스에 *전혀* 없다면, 응답 배열에서 해당 'nodeId'를 생략하십시오.
+                `;
+                const schema = {
+                    type: "ARRAY",
+                    items: {
+                        type: "OBJECT",
+                        properties: {
+                            nodeId: { type: "STRING", description: "관련 카드를 찾은 TOC 노드의 ID" },
+                            cards: {
+                                type: "ARRAY",
+                                items: {
+                                    type: "OBJECT",
+                                    properties: {
+                                        excerpt: { type: "STRING", description: "소스에서 추출한 원문 발췌문" },
+                                        analysis: { type: "STRING", description: "이 발췌문이 왜 목차와 관련 있는지, 어떤 맥락을 가졌는지에 대한 완결형 분석" }
+                                    },
+                                    required: ["excerpt", "analysis"]
+                                }
+                            }
+                        },
+                        required: ["nodeId", "cards"]
+                    }
+                };
+                const payload = {
+                    contents: [{ parts: [{ text: task }] }],
+                    systemInstruction: { parts: [{ text: `Persona: ${persona}\nContext: ${context}\nTask: ${task}` }] },
+                    generationConfig: { responseMimeType: "application/json", responseSchema: schema }
+                };
+
+                console.log("--- AI 프롬프트 (발췌문 찾기) ---", payload);
+                const responseText = await this.callGeminiAPI(payload);
+                return JSON.parse(responseText);
+            }
+            
+            async rewriteText(text, mode, contextNode, contextCards, contextPurpose) {
+                // [MODIFIED] (이전 수정과 동일)
+                const persona = "전문 작가 어시스턴트";
+                
+                const referenceExcerpts = contextCards.map((card, i) => 
+                    `[참조 카드 ${i+1}: ${card.sourceTitle}]\n[원문]: "${card.excerpt}"\n[분석]: ${card.analysis || 'N/A'}`
+                ).join('\n\n');
+                
+                let instruction = "";
+                switch (mode) {
+                    case 'extend': instruction = "더 길고 상세하게 확장하십시오."; break;
+                    case 'shorten': instruction = "더 짧고 간결하게 핵심만 요약하십시오."; break;
+                    case 'rewrite':
+                    default: instruction = "다른 표현을 사용하여 전문적인 톤으로 다시 작성하십시오."; break;
+                }
+
+                const context = `
+                    [전체 프로젝트 목적]: "${contextPurpose}"
+                    [현재 작성 중인 목차]: "${contextNode.text}"
+                    [참고 자료 (발췌문 카드)]:
+                  _ ${referenceExcerpts || "참고 자료 없음"}
+                `;
+                
+                const task = `
+                    [지침]:
+                    당신은 위의 '전체 프로젝트 목적'과 '현재 목차'에 맞춰 글을 작성 중입니다.
+                    주어진 '참고 자료'를 바탕으로, 아래의 [수정할 텍스트]를 [명령]에 맞게 수정하십시오.
+                    결과는 수정된 텍스트 본문만 반환해야 합니다.
+
+                    [명령]:
+                    ${instruction}
+
+                    [수정할 텍스트]:
+                    "${text}"
+                `;
+
+                const payload = {
+                    contents: [{ parts: [{ text: task }] }],
+                    systemInstruction: { parts: [{ text: `Persona: ${persona}\nContext: ${context}` }] }
+                };
+                
+                console.log(`--- AI 프롬프트 (${mode}) ---`, payload);
+                return this.callGeminiAPI(payload);
+            }
+        }
+        const aiEngine = new AIEngine(); 
+
+        // --- [MODIFIED] Firebase 헬퍼 (프로젝트 ID 추가) ---
+
+        const getProjectsCollection = (db, userId) => 
+            collection(db, `artifacts/${appId}/users/${userId}/projects`);
+
+        const getTocCollection = (db, userId, projectId) => 
+            collection(db, `artifacts/${appId}/users/${userId}/projects/${projectId}/toc`);
+
+        const getSourcesCollection = (db, userId, projectId) => 
+            collection(db, `artifacts/${appId}/users/${userId}/projects/${projectId}/sources`);
+
+        const getNodeCardsCollection = (db, userId, projectId, nodeId) => 
+            collection(db, `artifacts/${appId}/users/${userId}/projects/${projectId}/toc/${nodeId}/cards`);
+
+        // (데이터 평탄화 -> 계층 구조)
+        const buildTree = (nodes) => {
+            // ... (이전 코드와 동일)
+            const map = {};
+            const roots = [];
+            nodes.forEach(node => {
+                map[node.id] = { ...node, children: [] };
+            });
+            nodes.forEach(node => {
+                if (node.parentId && map[node.parentId]) {
+                    map[node.parentId].children.push(map[node.id]);
+                } else if (!node.parentId) {
+                    roots.push(map[node.id]);
+                }
+            });
+            const sortRecursive = (nodes) => {
+                nodes.forEach(node => {
+                    if (node.children) sortRecursive(node.children);
+                });
+            };
+            sortRecursive(roots);
+            return roots;
         };
-    }),
 
-    finishJob: (sourceId) => set((state) => {
-        return {
-            activeJobs: state.activeJobs.filter(id => id !== sourceId)
-        };
-    }),
-}));
-
-// --- AI 엔진 클래스 (Gemini API) ---
-class AIEngine {
-    // ... (이전 코드와 동일)
-    constructor() {
-        this.model = "gemini-2.5-flash-preview-09-2025";
-        this.apiKey = ""; // Canvas에서 자동 제공
-        this.apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
-    }
-
-    async exponentialBackoff(maxRetries, fn) {
-        let delay = 1000;
-        for (let i = 0; i < maxRetries; i++) {
-            try {
-                return await fn();
-            } catch (e) {
-                if (i === maxRetries - 1) throw e;
-                console.warn(`API 호출 실패 (재시도 ${i + 1}/${maxRetries}):`, e.message);
-                await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
-            }
-        }
-    }
-
-    async callGeminiAPI(payload) {
-        return this.exponentialBackoff(3, async () => {
-            const response = await fetch(this.apiUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
-            if (!response.ok) throw new Error(`API Error: ${response.status} ${response.statusText}`);
-            const result = await response.json();
-            const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
-            if (!text) throw new Error("API로부터 유효한 텍스트 응답을 받지 못했습니다.");
-            return text;
-        });
-    }
-
-    async generateTOCFromPurpose(purpose) {
-        // ... (이전 코드와 동일)
-        const persona = "전문적인 보고서 작성자 및 기획자";
-        const context = "사용자가 입력한 '목적'을 기반으로 논리적이고 체계적인 목차(TOC) 초안을 생성해야 합니다.";
-        const task = `사용자 목적: "${purpose}"\n이 목적을 달성하기 위한 상세한 보고서 목차를 생성해주십시오.`;
-        const schema = { type: "ARRAY", items: { type: "OBJECT", properties: { text: { type: "STRING" }, children: { type: "ARRAY", items: { "$ref": "#" } } }, required: ["text", "children"] } };
-        
-        const payload = {
-            contents: [{ parts: [{ text: task }] }],
-            systemInstruction: { parts: [{ text: `Persona: ${persona}\nContext: ${context}\nTask: ${task}` }] },
-            generationConfig: { responseMimeType: "application/json", responseSchema: schema }
-        };
-        
-        console.log("--- AI 프롬프트 (목차 생성) ---", payload);
-        const responseText = await this.callGeminiAPI(payload);
-        return JSON.parse(responseText);
-    }
-
-    async findExcerptsFromSource(tocJson, source, purpose) {
-        // [MODIFIED] (이전 수정과 동일)
-        const persona = "숙련된 리서치 조교";
-        const context = `
-            [지침 1: 자료 성질 판단]
-            당신은 '단일 소스 문서'의 성질(예: 법률 판례, 통계 보고서, 학술 논문, 의견 기사)을 먼저 판단해야 합니다. 이 자료의 *의도*가 무엇인지 파악하십시오.
-            [지침 2: 목적 기반 발췌]
-            사용자가 제공한 '전체 목차(TOC)'와 '단일 소스 문서'를 분석합니다.
-            전체 목적: "${purpose}"
-            당신의 임무는, [지침 1]에서 파악한 자료의 성질과 의도를 바탕으로, 목차의 *각* 노드(섹션)와 *가장 관련성 높은* 내용을 '단일 소스 문서'에서 찾는 것입니다.
-            
-            [지침 3: 완결된 카드 생성 (원문 + 분석)]
-            '발췌문(excerpt)'은 AI가 요약하거나 재작성한 글이 아니라, 소스 원문의 *정확한 복사본*이어야 합니다.
-            [중요] 각 발췌문에 대해, 이 발췌문이 '왜' 해당 목차 노드(nodeId)와 관련이 있는지, 그리고 이 자료가 어떤 맥락(예: 출처, 저자, 핵심 주장)을 가졌는지 설명하는 '분석(analysis)'을 *반드시* 작성해야 합니다.
-            '분석'은 사용자가 원본을 보지 않아도 될 정도로 완결된 형태여야 합니다.
-            [중요] 당신의 목표는 *다양한* 증거를 제공하는 것입니다. 만약 의미상 매우 유사하거나 중복되는 발췌문을 여러 개 찾았다면, 그 중 *가장 포괄적이고 대표적인 하나만* 반환하십시오.
-        `;
-        const task = `
-            **TOC (JSON with IDs):** ${JSON.stringify(tocJson)}
-            **Single Source Document (ID: ${source.id}, Title: ${source.title}):**
-            ---
-            ${source.content.substring(0, 10000)}... 
-            ---
-            
-            위 TOC의 각 노드를 검토하고, 위 단일 소스 문서에서 각 노드와 관련된 *대표적이고, 의미상 구별되는* 완결된 카드 데이터(cards)를 찾아 아래 JSON 포맷으로 반환하십시오.
-            - 'nodeId'는 TOC의 고유 ID여야 합니다.
-            - 'cards'는 아래 'properties'를 포함한 객체의 배열이어야 합니다.
-            - 만약 특정 노드에 해당하는 발췌문이 소스에 *전혀* 없다면, 응답 배열에서 해당 'nodeId'를 생략하십시오.
-        `;
-        const schema = {
-            type: "ARRAY",
-            items: {
-                type: "OBJECT",
-                properties: {
-                    nodeId: { type: "STRING", description: "관련 카드를 찾은 TOC 노드의 ID" },
-                    cards: {
-                        type: "ARRAY",
-                        items: {
-                            type: "OBJECT",
-                            properties: {
-                                excerpt: { type: "STRING", description: "소스에서 추출한 원문 발췌문" },
-                                analysis: { type: "STRING", description: "이 발췌문이 왜 목차와 관련 있는지, 어떤 맥락을 가졌는지에 대한 완결형 분석" }
-                            },
-                            required: ["excerpt", "analysis"]
-                        }
-                    }
-                },
-                required: ["nodeId", "cards"]
-            }
-        };
-        const payload = {
-            contents: [{ parts: [{ text: task }] }],
-            systemInstruction: { parts: [{ text: `Persona: ${persona}\nContext: ${context}\nTask: ${task}` }] },
-            generationConfig: { responseMimeType: "application/json", responseSchema: schema }
+        // (계층 구조 -> AI 전달용 JSON)
+        const getTreeAsJSON = (nodes) => {
+            // ... (이전 코드와 동일)
+            return nodes.map(node => ({
+                id: node.id, 
+                text: node.text,
+                children: getTreeAsJSON(node.children)
+            }));
         };
 
-        console.log("--- AI 프롬프트 (발췌문 찾기) ---", payload);
-        const responseText = await this.callGeminiAPI(payload);
-        return JSON.parse(responseText);
-    }
-    
-    async rewriteText(text, mode, contextNode, contextCards, contextPurpose) {
-        // [MODIFIED] (이전 수정과 동일)
-        const persona = "전문 작가 어시스턴트";
-        
-        const referenceExcerpts = contextCards.map((card, i) => 
-            `[참조 카드 ${i+1}: ${card.sourceTitle}]\n[원문]: "${card.excerpt}"\n[분석]: ${card.analysis || 'N/A'}`
-        ).join('\n\n');
-        
-        let instruction = "";
-        switch (mode) {
-            case 'extend': instruction = "더 길고 상세하게 확장하십시오."; break;
-            case 'shorten': instruction = "더 짧고 간결하게 핵심만 요약하십시오."; break;
-            case 'rewrite':
-            default: instruction = "다른 표현을 사용하여 전문적인 톤으로 다시 작성하십시오."; break;
-        }
-
-        const context = `
-            [전체 프로젝트 목적]: "${contextPurpose}"
-            [현재 작성 중인 목차]: "${contextNode.text}"
-            [참고 자료 (발췌문 카드)]:
-            ${referenceExcerpts || "참고 자료 없음"}
-        `;
-        
-        const task = `
-            [지침]:
-            당신은 위의 '전체 프로젝트 목적'과 '현재 목차'에 맞춰 글을 작성 중입니다.
-            주어진 '참고 자료'를 바탕으로, 아래의 [수정할 텍스트]를 [명령]에 맞게 수정하십시오.
-            결과는 수정된 텍스트 본문만 반환해야 합니다.
-
-            [명령]:
-            ${instruction}
-
-            [수정할 텍스트]:
-            "${text}"
-        `;
-
-        const payload = {
-            contents: [{ parts: [{ text: task }] }],
-            systemInstruction: { parts: [{ text: `Persona: ${persona}\nContext: ${context}` }] }
+        // 노드 경로(breadcrumb) 탐색 헬퍼
+        const findNodePath = (nodes, targetId, path = []) => {
+            // ... (이전 코드와 동일)
+            for (const node of nodes) {
+                const currentPath = [...path, node];
+                if (node.id === targetId) {
+                    return currentPath;
+                }
+                if (node.children) {
+                    const found = findNodePath(node.children, targetId, currentPath);
+                    if (found) return found;
+                }
+            }
+            return null;
         };
-        
-        console.log(`--- AI 프롬프트 (${mode}) ---`, payload);
-        return this.callGeminiAPI(payload);
-    }
-}
-const aiEngine = new AIEngine(); 
 
-// --- [MODIFIED] Firebase 헬퍼 (프로젝트 ID 추가) ---
+        // [MODIFIED] 백그라운드 작업을 실행하는 독립 함수 (프로젝트 ID 사용)
+        async function runJob(source, db, userId, toc, aiEngine) {
+            // [MODIFIED] projectId와 purpose를 store에서 가져옴
+            const { selectedProjectId, purpose } = useAppStore.getState();
+            if (!selectedProjectId) {
+                console.error("작업 실행 오류: 프로젝트 ID가 선택되지 않았습니다.");
+                return;
+            }
 
-const getProjectsCollection = (db, userId) => 
-    collection(db, `artifacts/${appId}/users/${userId}/projects`);
+            console.log(`백그라운드 작업 시작: ${source.title} (Project: ${selectedProjectId})`);
+            
+            // [MODIFIED] 경로 수정
+            const sourceRef = doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/sources`, source.id);
+            const tocCollectionRef = getTocCollection(db, userId, selectedProjectId);
 
-const getTocCollection = (db, userId, projectId) => 
-    collection(db, `artifacts/${appId}/users/${userId}/projects/${projectId}/toc`);
+            try {
+                await updateDoc(sourceRef, { status: "processing" });
+                
+                const tocJson = getTreeAsJSON(toc);
+                const excerptsData = await aiEngine.findExcerptsFromSource(tocJson, source, purpose);
+                
+                const cardBatch = writeBatch(db);
+                excerptsData.forEach(item => {
+                    const nodeId = item.nodeId;
+                    if (!nodeId || !item.cards) {
+                        console.warn("AI가 유효하지 않은 nodeId 또는 cards를 반환했습니다.", item);
+                        return;
+                    }
+                    
+                    item.cards.forEach(card => { 
+                        // [MODIFIED] 경로 수정
+                        const cardCollectionRef = getNodeCardsCollection(db, userId, selectedProjectId, nodeId);
+                        const cardDocRef = doc(cardCollectionRef); 
+                        cardBatch.set(cardDocRef, {
+                            sourceId: source.id,
+                            sourceTitle: source.title,
+                            excerpt: card.excerpt,
+                            analysis: card.analysis, 
+                            createdAt: Timestamp.now()
+                        });
+                    });
+                });
+                await cardBatch.commit();
 
-const getSourcesCollection = (db, userId, projectId) => 
-    collection(db, `artifacts/${appId}/users/${userId}/projects/${projectId}/sources`);
-
-const getNodeCardsCollection = (db, userId, projectId, nodeId) => 
-    collection(db, `artifacts/${appId}/users/${userId}/projects/${projectId}/toc/${nodeId}/cards`);
-
-// (데이터 평탄화 -> 계층 구조)
-const buildTree = (nodes) => {
-    // ... (이전 코드와 동일)
-    const map = {};
-    const roots = [];
-    nodes.forEach(node => {
-        map[node.id] = { ...node, children: [] };
-    });
-    nodes.forEach(node => {
-        if (node.parentId && map[node.parentId]) {
-            map[node.parentId].children.push(map[node.id]);
-        } else if (!node.parentId) {
-            roots.push(map[node.id]);
+                const uniqueNodeIds = [...new Set(excerptsData.map(item => item.nodeId))].filter(Boolean);
+                const linkBatch = writeBatch(db);
+                
+                linkBatch.update(sourceRef, { 
+                    status: "done", 
+                    linkedNodeIds: arrayUnion(...uniqueNodeIds) 
+                });
+                
+                uniqueNodeIds.forEach(nodeId => {
+                    const nodeRef = doc(tocCollectionRef, nodeId); 
+                    linkBatch.update(nodeRef, { 
+                        sourceIds: arrayUnion(source.id) 
+                    });
+                });
+                
+                await linkBatch.commit();
+                
+            } catch (e) {
+                console.error(`소스 처리 오류 (${source.title}):`, e);
+                await updateDoc(sourceRef, { status: "error" });
+            } finally {
+                console.log(`백그라운드 작업 완료: ${source.title}`);
+                useAppStore.getState().finishJob(source.id);
+            }
         }
-    });
-    const sortRecursive = (nodes) => {
-        nodes.forEach(node => {
-            if (node.children) sortRecursive(node.children);
-        });
-    };
-    sortRecursive(roots);
-    return roots;
-};
 
-// (계층 구조 -> AI 전달용 JSON)
-const getTreeAsJSON = (nodes) => {
-    // ... (이전 코드와 동일)
-    return nodes.map(node => ({
-        id: node.id, 
-        text: node.text,
-        children: getTreeAsJSON(node.children)
-    }));
-};
 
-// 노드 경로(breadcrumb) 탐색 헬퍼
-const findNodePath = (nodes, targetId, path = []) => {
-    // ... (이전 코드와 동일)
-    for (const node of nodes) {
-        const currentPath = [...path, node];
-        if (node.id === targetId) {
-            return currentPath;
+        // --- React 컴포넌트 ---
+
+        // 1. (왼쪽) 라이브러리 (Library Panel)
+        function LeftSidebar() {
+            const { leftSidebarTab, setLeftSidebarTab } = useAppStore();
+
+            return (
+                <div className="h-full flex flex-col bg-gray-50 border-r border-gray-200">
+                    <div className="flex p-2 space-x-1 border-b">
+                        <TabButton 
+                            icon={LayoutGrid} 
+                            label="아웃라인" 
+                            isActive={leftSidebarTab === 'outline'} 
+                            onClick={() => setLeftSidebarTab('outline')}
+                        />
+                        <TabButton 
+                            icon={FolderArchive} 
+                            label="소스" 
+                            isActive={leftSidebarTab === 'sources'} 
+                            onClick={() => setLeftSidebarTab('sources')}
+                        />
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto">
+                        {leftSidebarTab === 'outline' && <OutlineView />}
+                        {leftSidebarTab === 'sources' && <SourceListView />}
+                    </div>
+                </div>
+            );
         }
-        if (node.children) {
-            const found = findNodePath(node.children, targetId, currentPath);
-            if (found) return found;
+
+        // 1a. 라이브러리 - 아웃라인 탭
+        function OutlineView() {
+            // [MODIFIED] selectedProjectId, projects 추가
+            const { toc, db, userId, setLoading, purpose, setPurpose, selectedProjectId, projects } = useAppStore(); 
+            const currentProject = projects.find(p => p.id === selectedProjectId);
+
+            // AI 목차 생성 핸들러
+            const handleGenerateTOC = async () => {
+                if (!purpose || !db || !userId || !selectedProjectId) return;
+                setLoading(true, 'AI가 목차를 생성 중입니다...');
+                try {
+                    // [MODIFIED] 경로 수정
+                    const tocCollection = getTocCollection(db, userId, selectedProjectId);
+                    const querySnapshot = await getDocs(tocCollection);
+                    const deleteBatch = writeBatch(db);
+                    querySnapshot.forEach(doc => deleteBatch.delete(doc.ref));
+                    await deleteBatch.commit();
+                    
+                    const aiToc = await aiEngine.generateTOCFromPurpose(purpose);
+                    
+                    const saveNodes = async (nodes, parentId = null) => {
+                        const addBatch = writeBatch(db);
+                        const childPromises = [];
+
+                        for (const node of nodes) {
+                            let textToSave = "제목 없음";
+                            let childrenToSave = null;
+
+                            if (typeof node === 'string') {
+                                textToSave = node; 
+                            } else if (typeof node === 'object' && node !== null) {
+                                textToSave = node.text || "제목 없음";
+                                childrenToSave = node.children;
+                            } else {
+                                continue; 
+                            }
+
+                            // [MODIFIED] 경로 수정
+                            const docRef = doc(getTocCollection(db, userId, selectedProjectId)); 
+                            addBatch.set(docRef, {
+                                text: textToSave,
+                                parentId: parentId,
+                                content: "", 
+                                sourceIds: [] 
+                            });
+                            
+          _                   if (childrenToSave && childrenToSave.length > 0) {
+                                childPromises.push(saveNodes(childrenToSave, docRef.id));
+                            }
+                        }
+                        await addBatch.commit(); 
+                        await Promise.all(childPromises); 
+                    };
+                    
+                    await saveNodes(aiToc);
+
+                } catch (e) {
+                    console.error("목차 생성 오류:", e);
+                }
+                setLoading(false);
+            };
+
+            // 루트 노드 추가 핸들러
+            const handleAddRootNode = async () => {
+                if (!db || !userId || !selectedProjectId) return;
+                // [MODIFIED] 경로 수정
+                await addDoc(getTocCollection(db, userId, selectedProjectId), {
+                    text: "새 항목",
+                    parentId: null,
+                    content: "",
+                    sourceIds: [] 
+                });
+            };
+
+            // [NEW] Purpose 자동 저장
+            useEffect(() => {
+                if (!currentProject || purpose === currentProject.purpose) return;
+
+                const handler = setTimeout(async () => {
+                    if (db && userId && selectedProjectId) {
+                        console.log("프로젝트 목적 자동 저장:", selectedProjectId);
+                        const projectRef = doc(db, `artifacts/${appId}/users/${userId}/projects`, selectedProjectId);
+                        await updateDoc(projectRef, {
+                            purpose: purpose
+                        });
+                    }
+                }, 1500); // 1.5초 디바운스
+
+                return () => clearTimeout(handler);
+            }, [purpose, currentProject, db, userId, selectedProjectId]);
+
+
+            return (
+                <div className="p-2 space-y-3">
+                    <div className="p-3 bg-indigo-50 rounded-lg space-y-2">
+                        <label className="text-sm font-semibold text-indigo-800">프로젝트 목적</label>
+                        <textarea 
+                            value={purpose}
+                            onChange={(e) => setPurpose(e.target.value)} 
+                            rows="3" 
+                            className="w-full p-2 border border-gray-300 rounded-md text-sm" 
+                            placeholder="예: 'AI의 최신 동향' 보고서"
+                        />
+                        <button 
+                            onClick={handleGenerateTOC}
+                            className="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition flex items-center justify-center space-x-2 text-sm"
+                        >
+                            <BrainCircuit size={16} />
+                            <span>목차 재생성 (기존 목차 삭제)</span>
+                        </button>
+                    </div>
+                    
+                    <div className="flex justify-between items-center">
+                        <span className="font-semibold text-sm">아웃라인</span>
+                        <IconButton icon={Plus} onClick={handleAddRootNode} tooltip="루트 항목 추가" />
+                    </div>
+                    <div className="space-y-0.5">
+                        {toc.length > 0 ? (
+                            toc.map(node => <TOCNode key={node.id} node={node} level={0} />)
+                        ) : (
+                            <p className="text-gray-400 text-xs text-center py-4">목차가 비어있습니다.</p>
+                        )}
+                    </div>
+                </div>
+            );
         }
-    }
-    return null;
-};
 
-// [MODIFIED] 백그라운드 작업을 실행하는 독립 함수 (프로젝트 ID 사용)
-async function runJob(source, db, userId, toc, aiEngine) {
-    // [MODIFIED] projectId와 purpose를 store에서 가져옴
-    const { selectedProjectId, purpose } = useAppStore.getState();
-    if (!selectedProjectId) {
-        console.error("작업 실행 오류: 프로젝트 ID가 선택되지 않았습니다.");
-        return;
-    }
+        // 1a-1. 아웃라인 - 재귀 노드 컴포넌트
+        function TOCNode({ node, level }) {
+            // [MODIFIED] selectedProjectId 추가
+            const { selectedId, setSelectedId, db, userId, selectedProjectId } = useAppStore();
+            const [isRenaming, setIsRenaming] = useState(false);
+            const [renameText, setRenameText] = useState(node.text);
+            const [isExpanded, setIsExpanded] = useState(true);
+            
+            const hasData = node.content || (node.sourceIds && node.sourceIds.length > 0);
+            const isSelected = selectedId === `node-${node.id}`;
+            
+            const handleAddChild = async (e) => {
+                e.stopPropagation();
+                if (!db || !userId || !selectedProjectId) return;
+                // [MODIFIED] 경로 수정
+                await addDoc(getTocCollection(db, userId, selectedProjectId), {
+                    text: "새 자식 항목",
+                    parentId: node.id,
+                    content: "",
+                    sourceIds: []
+                });
+            };
 
-    console.log(`백그라운드 작업 시작: ${source.title} (Project: ${selectedProjectId})`);
-    
-    // [MODIFIED] 경로 수정
-    const sourceRef = doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/sources`, source.id);
-    const tocCollectionRef = getTocCollection(db, userId, selectedProjectId);
+            const handleDelete = async (e) => {
+                e.stopPropagation();
+                if (!db || !userId || !selectedProjectId) return;
+                console.warn(`'${node.text}' 삭제. 하위 노드는孤兒가 될 수 있음.`);
+                // [MODIFIED] 경로 수정
+                await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/toc`, node.id));
+            };
 
-    try {
-        await updateDoc(sourceRef, { status: "processing" });
-        
-        const tocJson = getTreeAsJSON(toc);
-        const excerptsData = await aiEngine.findExcerptsFromSource(tocJson, source, purpose);
-        
-        const cardBatch = writeBatch(db);
-        excerptsData.forEach(item => {
-            const nodeId = item.nodeId;
-            if (!nodeId || !item.cards) {
-                console.warn("AI가 유효하지 않은 nodeId 또는 cards를 반환했습니다.", item);
-                return;
-            }
-            
-            item.cards.forEach(card => { 
-                // [MODIFIED] 경로 수정
-                const cardCollectionRef = getNodeCardsCollection(db, userId, selectedProjectId, nodeId);
-                const cardDocRef = doc(cardCollectionRef); 
-                cardBatch.set(cardDocRef, {
-                    sourceId: source.id,
-                    sourceTitle: source.title,
-                    excerpt: card.excerpt,
-                    analysis: card.analysis, 
-                    createdAt: Timestamp.now()
-                });
-            });
-        });
-        await cardBatch.commit();
+            const handleRenameStart = (e) => {
+                e.stopPropagation();
+                setRenameText(node.text);
+                setIsRenaming(true);
+            };
 
-        const uniqueNodeIds = [...new Set(excerptsData.map(item => item.nodeId))].filter(Boolean);
-        const linkBatch = writeBatch(db);
-        
-        linkBatch.update(sourceRef, { 
-            status: "done", 
-            linkedNodeIds: arrayUnion(...uniqueNodeIds) 
-        });
-        
-        uniqueNodeIds.forEach(nodeId => {
-            const nodeRef = doc(tocCollectionRef, nodeId); 
-            linkBatch.update(nodeRef, { 
-                sourceIds: arrayUnion(source.id) 
-            });
-        });
-        
-        await linkBatch.commit();
-        
-    } catch (e) {
-        console.error(`소스 처리 오류 (${source.title}):`, e);
-        await updateDoc(sourceRef, { status: "error" });
-    } finally {
-        console.log(`백그라운드 작업 완료: ${source.title}`);
-        useAppStore.getState().finishJob(source.id);
-    }
-}
+            const handleRenameSubmit = async () => {
+                if (!db || !userId || !selectedProjectId || renameText === node.text) {
+                    setIsRenaming(false);
+                    return;
+                }
+                // [MODIFIED] 경로 수정
+                await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/toc`, node.id), {
+                    text: renameText
+                });
+                setIsRenaming(false);
+            };
 
-
-// --- React 컴포넌트 ---
-
-// 1. (왼쪽) 라이브러리 (Library Panel)
-function LeftSidebar() {
-    const { leftSidebarTab, setLeftSidebarTab } = useAppStore();
-
-    return (
-        <div className="h-full flex flex-col bg-gray-50 border-r border-gray-200">
-            <div className="flex p-2 space-x-1 border-b">
-                <TabButton 
-                    icon={LayoutGrid} 
-                    label="아웃라인" 
-                    isActive={leftSidebarTab === 'outline'} 
-                    onClick={() => setLeftSidebarTab('outline')}
-                />
-                <TabButton 
-                    icon={FolderArchive} 
-                    label="소스" 
-                    isActive={leftSidebarTab === 'sources'} 
-                    onClick={() => setLeftSidebarTab('sources')}
-                />
-            </div>
-            
-            <div className="flex-1 overflow-y-auto">
-                {leftSidebarTab === 'outline' && <OutlineView />}
-                {leftSidebarTab === 'sources' && <SourceListView />}
-            </div>
-        </div>
-    );
-}
-
-// 1a. 라이브러리 - 아웃라인 탭
-function OutlineView() {
-    // [MODIFIED] selectedProjectId, projects 추가
-    const { toc, db, userId, setLoading, purpose, setPurpose, selectedProjectId, projects } = useAppStore(); 
-    const currentProject = projects.find(p => p.id === selectedProjectId);
-
-    // AI 목차 생성 핸들러
-    const handleGenerateTOC = async () => {
-        if (!purpose || !db || !userId || !selectedProjectId) return;
-        setLoading(true, 'AI가 목차를 생성 중입니다...');
-        try {
-            // [MODIFIED] 경로 수정
-            const tocCollection = getTocCollection(db, userId, selectedProjectId);
-            const querySnapshot = await getDocs(tocCollection);
-            const deleteBatch = writeBatch(db);
-            querySnapshot.forEach(doc => deleteBatch.delete(doc.ref));
-            await deleteBatch.commit();
-            
-            const aiToc = await aiEngine.generateTOCFromPurpose(purpose);
-            
-            const saveNodes = async (nodes, parentId = null) => {
-                const addBatch = writeBatch(db);
-                const childPromises = [];
-
-                for (const node of nodes) {
-                    let textToSave = "제목 없음";
-                    let childrenToSave = null;
-
-                    if (typeof node === 'string') {
-                        textToSave = node; 
-                    } else if (typeof node === 'object' && node !== null) {
-                        textToSave = node.text || "제목 없음";
-                        childrenToSave = node.children;
-                    } else {
-                        continue; 
-                    }
-
-                    // [MODIFIED] 경로 수정
-                    const docRef = doc(getTocCollection(db, userId, selectedProjectId)); 
-                    addBatch.set(docRef, {
-                        text: textToSave,
-                        parentId: parentId,
-                        content: "", 
-                        sourceIds: [] 
-                    });
-                    
-                    if (childrenToSave && childrenToSave.length > 0) {
-                        childPromises.push(saveNodes(childrenToSave, docRef.id));
-                    }
-                }
-                await addBatch.commit(); 
-                await Promise.all(childPromises); 
-            };
-            
-            await saveNodes(aiToc);
-
-        } catch (e) {
-            console.error("목차 생성 오류:", e);
+            return (
+                <div>
+                    <div 
+                        className={`flex items-center group p-1.5 rounded-md cursor-pointer ${isSelected ? 'bg-blue-100' : 'hover:bg-gray-200'}`}
+                        style={{ paddingLeft: `${level * 16 + (node.children.length > 0 ? 0 : 20)}px` }}
+                        onClick={() => setSelectedId(`node-${node.id}`)}
+                    >
+                        {node.children.length > 0 && (
+                            <IconButton 
+                                icon={isExpanded ? ChevronDown : ChevronRight}
+                                onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+                                size="sm"
+                            />
+                        )}
+                        
+                        {hasData && (
+                            <span className="w-2 h-2 bg-green-500 rounded-full mr-1.5 flex-shrink-0" title="데이터 있음"></span>
+                        )}
+                        
+                        {isRenaming ? (
+                            <input
+                                type="text"
+                                value={renameText}
+                                onChange={(e) => setRenameText(e.target.value)}
+                                onBlur={handleRenameSubmit}
+                                onKeyDown={(e) => e.key === 'Enter' && handleRenameSubmit()}
+                                autoFocus
+                    M           className="flex-1 bg-white border border-blue-400 rounded px-1"
+                                onClick={(e) => e.stopPropagation()}
+                            />
+            _           ) : (
+                            <span className="flex-1 truncate text-sm">{node.text}</span>
+                        )}
+                        
+                        <div className={`flex-shrink-0 flex items-center space-x-0.5 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                            <IconButton icon={CornerDownRight} onClick={handleAddChild} tooltip="자식 추가" size="sm" />
+                            <IconButton icon={Edit2} onClick={handleRenameStart} tooltip="이름 변경" size="sm" />
+                            <IconButton icon={Trash2} onClick={handleDelete} tooltip="삭제" size="sm" />
+                        </div>
+                    </div>
+                    
+                    {isExpanded && node.children.length > 0 && (
+                        <div className="toc-children">
+                            {node.children.map(child => (
+                                <TOCNode key={child.id} node={child} level={level + 1} />
+                            ))}
+                        </div>
+                    )}
+                </div>
+            );
         }
-        setLoading(false);
-    };
 
-    // 루트 노드 추가 핸들러
-    const handleAddRootNode = async () => {
-        if (!db || !userId || !selectedProjectId) return;
-        // [MODIFIED] 경로 수정
-        await addDoc(getTocCollection(db, userId, selectedProjectId), {
-            text: "새 항목",
-            parentId: null,
-            content: "",
-            sourceIds: [] 
-        });
-    };
+        // 1b. 라이브러리 - 소스 탭
+        function SourceListView() {
+            // [MODIFIED] selectedProjectId 추가
+            const { sources, db, userId, addJobToQueue, selectedProjectId } = useAppStore(); 
+            const [newSourceTitle, setNewSourceTitle] = useState(""); 
+            const [sortOrder, setSortOrder] = useState("newest"); 
 
-    // [NEW] Purpose 자동 저장
-    useEffect(() => {
-        if (!currentProject || purpose === currentProject.purpose) return;
+            const handleAddSource = async () => {
+                const title = newSourceTitle.trim();
+                if (!title) {
+                    console.warn("새 소스 이름을 입력하세요.");
+                    return;
+                }
+                if (!db || !userId || !selectedProjectId) return;
+                
+                try {
+                    // [MODIFIED] 경로 수정
+                    await addDoc(getSourcesCollection(db, userId, selectedProjectId), {
+                        title: title,
+                        content: "여기에 내용을 붙여넣으세요...",
+                        createdAt: Timestamp.now(),
+                        status: "new",
+                        linkedNodeIds: []
+                    });
+                    setNewSourceTitle(""); // 입력 필드 초기화
+                } catch (e) {
+                    console.error(e);
+                }
+            };
+            
+            const handleProcessSource = (source) => {
+                addJobToQueue(source.id);
+            };
+            
+            const sortedSources = useMemo(() => {
+                return [...sources].sort((a, b) => {
+                    switch (sortOrder) {
+                        case 'name':
+                            return (a.title || "").localeCompare(b.title || "");
+                        case 'oldest':
+                            return (a.createdAt?.toDate() || 0) - (b.createdAt?.toDate() || 0);
+                        case 'newest':
+                        default:
+                            return (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0);
+                    }
+                });
+            }, [sources, sortOrder]);
 
-        const handler = setTimeout(async () => {
-            if (db && userId && selectedProjectId) {
-                console.log("프로젝트 목적 자동 저장:", selectedProjectId);
-                const projectRef = doc(db, `artifacts/${appId}/users/${userId}/projects`, selectedProjectId);
-                await updateDoc(projectRef, {
-                    purpose: purpose
-                });
-            }
-        }, 1500); // 1.5초 디바운스
+            return (
+                <div className="p-2 space-y-3">
+                    <div className="p-3 bg-green-50 rounded-lg space-y-2">
+                         <div className="flex space-x-2">
+                            <input 
+                                type="text"
+                                value={newSourceTitle}
+                                onChange={(e) => setNewSourceTitle(e.target.value)}
+                                className="flex-1 w-full p-2 border border-gray-300 rounded-md text-sm"
+                                placeholder="새 소스 이름 입력..."
+                                onKeyDown={(e) => e.key === 'Enter' && handleAddSource()}
+                            />
+                            <IconButton icon={Plus} onClick={handleAddSource} tooltip="추가" />
+                        </div>
+                    </div>
 
-        return () => clearTimeout(handler);
-    }, [purpose, currentProject, db, userId, selectedProjectId]);
-
-
-    return (
-        <div className="p-2 space-y-3">
-            <div className="p-3 bg-indigo-50 rounded-lg space-y-2">
-                <label className="text-sm font-semibold text-indigo-800">프로젝트 목적</label>
-                <textarea 
-                    value={purpose}
-                    onChange={(e) => setPurpose(e.target.value)} 
-                    rows="3" 
-                    className="w-full p-2 border border-gray-300 rounded-md text-sm" 
-                    placeholder="예: 'AI의 최신 동향' 보고서"
-                />
-                <button 
-                    onClick={handleGenerateTOC}
-                    className="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 transition flex items-center justify-center space-x-2 text-sm"
-                >
-                    <BrainCircuit size={16} />
-                    <span>목차 재생성 (기존 목차 삭제)</span>
-                </button>
-            </div>
-            
-            <div className="flex justify-between items-center">
-                <span className="font-semibold text-sm">아웃라인</span>
-                <IconButton icon={Plus} onClick={handleAddRootNode} tooltip="루트 항목 추가" />
-            </div>
-            <div className="space-y-0.5">
-                {toc.length > 0 ? (
-                    toc.map(node => <TOCNode key={node.id} node={node} level={0} />)
-                ) : (
-                    <p className="text-gray-400 text-xs text-center py-4">목차가 비어있습니다.</p>
-                )}
-            </div>
-        </div>
-    );
-}
-
-// 1a-1. 아웃라인 - 재귀 노드 컴포넌트
-function TOCNode({ node, level }) {
-    // [MODIFIED] selectedProjectId 추가
-    const { selectedId, setSelectedId, db, userId, selectedProjectId } = useAppStore();
-    const [isRenaming, setIsRenaming] = useState(false);
-    const [renameText, setRenameText] = useState(node.text);
-    const [isExpanded, setIsExpanded] = useState(true);
-    
-    const hasData = node.content || (node.sourceIds && node.sourceIds.length > 0);
-    const isSelected = selectedId === `node-${node.id}`;
-    
-    const handleAddChild = async (e) => {
-        e.stopPropagation();
-        if (!db || !userId || !selectedProjectId) return;
-        // [MODIFIED] 경로 수정
-        await addDoc(getTocCollection(db, userId, selectedProjectId), {
-            text: "새 자식 항목",
-            parentId: node.id,
-            content: "",
-            sourceIds: []
-        });
-    };
-
-    const handleDelete = async (e) => {
-        e.stopPropagation();
-        if (!db || !userId || !selectedProjectId) return;
-        console.warn(`'${node.text}' 삭제. 하위 노드는孤兒가 될 수 있음.`);
-        // [MODIFIED] 경로 수정
-        await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/toc`, node.id));
-    };
-
-    const handleRenameStart = (e) => {
-        e.stopPropagation();
-        setRenameText(node.text);
-        setIsRenaming(true);
-    };
-
-    const handleRenameSubmit = async () => {
-        if (!db || !userId || !selectedProjectId || renameText === node.text) {
-            setIsRenaming(false);
-            return;
+                    <div className="flex justify-between items-center">
+                        <span className="font-semibold text-sm">소스 라이브러리</span>
+                        <div className="flex space-x-1">
+                            <IconButton 
+                                icon={ArrowDownAZ} 
+                                tooltip="이름순" 
+                                size="sm"
+                                onClick={() => setSortOrder('name')} 
+                            />
+                            <IconButton 
+                                icon={ArrowDownWideNarrow} 
+                                tooltip="최신순" 
+                                size="sm"
+                                onClick={() => setSortOrder('newest')} 
+                            />
+                            <IconButton 
+                                icon={ArrowUpWideNarrow} 
+                                tooltip="오래된순" 
+                                size="sm"
+                                onClick={() => setSortOrder('oldest')} 
+                            />
+                        </div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                        {sortedSources.length > 0 ? (
+                            sortedSources.map(source => (
+                                <SourceItem 
+                                    key={source.id} 
+                                    source={source} 
+                                    onProcess={() => handleProcessSource(source)} 
+                                />
+                            ))
+                        ) : (
+                             <p className="text-gray-400 text-xs text-center py-4">소스가 비어있습니다.</p>
+                        )}
+                    </div>
+                </div>
+            );
         }
-        // [MODIFIED] 경로 수정
-        await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/toc`, node.id), {
-            text: renameText
-        });
-        setIsRenaming(false);
-    };
 
-    return (
-        <div>
-            <div 
-                className={`flex items-center group p-1.5 rounded-md cursor-pointer ${isSelected ? 'bg-blue-100' : 'hover:bg-gray-200'}`}
-                style={{ paddingLeft: `${level * 16 + (node.children.length > 0 ? 0 : 20)}px` }}
-                onClick={() => setSelectedId(`node-${node.id}`)}
-            >
-                {node.children.length > 0 && (
-                    <IconButton 
-                        icon={isExpanded ? ChevronDown : ChevronRight}
-                        onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
-                        size="sm"
-                    />
-                )}
-                
-                {hasData && (
-                    <span className="w-2 h-2 bg-green-500 rounded-full mr-1.5 flex-shrink-0" title="데이터 있음"></span>
-                )}
-                
-                {isRenaming ? (
-                    <input
-                        type="text"
-                        value={renameText}
-                        onChange={(e) => setRenameText(e.target.value)}
-                        onBlur={handleRenameSubmit}
-                        onKeyDown={(e) => e.key === 'Enter' && handleRenameSubmit()}
-                        autoFocus
-                        className="flex-1 bg-white border border-blue-400 rounded px-1"
-                        onClick={(e) => e.stopPropagation()}
-                    />
-                ) : (
-                    <span className="flex-1 truncate text-sm">{node.text}</span>
-                )}
-                
-                <div className={`flex-shrink-0 flex items-center space-x-0.5 ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                    <IconButton icon={CornerDownRight} onClick={handleAddChild} tooltip="자식 추가" size="sm" />
-                    <IconButton icon={Edit2} onClick={handleRenameStart} tooltip="이름 변경" size="sm" />
-                    <IconButton icon={Trash2} onClick={handleDelete} tooltip="삭제" size="sm" />
-                </div>
-            </div>
-            
-            {isExpanded && node.children.length > 0 && (
-                <div className="toc-children">
-                    {node.children.map(child => (
-                        <TOCNode key={child.id} node={child} level={level + 1} />
-                    ))}
-                </div>
-            )}
-        </div>
-    );
-}
+        // 1b-1. 소스 아이템 컴포넌트
+        function SourceItem({ source, onProcess }) {
+            // ... (이전 코드와 동일)
+            const { selectedId, setSelectedId, activeJobs, processingQueue } = useAppStore(); 
+            const isSelected = selectedId === `source-${source.id}`;
+            
+            const status = source.status || 'new';
+            
+            const isProcessing = activeJobs.includes(source.id);
+            const isQueued = processingQueue.includes(source.id);
 
-// 1b. 라이브러리 - 소스 탭
-function SourceListView() {
-    // [MODIFIED] selectedProjectId 추가
-    const { sources, db, userId, addJobToQueue, selectedProjectId } = useAppStore(); 
-    const [newSourceTitle, setNewSourceTitle] = useState(""); 
-    const [sortOrder, setSortOrder] = useState("newest"); 
-
-    const handleAddSource = async () => {
-        const title = newSourceTitle.trim();
-        if (!title) {
-            console.warn("새 소스 이름을 입력하세요.");
-            return;
+            return (
+                <div 
+                    className={`flex items-center p-2 rounded-md cursor-pointer ${isSelected ? 'bg-green-100' : 'hover:bg-gray-200'}`}
+                    onClick={() => setSelectedId(`source-${source.id}`)}
+                >
+                    <Book size={16} className="text-green-700 mr-2 flex-shrink-0" />
+                    <span className="truncate text-sm flex-1">{source.title}</span>
+                    
+                    {isProcessing ? (
+                        <Loader2 size={14} className="animate-spin text-blue-500" title="처리 중" />
+                    ) : isQueued ? (
+                        <Clock size={14} className="text-gray-500" title="대기 중" />
+                    ) : status === 'new' ? (
+                        <IconButton 
+                            icon={Send} 
+                            tooltip="AI 처리 실행" 
+                            size="sm" 
+                            onClick={(e) => { e.stopPropagation(); onProcess(); }} 
+                        />
+                    ) : status === 'done' ? (
+                        <Check size={14} className="text-green-500" title="처리 완료" />
+                    ) : ( // 'error'
+                         <X size={14} className="text-red-500" title="오류" />
+                    )}
+                </div>
+            );
         }
-        if (!db || !userId || !selectedProjectId) return;
-        
-        try {
-            // [MODIFIED] 경로 수정
-            await addDoc(getSourcesCollection(db, userId, selectedProjectId), {
-                title: title,
-                content: "여기에 내용을 붙여넣으세요...",
-                createdAt: Timestamp.now(),
-                status: "new",
-                linkedNodeIds: []
-            });
-            setNewSourceTitle(""); // 입력 필드 초기화
-        } catch (e) {
-            console.error(e);
+
+        // 2. (중앙) 에디터 패널
+        function MainEditor() {
+            // ... (이전 코드와 동일)
+            const { selectedId, toc, sources } = useAppStore();
+            
+            const [selectedType, selectedObject] = useMemo(() => {
+                if (!selectedId) return [null, null];
+                const [type, id] = selectedId.split('-');
+                
+                if (type === 'node') {
+                    const findNode = (nodes) => {
+                        for (const node of nodes) {
+                            if (node.id === id) return node;
+                            if (node.children) {
+                                const found = findNode(node.children);
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    };
+                    return ['node', findNode(toc)];
+                }
+                
+                if (type === 'source') {
+                    return ['source', sources.find(s => s.id === id)];
+                }
+                
+                return [null, null];
+            }, [selectedId, toc, sources]);
+
+            if (!selectedObject) {
+                return (
+                    <div className="h-full flex items-center justify-center p-10">
+                        <div className="text-center">
+                            <Sparkles size={48} className="mx-auto text-indigo-400" />
+                            <h2 className="mt-4 text-xl font-semibold">Knowledge Workbench</h2>
+                            <p className="text-gray-500 mt-2">
+                                왼쪽 라이브러리에서 아웃라인 항목이나 소스를 선택하여 작업을 시작하세요.
+                            </p>
+                        </div>
+                    </div>
+                );
+            }
+            
+            if (selectedType === 'node') {
+                return <NodeEditor node={selectedObject} />;
+            }
+            
+            if (selectedType === 'source') {
+                return <SourceEditor source={selectedObject} />;
+            }
         }
-    };
-    
-    const handleProcessSource = (source) => {
-        addJobToQueue(source.id);
-    };
-    
-    const sortedSources = useMemo(() => {
-        return [...sources].sort((a, b) => {
-            switch (sortOrder) {
-                case 'name':
-                    return (a.title || "").localeCompare(b.title || "");
-                case 'oldest':
-                    return (a.createdAt?.toDate() || 0) - (b.createdAt?.toDate() || 0);
-                case 'newest':
-                default:
-                    return (b.createdAt?.toDate() || 0) - (a.createdAt?.toDate() || 0);
-            }
-        });
-    }, [sources, sortOrder]);
 
-    return (
-        <div className="p-2 space-y-3">
-            <div className="p-3 bg-green-50 rounded-lg space-y-2">
-                 <div className="flex space-x-2">
-                    <input 
-                        type="text"
-                        value={newSourceTitle}
-                        onChange={(e) => setNewSourceTitle(e.target.value)}
-                        className="flex-1 w-full p-2 border border-gray-300 rounded-md text-sm"
-                        placeholder="새 소스 이름 입력..."
-                        onKeyDown={(e) => e.key === 'Enter' && handleAddSource()}
-                    />
-                    <IconButton icon={Plus} onClick={handleAddSource} tooltip="추가" />
-                </div>
-            </div>
+        // 2a. 중앙 에디터 - 노드 에디터
+        function NodeEditor({ node }) {
+            // [MODIFIED] selectedProjectId 추가
+            const { db, userId, purpose, selectedProjectId } = useAppStore();
+            const [content, setContent] = useState(node.content);
+            const [isAILoading, setIsAILoading] = useState(false);
+            const [cards, setCards] = useState([]); 
 
-            <div className="flex justify-between items-center">
-                <span className="font-semibold text-sm">소스 라이브러리</span>
-                <div className="flex space-x-1">
-                    <IconButton 
-                        icon={ArrowDownAZ} 
-                        tooltip="이름순" 
-                        size="sm"
-                        onClick={() => setSortOrder('name')} 
-                    />
-                    <IconButton 
-                        icon={ArrowDownWideNarrow} 
-                        tooltip="최신순" 
-                        size="sm"
-                        onClick={() => setSortOrder('newest')} 
-                    />
-                    <IconButton 
-                        icon={ArrowUpWideNarrow} 
-                        tooltip="오래된순" 
-                        size="sm"
-                        onClick={() => setSortOrder('oldest')} 
-                    />
-                </div>
-            </div>
-            
-            <div className="space-y-1">
-                {sortedSources.length > 0 ? (
-                    sortedSources.map(source => (
-                        <SourceItem 
-                            key={source.id} 
-                            source={source} 
-                            onProcess={() => handleProcessSource(source)} 
-                        />
-                    ))
-                ) : (
-                     <p className="text-gray-400 text-xs text-center py-4">소스가 비어있습니다.</p>
-                )}
-            </div>
-        </div>
-    );
-}
+            useEffect(() => {
+                if (!db || !userId || !node.id || !selectedProjectId) return;
+                
+                // [MODIFIED] 경로 수정
+                const cardsCollection = getNodeCardsCollection(db, userId, selectedProjectId, node.id);
+                const q = query(cardsCollection, orderBy("createdAt", "desc")); 
+                
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const newCards = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setCards(newCards);
+                });
+                
+                return () => unsubscribe(); 
+            }, [db, userId, node.id, selectedProjectId]); // 의존성 추가
+            
+            useEffect(() => {
+                setContent(node.content);
+            }, [node]);
+            
+            useEffect(() => {
+                const handler = setTimeout(async () => {
+                    if (content !== node.content && db && userId && selectedProjectId) {
+                        console.log("자동 저장:", node.id);
+                        // [MODIFIED] 경로 수정
+                        await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/toc`, node.id), {
+                            content: content 
+                        });
+                    }
+                }, 1000); 
+                
+                return () => clearTimeout(handler);
+            }, [content, node, db, userId, selectedProjectId]); // 의존성 추가
+            
+            const handleRewrite = async (mode) => {
+                if (!content) return;
+                setIsAILoading(true);
+                try {
+                    const newContent = await aiEngine.rewriteText(content, mode, node, cards, purpose);
+                    setContent(newContent); 
+                } catch (e) {
+                    console.error("AI 재작성 오류:", e);
+                }
+                setIsAILoading(false);
+            };
 
-// 1b-1. 소스 아이템 컴포넌트
-function SourceItem({ source, onProcess }) {
-    // ... (이전 코드와 동일)
-    const { selectedId, setSelectedId, activeJobs, processingQueue } = useAppStore(); 
-    const isSelected = selectedId === `source-${source.id}`;
-    
-    const status = source.status || 'new';
-    
-    const isProcessing = activeJobs.includes(source.id);
-    const isQueued = processingQueue.includes(source.id);
-
-    return (
-        <div 
-            className={`flex items-center p-2 rounded-md cursor-pointer ${isSelected ? 'bg-green-100' : 'hover:bg-gray-200'}`}
-            onClick={() => setSelectedId(`source-${source.id}`)}
-        >
-            <Book size={16} className="text-green-700 mr-2 flex-shrink-0" />
-            <span className="truncate text-sm flex-1">{source.title}</span>
-            
-            {isProcessing ? (
-                <Loader2 size={14} className="animate-spin text-blue-500" title="처리 중" />
-            ) : isQueued ? (
-                <Clock size={14} className="text-gray-500" title="대기 중" />
-            ) : status === 'new' ? (
-                <IconButton 
-                    icon={Send} 
-                    tooltip="AI 처리 실행" 
-                    size="sm" 
-                    onClick={(e) => { e.stopPropagation(); onProcess(); }} 
-                />
-            ) : status === 'done' ? (
-                <Check size={14} className="text-green-500" title="처리 완료" />
-            ) : ( // 'error'
-                 <X size={14} className="text-red-500" title="오류" />
-            )}
-        </div>
-    );
-}
-
-// 2. (중앙) 에디터 패널
-function MainEditor() {
-    // ... (이전 코드와 동일)
-    const { selectedId, toc, sources } = useAppStore();
-    
-    const [selectedType, selectedObject] = useMemo(() => {
-        if (!selectedId) return [null, null];
-        const [type, id] = selectedId.split('-');
-        
-        if (type === 'node') {
-            const findNode = (nodes) => {
-                for (const node of nodes) {
-                    if (node.id === id) return node;
-                    if (node.children) {
-                        const found = findNode(node.children);
-                        if (found) return found;
-                    }
-                }
-                return null;
-            };
-            return ['node', findNode(toc)];
+            return (
+                <div className="h-full flex flex-col p-6 overflow-y-auto">
+                    <h1 className="text-3xl font-bold mb-4">{node.text}</h1>
+                    
+                    <div className="flex space-x-2 mb-4 p-2 bg-gray-100 rounded-md">
+                        <button 
+                            onClick={() => handleRewrite('rewrite')}
+                            disabled={isAILoading || !content}
+                            className="flex items-center space-x-1 px-3 py-1.5 bg-white border rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            <Wand2 size={14} className="text-blue-500" />
+                            <span>AI로 재작성</span>
+                        </button>
+                        <button 
+                            onClick={() => handleRewrite('extend')}
+                            disabled={isAILoading || !content}
+                            className="flex items-center space-x-1 px-3 py-1.5 bg-white border rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            <Pilcrow size={14} className="text-green-500" />
+                            <span>더 길게</span>
+                        </button>
+                        <button 
+                            onClick={() => handleRewrite('shorten')}
+                            disabled={isAILoading || !content}
+                            className="flex items-center space-x-1 px-3 py-1.5 bg-white border rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
+                        >
+                            <WrapText size={14} className="text-red-500" />
+                            <span>더 짧게</span>
+                        </button>
+                        {isAILoading && <Loader2 size={16} className="animate-spin text-gray-500" />}
+                    </div>
+                    
+                    <textarea 
+                        value={content || ""}
+                        onChange={(e) => setContent(e.target.value)}
+                        className="w-full flex-1 p-4 border rounded-md resize-none leading-relaxed"
+                        placeholder="오른쪽 인스펙터의 '참조 카드'를 보며 글을 작성하세요..."
+                    />
+                </div>
+            );
         }
-        
-        if (type === 'source') {
-            return ['source', sources.find(s => s.id === id)];
-        }
-        
-        return [null, null];
-    }, [selectedId, toc, sources]);
 
-    if (!selectedObject) {
-        return (
-            <div className="h-full flex items-center justify-center p-10">
-                <div className="text-center">
-                    <Sparkles size={48} className="mx-auto text-indigo-400" />
-                    <h2 className="mt-4 text-xl font-semibold">Knowledge Workbench</h2>
-                    <p className="text-gray-500 mt-2">
-                        왼쪽 라이브러리에서 아웃라인 항목이나 소스를 선택하여 작업을 시작하세요.
-                    </p>
-                </div>
-            </div>
+        // 2b. 중앙 에디터 - 소스 에디터
+        function SourceEditor({ source }) {
+            // [MODIFIED] selectedProjectId 추가
+            const { db, userId, selectedProjectId } = useAppStore();
+            const [title, setTitle] = useState(source.title);
+            const [content, setContent] = useState(source.content);
+            
+            useEffect(() => {
+                setTitle(source.title);
+                setContent(source.content);
+            }, [source]);
+            
+            useEffect(() => {
+                const handler = setTimeout(async () => {
+                    if ((content !== source.content || title !== source.title) && db && userId && selectedProjectId) {
+                        console.log("소스 자동 저장:", source.id);
+                        // [MODIFIED] 경로 수정
+                        await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/sources`, source.id), {
+                            title,
+                            content
+                        });
+                    }
+                }, 1000);
+                return () => clearTimeout(handler);
+            }, [title, content, source, db, userId, selectedProjectId]); // 의존성 추가
+            
+            return (
+                <div className="h-full flex flex-col p-6 overflow-y-auto">
+                    <input 
+                        type="text"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        className="text-3xl font-bold mb-4 bg-transparent border-b-2 border-transparent focus:border-gray-300 outline-none"
+                    />
+                    <textarea 
+                        value={content}
+                        onChange={(e) => setContent(e.target.value)}
+                        className="w-full flex-1 p-4 border rounded-md resize-none leading-relaxed"
+                        placeholder="소스 원문 내용..."
+                    />
+                </div>
+            );
+        }
+
+        // 3. (오른쪽) 인스펙터 패널
+        function RightInspector() {
+            // [MODIFIED] selectedProjectId 추가
+            const { selectedId, toc, sources, selectedProjectId } = useAppStore();
+            
+            const [selectedType, selectedIdOnly] = useMemo(() => {
+                if (!selectedId) return [null, null];
+                const [type, id] = selectedId.split('-');
+                return [type, id];
+            }, [selectedId]);
+            
+            if (selectedType === 'node') {
+                const findNode = (nodes) => {
+                    for (const node of nodes) {
+                        if (node.id === selectedIdOnly) return node;
+                        if (node.children) {
+                            const found = findNode(node.children);
+                            if (found) return found;
+                        }
+                    }
+                    return null;
+                };
+                const node = findNode(toc);
+                if (!node) return null;
+                
+                return <NodeInspector node={node} />;
+            }
+            
+            if (selectedType === 'source') {
+                const source = sources.find(s => s.id === selectedIdOnly);
+                if (!source) return null;
+                
+                return <SourceInspector source={source} />;
+            }
+            
+            return (
+                <div className="h-full bg-white p-4 border-l">
+                     <h3 className="font-semibold text-gray-700">인스펙터</h3>
+                     <p className="text-sm text-gray-500 mt-2">왼쪽에서 항목을 선택하면 세부 정보가 표시됩니다.</p>
+                </div>
+            );
+        }
+
+        // 3a. 오른쪽 인스펙터 - 노드 인스펙터
+        function NodeInspector({ node }) {
+            // [MODIFIED] selectedProjectId 추가
+            const { db, userId, setSelectedId, selectedProjectId } = useAppStore();
+            const [cards, setCards] = useState([]); 
+            
+            useEffect(() => {
+                if (!db || !userId || !node.id || !selectedProjectId) return;
+                
+                // [MODIFIED] 경로 수정
+                const cardsCollection = getNodeCardsCollection(db, userId, selectedProjectId, node.id);
+                const q = query(cardsCollection, orderBy("createdAt", "desc")); 
+                
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const newCards = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setCards(newCards);
+                });
+                
+                return () => unsubscribe(); 
+            }, [db, userId, node.id, selectedProjectId]); // 의존성 추가
+            
+            const suggestedSources = []; 
+
+            return (
+                <div className="h-full bg-white p-4 space-y-4 border-l overflow-y-auto">
+                    <InspectorSection icon={Link} title="참조 카드">
+                        {cards.length > 0 ? (
+                            cards.map(card => (
+                                <ReferenceCard 
+                                    key={card.id} 
+                                    card={card} 
+                                    onClick={() => setSelectedId(`source-${card.sourceId}`)}
+                                />
+                            ))
+                        ) : (
+                            <p className="text-sm text-gray-400">이 목차에 배분된 자료 카드가 없습니다. '소스' 탭에서 자료를 처리하세요.</p>
+                        )}
+                    </InspectorSection>
+                    
+                    <InspectorSection icon={Wand2} title="추천 소스 (AI)">
+                        <p className="text-sm text-gray-400">추천 소스가 없습니다.</p>
+                    </InspectorSection>
+                    
+                    <InspectorSection icon={StickyNote} title="노트">
+                        <textarea className="w-full h-24 text-sm border rounded-md p-2" placeholder="이 노드에 대한 비공개 메모..."></textarea>
+                    </InspectorSection>
+                </div>
+            );
+        }
+
+        // 3b. 오른쪽 인스펙터 - 소스 인스펙터
+        function SourceInspector({ source }) {
+            const { toc, setSelectedId } = useAppStore();
+            
+            const linkedNodes = useMemo(() => {
+                if (!source.linkedNodeIds || source.linkedNodeIds.length === 0) {
+                    return [];
+                }
+                
+                return source.linkedNodeIds.map(nodeId => {
+                    const pathNodes = findNodePath(toc, nodeId); 
+                    if (!pathNodes) {
+                        return { id: nodeId, path: "목차를 찾을 수 없음" };
+                    }
+                    const path = pathNodes.map(n => n.text).join(' > ');
+                    return { id: nodeId, path: path };
+                }).filter(Boolean); 
+
+            }, [source.linkedNodeIds, toc]);
+
+            return (
+                <div className="h-full bg-white p-4 space-y-4 border-l overflow-y-auto">
+                    <InspectorSection icon={Link} title="연결된 목차">
+                        {linkedNodes.length > 0 ? (
+                            linkedNodes.map(n => (
+                                <div 
+                                    key={n.id} 
+                                    className="text-sm text-blue-600 hover:underline cursor-pointer"
+                                    onClick={() => setSelectedId(`node-${n.id}`)}
+                                    title={n.path}
+                                >
+                                    {n.path}
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-sm text-gray-400">연결된 목차가 없습니다.</p>
+                        )}
+                    </InspectorSection>
+                    
+                    <InspectorSection icon={FileText} title="메타데이터">
+                        <p className="text-sm text-gray-500">
+                            상태: {source.status || 'new'}
+                        </p>
+                        <p className="text-sm text-gray-500">
+                            생성일: {source.createdAt?.toDate().toLocaleString() || 'N/A'}
+                        </p> 
+                    </InspectorSection>
+                </div>
+            );
+        }
+
+
+        // --- 헬퍼 컴포넌트 ---
+        const TabButton = ({ icon: Icon, label, isActive, onClick }) => (
+            <button 
+                onClick={onClick}
+                className={`flex-1 flex flex-col items-center p-2 rounded-md transition-colors ${
+                    isActive ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-200'
+                }`}
+            >
+                <Icon size={18} />
+                <span className="text-xs mt-1">{label}</span>
+            </button>
         );
-    }
-    
-    if (selectedType === 'node') {
-        return <NodeEditor node={selectedObject} />;
-    }
-    
-    if (selectedType === 'source') {
-        return <SourceEditor source={selectedObject} />;
-    }
-}
 
-// 2a. 중앙 에디터 - 노드 에디터
-function NodeEditor({ node }) {
-    // [MODIFIED] selectedProjectId 추가
-    const { db, userId, purpose, selectedProjectId } = useAppStore();
-    const [content, setContent] = useState(node.content);
-    const [isAILoading, setIsAILoading] = useState(false);
-    const [cards, setCards] = useState([]); 
+        const IconButton = ({ icon: Icon, onClick, tooltip, size = "md" }) => (
+            <button
+                onClick={onClick}
+                title={tooltip}
+                className={`p-1 rounded text-gray-500 hover:bg-gray-300 hover:text-gray-800 ${size === 'sm' ? 'p-0.5' : 'p-1'}`}
+            >
+                <Icon size={size === 'sm' ? 14 : 16} />
+            </button>
+        );
 
-    useEffect(() => {
-        if (!db || !userId || !node.id || !selectedProjectId) return;
-        
-        // [MODIFIED] 경로 수정
-        const cardsCollection = getNodeCardsCollection(db, userId, selectedProjectId, node.id);
-        const q = query(cardsCollection, orderBy("createdAt", "desc")); 
-        
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const newCards = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setCards(newCards);
-        });
-        
-        return () => unsubscribe(); 
-    }, [db, userId, node.id, selectedProjectId]); // 의존성 추가
-    
-    useEffect(() => {
-        setContent(node.content);
-    }, [node]);
-    
-    useEffect(() => {
-        const handler = setTimeout(async () => {
-            if (content !== node.content && db && userId && selectedProjectId) {
-                console.log("자동 저장:", node.id);
-                // [MODIFIED] 경로 수정
-                await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/toc`, node.id), {
-                    content: content 
-                });
-            }
-        }, 1000); 
-        
-        return () => clearTimeout(handler);
-    }, [content, node, db, userId, selectedProjectId]); // 의존성 추가
-    
-    const handleRewrite = async (mode) => {
-        if (!content) return;
-        setIsAILoading(true);
-        try {
-            const newContent = await aiEngine.rewriteText(content, mode, node, cards, purpose);
-            setContent(newContent); 
-        } catch (e) {
-            console.error("AI 재작성 오류:", e);
+        const InspectorSection = ({ icon: Icon, title, children }) => (
+            <div className="border-b pb-3">
+                <h4 className="flex items-center text-sm font-semibold text-gray-600 mb-2">
+                    <Icon size={14} className="mr-1.5" />
+                    {title}
+                </h4>
+                <div className="space-y-2 pl-1">
+                    {children}
+                </div>
+            </div>
+        );
+
+        const ReferenceCard = ({ card, onClick }) => (
+            // [MODIFIED] (이전 수정과 동일)
+            <div 
+                className="p-3 rounded-md border bg-white hover:bg-gray-50 shadow-sm"
+            >
+                <div 
+                    onClick={onClick} 
+                    className="flex items-center text-xs text-green-700 font-medium mb-1.5 cursor-pointer"
+                    title={`소스 보기: ${card.sourceTitle}`}
+                >
+                    <Book size={14} className="mr-1.5 flex-shrink-0" />
+                    <span className="truncate">{card.sourceTitle}</span>
+                </div>
+                
+                <blockquote className="text-sm text-gray-700 border-l-2 border-gray-300 pl-2 italic">
+                    "{card.excerpt}"
+                </blockquote>
+                
+                {card.analysis && (
+                    <p className="text-sm text-gray-600 mt-2 pt-2 border-t border-gray-100">
+                        {card.analysis}
+                    </p>
+                )}
+            </div>
+        );
+
+        function ProcessingStatus() {
+            // ... (이전 코드와 동일)
+            const { sources, activeJobs, processingQueue } = useAppStore();
+            
+            let statusText = "대기 중";
+            let icon = <Check size={14} className="text-green-500" />;
+
+            if (activeJobs.length > 0) {
+                statusText = `처리 중: ${activeJobs.length}개`;
+                icon = <Loader2 size={14} className="animate-spin text-blue-500" />;
+            } else if (processingQueue.length > 0) {
+                statusText = `대기열: ${processingQueue.length}개`;
+                icon = <Clock size={14} className="text-gray-500" />;
+            }
+            
+            return (
+                <div className="flex items-center space-x-2 text-sm text-gray-600" title="AI 백그라운드 작업 상태">
+                    {icon}
+                    <span className="hidden md:inline">{statusText}</span>
+                </div>
+            );
         }
-        setIsAILoading(false);
-    };
 
-    return (
-        <div className="h-full flex flex-col p-6 overflow-y-auto">
-            <h1 className="text-3xl font-bold mb-4">{node.text}</h1>
-            
-            <div className="flex space-x-2 mb-4 p-2 bg-gray-100 rounded-md">
-                <button 
-                    onClick={() => handleRewrite('rewrite')}
-                    disabled={isAILoading || !content}
-                    className="flex items-center space-x-1 px-3 py-1.5 bg-white border rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
-                >
-                    <Wand2 size={14} className="text-blue-500" />
-                    <span>AI로 재작성</span>
-                </button>
-                <button 
-                    onClick={() => handleRewrite('extend')}
-                    disabled={isAILoading || !content}
-                    className="flex items-center space-x-1 px-3 py-1.5 bg-white border rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
-                >
-                    <Pilcrow size={14} className="text-green-500" />
-                    <span>더 길게</span>
-                </button>
-                <button 
-                    onClick={() => handleRewrite('shorten')}
-                    disabled={isAILoading || !content}
-                    className="flex items-center space-x-1 px-3 py-1.5 bg-white border rounded-md text-sm hover:bg-gray-50 disabled:opacity-50"
-                >
-                    <WrapText size={14} className="text-red-500" />
-                    <span>더 짧게</span>
-                </button>
-                {isAILoading && <Loader2 size={16} className="animate-spin text-gray-500" />}
-            </div>
-            
-            <textarea 
-                value={content || ""}
-                onChange={(e) => setContent(e.target.value)}
-                className="w-full flex-1 p-4 border rounded-md resize-none leading-relaxed"
-                placeholder="오른쪽 인스펙터의 '참조 카드'를 보며 글을 작성하세요..."
-            />
-        </div>
-    );
-}
+        // --- [NEW] 프로젝트 대시보드 컴포넌트 ---
+        function ProjectDashboard() {
+            const { projects, db, userId, selectProject, setCreateModalOpen } = useAppStore();
+            
+            // [FIX] confirm()을 대체하기 위한 로컬 상태
+            const [projectToDelete, setProjectToDelete] = useState(null);
 
-// 2b. 중앙 에디터 - 소스 에디터
-function SourceEditor({ source }) {
-    // [MODIFIED] selectedProjectId 추가
-    const { db, userId, selectedProjectId } = useAppStore();
-    const [title, setTitle] = useState(source.title);
-    const [content, setContent] = useState(source.content);
-    
-    useEffect(() => {
-        setTitle(source.title);
-        setContent(source.content);
-    }, [source]);
-    
-    useEffect(() => {
-        const handler = setTimeout(async () => {
-            if ((content !== source.content || title !== source.title) && db && userId && selectedProjectId) {
-                console.log("소스 자동 저장:", source.id);
-                // [MODIFIED] 경로 수정
-                await updateDoc(doc(db, `artifacts/${appId}/users/${userId}/projects/${selectedProjectId}/sources`, source.id), {
-                    title,
-                    content
-                });
-            }
-        }, 1000);
-        return () => clearTimeout(handler);
-    }, [title, content, source, db, userId, selectedProjectId]); // 의존성 추가
-    
-    return (
-        <div className="h-full flex flex-col p-6 overflow-y-auto">
-            <input 
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                className="text-3xl font-bold mb-4 bg-transparent border-b-2 border-transparent focus:border-gray-300 outline-none"
-            />
-            <textarea 
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="w-full flex-1 p-4 border rounded-md resize-none leading-relaxed"
-                placeholder="소스 원문 내용..."
-            />
-        </div>
-    );
-}
+            // [FIX] window.confirm()을 모달 상태 변경으로 대체
+            const handleDeleteProject = (e, projectId) => {
+                e.stopPropagation();
+                setProjectToDelete(projectId); // 모달 열기
+            };
 
-// 3. (오른쪽) 인스펙터 패널
-function RightInspector() {
-    // [MODIFIED] selectedProjectId 추가
-    const { selectedId, toc, sources, selectedProjectId } = useAppStore();
-    
-    const [selectedType, selectedIdOnly] = useMemo(() => {
-        if (!selectedId) return [null, null];
-        const [type, id] = selectedId.split('-');
-        return [type, id];
-    }, [selectedId]);
-    
-    if (selectedType === 'node') {
-        const findNode = (nodes) => {
-            for (const node of nodes) {
-                if (node.id === selectedIdOnly) return node;
-                if (node.children) {
-                    const found = findNode(node.children);
-                    if (found) return found;
+            // [FIX] 실제 삭제 로직 (모달에서 호출)
+            const confirmDelete = async () => {
+                if (!projectToDelete || !db || !userId) return;
+                
+                console.warn("프로젝트 삭제 기능은 하위 문서를 삭제하지 않습니다.");
+                try {
+                    const projectRef = doc(db, `artifacts/${appId}/users/${userId}/projects`, projectToDelete);
+                    await deleteDoc(projectRef);
+                    console.log("프로젝트 삭제됨:", projectToDelete);
+                } catch (error) {
+                    console.error("프로젝트 삭제 오류:", error);
+                } finally {
+                    setProjectToDelete(null); // 모달 닫기
                 }
-            }
-            return null;
-        };
-        const node = findNode(toc);
-        if (!node) return null;
-        
-        return <NodeInspector node={node} />;
-    }
-    
-    if (selectedType === 'source') {
-        const source = sources.find(s => s.id === selectedIdOnly);
-        if (!source) return null;
-        
-        return <SourceInspector source={source} />;
-    }
-    
-    return (
-        <div className="h-full bg-white p-4 border-l">
-             <h3 className="font-semibold text-gray-700">인스펙터</h3>
-             <p className="text-sm text-gray-500 mt-2">왼쪽에서 항목을 선택하면 세부 정보가 표시됩니다.</p>
-        </div>
-    );
-}
-
-// 3a. 오른쪽 인스펙터 - 노드 인스펙터
-function NodeInspector({ node }) {
-    // [MODIFIED] selectedProjectId 추가
-    const { db, userId, setSelectedId, selectedProjectId } = useAppStore();
-    const [cards, setCards] = useState([]); 
-    
-    useEffect(() => {
-        if (!db || !userId || !node.id || !selectedProjectId) return;
-        
-        // [MODIFIED] 경로 수정
-        const cardsCollection = getNodeCardsCollection(db, userId, selectedProjectId, node.id);
-        const q = query(cardsCollection, orderBy("createdAt", "desc")); 
-        
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const newCards = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setCards(newCards);
-        });
-        
-        return () => unsubscribe(); 
-    }, [db, userId, node.id, selectedProjectId]); // 의존성 추가
-    
-    const suggestedSources = []; 
-
-    return (
-        <div className="h-full bg-white p-4 space-y-4 border-l overflow-y-auto">
-            <InspectorSection icon={Link} title="참조 카드">
-                {cards.length > 0 ? (
-                    cards.map(card => (
-                        <ReferenceCard 
-                            key={card.id} 
-                            card={card} 
-                            onClick={() => setSelectedId(`source-${card.sourceId}`)}
-                        />
-                    ))
-                ) : (
-                    <p className="text-sm text-gray-400">이 목차에 배분된 자료 카드가 없습니다. '소스' 탭에서 자료를 처리하세요.</p>
-                )}
-            </InspectorSection>
-            
-            <InspectorSection icon={Wand2} title="추천 소스 (AI)">
-                <p className="text-sm text-gray-400">추천 소스가 없습니다.</p>
-            </InspectorSection>
-            
-            <InspectorSection icon={StickyNote} title="노트">
-                <textarea className="w-full h-24 text-sm border rounded-md p-2" placeholder="이 노드에 대한 비공개 메모..."></textarea>
-            </InspectorSection>
-        </div>
-    );
-}
-
-// 3b. 오른쪽 인스펙터 - 소스 인스펙터
-function SourceInspector({ source }) {
-    const { toc, setSelectedId } = useAppStore();
-    
-    const linkedNodes = useMemo(() => {
-        if (!source.linkedNodeIds || source.linkedNodeIds.length === 0) {
-            return [];
-        }
-        
-        return source.linkedNodeIds.map(nodeId => {
-            const pathNodes = findNodePath(toc, nodeId); 
-            if (!pathNodes) {
-                return { id: nodeId, path: "목차를 찾을 수 없음" };
-            }
-            const path = pathNodes.map(n => n.text).join(' > ');
-            return { id: nodeId, path: path };
-        }).filter(Boolean); 
-
-    }, [source.linkedNodeIds, toc]);
-
-    return (
-        <div className="h-full bg-white p-4 space-y-4 border-l overflow-y-auto">
-            <InspectorSection icon={Link} title="연결된 목차">
-                {linkedNodes.length > 0 ? (
-                    linkedNodes.map(n => (
-                        <div 
-                            key={n.id} 
-                            className="text-sm text-blue-600 hover:underline cursor-pointer"
-                            onClick={() => setSelectedId(`node-${n.id}`)}
-                            title={n.path}
-                        >
-                            {n.path}
-                        </div>
-                    ))
-                ) : (
-                    <p className="text-sm text-gray-400">연결된 목차가 없습니다.</p>
-                )}
-            </InspectorSection>
-            
-            <InspectorSection icon={FileText} title="메타데이터">
-                <p className="text-sm text-gray-500">
-                    상태: {source.status || 'new'}
-                </p>
-                <p className="text-sm text-gray-500">
-                    생성일: {source.createdAt?.toDate().toLocaleString() || 'N/A'}
-                </p> 
-            </InspectorSection>
-        </div>
-    );
-}
-
-
-// --- 헬퍼 컴포넌트 ---
-const TabButton = ({ icon: Icon, label, isActive, onClick }) => (
-    <button 
-        onClick={onClick}
-        className={`flex-1 flex flex-col items-center p-2 rounded-md transition-colors ${
-            isActive ? 'bg-indigo-100 text-indigo-700' : 'text-gray-500 hover:bg-gray-200'
-        }`}
-    >
-        <Icon size={18} />
-        <span className="text-xs mt-1">{label}</span>
-    </button>
-);
-
-const IconButton = ({ icon: Icon, onClick, tooltip, size = "md" }) => (
-    <button
-        onClick={onClick}
-        title={tooltip}
-        className={`p-1 rounded text-gray-500 hover:bg-gray-300 hover:text-gray-800 ${size === 'sm' ? 'p-0.5' : 'p-1'}`}
-    >
-        <Icon size={size === 'sm' ? 14 : 16} />
-    </button>
-);
-
-const InspectorSection = ({ icon: Icon, title, children }) => (
-    <div className="border-b pb-3">
-        <h4 className="flex items-center text-sm font-semibold text-gray-600 mb-2">
-            <Icon size={14} className="mr-1.5" />
-            {title}
-        </h4>
-        <div className="space-y-2 pl-1">
-            {children}
-        </div>
-    </div>
-);
-
-const ReferenceCard = ({ card, onClick }) => (
-    // [MODIFIED] (이전 수정과 동일)
-    <div 
-        className="p-3 rounded-md border bg-white hover:bg-gray-50 shadow-sm"
-    >
-        <div 
-            onClick={onClick} 
-            className="flex items-center text-xs text-green-700 font-medium mb-1.5 cursor-pointer"
-            title={`소스 보기: ${card.sourceTitle}`}
-        >
-            <Book size={14} className="mr-1.5 flex-shrink-0" />
-            <span className="truncate">{card.sourceTitle}</span>
-        </div>
-        
-        <blockquote className="text-sm text-gray-700 border-l-2 border-gray-300 pl-2 italic">
-            "{card.excerpt}"
-        </blockquote>
-        
-        {card.analysis && (
-            <p className="text-sm text-gray-600 mt-2 pt-2 border-t border-gray-100">
-                {card.analysis}
-            </p>
-        )}
-    </div>
-);
-
-function ProcessingStatus() {
-    // ... (이전 코드와 동일)
-    const { sources, activeJobs, processingQueue } = useAppStore();
-    
-    let statusText = "대기 중";
-    let icon = <Check size={14} className="text-green-500" />;
-
-    if (activeJobs.length > 0) {
-        statusText = `처리 중: ${activeJobs.length}개`;
-        icon = <Loader2 size={14} className="animate-spin text-blue-500" />;
-    } else if (processingQueue.length > 0) {
-        statusText = `대기열: ${processingQueue.length}개`;
-        icon = <Clock size={14} className="text-gray-500" />;
-    }
-    
-    return (
-        <div className="flex items-center space-x-2 text-sm text-gray-600" title="AI 백그라운드 작업 상태">
-            {icon}
-            <span className="hidden md:inline">{statusText}</span>
-        </div>
-    );
-}
-
-// --- [NEW] 프로젝트 대시보드 컴포넌트 ---
-
-function ProjectDashboard() {
-    const { projects, db, userId, selectProject, setCreateModalOpen } = useAppStore();
-    
-    // TODO: Firestore Cloud Function을 사용한 하위 컬렉션 삭제 구현 필요
-    const handleDeleteProject = async (e, projectId) => {
-        e.stopPropagation();
-        if (!db || !userId) return;
-        
-        // 경고 모달 필요 (지금은 window.confirm 대체)
-        console.warn("프로젝트 삭제 기능은 하위 문서를 삭제하지 않습니다.");
-        // 간단한 확인 (프로덕션에서는 커스텀 모달 사용)
-        if (confirm("정말로 이 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.")) {
-            try {
-                const projectRef = doc(db, `artifacts/${appId}/users/${userId}/projects`, projectId);
-                await deleteDoc(projectRef);
-                console.log("프로젝트 삭제됨:", projectId);
-            } catch (error) {
-                console.error("프로젝트 삭제 오류:", error);
-            }
-        }
-    };
-
-    return (
-        <div className="h-full w-full bg-gray-100 p-8 overflow-y-auto">
-            <h1 className="text-3xl font-bold text-gray-900 mb-6">프로젝트 대시보드</h1>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {/* 새 프로젝트 카드 */}
-                <button
-                    onClick={() => setCreateModalOpen(true)}
-                    className="flex flex-col items-center justify-center h-48 bg-white border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-indigo-500 hover:text-indigo-600 transition-all duration-300"
-                >
-                    <Plus size={32} />
-                    <span className="mt-2 font-semibold">새 프로젝트 생성</span>
-                </button>
-                
-                {/* 기존 프로젝트 카드 */}
-                {projects.map(project => (
-                    <div 
-                        key={project.id}
-                        onClick={() => selectProject(project.id)}
-                        className="relative flex flex-col h-48 p-5 bg-white border border-gray-200 rounded-lg shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-                    >
-                        <div className="flex-shrink-0">
-                            <Briefcase size={24} className="text-indigo-600" />
-                        </div>
-                        <div className="flex-1 flex flex-col justify-between mt-3">
-                            <h3 className="text-lg font-semibold text-gray-800 truncate">{project.name}</h3>
-                            <div>
-                                <p className="text-sm text-gray-500 truncate">{project.purpose || "목적 없음"}</p>
-                                <p className="text-xs text-gray-400 mt-1">
-                                    {project.createdAt?.toDate().toLocaleDateString() || '날짜 없음'}
-                                </p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={(e) => handleDeleteProject(e, project.id)}
-                            className="absolute top-3 right-3 p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-gray-100 transition"
-                            title="프로젝트 삭제"
-                        >
-                            <Trash2 size={16} />
-                        </button>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-}
-
-// --- [NEW] 새 프로젝트 생성 모달 ---
-function CreateProjectModal() {
-    const { db, userId, setCreateModalOpen, selectProject } = useAppStore();
-    const [projectName, setProjectName] = useState("");
-    const [isLoading, setIsLoading] = useState(false);
-    const inputRef = useRef(null);
-
-    useEffect(() => {
-        // 모달이 열릴 때 input에 포커스
-        inputRef.current?.focus();
-    }, []);
-
-    const handleCreate = async () => {
-        if (!projectName.trim() || !db || !userId) return;
-        
-        setIsLoading(true);
-        try {
-            const newProject = {
-                name: projectName,
-                purpose: "", // 초기 목적은 비어있음
-                createdAt: Timestamp.now(),
             };
-            const docRef = await addDoc(getProjectsCollection(db, userId), newProject);
-            
-            console.log("새 프로젝트 생성:", docRef.id);
-            setCreateModalOpen(false);
-            selectProject(docRef.id); // 생성된 프로젝트로 즉시 이동
-            
-        } catch (e) {
-            console.error("프로젝트 생성 오류:", e);
-        } finally {
-            setIsLoading(false);
-        }
-    };
 
-    return (
-        <div 
-            className="absolute inset-0 z-40 bg-black/30 flex items-center justify-center p-4"
-            onClick={() => setCreateModalOpen(false)} // 배경 클릭 시 닫기
-        >
-            <div 
-                className="w-full max-w-md bg-white rounded-lg shadow-xl p-6"
-                onClick={(e) => e.stopPropagation()} // 모달 내부 클릭 시 닫기 방지
-            >
-                <h2 className="text-xl font-semibold mb-4">새 프로젝트 생성</h2>
-                <div className="space-y-3">
-                    <label htmlFor="projectName" className="text-sm font-medium text-gray-700">프로젝트 이름</label>
-                    <input
-                        ref={inputRef}
-                        id="projectName"
-                        type="text"
-                        value={projectName}
-                        onChange={(e) => setProjectName(e.target.value)}
-                        placeholder="예: 2025년 4분기 AI 시장 보고서"
-                        className="w-full p-2 border border-gray-300 rounded-md"
-                        onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-                    />
-                </div>
-                <div className="flex justify-end space-x-3 mt-6">
-                    <button
-                        onClick={() => setCreateModalOpen(false)}
-                        className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
-                        disabled={isLoading}
-                    >
-                        취소
-                    </button>
-                    <button
-                        onClick={handleCreate}
-                        className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
-                        disabled={isLoading || !projectName.trim()}
-                    >
-                        {isLoading ? <Loader2 size={16} className="animate-spin" /> : "생성"}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-
-// --- 메인 앱 컴포넌트 ---
-export default function App() {
-    const { 
-        setFirebaseInstances, setLoading, setTOC, setSources,
-        loading, globalLoadingMessage, db, userId, 
-        toc, sources, 
-        processingQueue, activeJobs, _startJobs, finishJob,
-        // [NEW] 프로젝트 상태
-        projects, setProjects, selectedProjectId, goToDashboard, isCreateModalOpen
-    } = useAppStore();
-
-    // 1. Firebase 초기화 및 인증
-    useEffect(() => {
-        try {
-            const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-            const db = getFirestore(app);
-            
-            onAuthStateChanged(auth, async (user) => {
-                let currentUserId = user?.uid;
-                if (!currentUserId) {
-                    try {
-                        if (initialAuthToken) {
-                            const userCredential = await signInWithCustomToken(auth, initialAuthToken);
-                            currentUserId = userCredential.user.uid;
-                        } else {
-                            const userCredential = await signInAnonymously(auth);
-                            currentUserId = userCredential.user.uid;
-                        }
-                    } catch (e) {
-                        console.error("Firebase Auth Error:", e);
-                        setLoading(true, '인증 실패');
-                        return;
-                    }
-                }
-                console.log("인증된 사용자:", currentUserId);
-                setFirebaseInstances(db, auth, currentUserId);
-                setLoading(false);
-            });
-        } catch (e) {
-            console.error("Firebase Init Error:", e);
-            setLoading(true, 'Firebase 초기화 실패');
-        }
-    }, [setFirebaseInstances, setLoading]);
-
-    // 2. [NEW] 프로젝트 리스너
-    useEffect(() => {
-        if (!db || !userId) return;
-        
-        const q = query(getProjectsCollection(db, userId), orderBy("createdAt", "desc"));
-        
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const newProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setProjects(newProjects);
-            console.log("프로젝트 로드됨:", newProjects.length);
-        });
-        
-        return () => unsubscribe();
-    }, [db, userId, setProjects]);
-
-
-    // 3. [MODIFIED] TOC 실시간 리스너 (프로젝트 ID 의존)
-    useEffect(() => {
-        if (!db || !userId || !selectedProjectId) {
-            setTOC([]); // 프로젝트가 선택되지 않으면 TOC 비움
-            return;
-        }
-        
-        const tocCollection = getTocCollection(db, userId, selectedProjectId);
-        const q = query(tocCollection, orderBy("text")); // 이름순 정렬
-        
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const nodes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const tree = buildTree(nodes);
-            setTOC(tree);
-        });
-        
-        return () => unsubscribe();
-    }, [db, userId, selectedProjectId, setTOC]); // 의존성 수정
-
-    // 4. [MODIFIED] Sources 실시간 리스너 (프로젝트 ID 의존)
-    useEffect(() => {
-        if (!db || !userId || !selectedProjectId) {
-            setSources([]); // 프로젝트가 선택되지 않으면 Sources 비움
-            return;
-        }
-        
-        const sourcesCollection = getSourcesCollection(db, userId, selectedProjectId);
-        const q = query(sourcesCollection, orderBy("createdAt", "desc"));
-        
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const sources = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setSources(sources);
-        });
-        
-        return () => unsubscribe();
-    }, [db, userId, selectedProjectId, setSources]); // 의존성 수정
-    
-    // 5. [MODIFIED] 백그라운드 Job Runner (프로젝트 ID 의존)
-    useEffect(() => {
-        const availableSlots = MAX_CONCURRENT_JOBS - activeJobs.length;
-        if (availableSlots > 0 && processingQueue.length > 0) {
-            
-            const jobsToStartIds = processingQueue.slice(0, availableSlots);
-            _startJobs(jobsToStartIds); 
-
-            jobsToStartIds.forEach(jobId => {
-                const source = sources.find(s => s.id === jobId);
-                
-                // [MODIFIED] selectedProjectId 확인
-                if (!source || !db || !userId || !toc || !selectedProjectId) { 
-                    console.warn(`작업 ${jobId}을(를) 시작할 수 없습니다. (소스/DB/TOC/ProjectID 누락)`);
-                    finishJob(jobId); 
-                    return;
-                }
-                
-                runJob(source, db, userId, toc, aiEngine)
-                    .catch(e => console.error(`Job ${jobId} 실패:`, e))
-                    .finally(() => {
-                        finishJob(jobId);
-                    });
-            });
-        }
-    }, [
-        processingQueue, 
-        activeJobs.length, 
-        db, 
-        userId, 
-        selectedProjectId, // 의존성 추가
-        toc, 
-        sources, 
-        _startJobs, 
-        finishJob
-    ]);
-
-    // [MODIFIED] 렌더링 로직
-    const currentProjectName = projects.find(p => p.id === selectedProjectId)?.name || "프로젝트 선택";
-
-    return (
-        <div className="h-screen w-screen flex flex-col antialiased text-gray-900">
-            {loading && (
-                <div className="absolute inset-0 bg-white/70 z-50 flex flex-col items-center justify-center">
-                    <Loader2 className="animate-spin h-10 w-10 text-indigo-600" />
-                    <span className="mt-3 text-sm font-medium text-gray-700">{globalLoadingMessage}</span>
-                </div>
-            )}
-            
-            {/* [NEW] 모달 렌더링 */}
-            {isCreateModalOpen && <CreateProjectModal />}
-            
-            <header className="flex-shrink-0 h-14 bg-white border-b flex items-center justify-between px-4 z-10">
-                <div className="flex items-center space-x-3">
-                    <h1 className="text-lg font-bold text-indigo-700">Knowledge Workbench</h1>
-                    {/* [NEW] 대시보드 이동 버튼 및 현재 프로젝트 이름 */}
-                    {selectedProjectId && (
-                        <>
-                            <button 
-                                onClick={goToDashboard} 
-                                title="대시보드로 이동"
-                                className="flex items-center space-x-1.5 text-sm text-gray-600 hover:text-indigo-600"
-                            >
-                                <Home size={16} />
-                                <span>대시보드</span>
-                            </button>
-                            <span className="text-gray-400">/</span>
-                            <span className="font-semibold text-gray-800">{currentProjectName}</span>
-                        </>
+            return (
+                <div className="h-full w-full bg-gray-100 p-8 overflow-y-auto">
+                    {/* [FIX] 삭제 확인 모달 렌더링 */}
+                    {projectToDelete && (
+                        <DeleteConfirmModal
+                            onConfirm={confirmDelete}
+                            onCancel={() => setProjectToDelete(null)}
+                        />
                     )}
+
+                    <h1 className="text-3xl font-bold text-gray-900 mb-6">프로젝트 대시보드</h1>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                        {/* 새 프로젝트 카드 */}
+                        <button
+                            onClick={() => setCreateModalOpen(true)}
+                            className="flex flex-col items-center justify-center h-48 bg-white border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-indigo-500 hover:text-indigo-600 transition-all duration-300"
+                        >
+                            <Plus size={32} />
+                            <span className="mt-2 font-semibold">새 프로젝트 생성</span>
+                        </button>
+                        
+                        {/* 기존 프로젝트 카드 */}
+                        {projects.map(project => (
+                            <div 
+                                key={project.id}
+                                onClick={() => selectProject(project.id)}
+                                className="relative flex flex-col h-48 p-5 bg-white border border-gray-200 rounded-lg shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                            >
+                                <div className="flex-shrink-0">
+                                    <Briefcase size={24} className="text-indigo-600" />
+                                </div>
+                                <div className="flex-1 flex flex-col justify-between mt-3">
+                                    <h3 className="text-lg font-semibold text-gray-800 truncate">{project.name}</h3>
+                                    <div>
+                                        <p className="text-sm text-gray-500 truncate">{project.purpose || "목적 없음"}</p>
+                                        <p className="text-xs text-gray-400 mt-1">
+                                            {project.createdAt?.toDate().toLocaleDateString() || '날짜 없음'}
+                                        </p>
+                                    </div>
+                                </div>
+                    _         <button
+                                    onClick={(e) => handleDeleteProject(e, project.id)}
+                                    className="absolute top-3 right-3 p-1 text-gray-400 hover:text-red-500 rounded-full hover:bg-gray-100 transition"
+                                    title="프로젝트 삭제"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- [NEW] 새 프로젝트 생성 모달 ---
+        function CreateProjectModal() {
+            const { db, userId, setCreateModalOpen, selectProject } = useAppStore();
+            const [projectName, setProjectName] = useState("");
+            const [isLoading, setIsLoading] = useState(false);
+            const inputRef = useRef(null);
+
+            useEffect(() => {
+                // 모달이 열릴 때 input에 포커스
+                inputRef.current?.focus();
+            }, []);
+
+            const handleCreate = async () => {
+                if (!projectName.trim() || !db || !userId) return;
+                
+                setIsLoading(true);
+                try {
+                    const newProject = {
+                        name: projectName,
+                        purpose: "", // 초기 목적은 비어있음
+                        createdAt: Timestamp.now(),
+                    };
+                    const docRef = await addDoc(getProjectsCollection(db, userId), newProject);
+                    
+                    console.log("새 프로젝트 생성:", docRef.id);
+                    setCreateModalOpen(false);
+                    selectProject(docRef.id); // 생성된 프로젝트로 즉시 이동
+                    
+                } catch (e) {
+                    console.error("프로젝트 생성 오류:", e);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            return (
+                <div 
+                    className="absolute inset-0 z-40 bg-black/30 flex items-center justify-center p-4"
+                    onClick={() => setCreateModalOpen(false)} // 배경 클릭 시 닫기
+                >
+                    <div 
+                        className="w-full max-w-md bg-white rounded-lg shadow-xl p-6"
+                        onClick={(e) => e.stopPropagation()} // 모달 내부 클릭 시 닫기 방지
+                _   >
+                        <h2 className="text-xl font-semibold mb-4">새 프로젝트 생성</h2>
+                        <div className="space-y-3">
+                            <label htmlFor="projectName" className="text-sm font-medium text-gray-700">프로젝트 이름</label>
+                            <input
+                                ref={inputRef}
+                                id="projectName"
+                                type="text"
+                                value={projectName}
+                                onChange={(e) => setProjectName(e.target.value)}
+                                placeholder="예: 2025년 4분기 AI 시장 보고서"
+                                className="w-full p-2 border border-gray-300 rounded-md"
+                                onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
+                            />
+                        </div>
+                        <div className="flex justify-end space-x-3 mt-6">
+                            <button
+                                onClick={() => setCreateModalOpen(false)}
+                                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                                disabled={isLoading}
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleCreate}
+                                className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50"
+                                disabled={isLoading || !projectName.trim()}
+                            >
+                                {isLoading ? <Loader2 size={16} className="animate-spin" /> : "생성"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- [FIX] 삭제 확인 모달 (confirm() 대체) ---
+        function DeleteConfirmModal({ onConfirm, onCancel }) {
+            return (
+                <div
+                    className="absolute inset-0 z-50 bg-black/30 flex items-center justify-center p-4"
+                    onClick={onCancel} // 배경 클릭 시 닫기
+                >
+                    <div
+                        className="w-full max-w-md bg-white rounded-lg shadow-xl p-6"
+                        onClick={(e) => e.stopPropagation()} // 모달 내부 클릭 시 닫기 방지
+                    >
+                        <h2 className="text-xl font-semibold mb-4 text-red-600">프로젝트 삭제 확인</h2>
+                        <p className="text-gray-700 mb-6">
+                            정말로 이 프로젝트를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.
+                        </p>
+                        <div className="flex justify-end space-x-3 mt-6">
+                            <button
+                                onClick={onCancel}
+                                className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={onConfirm}
+                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
+                            >
+                                삭제 확인
+                            </button>
+                        </div>
+                    </div>
                 </div>
-                <ProcessingStatus />
-            </header>
-            
-            <main className="flex-1 overflow-hidden">
-                {/* [MODIFIED] 프로젝트 ID에 따라 뷰 전환 */}
-                {!selectedProjectId ? (
-                    <ProjectDashboard />
-                ) : (
-                    <PanelGroup direction="horizontal">
-                        {/* 1. (왼쪽) 라이브러리 */}
-                        <Panel defaultSize={25} minSize={20} maxSize={40}>
-                            <LeftSidebar />
-                        </Panel>
-                        <PanelResizeHandle className="w-1.5 bg-gray-200 hover:bg-indigo-300 transition-colors" />
-                        
-                        {/* 2. (중앙) 에디터 */}
-                        <Panel defaultSize={45} minSize={30}>
-                            <MainEditor />
-                        </Panel>
-                        <PanelResizeHandle className="w-1.5 bg-gray-200 hover:bg-indigo-300 transition-colors" />
-                        
-                        {/* 3. (오른쪽) 인스펙터 */}
-                        <Panel defaultSize={30} minSize={20} maxSize={40}>
-                            <RightInspector />
-                        </Panel>
-                    </PanelGroup>
-                )}
-            </main>
-        </div>
-    );
-}
+            );
+        }
+
+
+        // --- 메인 앱 컴포넌트 ---
+        function App() {
+            const { 
+                setFirebaseInstances, setLoading, setTOC, setSources,
+                loading, globalLoadingMessage, db, userId, 
+                toc, sources, 
+                processingQueue, activeJobs, _startJobs, finishJob,
+                // [NEW] 프로젝트 상태
+                projects, setProjects, selectedProjectId, goToDashboard, isCreateModalOpen
+            } = useAppStore();
+
+            // 1. Firebase 초기화 및 인증
+            useEffect(() => {
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    const auth = getAuth(app);
+                    const db = getFirestore(app);
+                    
+                    onAuthStateChanged(auth, async (user) => {
+                        let currentUserId = user?.uid;
+                        if (!currentUserId) {
+                            try {
+                                if (initialAuthToken) {
+                                    const userCredential = await signInWithCustomToken(auth, initialAuthToken);
+                                    currentUserId = userCredential.user.uid;
+                                } else {
+                                    const userCredential = await signInAnonymously(auth);
+                                    currentUserId = userCredential.user.uid;
+                                }
+                            } catch (e) {
+                                console.error("Firebase Auth Error:", e);
+                                setLoading(true, '인증 실패');
+                                return;
+                            }
+                      _ }
+                        console.log("인증된 사용자:", currentUserId);
+                        setFirebaseInstances(db, auth, currentUserId);
+                        setLoading(false);
+                    });
+                } catch (e) {
+                    console.error("Firebase Init Error:", e);
+                    setLoading(true, 'Firebase 초기화 실패');
+                }
+            }, [setFirebaseInstances, setLoading]);
+
+            // 2. [NEW] 프로젝트 리스너
+            useEffect(() => {
+                if (!db || !userId) return;
+                
+                const q = query(getProjectsCollection(db, userId), orderBy("createdAt", "desc"));
+                
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const newProjects = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setProjects(newProjects);
+                    console.log("프로젝트 로드됨:", newProjects.length);
+                });
+                
+                return () => unsubscribe();
+            }, [db, userId, setProjects]);
+
+
+            // 3. [MODIFIED] TOC 실시간 리스너 (프로젝트 ID 의존)
+            useEffect(() => {
+                if (!db || !userId || !selectedProjectId) {
+                    setTOC([]); // 프로젝트가 선택되지 않으면 TOC 비움
+                    return;
+                }
+                
+                const tocCollection = getTocCollection(db, userId, selectedProjectId);
+                const q = query(tocCollection, orderBy("text")); // 이름순 정렬
+                
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const nodes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    const tree = buildTree(nodes);
+                    setTOC(tree);
+                });
+                
+                return () => unsubscribe();
+            }, [db, userId, selectedProjectId, setTOC]); // 의존성 수정
+
+            // 4. [MODIFIED] Sources 실시간 리스너 (프로젝트 ID 의존)
+            useEffect(() => {
+                if (!db || !userId || !selectedProjectId) {
+                    setSources([]); // 프로젝트가 선택되지 않으면 Sources 비움
+                    return;
+                }
+                
+                const sourcesCollection = getSourcesCollection(db, userId, selectedProjectId);
+                const q = query(sourcesCollection, orderBy("createdAt", "desc"));
+                
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const sources = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setSources(sources);
+                });
+                
+                return () => unsubscribe();
+            }, [db, userId, selectedProjectId, setSources]); // 의존성 수정
+            
+            // 5. [MODIFIED] 백그라운드 Job Runner (프로젝트 ID 의존)
+            useEffect(() => {
+                const availableSlots = MAX_CONCURRENT_JOBS - activeJobs.length;
+                if (availableSlots > 0 && processingQueue.length > 0) {
+                    
+                    const jobsToStartIds = processingQueue.slice(0, availableSlots);
+                    _startJobs(jobsToStartIds); 
+
+                    jobsToStartIds.forEach(jobId => {
+                        const source = sources.find(s => s.id === jobId);
+                        
+                        // [MODIFIED] selectedProjectId 확인
+                        if (!source || !db || !userId || !toc || !selectedProjectId) { 
+                            console.warn(`작업 ${jobId}을(를) 시작할 수 없습니다. (소스/DB/TOC/ProjectID 누락)`);
+                            finishJob(jobId); 
+                            return;
+                        }
+                        
+                        runJob(source, db, userId, toc, aiEngine)
+                            .catch(e => console.error(`Job ${jobId} 실패:`, e))
+                            .finally(() => {
+                                finishJob(jobId);
+                            });
+                    });
+                }
+            }, [
+                processingQueue, 
+                activeJobs.length, 
+                db, 
+                userId, 
+                selectedProjectId, // 의존성 추가
+                toc, 
+                sources, 
+                _startJobs, 
+                finishJob
+            ]);
+
+            // [MODIFIED] 렌더링 로직
+            const currentProjectName = projects.find(p => p.id === selectedProjectId)?.name || "프로젝트 선택";
+
+            return (
+                <div className="h-screen w-screen flex flex-col antialiased text-gray-900">
+                    {loading && (
+                        <div className="absolute inset-0 bg-white/70 z-50 flex flex-col items-center justify-center">
+        description: 
+                            <Loader2 className="animate-spin h-10 w-10 text-indigo-600" />
+                            <span className="mt-3 text-sm font-medium text-gray-700">{globalLoadingMessage}</span>
+                        </div>
+                    )}
+                    
+                    {/* [NEW] 모달 렌더링 */}
+                    {isCreateModalOpen && <CreateProjectModal />}
+                    
+                    <header className="flex-shrink-0 h-14 bg-white border-b flex items-center justify-between px-4 z-10">
+                        <div className="flex items-center space-x-3">
+                            <h1 className="text-lg font-bold text-indigo-700">Knowledge Workbench</h1>
+                            {/* [NEW] 대시보드 이동 버튼 및 현재 프로젝트 이름 */}
+                            {selectedProjectId && (
+                                <>
+                                    <button 
+                                        onClick={goToDashboard} 
+                                        title="대시보드로 이동"
+                                        className="flex items-center space-x-1.5 text-sm text-gray-600 hover:text-indigo-600"
+                                    >
+                          _         <Home size={16} />
+                                        <span>대시보드</span>
+                                    </button>
+                                    <span className="text-gray-400">/</span>
+                                    <span className="font-semibold text-gray-800">{currentProjectName}</span>
+                                </>
+                            )}
+                        </div>
+                        <ProcessingStatus />
+                    </header>
+              _     
+                    <main className="flex-1 overflow-hidden">
+                        {/* [MODIFIED] 프로젝트 ID에 따라 뷰 전환 */}
+                        {!selectedProjectId ? (
+                            <ProjectDashboard />
+                        ) : (
+                            <PanelGroup direction="horizontal">
+                                {/* 1. (왼쪽) 라이브러리 */}
+                                <Panel defaultSize={25} minSize={20} maxSize={40}>
+                                    <LeftSidebar />
+                                </Panel>
+                                <PanelResizeHandle className="w-1.5 bg-gray-200 hover:bg-indigo-300 transition-colors" />
+                                
+                                {/* 2. (중앙) 에디터 */}
+                                <Panel defaultSize={45} minSize={30}>
+                                    <MainEditor />
+                  _           </Panel>
+                                <PanelResizeHandle className="w-1.5 bg-gray-200 hover:bg-indigo-300 transition-colors" />
+                                
+                                {/* 3. (오른쪽) 인스펙터 */}
+                                <Panel defaultSize={30} minSize={20} maxSize={40}>
+                      _           <RightInspector />
+                                </Panel>
+                            </PanelGroup>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        // --- 4. 앱 렌더링 ---
+        // 'export' 구문을 제거하고, 대신 ReactDOM을 사용하여 앱을 렌더링합니다.
+        const rootElement = document.getElementById('root');
+        const root = ReactDOM.createRoot(rootElement);
+        root.render(<App />);
+
+    </script>
+</body>
+</html>
