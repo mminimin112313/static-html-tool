@@ -1,0 +1,1837 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gemini File Store 관리자</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+    <style>
+      body {
+        background-color: #030712; /* bg-gray-950 */
+      }
+      .drag-over {
+        border-style: dashed !important;
+        border-color: #3b82f6 !important; /* blue-500 */
+        background-color: #111827 !important; /* gray-900 */
+      }
+      .prose p { margin-top: 0.5em; margin-bottom: 0.5em; }
+      .prose ul, .prose ol { list-style-position: inside; padding-left: 1.5em; margin: 0.5em 0; }
+      .prose li { margin: 0.25em 0; }
+      .prose pre { background-color: #030712; padding: 0.75rem; border-radius: 0.375rem; overflow-x: auto; margin: 1em 0; font-family: monospace; }
+      .prose code:not(pre code) { background-color: #1f2937; padding: 0.2em 0.4em; border-radius: 0.25rem; font-family: monospace; }
+      .prose a { color: #60a5fa; text-decoration: underline; }
+      .prose-invert { color: #d1d5db; }
+      .prose-invert a { color: #93c5fd; }
+      .prose-invert strong { color: #ffffff; }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      .animate-fade-in {
+        animation: fadeIn 0.3s ease-out;
+      }
+      /* [NEW] 스피너 스타일 (기존 파일에 없어서 index.html에서 가져옴) */
+      .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            width: 20px; /* 작은 스피너 */
+            height: 20px;
+            border-radius: 50%;
+            border-left-color: #3b82f6; /* blue-500 */
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <noscript>이 앱을 실행하려면 JavaScript가 필요합니다.</noscript>
+    <div id="root"></div>
+
+    <script type="text/babel">
+(function() { // IIFE
+
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+/* --- 아이콘 컴포넌트 --- */
+function IconFolder() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" /> </svg> ); }
+function IconChat() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-3.86 8.25-8.625 8.25a8.61 8.61 0 01-1.631-.203l-4.055 2.026a.75.75 0 01-.913-.913l2.026-4.055a8.61 8.61 0 01-.203-1.631c0-4.556 3.86-8.25 8.625 8.25s8.625 3.694 8.625 8.25z" /> </svg> ); }
+function IconTrash() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12.502 0v-.001c0-.104.012-.207.035-.308.31-.994 1.29-1.75 2.433-1.75h3.164a2.25 2.25 0 012.23 1.973c.043.372.079.75.12 1.139m-14.456 0c.342.052.682.107 1.022.166" /> </svg> ); }
+function IconFile() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /> </svg> ); }
+function IconCloudUpload() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l-3.75 3.75M12 9.75l3.75 3.75m-7.5 3C4.5 16.5 3 15 3 13.125c0-1.77 1.19-3.214 2.754-3.571.324-.058.65-.098 1.002-.122a3.75 3.75 0 013.48-3.316.75.75 0 01.62.375 3.75 3.75 0 013.48 3.316.75.75 0 01.62-.375 3.75 3.75 0 013.48 3.316c.353.024.678.064 1.002.122C20.81 9.91 22 11.355 22 13.125c0 1.875-1.5 3.375-3.375 3.375M12 16.5h-1.5" /> </svg> ); }
+function IconPlus() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /> </svg> ); }
+function IconSpinner() { return ( <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"> <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle> <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path> </svg> ); }
+function IconArrowLeft() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /> </svg> ); }
+function IconSearch() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /> </svg> ); }
+function IconCopy() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" /> </svg> ); }
+function IconCheck() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /> </svg> ); }
+function IconUser() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" /> </svg> ); }
+function IconGemini() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" className="w-5 h-5"> <path d="M12 10.454c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318-1.038-2.318-2.318-2.318zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818zm6.545-3.136c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318-1.038-2.318-2.318-2.318zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818zM5.455 10.454c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318-1.038-2.318-2.318-2.318zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818zM12 3.273c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318S13.28 3.273 12 3.273zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818zm6.545-3.136c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318-1.038-2.318-2.318-2.318zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818zM5.455 3.273c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318S6.735 3.273 5.455 3.273zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818zM12 17.636c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318-1.038-2.318-2.318-2.318zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818zm6.545-3.136c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318-1.038-2.318-2.318-2.318zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818zM5.455 17.636c-1.28 0-2.318 1.038-2.318 2.318s1.038 2.318 2.318 2.318 2.318-1.038 2.318-2.318-1.038-2.318-2.318-2.318zm0 3.136c-.451 0-.818-.367-.818-.818s.367-.818.818-.818.818.367.818.818-.367.818-.818.818z" /> </svg> ); }
+function IconEdit() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /> </svg> ); }
+function IconCheckSmall() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /> </svg> ); }
+function IconXSmall() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /> </svg> ); }
+function IconUploadQueue() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l-3.75 3.75M12 9.75l3.75 3.75m-7.5 3C4.5 16.5 3 15 3 13.125c0-1.77 1.19-3.214 2.754-3.571.324-.058.65-.098 1.002-.122a3.75 3.75 0 013.48-3.316.75.75 0 01.62.375 3.75 3.75 0 013.48 3.316.75.75 0 01.62-.375 3.75 3.75 0 013.48 3.316c.353.024.678.064 1.002.122C20.81 9.91 22 11.355 22 13.125c0 1.875-1.5 3.375-3.375 3.375M12 16.5h-1.5" /> </svg> ); }
+function IconChevronDown() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /> </svg> ); }
+function IconChevronRight() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /> </svg> ); }
+function IconExternalLink() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /> </svg> ); }
+function IconSettings() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M10.343 3.94c.09-.542.56-1.002 1.135-1.172a17.937 17.937 0 013.042 0c.575.17 1.045.63 1.135 1.172M16.03 15.908c.57.169 1.04.63 1.13 1.172a17.937 17.937 0 010 3.042c-.09.542-.56 1.002-1.13.172M16.03 15.908c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M16.03 15.908c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m-3.042 0c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c-.169.57-.63 1.04-1.172 1.13a17.937 17.937 0 01-3.042 0c-.542-.09-1.002-.56-1.172-1.13m0 3.042c-.169-.57-.63-1.04-1.172 1.13a17.937 17.937 0 01-3.042 0c-.542-.09-1.002-.56-1.172-1.13M8.08 15.908c-.57.169-1.04.63-1.13 1.172a17.937 17.937 0 010 3.042c.09.542.56 1.002 1.13 1.172m-3.042 0c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M8.08 15.908c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m-3.042 0c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M3.94 10.343c.542-.09.992-.56 1.172-1.13a17.937 17.937 0 010-3.042c-.18-.57-.63-1.04-1.172-1.13M3.94 10.343c.542.09.992.56 1.172 1.13a17.937 17.937 0 010 3.042c-.18.57-.63 1.04-1.172 1.13M3.94 10.343c-.542-.09-1.002-.56-1.172-1.13a17.937 17.937 0 010-3.042c.18-.57.63-1.04 1.172-1.13m0 3.042c-.542.09-1.002-.56-1.172 1.13a17.937 17.937 0 010 3.042c.18.57.63 1.04 1.172 1.13m10.116-3.042c.57.169 1.04.63 1.13 1.172a17.937 17.937 0 010 3.042c-.09.542-.56 1.002-1.13 1.172M14.056 10.343c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M14.056 10.343c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M10.343 3.94c.09.542.56 1.002 1.135 1.172a17.937 17.937 0 013.042 0c.575-.17 1.045-.63 1.135-1.172m-3.042 0c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542-.09.992-.56 1.172-1.13M10.343 3.94c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m0-3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M12 15a3 3 0 100-6 3 3 0 000 6z" /> </svg> ); }
+function IconEdit() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" /> </svg> ); }
+function IconCheckSmall() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /> </svg> ); }
+function IconXSmall() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /> </svg> ); }
+function IconUploadQueue() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M12 16.5V9.75m0 0l-3.75 3.75M12 9.75l3.75 3.75m-7.5 3C4.5 16.5 3 15 3 13.125c0-1.77 1.19-3.214 2.754-3.571.324-.058.65-.098 1.002-.122a3.75 3.75 0 013.48-3.316.75.75 0 01.62.375 3.75 3.75 0 013.48 3.316.75.75 0 01.62-.375 3.75 3.75 0 013.48 3.316c.353.024.678.064 1.002.122C20.81 9.91 22 11.355 22 13.125c0 1.875-1.5 3.375-3.375 3.375M12 16.5h-1.5" /> </svg> ); }
+function IconChevronDown() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /> </svg> ); }
+function IconChevronRight() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /> </svg> ); }
+function IconExternalLink() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4"> <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /> </svg> ); }
+function IconSettings() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M10.343 3.94c.09-.542.56-1.002 1.135-1.172a17.937 17.937 0 013.042 0c.575.17 1.045.63 1.135 1.172M16.03 15.908c.57.169 1.04.63 1.13 1.172a17.937 17.937 0 010 3.042c-.09.542-.56 1.002-1.13.172M16.03 15.908c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M16.03 15.908c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m-3.042 0c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c-.169.57-.63 1.04-1.172 1.13a17.937 17.937 0 01-3.042 0c-.542-.09-1.002-.56-1.172-1.13m0 3.042c-.169-.57-.63-1.04-1.172 1.13a17.937 17.937 0 01-3.042 0c-.542-.09-1.002-.56-1.172-1.13M8.08 15.908c-.57.169-1.04.63-1.13 1.172a17.937 17.937 0 010 3.042c.09.542.56 1.002 1.13 1.172m-3.042 0c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M8.08 15.908c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m-3.042 0c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M3.94 10.343c.542-.09.992-.56 1.172-1.13a17.937 17.937 0 010-3.042c-.18-.57-.63-1.04-1.172-1.13M3.94 10.343c.542.09.992.56 1.172 1.13a17.937 17.937 0 010 3.042c-.18.57-.63 1.04-1.172 1.13M3.94 10.343c-.542-.09-1.002-.56-1.172-1.13a17.937 17.937 0 010-3.042c.18-.57.63-1.04 1.172-1.13m0 3.042c-.542.09-1.002-.56-1.172 1.13a17.937 17.937 0 010 3.042c.18.57.63 1.04 1.172 1.13m10.116-3.042c.57.169 1.04.63 1.13 1.172a17.937 17.937 0 010 3.042c-.09.542-.56 1.002-1.13 1.172M14.056 10.343c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M14.056 10.343c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M10.343 3.94c.09.542.56 1.002 1.135 1.172a17.937 17.937 0 013.042 0c.575-.17 1.045-.63 1.135-1.172m-3.042 0c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542-.09.992-.56 1.172-1.13M10.343 3.94c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m0-3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M12 15a3 3 0 100-6 3 3 0 000 6z" /> </svg> ); }
+function IconXCircle() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> </svg> ); }
+function IconFileQueue() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /> </svg> ); }
+// [NEW] 다운로드 아이콘 추가
+function IconDownload() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /> </svg> ); }
+
+
+/* --- API 및 유틸리티 --- */
+
+const API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/';
+const UPLOAD_BASE_URL = 'https://generativelanguage.googleapis.com/upload/v1beta/';
+// [NEW] Gemini generateContent API 엔드포인트
+const GEMINI_GENERATE_CONTENT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent';
+
+
+const DB_NAME = 'GeminiFileStoreDB';
+const CHAT_STORE = 'chats';
+
+// IndexedDB 헬퍼 (변경 없음)
+function openDB() { return new Promise((resolve, reject) => { const request = indexedDB.open(DB_NAME, 1); request.onupgradeneeded = (event) => { const db = event.target.result; if (!db.objectStoreNames.contains(CHAT_STORE)) { db.createObjectStore(CHAT_STORE, { keyPath: 'id' }); } }; request.onsuccess = (event) => { resolve(event.target.result); }; request.onerror = (event) => { reject('IndexedDB error: ' + event.target.errorCode); }; }); }
+function dbRequest(storeName, mode, operation) { return new Promise(async (resolve, reject) => { try { const db = await openDB(); const tx = db.transaction(storeName, mode); const store = tx.objectStore(storeName); operation(store, resolve, reject); tx.oncomplete = () => { if (mode !== 'readonly') { resolve(); } }; tx.onerror = (event) => { reject(event.target.error); }; } catch (error) { reject(error); } }); }
+function getChatsFromDB() { return dbRequest(CHAT_STORE, 'readonly', (store, resolve) => { const request = store.getAll(); request.onsuccess = () => resolve(request.result); }); }
+function saveChatToDB(chat) { return dbRequest(CHAT_STORE, 'readwrite', (store) => { store.put(chat); }); }
+function deleteChatFromDB(chatId) { return dbRequest(CHAT_STORE, 'readwrite', (store) => { store.delete(chatId); }); }
+function clearChatsFromDB() { return dbRequest(CHAT_STORE, 'readwrite', (store) => { store.clear(); }); }
+
+// 일반 API 요청 (File API 용)
+async function apiRequest(endpoint, options = {}, apiKey) {
+  let url = `${API_BASE_URL}${endpoint}`;
+  
+  // *** [수정] GET, DELETE 등 params가 있는 모든 요청에 대해 쿼리 스트링 처리 ***
+  if (options.params) {
+    const query = new URLSearchParams(options.params).toString();
+    if (query) {
+      url += `?${query}`;
+    }
+  }
+  console.log(`[File API] Requesting: ${method} ${url}`); // [LOG]
+
+  const headers = {
+    'Content-Type': 'application/json',
+    'x-goog-api-key': apiKey,
+    ...options.headers,
+  };
+  
+  const method = options.method || 'GET';
+
+  try {
+    const response = await fetch(url, { ...options, method, headers, params: undefined }); // params는 이미 url에 포함됨
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('API Error Response:', errorData);
+      throw new Error(`API Error: ${errorData.error?.message || response.statusText}`);
+    }
+    const text = await response.text();
+    const jsonData = text ? JSON.parse(text) : {};
+    console.log(`[File API] Success: ${method} ${endpoint}`, jsonData); // [LOG]
+    return jsonData;
+  } catch (error) {
+    console.error(`API Request Failed: ${error.message}`);
+    throw error;
+  }
+}
+
+// [NEW] Gemini API 호출 (generateContent 용)
+async function apiGeminiFilter(prompt, apiKey, retries = 3, delay = 1000) {
+  console.log('%c[Gemini API] 호출 시작...', 'color: blue; font-weight: bold;'); // [LOG]
+  console.log('[Gemini API] Prompt:', prompt); // [LOG]
+  
+  const apiUrl = `${GEMINI_GENERATE_CONTENT_URL}?key=${apiKey}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    // 안전 설정을 추가하여 응답이 차단될 가능성을 줄일 수 있습니다.
+    // "safetySettings": [
+    //   { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+    //   { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+    //   { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+    //   { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
+    // ]
+  };
+
+  for (let i = 0; i < retries; i++) {
+      try {
+          console.log(`[Gemini API] ${i + 1}번째 시도...`); // [LOG]
+          const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+              const errorData = await response.json();
+              console.error('[Gemini API] 응답 오류:', errorData); // [LOG]
+              throw new Error(errorData.error?.message || `HTTP ${response.status} 오류`);
+          }
+
+          const result = await response.json();
+          console.log('[Gemini API] 응답 성공:', result); // [LOG]
+
+          if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0].text) {
+              const extractedText = result.candidates[0].content.parts[0].text;
+              console.log('[Gemini API] 추출된 텍스트:', extractedText); // [LOG]
+              return extractedText;
+          } else {
+              let errorMsg = 'Gemini API로부터 유효한 응답을 받지 못했습니다.';
+              if (result.candidates && result.candidates[0].finishReason) {
+                  errorMsg += ` (이유: ${result.candidates[0].finishReason})`;
+              }
+              console.warn('[Gemini API] 콘텐츠 없음:', errorMsg, result); // [LOG]
+              throw new Error(errorMsg);
+          }
+      } catch (error) {
+          console.warn(`[Gemini API] ${i + 1}번째 시도 실패:`, error); // [LOG]
+          if (i === retries - 1) {
+              throw error; // 재시도 모두 실패 시 에러 throw
+          }
+          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+      }
+  }
+}
+
+// 파일 업로드 요청 (변경 없음)
+async function apiUploadRequest(endpoint, file, metadata, apiKey, onProgress) {
+  // ... (기존 코드와 동일)
+// ... (기존 apiUploadRequest 코드)
+  const params = new URLSearchParams();
+  if (metadata.displayName) {
+    params.append('displayName', metadata.displayName);
+  }
+  const url = `${UPLOAD_BASE_URL}${endpoint}?${params.toString()}`;
+
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  console.log(`[File Upload] Requesting: POST ${url}`); // [LOG]
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': apiKey,
+      },
+      body: formData,
+    });
+
+    const responseText = await response.text();
+    if (!response.ok) {
+        console.error('Upload API Error Response Text:', responseText);
+        throw new Error(`Upload API Error: ${responseText}`);
+    }
+    try {
+        const jsonData = JSON.parse(responseText);
+        console.log(`[File Upload] Success:`, jsonData); // [LOG]
+        return jsonData;
+    } catch (parseError) {
+        console.error('API Upload JSON Parse Error:', parseError, 'Response Text:', responseText);
+        throw new Error(`업로드 API가 JSON이 아닌 응답을 반환했습니다: ${responseText.substring(0, 100)}...`);
+    }
+  } catch (error) {
+    console.error('API Upload Error:', error);
+    throw error;
+  }
+}
+
+// 파일 크기 포맷터 (변경 없음)
+function formatBytes(bytes, decimals = 2) { if (!bytes || bytes === 0) return 'N/A'; const k = 1024; const dm = decimals < 0 ? 0 : decimals; const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']; const i = Math.floor(Math.log(bytes) / Math.log(k)); return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`; }
+
+// 클립보드 훅 (SweetAlert 사용)
+function useClipboard(timeout = 1500) { 
+// ... (기존 코드와 동일)
+// ... (기존 useClipboard 코드)
+  const [copied, setCopied] = useState(false); 
+  const copy = useCallback((text) => { 
+    try { 
+      const el = document.createElement('textarea'); 
+      el.value = text; 
+      document.body.appendChild(el); 
+      el.select(); 
+      const success = document.execCommand('copy'); 
+      document.body.removeChild(el); 
+      if (success) { 
+        setCopied(true); 
+        setTimeout(() => setCopied(false), timeout); 
+      } else { 
+        throw new Error('Copy command failed'); 
+      } 
+    } catch (e) { 
+      console.error('Failed to copy to clipboard:', e); 
+      Swal.fire({ 
+        title: '오류', 
+        text: '클립보드 복사에 실패했습니다.', 
+        icon: 'error', 
+        background: '#1f2937', 
+        color: '#d1d5db' 
+      }); 
+    } 
+  }, [timeout]); 
+  return [copied, copy]; 
+}
+
+// 자동 높이 조절 훅 (변경 없음)
+function useAutosizeTextarea(textareaRef, value) {
+// ... (기존 코드와 동일)
+// ... (기존 useAutosizeTextarea 코드)
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = '0px'; 
+      const scrollHeight = textareaRef.current.scrollHeight;
+      textareaRef.current.style.height = `${scrollHeight}px`; 
+    }
+  }, [textareaRef, value]);
+}
+
+
+/* --- 하위 컴포넌트 --- */
+
+// 설정 모달 (변경 없음)
+function SettingsModal({ isOpen, onClose, apiKey, setApiKey, systemInstruction, setSystemInstruction }) {
+// ... (기존 코드와 동일)
+// ... (기존 SettingsModal 코드)
+  const [localApiKey, setLocalApiKey] = useState(apiKey);
+  const [localInstruction, setLocalInstruction] = useState(systemInstruction);
+
+  useEffect(() => { setLocalApiKey(apiKey); }, [apiKey]);
+  useEffect(() => { setLocalInstruction(systemInstruction); }, [systemInstruction]);
+
+  if (!isOpen) return null;
+
+  const handleSave = () => {
+    setApiKey(localApiKey);
+    setSystemInstruction(localInstruction);
+    localStorage.setItem('gemini-api-key', localApiKey);
+    localStorage.setItem('gemini-system-instruction', localInstruction);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
+      <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl p-6 border border-gray-700 animate-fade-in">
+        <h2 className="text-2xl font-bold text-white mb-6">설정</h2>
+        <div className="mb-6">
+          <label htmlFor="apiKey" className="block text-sm font-medium text-gray-300 mb-2">
+            Gemini API 키
+          </label>
+          <input
+            type="password"
+            id="apiKey"
+            value={localApiKey}
+            onChange={(e) => setLocalApiKey(e.target.value)}
+            className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="gme-..."
+          />
+        </div>
+        <div className="mb-8">
+          <label htmlFor="systemInstruction" className="block text-sm font-medium text-gray-300 mb-2">
+            시스템 프롬프트 (System Instruction)
+          </label>
+          <textarea
+            id="systemInstruction"
+            rows="8"
+            value={localInstruction}
+            onChange={(e) => setLocalInstruction(e.target.value)}
+            className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="모델이 항상 따르도록 할 지침을 입력하세요..."
+          />
+        </div>
+        <div className="flex justify-end space-x-4">
+          <button
+            onClick={onClose}
+            className="bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-6 rounded-lg transition"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleSave}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg transition"
+          >
+            저장
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// 헤더 (변경 없음)
+function Header({ apiKey, onLogout, pendingOperations, removeOperation, onOpenSettings }) {
+// ... (기존 코드와 동일)
+// ... (기존 Header 코드)
+  const [showOps, setShowOps] = useState(false);
+  const opCount = Object.keys(pendingOperations).length;
+
+  const getStatusColor = (status) => {
+    if (status === 'succeeded') return 'text-green-400';
+    if (status === 'failed') return 'text-red-400';
+    return 'text-blue-400';
+  };
+
+  return (
+    <header className="flex-shrink-0 bg-gray-900 border-b border-gray-700 flex items-center justify-between p-4">
+      <div className="flex items-center space-x-2">
+        <IconGemini />
+        <h1 className="text-xl font-bold text-white">File Store Manager</h1>
+      </div>
+      <div className="flex items-center space-x-4">
+        <div className="relative">
+          <button 
+            onClick={() => setShowOps(!showOps)}
+            className="relative p-2 rounded-full text-gray-400 hover:text-white hover:bg-gray-700"
+          >
+            <IconUploadQueue />
+            {opCount > 0 && (
+              <span className="absolute top-0 right-0 block h-5 w-5 rounded-full text-xs flex items-center justify-center bg-blue-600 text-white ring-2 ring-gray-900">
+                {opCount}
+              </span>
+            )}
+          </button>
+          
+          {showOps && opCount > 0 && (
+            <div className="absolute right-0 mt-2 w-80 bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50">
+              <div className="p-4 border-b border-gray-700"><h3 className="font-semibold text-white">진행중인 작업</h3></div>
+              <ul className="max-h-64 overflow-y-auto">
+                {Object.values(pendingOperations).map(op => (
+                  <li key={op.id} className="p-4 border-b border-gray-700 last:border-b-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-300 w-3/4 truncate">{op.description}</span>
+                      {['processing', 'indexing'].includes(op.status) && <IconSpinner />}
+                      {op.status === 'succeeded' && <IconCheck className="w-5 h-5 text-green-400" />}
+                      {op.status === 'failed' && <IconXSmall className="w-5 h-5 text-red-400" />}
+                    </div>
+                    <p className={`text-xs mt-1 ${getStatusColor(op.status)}`}>
+                      {op.status === 'failed' ? op.error : op.status}
+                    </p>
+                    {(op.status === 'succeeded' || op.status === 'failed') && (
+                      <button onClick={() => removeOperation(op.id)} className="text-xs text-gray-500 hover:text-red-400 mt-1"> 닫기 </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        <div className="text-sm text-gray-500">
+          API Key: ...{apiKey.slice(-4)}
+        </div>
+        
+        <button
+          onClick={onOpenSettings}
+          className="p-2 rounded-full text-gray-400 hover:text-white hover:bg-gray-700"
+          title="설정"
+        >
+          <IconSettings />
+        </button>
+
+        <button
+          onClick={onLogout}
+          className="bg-gray-700 hover:bg-red-600 text-white text-sm font-semibold py-2 px-4 rounded-lg transition"
+        >
+          로그아웃
+        </button>
+      </div>
+    </header>
+  );
+}
+
+// 채팅 사이드바 (변경 없음)
+function ChatSidebar({ chats, selectedChat, onSelectChat, onCreateNewChat, onDeleteChat, onUpdateChat, onNavigateBack, currentStoreName }) {
+// ... (기존 코드와 동일)
+// ... (기존 ChatSidebar 코드)
+  const [editingChatId, setEditingChatId] = useState(null);
+  const [newTitle, setNewTitle] = useState('');
+
+  const handleStartEdit = (chat) => { setEditingChatId(chat.id); setNewTitle(chat.title); };
+  const handleSaveEdit = (chat) => { if (newTitle.trim()) { onUpdateChat({ ...chat, title: newTitle.trim() }); } setEditingChatId(null); };
+
+  const filteredChats = chats.filter(c => c.storeName === selectedChat.storeName);
+
+  return (
+    <div className="w-72 flex-shrink-0 bg-gray-900 border-r border-gray-700 flex flex-col">
+      <div className="p-4 border-b border-gray-700">
+        <button onClick={onNavigateBack} className="flex items-center space-x-2 text-sm text-gray-400 hover:text-white mb-3">
+          <IconArrowLeft /> <span>모든 프로젝트 (스토어)</span>
+        </button>
+        <h2 className="text-lg font-semibold text-white truncate" title={currentStoreName}> {currentStoreName || "채팅"} </h2>
+      </div>
+      <div className="p-4">
+        <button onClick={onCreateNewChat} className="w-full flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition">
+          <IconPlus /> <span>새 채팅 시작</span>
+        </button>
+      </div>
+      <nav className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+        {filteredChats.length > 0 ? (
+          filteredChats.map(chat => (
+            <div key={chat.id} className={`group flex items-center justify-between p-3 rounded-lg cursor-pointer ${selectedChat?.id === chat.id ? 'bg-blue-800 text-white' : 'text-gray-300 hover:bg-gray-800'}`}>
+              {editingChatId === chat.id ? (
+                <input
+                  type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)}
+                  onBlur={() => handleSaveEdit(chat)} onKeyDown={(e) => e.key === 'Enter' && handleSaveEdit(chat)}
+                  className="flex-1 bg-gray-700 text-white p-1 rounded outline-none" autoFocus
+                />
+              ) : (
+                <span className="flex-1 truncate" onClick={() => onSelectChat(chat)}> {chat.title} </span>
+              )}
+              <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                {editingChatId === chat.id ? (
+                  <button onClick={() => handleSaveEdit(chat)} className="p-1 hover:text-white"><IconCheckSmall /></button>
+                ) : (
+                  <button onClick={() => handleStartEdit(chat)} className="p-1 hover:text-white"><IconEdit /></button>
+                )}
+                <button onClick={() => onDeleteChat(chat.id)} className="p-1 hover:text-red-400"><IconTrash /></button>
+              </div>
+            </div>
+          ))
+        ) : ( <p className="text-sm text-gray-500 text-center p-4">이 스토어의 채팅 기록이 없습니다.</p> )}
+      </nav>
+    </div>
+  );
+}
+
+// 스토어 목록 (대시보드) (변경 없음)
+function FileSearchStoreList({ stores, onCreateStore, onDeleteStore, onSelectStoreForDocs, onSelectStoreForChat, deletingStoreName }) {
+// ... (기존 코드와 동일)
+// ... (기존 FileSearchStoreList 코드)
+  const [newStoreName, setNewStoreName] = useState('');
+  const handleSubmit = (e) => { e.preventDefault(); if (newStoreName.trim()) { onCreateStore(newStoreName.trim()); setNewStoreName(''); } };
+
+  return (
+    <div className="animate-fade-in">
+      <div className="mb-8 p-6 bg-gray-900 rounded-lg shadow-lg border border-gray-700">
+        <form onSubmit={handleSubmit} className="flex space-x-4">
+          <input
+            type="text" value={newStoreName} onChange={(e) => setNewStoreName(e.target.value)}
+            className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            placeholder="새 프로젝트 (스토어) 이름"
+          />
+          <button type="submit" className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition">
+            <IconPlus /> <span>생성</span>
+          </button>
+        </form>
+      </div>
+      <h2 className="text-2xl font-bold text-white mb-6">프로젝트 대시보드 ({stores.length})</h2>
+      {stores.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {stores.map(store => (
+            <div key={store.name} className="bg-gray-900 border border-gray-700 rounded-lg shadow-xl p-6 flex flex-col justify-between transition hover:shadow-blue-500/20 hover:-translate-y-1">
+              <div>
+                <h3 className="text-xl font-bold text-white mb-2 truncate" title={store.displayName}>{store.displayName}</h3>
+                <p className="text-sm text-gray-500 truncate mb-4" title={store.name}>{store.name}</p>
+                <div className="flex space-x-4 text-sm text-gray-400 mb-6">
+                  <span className="flex items-center space-x-1"><IconFile /> <span>{store.activeDocumentsCount || 0} Docs</span></span>
+                  <span className="flex items-center space-x-1"><IconCloudUpload /> <span>{formatBytes(store.sizeBytes)}</span></span>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                <button onClick={() => onSelectStoreForDocs(store)} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded-lg transition text-sm flex items-center justify-center space-x-2">
+                  <IconFolder /> <span>문서 관리</span>
+                </button>
+                <button onClick={() => onSelectStoreForChat(store)} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition text-sm flex items-center justify-center space-x-2">
+                  <IconChat /> <span>채팅 시작</span>
+                </button>
+                <button 
+                  onClick={() => onDeleteStore(store.name)} 
+                  className="bg-gray-700 hover:bg-red-600 text-white p-2 rounded-full transition disabled:opacity-50" 
+                  title="스토어 삭제"
+                  disabled={deletingStoreName === store.name}
+                >
+                  {deletingStoreName === store.name ? <IconSpinner /> : <IconTrash />}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : ( <p className="text-gray-400">생성된 스토어가 없습니다. 새 프로젝트(스토어)를 생성해주세요.</p> )}
+    </div>
+  );
+}
+
+
+// [UPDATE] 문서 목록 (스토어 전체 검색 버튼 추가)
+function DocumentList({ store, documents, onDeleteDocument, onUploadFiles, onSelectDocument, onBack, isLoading, onSelectStoreForSearch }) {
+  const [uploadQueue, setUploadQueue] = useState([]); 
+  const [isDragging, setIsDragging] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleFilesChange = (files) => {
+// ... (기존 코드와 동일)
+// ... (기존 handleFilesChange 코드)
+    if (files && files.length > 0) {
+      const newFiles = Array.from(files);
+      const uniqueNewFiles = newFiles.filter(nf => !uploadQueue.some(qf => qf.name === nf.name && qf.size === nf.size));
+      setUploadQueue(prev => [...prev, ...uniqueNewFiles]);
+    }
+  };
+  
+  const handleFileChange = (e) => {
+// ... (기존 코드와 동일)
+// ... (기존 handleFileChange 코드)
+    handleFilesChange(e.target.files);
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+    }
+  };
+  
+  const removeFromQueue = (fileName) => {
+// ... (기존 코드와 동일)
+// ... (기존 removeFromQueue 코드)
+    setUploadQueue(prev => prev.filter(f => f.name !== fileName));
+  };
+
+  const handleUploadAll = () => {
+// ... (기존 코드와 동일)
+// ... (기존 handleUploadAll 코드)
+    if (uploadQueue.length === 0) return;
+
+    Swal.fire({
+      title: `${uploadQueue.length}개 파일 업로드`,
+      text: '선택한 모든 파일을 업로드하시겠습니까?',
+      icon: 'info',
+      showCancelButton: true,
+      confirmButtonText: '업로드 시작',
+      cancelButtonText: '취소',
+      background: '#1f2937',
+      color: '#d1d5db'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        onUploadFiles(store.name, uploadQueue);
+        setUploadQueue([]);
+      }
+    });
+  };
+
+  const handleDragOver = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(true); };
+  const handleDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); };
+  const handleDrop = (e) => { e.preventDefault(); e.stopPropagation(); setIsDragging(false); handleFilesChange(e.dataTransfer.files); };
+
+
+  return (
+    <div 
+      className={`animate-fade-in ${isDragging ? 'drag-over' : ''}`}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      <button onClick={onBack} className="flex items-center space-x-2 text-sm text-blue-400 hover:text-blue-300 mb-6">
+        <IconArrowLeft />
+        <span>프로젝트 대시보드로 돌아가기</span>
+      </button>
+      
+      {/* [NEW] 타이틀 영역에 스토어 전체 검색 버튼 추가 */}
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-white">
+          문서 관리: <span className="text-blue-400">{store.displayName}</span>
+        </h2>
+        <button 
+          onClick={() => onSelectStoreForSearch(store)} 
+          className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition text-sm"
+          disabled={documents.length === 0 || isLoading}
+        >
+          <IconSearch /> <span>스토어 전체 검색</span>
+        </button>
+      </div>
+      
+      <div className={`mb-8 p-6 bg-gray-900 rounded-lg shadow-lg border border-gray-700 transition-all ${isDragging ? 'border-blue-500 border-dashed' : 'border-gray-700'}`}>
+        <h3 className="text-xl font-semibold text-white mb-4">새 문서 업로드</h3>
+        
+        <div className="flex justify-center items-center p-8 border-2 border-dashed border-gray-600 rounded-lg text-center">
+{/* ... (기존 코드와 동일) ... */}
+{/* ... (기존 file-upload label 코드) ... */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            multiple 
+            className="hidden"
+            id="file-upload"
+          />
+          <label htmlFor="file-upload" className="cursor-pointer">
+            <IconCloudUpload className="mx-auto h-12 w-12 text-gray-500" />
+            <p className="mt-2 text-blue-400 font-semibold">파일 선택</p>
+            <p className="text-sm text-gray-400">또는 파일을 드래그 앤 드롭하세요</p>
+            <p className="text-xs text-gray-500">(여러 파일 선택 가능)</p>
+          </label>
+        </div>
+
+        {uploadQueue.length > 0 && (
+          <div className="mt-6">
+{/* ... (기존 코드와 동일) ... */}
+{/* ... (기존 업로드 대기열 코드) ... */}
+            <h4 className="font-semibold text-white mb-3">업로드 대기열 ({uploadQueue.length})</h4>
+            <ul className="max-h-48 overflow-y-auto space-y-2 bg-gray-800 p-3 rounded-lg border border-gray-700">
+              {uploadQueue.map(file => (
+                <li key={file.name} className="flex items-center justify-between text-sm text-gray-300 bg-gray-700 p-2 rounded">
+                  <span className="flex items-center space-x-2 truncate">
+                    <IconFileQueue className="flex-shrink-0" />
+                    <span className="truncate" title={file.name}>{file.name}</span>
+                  </span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-gray-400">{formatBytes(file.size)}</span>
+                    <button 
+                      onClick={() => removeFromQueue(file.name)} 
+                      className="text-red-400 hover:text-red-300"
+                      title="큐에서 제거"
+                    >
+                      <IconXCircle />
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <button 
+              onClick={handleUploadAll} 
+              className="w-full mt-4 flex items-center justify-center space-x-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition"
+            >
+              <IconCloudUpload /> <span>모두 업로드 ({uploadQueue.length}개)</span>
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="bg-gray-900 rounded-lg shadow-lg border border-gray-700 overflow-hidden">
+        <table className="min-w-full divide-y divide-gray-700">
+{/* ... (기존 코드와 동일) ... */}
+{/* ... (기존 table head 코드) ... */}
+          <thead className="bg-gray-800">
+            <tr>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">표시 이름</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">상태</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">크기</th>
+              <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">MIME 유형</th>
+              <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-300 uppercase tracking-wider">작업</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-700">
+            {isLoading && !documents.length ? (
+              <tr><td colSpan="5" className="text-center py-8 text-gray-400"><div className="flex justify-center"><IconSpinner /></div></td></tr>
+            ) : (
+              documents.map(doc => (
+{/* ... (기존 코드와 동일) ... */}
+{/* ... (기존 table row 코드) ... */}
+                <tr key={doc.name} className="hover:bg-gray-800">
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-white">{doc.displayName}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm">
+                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${ doc.state === 'ACTIVE' ? 'bg-green-900 text-green-300' : doc.state === 'PENDING' ? 'bg-yellow-900 text-yellow-300' : 'bg-red-900 text-red-300' }`}>
+                      {doc.state}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{formatBytes(doc.sizeBytes)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{doc.mimeType}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
+                    <button onClick={() => onSelectDocument(doc)} disabled={doc.state !== 'ACTIVE'} className="text-blue-400 hover:text-blue-300 disabled:opacity-50" title="시맨틱 검색"> <IconSearch /> </button>
+                    <button onClick={() => onDeleteDocument(doc.name)} className="text-red-400 hover:text-red-300" title="문서 삭제"> <IconTrash /> </button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// 문서 시맨틱 검색 (변경 없음)
+function DocumentSearch({ document, apiKey, onBack }) {
+// ... (기존 코드와 동일)
+// ... (기존 DocumentSearch 코드)
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [copied, copy] = useClipboard();
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+    setIsLoading(true); setError(null); setResults([]);
+    try {
+      const endpoint = `${document.name}:query`;
+      const data = await apiRequest(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ query: query, resultsCount: 10 }),
+      }, apiKey);
+      setResults(data.relevantChunks || []);
+    } catch (err) { setError(err.message); } finally { setIsLoading(false); }
+  };
+
+  const copyAllResults = () => { const allText = results.map((chunk, i) => (`[검색 결과 ${i + 1} (청크 ID: ${chunk.chunk.name})]\n${chunk.chunk.text}\n\n`)).join('--------------------\n'); copy(allText); };
+
+  return (
+    <div className="animate-fade-in">
+      <button onClick={onBack} className="flex items-center space-x-2 text-sm text-blue-400 hover:text-blue-300 mb-6">
+        <IconArrowLeft /> <span>문서 목록으로 돌아가기</span>
+      </button>
+      <h2 className="text-2xl font-bold text-white mb-2"> 시맨틱 검색: <span className="text-blue-400">{document.displayName}</span> </h2>
+      <p className="text-sm text-gray-500 mb-6">{document.name}</p>
+      <form onSubmit={handleSearch} className="mb-8 flex space-x-4">
+        <input
+          type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+          className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="문서 내용 검색..." disabled={isLoading}
+        />
+        <button type="submit" className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition disabled:opacity-50" disabled={isLoading || !query.trim()}>
+          {isLoading ? <IconSpinner /> : <IconSearch />} <span>검색</span>
+        </button>
+      </form>
+      {error && ( <div className="mb-4 bg-red-800 border border-red-600 text-red-200 px-4 py-3 rounded-lg"> {error} </div> )}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-semibold text-white">검색 결과 ({results.length})</h3>
+          {results.length > 0 && (
+            <button onClick={copyAllResults} className="flex items-center space-x-2 text-sm bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition">
+              {copied ? <IconCheck /> : <IconCopy />} <span>{copied ? '복사 완료!' : '전체 복사'}</span>
+            </button>
+          )}
+        </div>
+        {isLoading && results.length === 0 && <p className="text-gray-400">검색 중...</p>}
+        {!isLoading && results.length === 0 && query && ( <p className="text-gray-400">검색 결과가 없습니다.</p> )}
+        <div className="space-y-4">
+          {results.map((chunk, index) => (
+            <div key={index} className="bg-gray-900 border border-gray-700 rounded-lg p-4">
+              <p className="text-sm text-blue-400 mb-2 font-mono" title={chunk.chunk.name}> 청크 ID: ...{chunk.chunk.name.split('/').pop()} </p>
+              <p className="text-gray-300 whitespace-pre-wrap">{chunk.chunk.text}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// [NEW] 스토어 전체 검색 컴포넌트
+function StoreSearch({ store, documents, apiKey, onBack }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]); // 스트리밍으로 채워질 결과
+  const [isLoading, setIsLoading] = useState(false);
+  const [geminiStatus, setGeminiStatus] = useState(''); // Gemini 필터링 상태
+  const [searchStatus, setSearchStatus] = useState(''); // 시맨틱 검색 상태
+  const [error, setError] = useState(null);
+  const [downloadReady, setDownloadReady] = useState(false);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+
+    console.log(`[StoreSearch] 검색 시작. 쿼리: "${query}"`);
+    setIsLoading(true);
+    setError(null);
+    setResults([]);
+    setGeminiStatus('Gemini가 관련 문서를 필터링 중...');
+    setSearchStatus('');
+    setDownloadReady(false);
+
+    try {
+      // 1. Gemini로 문서 필터링
+      const docNames = documents.map(d => d.displayName || d.name.split('/').pop());
+      const prompt = `사용자 쿼리: "${query}"\n\n문서 목록: [${docNames.join(', ')}]\n\n위 쿼리와 가장 관련성이 높아 보이는 문서의 '표시 이름(displayName)'을 쉼표(,)로 구분된 목록으로 반환해 줘. 다른 설명은 필요 없고, 관련 문서가 없으면 "없음"이라고만 응답해 줘.\n\n관련 문서 목록:`;
+      
+      const geminiResponse = await apiGeminiFilter(prompt, apiKey);
+
+      if (!geminiResponse || geminiResponse.trim().toLowerCase() === '없음') {
+        setGeminiStatus('Gemini가 관련 문서를 찾지 못했습니다.');
+        setIsLoading(false);
+        return;
+      }
+
+      const relevantDocNames = geminiResponse.split(',').map(name => name.trim()).filter(name => name.length > 0);
+      console.log('[StoreSearch] Gemini 추천 문서:', relevantDocNames);
+
+      const docsToSearch = documents.filter(doc => {
+          const docName = doc.displayName || doc.name.split('/').pop();
+          return relevantDocNames.some(geminiName => docName.includes(geminiName));
+      });
+      
+      console.log(`[StoreSearch] ${docsToSearch.length}개의 일치하는 문서를 찾았습니다.`, docsToSearch.map(d => d.displayName));
+
+      if (docsToSearch.length === 0) {
+        setGeminiStatus(`Gemini가 "${geminiResponse}" 문서를 찾았으나, 실제 문서 목록과 일치하는 항목이 없습니다.`);
+        setIsLoading(false);
+        return;
+      }
+
+      setGeminiStatus(`Gemini가 선택한 관련 문서: ${docsToSearch.map(d => d.displayName).join(', ')}`);
+
+      // 2. 필터링된 문서로 시맨틱 검색 (스트리밍)
+      setSearchStatus(`총 ${docsToSearch.length}개 문서에서 검색을 시작합니다...`);
+
+      let allRelevantChunks = [];
+      let resultsFound = false;
+
+      for (const doc of docsToSearch) {
+        setSearchStatus(`[${doc.displayName || doc.name.split('/').pop()}] 문서를 검색 중...`);
+        try {
+          const resultData = await apiRequest(
+            `${doc.name}:query`,
+            {
+              method: 'POST',
+              body: JSON.stringify({ query: query, resultsCount: 100 })
+            },
+            apiKey
+          );
+
+          if (resultData && resultData.relevantChunks && resultData.relevantChunks.length > 0) {
+            resultsFound = true;
+            const chunksWithDoc = resultData.relevantChunks.map(chunk => ({
+              ...chunk,
+              documentName: doc.displayName || doc.name.split('/').pop()
+            }));
+            
+            // 스트리밍: 현재 결과에 추가
+            setResults(prevResults => [...prevResults, ...chunksWithDoc]);
+            allRelevantChunks.push(...chunksWithDoc);
+          }
+        } catch (docError) {
+          console.warn(`'${doc.displayName || doc.name.split('/').pop()}' 문서 검색 실패:`, docError);
+          // UI에 에러 표시
+          setResults(prevResults => [...prevResults, { isError: true, documentName: doc.displayName || doc.name.split('/').pop(), error: docError.message }]);
+        }
+      }
+      
+      setSearchStatus(resultsFound ? `총 ${allRelevantChunks.length}개의 결과를 찾았습니다.` : '관련된 검색 결과를 찾을 수 없습니다.');
+      if (resultsFound) {
+        setDownloadReady(true);
+      }
+
+    } catch (err) {
+      console.error('[StoreSearch] 검색 오류:', err);
+      setError(err.message);
+      setGeminiStatus('');
+      setSearchStatus('');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const downloadResults = () => {
+    if (results.length === 0 || !downloadReady) return;
+    
+    // 에러가 아닌 결과만 필터링
+    const validResults = results.filter(r => !r.isError);
+    if (validResults.length === 0) {
+        Swal.fire({ title: '오류', text: '다운로드할 유효한 검색 결과가 없습니다.', icon: 'error', background: '#1f2937', color: '#d1d5db' });
+        return;
+    }
+
+    const data = JSON.stringify(validResults, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `search_results_${store.displayName.replace(/[^a-z0-9]/gi, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <button onClick={onBack} className="flex items-center space-x-2 text-sm text-blue-400 hover:text-blue-300 mb-6">
+        <IconArrowLeft /> <span>문서 목록으로 돌아가기</span>
+      </button>
+      <h2 className="text-2xl font-bold text-white mb-2">
+        스토어 전체 검색: <span className="text-blue-400">{store.displayName}</span>
+      </h2>
+      <p className="text-sm text-gray-500 mb-6">총 {documents.length}개 문서를 대상으로 Gemini가 필터링 후 검색합니다.</p>
+      
+      <form onSubmit={handleSearch} className="mb-6 flex space-x-4">
+        <input
+          type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+          className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="스토어 전체에서 검색할 쿼리 입력..." disabled={isLoading}
+        />
+        <button type="submit" className="flex items-center justify-center space-x-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition disabled:opacity-50" disabled={isLoading || !query.trim()}>
+          {isLoading ? <IconSpinner /> : <IconSearch />} <span>검색</span>
+        </button>
+      </form>
+
+      {/* 상태 및 결과 표시 */}
+      <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-lg p-6 min-h-[400px]">
+        <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-3">
+          <h3 className="text-xl font-semibold text-white">검색 결과</h3>
+          <button 
+            onClick={downloadResults} 
+            className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium text-sm hover:bg-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!downloadReady || isLoading}
+          >
+            <IconDownload />
+            <span>결과 다운로드 (JSON)</span>
+          </button>
+        </div>
+
+        {error && ( <div className="my-4 bg-red-800 border border-red-600 text-red-200 px-4 py-3 rounded-lg"> <strong>오류:</strong> {error} </div> )}
+
+        {geminiStatus && (
+          <div className="text-sm text-gray-300 mb-4 p-3 bg-blue-900 border border-blue-700 rounded-lg">
+            <strong>Gemini 필터:</strong> {geminiStatus}
+          </div>
+        )}
+        
+        {isLoading && (
+          <div className="flex items-center space-x-3 text-gray-400">
+            <IconSpinner />
+            <span>{searchStatus || '대기 중...'}</span>
+          </div>
+        )}
+
+        {!isLoading && results.length === 0 && searchStatus && (
+           <p className="text-gray-400">{searchStatus}</p>
+        )}
+
+        <div className="space-y-4 mt-4">
+          {results.map((item, index) => {
+            if (item.isError) {
+              return (
+                <div key={index} className="border border-red-700 p-4 rounded-lg bg-red-900 bg-opacity-30">
+                  <p className="text-sm font-medium text-red-400 mb-2">
+                    <strong>출처:</strong> {item.documentName} (검색 실패)
+                  </p>
+                  <p className="text-red-300 text-xs">{item.error}</p>
+                </div>
+              )
+            }
+            
+            const chunk = item.chunk || {};
+            const chunkText = chunk.data?.stringValue || `(텍스트를 찾을 수 없음. JSON: ${JSON.stringify(chunk)})`;
+            const chunkName = chunk.name || '알 수 없는 청크';
+
+            return (
+              <div key={index} className="border border-gray-700 p-4 rounded-lg bg-gray-800 transition hover:shadow-md animate-fade-in">
+                <p className="text-sm font-medium text-blue-400 mb-2">
+                  <strong>출처:</strong> {item.documentName}
+                </p>
+                <p className="text-gray-300 whitespace-pre-wrap text-sm">{chunkText}</p>
+                <p className="text-xs text-gray-500 mt-3 font-mono">
+                  <strong>Chunk ID:</strong> {chunkName.split('/').pop()}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// 채팅 인터페이스 (변경 없음)
+function ChatInterface({ chat, apiKey, systemInstruction, onUpdateChat }) {
+// ... (기존 코드와 동일)
+// ... (기존 ChatInterface 코드)
+  const [messages, setMessages] = useState(chat.messages || []);
+  const [input, setInput] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const messagesEndRef = useRef(null);
+  const [copied, copy] = useClipboard();
+  
+  const textareaRef = useRef(null);
+  useAutosizeTextarea(textareaRef, input); 
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const generateChatResponse = async (userMessage) => {
+    setIsLoading(true);
+    setError(null);
+    console.log('[Chat] 응답 생성 시작...'); // [LOG]
+    
+    const model = 'gemini-flash-latest';
+    const endpoint = `models/${model}:generateContent`;
+
+    const instructionText = systemInstruction || `반드시 모든 답변에는 출처를 특정하여 기술하세요. 예를 들면 법 조문, 문헌명 등등을 말합니다.`;
+    
+    const systemInstructionPayload = {
+        parts: [ { text: instructionText } ]
+    };
+
+    const generationConfig = {
+        thinkingConfig: { thinkingBudget: -1 },
+        imageConfig: { imageSize: '1K' },
+    };
+
+    const contents = [
+        ...messages.map(m => ({
+            role: m.role,
+            parts: [{ text: m.text }]
+        })),
+        {
+            role: 'user',
+            parts: [{ text: userMessage }]
+        }
+    ];
+
+    const tools = [
+        {
+            fileSearch: {
+                fileSearchStoreNames: [chat.storeName]
+            }
+        }
+    ];
+
+    const payload = {
+        systemInstruction: systemInstructionPayload,
+        generationConfig,
+        contents,
+        tools
+    };
+    
+    console.log('[Chat] API Payload:', payload); // [LOG]
+
+    try {
+      const data = await apiRequest(endpoint, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }, apiKey);
+      
+      console.log('[Chat] API Response:', data); // [LOG]
+
+      const modelResponse = data.candidates[0].content.parts[0].text;
+      const groundingMetadata = data.candidates[0].groundingMetadata;
+
+      return {
+        text: modelResponse,
+        groundingMetadata: groundingMetadata
+      };
+
+    } catch (err) {
+      console.error('[Chat] API Error:', err); // [LOG]
+      setError(err.message);
+      setIsLoading(false);
+      return null;
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!input.trim() || isLoading) return;
+
+    const userMessage = { role: 'user', text: input.trim() };
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    setInput('');
+    
+    let updatedChat = { ...chat, messages: newMessages };
+    if (chat.title === "새 채팅") {
+      updatedChat.title = input.trim().substring(0, 30);
+    }
+    
+    const modelResponse = await generateChatResponse(input.trim());
+    setIsLoading(false);
+
+    if (modelResponse) {
+      const botMessage = {
+        role: 'model',
+        text: modelResponse.text,
+        groundingMetadata: modelResponse.groundingMetadata
+      };
+      const finalMessages = [...newMessages, botMessage];
+      setMessages(finalMessages);
+      onUpdateChat({ ...updatedChat, messages: finalMessages });
+      console.log('[Chat] 채팅 업데이트됨 (응답 포함).'); // [LOG]
+    } else {
+      onUpdateChat(updatedChat); // 에러가 났어도 유저 메시지는 저장
+      console.log('[Chat] 채팅 업데이트됨 (유저 메시지만).'); // [LOG]
+    }
+  };
+  
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      handleSubmit(e);
+    }
+  };
+
+
+  // 마크다운 파싱 및 복사 버튼 래퍼
+  const ChatMessageContent = ({ message }) => {
+// ... (기존 코드와 동일)
+// ... (기존 ChatMessageContent 코드)
+    const [justCopied, setJustCopied] = useState(false);
+
+    const handleCopy = () => {
+      copy(message.text);
+      setJustCopied(true);
+      setTimeout(() => setJustCopied(false), 1500);
+    };
+
+    const renderedHtml = useMemo(() => {
+        if (!window.marked) return message.text.replace(/\n/g, '<br>'); 
+        return window.marked.parse(message.text, {
+            gfm: true, 
+            breaks: true,
+            sanitize: false 
+        });
+    }, [message.text]);
+
+    return (
+      <div className={`relative group w-full max-w-full ${message.role === 'user' ? 'bg-gray-800' : 'bg-gray-900'}`}>
+        <div className="max-w-4xl mx-auto px-6 py-6 flex space-x-4">
+          <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center">
+            {message.role === 'user' ? <IconUser /> : <IconGemini />}
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <div
+              className="prose prose-invert max-w-none"
+              dangerouslySetInnerHTML={{ __html: renderedHtml }}
+            />
+
+            {message.groundingMetadata?.groundingAttributions?.length > 0 && (
+              <div className="mt-4 border-t border-gray-700 pt-3">
+                <h4 className="text-sm font-semibold text-gray-400 mb-2">참조 (인용)</h4>
+                <div className="flex flex-wrap gap-2">
+                  {message.groundingMetadata.groundingAttributions.map((attr, idx) => (
+                    <a 
+                      key={idx}
+                      href={attr.web?.uri} 
+                      target="_blank" rel="noopener noreferrer"
+                      className="flex items-center space-x-1 text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full hover:bg-blue-800"
+                      title={`출처: ${attr.file?.displayName || '알 수 없음'}`}
+                    >
+                      <span>{attr.file?.displayName ? attr.file.displayName.substring(0, 20) : '출처'}...</span>
+                      <IconExternalLink className="w-3 h-3" />
+                    </a>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {message.role === 'model' && (
+              <button onClick={handleCopy} className="absolute top-2 right-2 p-1.5 rounded-lg bg-gray-800 text-gray-400 opacity-0 group-hover:opacity-100 transition hover:bg-gray-700 hover:text-white" title="응답 복사">
+                {justCopied ? <IconCheck /> : <IconCopy />}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex flex-col h-full animate-fade-in">
+      <div className="flex-1 overflow-y-auto">
+{/* ... (기존 코드와 동일) ... */}
+{/* ... (기존 ChatInterface 렌더링 코드) ... */}
+        <div className="flex flex-col min-h-full">
+          {messages.length === 0 && (
+            <div className="flex-1 flex items-center justify-center">
+              <p className="text-gray-500">무엇이든 물어보세요. 이 스토어의 문서를 참조하여 답변합니다.</p>
+            </div>
+          )}
+          
+          <div>
+            {messages.map((msg, index) => (
+              <ChatMessageContent key={index} message={msg} />
+            ))}
+          </div>
+
+          <div className="flex-1" />
+
+          {isLoading && (
+            <div className="w-full max-w-full bg-gray-900">
+              <div className="max-w-4xl mx-auto px-6 py-6 flex space-x-4">
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center"><IconGemini /></div>
+                <div className="flex-1 overflow-hidden flex items-center">
+                  <IconSpinner /> <span className="ml-2 text-gray-400">생각 중...</span>
+                </div>
+              </div>
+            </div>
+          )}
+          {error && (
+            <div className="w-full max-w-full bg-red-900 text-red-200">
+              <div className="max-w-4xl mx-auto px-6 py-4"> <strong>오류:</strong> {error} </div>
+            </div>
+          )}
+          <div ref={messagesEndRef} />
+        </div>
+      </div>
+
+      <div className="flex-shrink-0 p-4 bg-gray-950">
+{/* ... (기존 코드와 동일) ... */}
+{/* ... (기존 ChatInterface 폼 코드) ... */}
+        <form onSubmit={handleSubmit} className="max-w-4xl mx-auto flex items-end space-x-4">
+          <textarea
+            ref={textareaRef}
+            rows="1" 
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown} 
+            className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none overflow-y-auto"
+            style={{ maxHeight: '200px' }} 
+            placeholder={isLoading ? "답변 생성 중..." : `${chat.storeDisplayName}에 질문하기... (Enter로 줄바꿈, Shift+Enter로 전송)`}
+            disabled={isLoading}
+          />
+          <button
+            type="submit"
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg transition disabled:opacity-50 self-end"
+            disabled={isLoading || !input.trim()}
+          >
+            전송
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+/* --- 메인 앱 컴포넌트 --- */
+function App() {
+  const [apiKey, setApiKey] = useState(localStorage.getItem('gemini-api-key') || '');
+  const [systemInstruction, setSystemInstruction] = useState(localStorage.getItem('gemini-system-instruction') || '반드시 모든 답변에는 출처를 특정하여 기술하세요.');
+
+  const [apiKeyValid, setApiKeyValid] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [globalError, setGlobalError] = useState(null);
+  
+  // [UPDATE] 'STORE_SEARCH' 뷰 추가
+  const [currentView, setCurrentView] = useState('STORES'); // 'STORES', 'DOCS', 'DOC_SEARCH', 'CHAT', 'STORE_SEARCH'
+  const [selectedStore, setSelectedStore] = useState(null);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [selectedChat, setSelectedChat] = useState(null);
+
+  const [stores, setStores] = useState([]);
+  const [documents, setDocuments] = useState([]);
+  const [chats, setChats] = useState([]);
+  
+  const [pendingOperations, setPendingOperations] = useState({});
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
+  const [deletingStoreName, setDeletingStoreName] = useState(null);
+
+
+  const addOperation = (id, description) => { 
+    console.log('[Operation] Add:', id, description); // [LOG]
+    setPendingOperations(prev => ({ ...prev, [id]: { id, description, status: 'processing' } })); 
+  };
+  const updateOperation = (id, status, error = null) => { 
+    console.log('[Operation] Update:', id, status, error); // [LOG]
+    setPendingOperations(prev => ({ ...prev, [id]: { ...prev[id], status, error } })); 
+  };
+  const removeOperation = (id) => { 
+    console.log('[Operation] Remove:', id); // [LOG]
+    setPendingOperations(prev => { const newState = { ...prev }; delete newState[id]; return newState; }); 
+  };
+
+  // API 키 유효성 검사
+  const validateApiKey = useCallback(async (key) => {
+    console.log('[Auth] API 키 유효성 검사 중...'); // [LOG]
+    if (!key) { 
+      console.log('[Auth] API 키 없음.'); // [LOG]
+      setApiKeyValid(false); setIsLoading(false); return; 
+    }
+    setIsLoading(true); setGlobalError(null);
+    try {
+      await apiRequest('fileSearchStores', { method: 'GET' }, key);
+      console.log('[Auth] API 키 유효성 검사 성공.'); // [LOG]
+      setApiKeyValid(true);
+      localStorage.setItem('gemini-api-key', key);
+    } catch (error) {
+      console.error('[Auth] API 키 유효성 검사 실패:', error); // [LOG]
+      setApiKeyValid(false);
+      setGlobalError('API 키가 유효하지 않거나, 네트워크 오류가 발생했습니다.');
+      localStorage.removeItem('gemini-api-key');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // 초기화
+  useEffect(() => {
+    validateApiKey(apiKey);
+  }, [apiKey, validateApiKey]);
+
+  // 데이터 로딩
+  useEffect(() => {
+    if (apiKeyValid) { 
+      console.log('[Data] API 키 유효, 스토어 및 채팅 로드.'); // [LOG]
+      listStores(); 
+      loadChats(); 
+    } 
+    else { 
+      console.log('[Data] API 키 유효하지 않음, 데이터 초기화.'); // [LOG]
+      setStores([]); 
+      setChats([]); 
+    }
+  }, [apiKeyValid]);
+
+
+  /* --- 데이터 CRUD 함수 --- */
+
+  // 스토어
+  const listStores = useCallback(async () => {
+    if (!apiKeyValid) return;
+    console.log('[Data] 스토어 목록 로드 중...'); // [LOG]
+    setIsLoading(true);
+    try {
+      const data = await apiRequest('fileSearchStores', { method: 'GET' }, apiKey);
+      setStores(data.fileSearchStores || []);
+      console.log(`[Data] 스토어 ${data.fileSearchStores?.length || 0}개 로드 완료.`); // [LOG]
+    } catch (error) { 
+      console.error('[Data] 스토어 목록 로드 실패:', error); // [LOG]
+      setGlobalError(error.message); 
+    } finally { setIsLoading(false); }
+  }, [apiKey, apiKeyValid]);
+
+  const createStore = async (displayName) => {
+    console.log(`[Data] 스토어 생성 중: ${displayName}`); // [LOG]
+    try {
+      const newStore = await apiRequest('fileSearchStores', { method: 'POST', body: JSON.stringify({ displayName }), }, apiKey);
+      console.log(`[Data] 스토어 생성 성공:`, newStore); // [LOG]
+      setStores([newStore, ...stores]);
+    } catch (error) { 
+      console.error(`[Data] 스토어 생성 실패:`, error); // [LOG]
+      setGlobalError(`스토어 생성 실패: ${error.message}`); 
+    }
+  };
+
+  const deleteStore = async (storeName) => {
+    console.log(`[Data] 스토어 삭제 요청: ${storeName}`); // [LOG]
+    const result = await Swal.fire({
+      title: '정말 삭제하시겠습니까?',
+      text: "이 스토어와 관련된 모든 문서 및 채팅 기록(로컬)이 영구적으로 삭제됩니다.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: '삭제',
+      cancelButtonText: '취소',
+      confirmButtonColor: '#e53e3e',
+      background: '#1f2937', 
+      color: '#d1d5db'
+    });
+
+    if (!result.isConfirmed) {
+      console.log('[Data] 스토어 삭제 취소됨.'); // [LOG]
+      return;
+    }
+    
+    setDeletingStoreName(storeName); 
+    setGlobalError(null); 
+
+    console.log(`[Data] 로컬 채팅 삭제 중...`); // [LOG]
+    const chatsToDelete = chats.filter(c => c.storeName === storeName);
+    for (const chat of chatsToDelete) { await deleteChatFromDB(chat.id); }
+    setChats(prev => prev.filter(c => c.storeName !== storeName));
+    
+    try {
+      console.log(`[Data] API 스토어 삭제 중 (force=true): ${storeName}`); // [LOG]
+      await apiRequest(storeName, { method: 'DELETE', params: { force: true } }, apiKey);
+      setStores(stores.filter(s => s.name !== storeName));
+      console.log(`[Data] 스토어 삭제 완료: ${storeName}`); // [LOG]
+    } catch (error) { 
+      console.error(`[Data] 스토어 삭제 실패:`, error); // [LOG]
+      setGlobalError(`스토어 삭제 실패: ${error.message}`); 
+    } finally {
+      setDeletingStoreName(null); 
+    }
+  };
+
+  // [UPDATE] 문서 (전체 로드)
+  const listDocuments = useCallback(async (storeName) => {
+    if (!apiKeyValid) return;
+    console.log(`[Data] ${storeName}의 모든 문서 로드 시작...`); // [LOG]
+    setIsLoading(true);
+    setDocuments([]); 
+    
+    let allDocuments = [];
+    let nextPageToken = null;
+
+    try {
+      do {
+        const params = { pageSize: 20 };
+        if (nextPageToken) {
+          params.pageToken = nextPageToken;
+        }
+
+        const data = await apiRequest(`${storeName}/documents`, { 
+            method: 'GET',
+            params: params
+        }, apiKey);
+        
+        const loadedDocs = data.documents || [];
+        console.log(`[Data] 문서 ${loadedDocs.length}개 로드됨. 다음 토큰: ${data.nextPageToken}`); // [LOG]
+        allDocuments = [...allDocuments, ...loadedDocs];
+        nextPageToken = data.nextPageToken;
+
+      } while (nextPageToken);
+      
+      setDocuments(allDocuments);
+      console.log(`[Data] ${storeName}의 모든 문서 로드 완료. 총 ${allDocuments.length}개.`); // [LOG]
+
+    } catch (error) {
+      console.error(`[Data] 문서 로드 실패:`, error); // [LOG]
+      setGlobalError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [apiKey, apiKeyValid]);
+
+
+  // 다중 파일 업로드
+  const uploadFiles = async (storeName, files) => {
+    console.log(`[Data] ${files.length}개 파일 업로드 시작...`); // [LOG]
+    for (const file of files) {
+      const opId = `upload-${crypto.randomUUID()}`;
+      addOperation(opId, `${file.name} 업로드 중...`);
+      
+      const metadata = { displayName: file.name };
+
+      try {
+        const operation = await apiUploadRequest(
+          `${storeName}:uploadToFileSearchStore`, file, metadata, apiKey
+        );
+        console.log(`[Data] ${file.name} 업로드 성공, 인덱싱 시작... Op: ${operation.name}`); // [LOG]
+        updateOperation(opId, 'indexing', '파일 인덱싱 중...');
+        pollOperation(operation.name, opId);
+      } catch (error) {
+        console.error(`[Data] ${file.name} 업로드 실패:`, error); // [LOG]
+        updateOperation(opId, 'failed', error.message);
+      }
+    }
+  };
+
+
+  const deleteDocument = async (docName) => {
+    console.log(`[Data] 문서 삭제 요청: ${docName}`); // [LOG]
+    try {
+      await apiRequest(docName, { method: 'DELETE', params: { force: true } }, apiKey);
+      setDocuments(documents.filter(d => d.name !== docName));
+      console.log(`[Data] 문서 삭제 성공: ${docName}`); // [LOG]
+    } catch (error) { 
+      console.error(`[Data] 문서 삭제 실패:`, error); // [LOG]
+      setGlobalError(`문서 삭제 실패: ${error.message}`); 
+    }
+  };
+
+  // 작업 폴링
+  const pollOperation = useCallback(async (opName, uiOpId) => {
+    try {
+      console.log(`[Poll] ${uiOpId} 상태 확인 중...`); // [LOG]
+      const operation = await apiRequest(opName, { method: 'GET' }, apiKey);
+      if (operation.done) {
+        if (operation.error) { 
+          console.error(`[Poll] ${uiOpId} 작업 실패:`, operation.error); // [LOG]
+          throw new Error(operation.error.message); 
+        }
+        console.log(`[Poll] ${uiOpId} 작업 성공.`); // [LOG]
+        updateOperation(uiOpId, 'succeeded', '완료');
+        if (currentView === 'STORES') listStores();
+        if (currentView === 'DOCS' && selectedStore) listDocuments(selectedStore.name);
+        setTimeout(() => removeOperation(uiOpId), 3000);
+      } else {
+        console.log(`[Poll] ${uiOpId} 아직 진행 중...`); // [LOG]
+        setTimeout(() => pollOperation(opName, uiOpId), 3000);
+      }
+    } catch (error) { 
+      console.error(`[Poll] ${uiOpId} 폴링 오류:`, error); // [LOG]
+      updateOperation(uiOpId, 'failed', error.message); 
+    }
+  }, [apiKey, currentView, selectedStore, listStores, listDocuments]); // [FIX] listDocuments, listStores 의존성 추가
+
+  // 채팅
+  const loadChats = async () => { 
+    console.log('[Data] 로컬 채팅 기록 로드 중...'); // [LOG]
+    const dbChats = await getChatsFromDB(); 
+    setChats(dbChats); 
+    console.log(`[Data] 로컬 채팅 ${dbChats.length}개 로드 완료.`); // [LOG]
+  };
+  const createNewChat = (store) => { 
+    console.log(`[Data] 새 채팅 생성 (스토어: ${store.displayName})`); // [LOG]
+    const newChat = { id: crypto.randomUUID(), storeName: store.name, storeDisplayName: store.displayName, title: "새 채팅", messages: [], createdAt: new Date().toISOString(), }; 
+    setChats([newChat, ...chats]); 
+    setSelectedChat(newChat); 
+    saveChatToDB(newChat); 
+    setCurrentView('CHAT'); 
+  };
+  const updateChat = (chat) => { 
+    console.log(`[Data] 채팅 업데이트: ${chat.title}`); // [LOG]
+    setSelectedChat(chat); 
+    saveChatToDB(chat); 
+    setChats(prev => prev.map(c => c.id === chat.id ? chat : c)); 
+  };
+  const deleteChat = (chatId) => { 
+    console.log(`[Data] 채팅 삭제: ${chatId}`); // [LOG]
+    deleteChatFromDB(chatId); 
+    setChats(prev => prev.filter(c => c.id !== chatId)); 
+    if (selectedChat?.id === chatId) { 
+      setSelectedChat(null); 
+      setCurrentView('STORES'); 
+    } 
+  };
+
+
+  /* --- UI 렌더링 로직 --- */
+
+  const handleApiKeySubmit = (e) => {
+    e.preventDefault();
+    const key = e.target.elements.apiKey.value;
+    console.log('[Auth] 새 API 키 제출됨.'); // [LOG]
+    setApiKey(key);
+    validateApiKey(key);
+  };
+
+  // 화면 전환 로직
+  const selectStoreForDocs = (store) => { 
+    console.log(`[View] 문서 관리로 전환: ${store.displayName}`); // [LOG]
+    setSelectedStore(store); 
+    listDocuments(store.name); 
+    setCurrentView('DOCS'); 
+  };
+  const selectStoreForChat = (store) => { 
+    console.log(`[View] 채팅으로 전환: ${store.displayName}`); // [LOG]
+    setSelectedStore(store); 
+    const existingChat = chats.find(c => c.storeName === store.name); 
+    if (existingChat) { 
+      setSelectedChat(existingChat); 
+      setCurrentView('CHAT'); 
+    } else { 
+      createNewChat(store); 
+    } 
+  };
+  const selectDocForSearch = (doc) => { 
+    console.log(`[View] 단일 문서 검색으로 전환: ${doc.displayName}`); // [LOG]
+    setSelectedDoc(doc); 
+    setCurrentView('DOC_SEARCH'); 
+  };
+  // [NEW] 스토어 전체 검색 뷰로 전환
+  const selectStoreForSearch = (store) => {
+    console.log(`[View] 스토어 전체 검색으로 전환: ${store.displayName}`); // [LOG]
+    setSelectedStore(store);
+    // 문서는 DocumentList에서 이미 로드됨 (documents state에 있음)
+    setCurrentView('STORE_SEARCH');
+  };
+  
+  const navigateTo = (view) => { 
+    console.log(`[View] 뷰 전환: ${view}`); // [LOG]
+    setCurrentView(view); 
+    if (view === 'STORES') { 
+      setSelectedStore(null); 
+      setSelectedDoc(null); 
+      setSelectedChat(null); 
+      listStores(); 
+    } 
+  };
+  const selectChat = (chat) => { 
+    console.log(`[View] 기존 채팅 선택: ${chat.title}`); // [LOG]
+    setSelectedChat(chat); 
+    setCurrentView('CHAT'); 
+  };
+  
+  // 렌더링
+  if (isLoading && !apiKeyValid && !apiKey) {
+      return <div className="flex h-screen w-full items-center justify-center bg-gray-950 text-white"><IconSpinner /> 로딩 중...</div>; 
+  }
+
+  // API 키가 없을 때 (최초)
+  if (!apiKey) {
+// ... (기존 코드와 동일)
+// ... (기존 API 키 입력 폼 코드)
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-gray-900 text-white">
+        <div className="w-full max-w-md p-8 bg-gray-800 rounded-lg shadow-xl">
+          <h1 className="text-3xl font-bold text-center text-blue-400 mb-6">Gemini File Store 관리자</h1>
+          <p className="text-center text-gray-300 mb-8">시작하려면 Gemini API 키를 입력하세요.</p>
+          <form onSubmit={handleApiKeySubmit}>
+            <input
+              type="password" name="apiKey"
+              className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="Gemini API Key"
+            />
+            <button type="submit" className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition">
+              API 키 저장 및 시작
+            </button>
+            {globalError && <p className="mt-4 text-center text-red-400">{globalError}</p>}
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  // API 키는 있으나 유효하지 않을 때
+  if (!apiKeyValid) {
+// ... (기존 코드와 동일)
+// ... (기존 API 키 오류 폼 코드)
+     return (
+        <div className="flex h-screen w-full items-center justify-center bg-gray-900 text-white">
+            <div className="w-full max-w-md p-8 bg-gray-800 rounded-lg shadow-xl">
+                <h1 className="text-3xl font-bold text-center text-red-400 mb-6">오류</h1>
+                <p className="text-center text-gray-300 mb-8">{globalError || "API 키가 유효하지 않습니다."}</p>
+                <button 
+                    onClick={() => setIsSettingsOpen(true)} 
+                    className="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition"
+                >
+                    설정에서 API 키 수정
+                </button>
+                <SettingsModal
+                    isOpen={true} 
+                    onClose={() => setIsSettingsOpen(false)} 
+                    apiKey={apiKey}
+                    setApiKey={setApiKey} 
+                    systemInstruction={systemInstruction}
+                    setSystemInstruction={setSystemInstruction}
+                />
+            </div>
+        </div>
+     );
+  }
+
+  // 메인 애플리케이션 UI
+  return (
+    <div className="flex h-screen bg-gray-950 text-gray-200">
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        apiKey={apiKey}
+        setApiKey={setApiKey} 
+        systemInstruction={systemInstruction}
+        setSystemInstruction={setSystemInstruction}
+      />
+
+      {currentView === 'CHAT' && (
+        <ChatSidebar 
+          chats={chats} 
+          selectedChat={selectedChat}
+          onSelectChat={selectChat}
+          onCreateNewChat={() => createNewChat(selectedStore)}
+          onDeleteChat={deleteChat}
+          onUpdateChat={updateChat}
+          onNavigateBack={() => navigateTo('STORES')}
+          currentStoreName={selectedStore?.displayName}
+        />
+      )}
+
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <Header 
+          apiKey={apiKey} 
+          onLogout={() => {
+            console.log('[Auth] 로그아웃.'); // [LOG]
+            setApiKey('');
+            setApiKeyValid(false);
+            localStorage.removeItem('gemini-api-key');
+            setGlobalError(null);
+          }}
+          pendingOperations={pendingOperations}
+          removeOperation={removeOperation}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+        />
+        <main className={`flex-1 overflow-y-auto ${currentView !== 'CHAT' ? 'p-4 md:p-8' : ''}`}>
+          {globalError && (
+            <div className="m-4 md:m-8 bg-red-800 border border-red-600 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
+              <span className="block sm:inline">{globalError}</span>
+              <button className="absolute top-0 bottom-0 right-0 px-4 py-3" onClick={() => setGlobalError(null)}>
+                 <IconXSmall />
+              </button>
+            </div>
+          )}
+
+          <div className={currentView !== 'CHAT' ? 'max-w-7xl mx-auto' : 'h-full'}>
+            {currentView === 'STORES' && (
+              <FileSearchStoreList 
+                stores={stores}
+                deletingStoreName={deletingStoreName}
+                onCreateStore={createStore}
+                onDeleteStore={deleteStore}
+                onSelectStoreForDocs={selectStoreForDocs}
+                onSelectStoreForChat={selectStoreForChat}
+              />
+            )}
+            
+            {currentView === 'DOCS' && selectedStore && (
+              <DocumentList
+                store={selectedStore}
+                documents={documents}
+                onDeleteDocument={deleteDocument}
+                onUploadFiles={uploadFiles} 
+                onSelectDocument={selectDocForSearch}
+                onBack={() => navigateTo('STORES')}
+                isLoading={isLoading}
+                onSelectStoreForSearch={selectStoreForSearch} // [NEW] 핸들러 전달
+              />
+            )}
+
+            {currentView === 'DOC_SEARCH' && selectedDoc && (
+              <DocumentSearch
+                document={selectedDoc}
+                apiKey={apiKey}
+                onBack={() => setCurrentView('DOCS')}
+              />
+            )}
+            
+            {/* [NEW] 스토어 전체 검색 뷰 렌더링 */}
+            {currentView === 'STORE_SEARCH' && selectedStore && (
+              <StoreSearch
+                store={selectedStore}
+                documents={documents}
+                apiKey={apiKey}
+                onBack={() => setCurrentView('DOCS')}
+              />
+            )}
+          </div>
+
+          {currentView === 'CHAT' && selectedChat && (
+            <ChatInterface
+              key={selectedChat.id}
+              chat={selectedChat}
+              apiKey={apiKey}
+              systemInstruction={systemInstruction}
+              onUpdateChat={updateChat}
+            />
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+
+// React 앱 마운트
+const container = document.getElementById('root');
+if (!window._geminiAppRoot) {
+  const EffectiveReactDOM = ReactDOM.default || ReactDOM; 
+  if (EffectiveReactDOM && typeof EffectiveReactDOM.createRoot === 'function') {
+    window._geminiAppRoot = EffectiveReactDOM.createRoot(container);
+  } else if (typeof ReactDOMClient !== 'undefined') {
+    window._geminiAppRoot = ReactDOMClient.createRoot(container);
+  } else {
+    console.error('Could not find ReactDOM.createRoot or ReactDOMClient.createRoot.');
+  }
+}
+if (window._geminiAppRoot) {
+  window._geminiAppRoot.render(<App />);
+} else {
+  console.error('Failed to create React root.');
+}
+
+})(); // IIFE 종료
+    </script>
+</body>
+</html>
