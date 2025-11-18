@@ -826,9 +826,10 @@ function StoreSearch({ store, documents, apiKey, onBack }) {
       console.log('[StoreSearch] Gemini 추천 문서:', relevantDocNames);
 
       const docsToSearch = documents.filter(doc => {
-          const docName = doc.displayName || doc.name.split('/').pop();
-          return relevantDocNames.some(geminiName => docName.includes(geminiName));
-      });
+          const docName = doc.displayName || doc.name.split('/').pop();
+          // [FIX] '전체 이름'(docName)이 '단순 이름'(geminiName)을 포함하는지 검사
+          return relevantDocNames.some(geminiName => docName.includes(geminiName));
+      });
       
       console.log(`[StoreSearch] ${docsToSearch.length}개의 일치하는 문서를 찾았습니다.`, docsToSearch.map(d => d.displayName));
 
@@ -1424,44 +1425,46 @@ function App() {
   };
 
   // [UPDATE] 문서 (전체 로드)
-  const listDocuments = useCallback(async (storeName) => {
-    if (!apiKeyValid) return;
-    console.log(`[Data] ${storeName}의 모든 문서 로드 시작...`); // [LOG]
-    setIsLoading(true);
-    setDocuments([]); 
-    
-    let allDocuments = [];
-    let nextPageToken = null;
+  // [UPDATE] 문서 (전체 로드 - 페이지 크기 최적화됨)
+  const listDocuments = useCallback(async (storeName) => {
+    if (!apiKeyValid) return;
+    console.log(`[Data] ${storeName}의 모든 문서 로드 시작...`); // [LOG]
+    setIsLoading(true);
+    setDocuments([]); 
+    
+    let allDocuments = [];
+    let nextPageToken = null;
 
-    try {
-      do {
-        const params = { pageSize: 20 };
-        if (nextPageToken) {
-          params.pageToken = nextPageToken;
-        }
+    try {
+      do {
+        // [!!!] 수정 지점: pageSize를 20에서 100으로 상향 조정
+        const params = { pageSize: 100 }; 
+        if (nextPageToken) {
+          params.pageToken = nextPageToken;
+        }
 
-        const data = await apiRequest(`${storeName}/documents`, { 
-            method: 'GET',
-            params: params
-        }, apiKey);
-        
-        const loadedDocs = data.documents || [];
-        console.log(`[Data] 문서 ${loadedDocs.length}개 로드됨. 다음 토큰: ${data.nextPageToken}`); // [LOG]
-        allDocuments = [...allDocuments, ...loadedDocs];
-        nextPageToken = data.nextPageToken;
+        const data = await apiRequest(`${storeName}/documents`, { 
+            method: 'GET',
+            params: params
+        }, apiKey);
+        
+        const loadedDocs = data.documents || [];
+        console.log(`[Data] 문서 ${loadedDocs.length}개 로드됨. 다음 토큰: ${data.nextPageToken}`); // [LOG]
+        allDocuments = [...allDocuments, ...loadedDocs];
+        nextPageToken = data.nextPageToken;
 
-      } while (nextPageToken);
-      
-      setDocuments(allDocuments);
-      console.log(`[Data] ${storeName}의 모든 문서 로드 완료. 총 ${allDocuments.length}개.`); // [LOG]
+      } while (nextPageToken);
+      
+      setDocuments(allDocuments);
+      console.log(`[Data] ${storeName}의 모든 문서 로드 완료. 총 ${allDocuments.length}개.`); // [LOG]
 
-    } catch (error) {
-      console.error(`[Data] 문서 로드 실패:`, error); // [LOG]
-      setGlobalError(error.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [apiKey, apiKeyValid]);
+    } catch (error) {
+      console.error(`[Data] 문서 로드 실패:`, error); // [LOG]
+      setGlobalError(error.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [apiKey, apiKeyValid]);
 
 
   // 다중 파일 업로드
