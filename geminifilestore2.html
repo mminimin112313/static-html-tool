@@ -787,7 +787,7 @@ function DocumentSearch({ document, apiKey, onBack }) {
 }
 
 
-// [NEW] 스토어 전체 검색 컴포넌트
+// [NEW] 스토어 전체 검색 컴포넌트 (병렬 처리 적용됨)
 function StoreSearch({ store, documents, apiKey, onBack }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState([]); // 스트리밍으로 채워질 결과
@@ -840,41 +840,57 @@ function StoreSearch({ store, documents, apiKey, onBack }) {
 
       setGeminiStatus(`Gemini가 선택한 관련 문서: ${docsToSearch.map(d => d.displayName).join(', ')}`);
 
-      // 2. 필터링된 문서로 시맨틱 검색 (스트리밍)
-      setSearchStatus(`총 ${docsToSearch.length}개 문서에서 검색을 시작합니다...`);
-
+      // 2. 필터링된 문서로 시맨틱 검색 (병렬 처리)
       let allRelevantChunks = [];
       let resultsFound = false;
 
-      for (const doc of docsToSearch) {
-        setSearchStatus(`[${doc.displayName || doc.name.split('/').pop()}] 문서를 검색 중...`);
-        try {
-          const resultData = await apiRequest(
-            `${doc.name}:query`,
-            {
-              method: 'POST',
-              body: JSON.stringify({ query: query, resultsCount: 100 })
-            },
-            apiKey
-          );
+      setSearchStatus(`총 ${docsToSearch.length}개 문서에서 병렬 검색을 시작합니다...`);
 
+      // 2. 필터링된 문서로 시맨틱 검색 (스트리밍 -> 병렬 처리로 변경)
+      const searchPromises = docsToSearch.map(doc =>
+        apiRequest(
+          `${doc.name}:query`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ query: query, resultsCount: 100 })
+          },
+          apiKey
+        )
+      );
+
+      // Promise.allSettled를 사용해 모든 요청이 완료될 때까지 기다립니다. (일부 실패해도 계속 진행)
+      const promiseResults = await Promise.allSettled(searchPromises);
+
+      let newResultsBatch = []; // 한 번에 state를 업데이트하기 위한 임시 배열
+
+      promiseResults.forEach((result, index) => {
+        const doc = docsToSearch[index]; // 인덱스를 기준으로 원본 문서 매칭
+        const docDisplayName = doc.displayName || doc.name.split('/').pop();
+
+        if (result.status === 'fulfilled') {
+          const resultData = result.value;
           if (resultData && resultData.relevantChunks && resultData.relevantChunks.length > 0) {
             resultsFound = true;
             const chunksWithDoc = resultData.relevantChunks.map(chunk => ({
               ...chunk,
-              documentName: doc.displayName || doc.name.split('/').pop()
+              documentName: docDisplayName
             }));
             
-            // 스트리밍: 현재 결과에 추가
-            setResults(prevResults => [...prevResults, ...chunksWithDoc]);
             allRelevantChunks.push(...chunksWithDoc);
+            newResultsBatch.push(...chunksWithDoc); // 임시 배열에 추가
           }
-        } catch (docError) {
-          console.warn(`'${doc.displayName || doc.name.split('/').pop()}' 문서 검색 실패:`, docError);
+          // 검색 결과가 없는 경우는 그냥 넘어갑니다.
+        } else {
+          // result.status === 'rejected'
+          const docError = result.reason;
+          console.warn(`'${docDisplayName}' 문서 검색 실패:`, docError);
           // UI에 에러 표시
-          setResults(prevResults => [...prevResults, { isError: true, documentName: doc.displayName || doc.name.split('/').pop(), error: docError.message }]);
+          newResultsBatch.push({ isError: true, documentName: docDisplayName, error: docError.message });
         }
-      }
+      });
+      
+      // 모든 결과가 처리된 후, React state를 *한 번만* 업데이트합니다.
+      setResults(newResultsBatch);
       
       setSearchStatus(resultsFound ? `총 ${allRelevantChunks.length}개의 결과를 찾았습니다.` : '관련된 검색 결과를 찾을 수 없습니다.');
       if (resultsFound) {
