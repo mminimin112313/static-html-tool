@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+const listDocuments = useCallback(async (storeName) => {<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -33,7 +33,29 @@
       .prose-invert { color: #d1d5db; }
       .prose-invert a { color: #93c5fd; }
       .prose-invert strong { color: #ffffff; }
-      
+      /* [NEW] 명시도를 높인 테이블 스타일 (이 코드로 교체) */
+      div.prose.prose-invert table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1em 0;
+      }
+      div.prose.prose-invert th {
+        background-color: #374151; /* bg-gray-700 */
+        border: 1px solid #4b5563; /* border-gray-600 */
+        padding: 0.75em 1em;
+        font-weight: 600;
+        color: #ffffff !important; /* text-white (!important 추가로 확실히 적용) */
+        text-align: left;
+      }
+      div.prose.prose-invert td {
+        border: 1px solid #4b5563; /* border-gray-600 */
+        padding: 0.75em 1em;
+        color: #d1d5db !important; /* text-gray-300 (!important 추가로 확실히 적용) */
+      }
+      div.prose.prose-invert tr:nth-child(even) {
+          background-color: #1f2937; /* bg-gray-800 */
+      }
+        
       @keyframes fadeIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
@@ -41,6 +63,19 @@
       .animate-fade-in {
         animation: fadeIn 0.3s ease-out;
       }
+      /* [NEW] 스피너 스타일 (기존 파일에 없어서 index.html에서 가져옴) */
+      .spinner {
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            width: 20px; /* 작은 스피너 */
+            height: 20px;
+            border-radius: 50%;
+            border-left-color: #3b82f6; /* blue-500 */
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -53,7 +88,6 @@
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 /* --- 아이콘 컴포넌트 --- */
-// (아이콘 컴포넌트들은 이전과 동일하게 유지)
 function IconFolder() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" /> </svg> ); }
 function IconChat() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-3.86 8.25-8.625 8.25a8.61 8.61 0 01-1.631-.203l-4.055 2.026a.75.75 0 01-.913-.913l2.026-4.055a8.61 8.61 0 01-.203-1.631c0-4.556 3.86-8.25 8.625 8.25s8.625 3.694 8.625 8.25z" /> </svg> ); }
 function IconTrash() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12.502 0v-.001c0-.104.012-.207.035-.308.31-.994 1.29-1.75 2.433-1.75h3.164a2.25 2.25 0 012.23 1.973c.043.372.079.75.12 1.139m-14.456 0c.342.052.682.107 1.022.166" /> </svg> ); }
@@ -77,12 +111,17 @@ function IconExternalLink() { return ( <svg xmlns="http://www.w3.org/2000/svg" f
 function IconSettings() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M10.343 3.94c.09-.542.56-1.002 1.135-1.172a17.937 17.937 0 013.042 0c.575.17 1.045.63 1.135 1.172M16.03 15.908c.57.169 1.04.63 1.13 1.172a17.937 17.937 0 010 3.042c-.09.542-.56 1.002-1.13.172M16.03 15.908c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M16.03 15.908c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m-3.042 0c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c-.169.57-.63 1.04-1.172 1.13a17.937 17.937 0 01-3.042 0c-.542-.09-1.002-.56-1.172-1.13m0 3.042c-.169-.57-.63-1.04-1.172 1.13a17.937 17.937 0 01-3.042 0c-.542-.09-1.002-.56-1.172-1.13M8.08 15.908c-.57.169-1.04.63-1.13 1.172a17.937 17.937 0 010 3.042c.09.542.56 1.002 1.13 1.172m-3.042 0c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M8.08 15.908c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m-3.042 0c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M3.94 10.343c.542-.09.992-.56 1.172-1.13a17.937 17.937 0 010-3.042c-.18-.57-.63-1.04-1.172-1.13M3.94 10.343c.542.09.992.56 1.172 1.13a17.937 17.937 0 010 3.042c-.18.57-.63 1.04-1.172 1.13M3.94 10.343c-.542-.09-1.002-.56-1.172-1.13a17.937 17.937 0 010-3.042c.18-.57.63-1.04 1.172-1.13m0 3.042c-.542.09-1.002-.56-1.172 1.13a17.937 17.937 0 010 3.042c.18.57.63 1.04 1.172 1.13m10.116-3.042c.57.169 1.04.63 1.13 1.172a17.937 17.937 0 010 3.042c-.09.542-.56 1.002-1.13 1.172M14.056 10.343c.57-.169 1.04-.63 1.13-1.172a17.937 17.937 0 010-3.042c-.09-.542-.56-1.002-1.13-1.172m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M14.056 10.343c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m0 3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M10.343 3.94c.09.542.56 1.002 1.135 1.172a17.937 17.937 0 013.042 0c.575-.17 1.045-.63 1.135-1.172m-3.042 0c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542-.09.992-.56 1.172-1.13M10.343 3.94c.169-.57.63-1.04 1.172-1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13m0-3.042c.169.57.63 1.04 1.172 1.13a17.937 17.937 0 013.042 0c.542.09.992.56 1.172 1.13M12 15a3 3 0 100-6 3 3 0 000 6z" /> </svg> ); }
 function IconXCircle() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 9.75l4.5 4.5m0-4.5l-4.5 4.5M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /> </svg> ); }
 function IconFileQueue() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /> </svg> ); }
+// [NEW] 다운로드 아이콘 추가
+function IconDownload() { return ( <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5"> <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" /> </svg> ); }
 
 
 /* --- API 및 유틸리티 --- */
 
 const API_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/';
 const UPLOAD_BASE_URL = 'https://generativelanguage.googleapis.com/upload/v1beta/';
+// [NEW] Gemini generateContent API 엔드포인트
+const GEMINI_GENERATE_CONTENT_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent';
+
 
 const DB_NAME = 'GeminiFileStoreDB';
 const CHAT_STORE = 'chats';
@@ -95,7 +134,7 @@ function saveChatToDB(chat) { return dbRequest(CHAT_STORE, 'readwrite', (store) 
 function deleteChatFromDB(chatId) { return dbRequest(CHAT_STORE, 'readwrite', (store) => { store.delete(chatId); }); }
 function clearChatsFromDB() { return dbRequest(CHAT_STORE, 'readwrite', (store) => { store.clear(); }); }
 
-// 일반 API 요청
+// 일반 API 요청 (File API 용)
 async function apiRequest(endpoint, options = {}, apiKey) {
   let url = `${API_BASE_URL}${endpoint}`;
   
@@ -112,19 +151,82 @@ async function apiRequest(endpoint, options = {}, apiKey) {
     'x-goog-api-key': apiKey,
     ...options.headers,
   };
+  
+  const method = options.method || 'GET';
+  console.log(`[File API] Requesting: ${method} ${url}`); // [LOG]
 
   try {
-    const response = await fetch(url, { ...options, headers, params: undefined }); // params는 이미 url에 포함됨
+    const response = await fetch(url, { ...options, method, headers, params: undefined }); // params는 이미 url에 포함됨
     if (!response.ok) {
       const errorData = await response.json();
       console.error('API Error Response:', errorData);
       throw new Error(`API Error: ${errorData.error?.message || response.statusText}`);
     }
     const text = await response.text();
-    return text ? JSON.parse(text) : {};
+    const jsonData = text ? JSON.parse(text) : {};
+    console.log(`[File API] Success: ${method} ${endpoint}`, jsonData); // [LOG]
+    return jsonData;
   } catch (error) {
     console.error(`API Request Failed: ${error.message}`);
     throw error;
+  }
+}
+
+// [NEW] Gemini API 호출 (generateContent 용)
+async function apiGeminiFilter(prompt, apiKey, retries = 3, delay = 1000) {
+  console.log('%c[Gemini API] 호출 시작...', 'color: blue; font-weight: bold;'); // [LOG]
+  console.log('[Gemini API] Prompt:', prompt); // [LOG]
+  
+  const apiUrl = `${GEMINI_GENERATE_CONTENT_URL}?key=${apiKey}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }],
+    // 안전 설정을 추가하여 응답이 차단될 가능성을 줄일 수 있습니다.
+    // "safetySettings": [
+    //  { "category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE" },
+    //  { "category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE" },
+    //  { "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE" },
+    //  { "category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE" }
+    // ]
+  };
+
+  for (let i = 0; i < retries; i++) {
+      try {
+          console.log(`[Gemini API] ${i + 1}번째 시도...`); // [LOG]
+          const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+          });
+
+          if (!response.ok) {
+              const errorData = await response.json();
+              console.error('[Gemini API] 응답 오류:', errorData); // [LOG]
+              throw new Error(errorData.error?.message || `HTTP ${response.status} 오류`);
+          }
+
+          const result = await response.json();
+          console.log('[Gemini API] 응답 성공:', result); // [LOG]
+
+          if (result.candidates && result.candidates[0].content && result.candidates[0].content.parts[0].text) {
+              const extractedText = result.candidates[0].content.parts[0].text;
+              console.log('[Gemini API] 추출된 텍스트:', extractedText); // [LOG]
+              return extractedText;
+          } else {
+              let errorMsg = 'Gemini API로부터 유효한 응답을 받지 못했습니다.';
+              if (result.candidates && result.candidates[0].finishReason) {
+                  errorMsg += ` (이유: ${result.candidates[0].finishReason})`;
+              }
+              console.warn('[Gemini API] 콘텐츠 없음:', errorMsg, result); // [LOG]
+              throw new Error(errorMsg);
+          }
+      } catch (error) {
+          console.warn(`[Gemini API] ${i + 1}번째 시도 실패:`, error); // [LOG]
+          if (i === retries - 1) {
+              throw error; // 재시도 모두 실패 시 에러 throw
+          }
+          await new Promise(resolve => setTimeout(resolve, delay * Math.pow(2, i)));
+      }
   }
 }
 
@@ -138,6 +240,8 @@ async function apiUploadRequest(endpoint, file, metadata, apiKey, onProgress) {
 
   const formData = new FormData();
   formData.append('file', file);
+  
+  console.log(`[File Upload] Requesting: POST ${url}`); // [LOG]
 
   try {
     const response = await fetch(url, {
@@ -154,7 +258,9 @@ async function apiUploadRequest(endpoint, file, metadata, apiKey, onProgress) {
         throw new Error(`Upload API Error: ${responseText}`);
     }
     try {
-        return JSON.parse(responseText);
+        const jsonData = JSON.parse(responseText);
+        console.log(`[File Upload] Success:`, jsonData); // [LOG]
+        return jsonData;
     } catch (parseError) {
         console.error('API Upload JSON Parse Error:', parseError, 'Response Text:', responseText);
         throw new Error(`업로드 API가 JSON이 아닌 응답을 반환했습니다: ${responseText.substring(0, 100)}...`);
@@ -169,7 +275,36 @@ async function apiUploadRequest(endpoint, file, metadata, apiKey, onProgress) {
 function formatBytes(bytes, decimals = 2) { if (!bytes || bytes === 0) return 'N/A'; const k = 1024; const dm = decimals < 0 ? 0 : decimals; const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']; const i = Math.floor(Math.log(bytes) / Math.log(k)); return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`; }
 
 // 클립보드 훅 (SweetAlert 사용)
-function useClipboard(timeout = 1500) { const [copied, setCopied] = useState(false); const copy = useCallback((text) => { try { const el = document.createElement('textarea'); el.value = text; document.body.appendChild(el); el.select(); const success = document.execCommand('copy'); document.body.removeChild(el); if (success) { setCopied(true); setTimeout(() => setCopied(false), timeout); } else { throw new Error('Copy command failed'); } } catch (e) { console.error('Failed to copy to clipboard:', e); /* (수정) alert 대신 SweetAlert2 사용 */ Swal.fire({ title: '오류', text: '클립보드 복사에 실패했습니다.', icon: 'error', background: '#1f2937', color: '#d1d5db' }); } }, [timeout]); return [copied, copy]; }
+function useClipboard(timeout = 1500) { 
+  const [copied, setCopied] = useState(false); 
+  const copy = useCallback((text) => { 
+    try { 
+      const el = document.createElement('textarea'); 
+      el.value = text; 
+      document.body.appendChild(el); 
+      el.select(); 
+      const success = document.execCommand('copy'); 
+      document.body.removeChild(el); 
+      if (success) { 
+        setCopied(true); 
+        setTimeout(() => setCopied(false), timeout); 
+      } else { 
+        throw new Error('Copy command failed'); 
+      } 
+    } catch (e) { 
+      console.error('Failed to copy to clipboard:', e); 
+      Swal.fire({ 
+        title: '오류', 
+        text: '클립보드 복사에 실패했습니다.', 
+        icon: 'error', 
+        background: '#1f2937', 
+        color: '#d1d5db' 
+      }); 
+    } 
+  }, [timeout]); 
+  return [copied, copy]; 
+}
+
 // 자동 높이 조절 훅 (변경 없음)
 function useAutosizeTextarea(textareaRef, value) {
   useEffect(() => {
@@ -189,15 +324,8 @@ function SettingsModal({ isOpen, onClose, apiKey, setApiKey, systemInstruction, 
   const [localApiKey, setLocalApiKey] = useState(apiKey);
   const [localInstruction, setLocalInstruction] = useState(systemInstruction);
 
-  // apiKey prop이 바뀔 때 localApiKey 동기화 (로그인 실패 시 유용)
-  useEffect(() => {
-    setLocalApiKey(apiKey);
-  }, [apiKey]);
-  
-  // systemInstruction prop이 바뀔 때 localInstruction 동기화
-  useEffect(() => {
-    setLocalInstruction(systemInstruction);
-  }, [systemInstruction]);
+  useEffect(() => { setLocalApiKey(apiKey); }, [apiKey]);
+  useEffect(() => { setLocalInstruction(systemInstruction); }, [systemInstruction]);
 
   if (!isOpen) return null;
 
@@ -213,7 +341,6 @@ function SettingsModal({ isOpen, onClose, apiKey, setApiKey, systemInstruction, 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
       <div className="bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl p-6 border border-gray-700 animate-fade-in">
         <h2 className="text-2xl font-bold text-white mb-6">설정</h2>
-        
         <div className="mb-6">
           <label htmlFor="apiKey" className="block text-sm font-medium text-gray-300 mb-2">
             Gemini API 키
@@ -224,11 +351,9 @@ function SettingsModal({ isOpen, onClose, apiKey, setApiKey, systemInstruction, 
             value={localApiKey}
             onChange={(e) => setLocalApiKey(e.target.value)}
             className="w-full px-4 py-3 bg-gray-700 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            placeholder="gme-...
-"
+            placeholder="gme-..."
           />
         </div>
-
         <div className="mb-8">
           <label htmlFor="systemInstruction" className="block text-sm font-medium text-gray-300 mb-2">
             시스템 프롬프트 (System Instruction)
@@ -242,7 +367,6 @@ function SettingsModal({ isOpen, onClose, apiKey, setApiKey, systemInstruction, 
             placeholder="모델이 항상 따르도록 할 지침을 입력하세요..."
           />
         </div>
-
         <div className="flex justify-end space-x-4">
           <button
             onClick={onClose}
@@ -280,7 +404,6 @@ function Header({ apiKey, onLogout, pendingOperations, removeOperation, onOpenSe
         <h1 className="text-xl font-bold text-white">File Store Manager</h1>
       </div>
       <div className="flex items-center space-x-4">
-        {/* 작업 큐 */}
         <div className="relative">
           <button 
             onClick={() => setShowOps(!showOps)}
@@ -303,8 +426,8 @@ function Header({ apiKey, onLogout, pendingOperations, removeOperation, onOpenSe
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-300 w-3/4 truncate">{op.description}</span>
                       {['processing', 'indexing'].includes(op.status) && <IconSpinner />}
-                      {op.status === 'succeeded' && <IconCheck className="text-green-400" />}
-                      {op.status === 'failed' && <IconXSmall className="text-red-400" />}
+                      {op.status === 'succeeded' && <IconCheck className="w-5 h-5 text-green-400" />}
+                      {op.status === 'failed' && <IconXSmall className="w-5 h-5 text-red-400" />}
                     </div>
                     <p className={`text-xs mt-1 ${getStatusColor(op.status)}`}>
                       {op.status === 'failed' ? op.error : op.status}
@@ -394,8 +517,7 @@ function ChatSidebar({ chats, selectedChat, onSelectChat, onCreateNewChat, onDel
   );
 }
 
-// 스토어 목록 (대시보드)
-// *** [수정] deletingStoreName prop 추가 ***
+// 스토어 목록 (대시보드) (변경 없음)
 function FileSearchStoreList({ stores, onCreateStore, onDeleteStore, onSelectStoreForDocs, onSelectStoreForChat, deletingStoreName }) {
   const [newStoreName, setNewStoreName] = useState('');
   const handleSubmit = (e) => { e.preventDefault(); if (newStoreName.trim()) { onCreateStore(newStoreName.trim()); setNewStoreName(''); } };
@@ -434,7 +556,6 @@ function FileSearchStoreList({ stores, onCreateStore, onDeleteStore, onSelectSto
                 <button onClick={() => onSelectStoreForChat(store)} className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition text-sm flex items-center justify-center space-x-2">
                   <IconChat /> <span>채팅 시작</span>
                 </button>
-                {/* *** [수정] 삭제 버튼에 로딩 상태 및 비활성화 적용 *** */}
                 <button 
                   onClick={() => onDeleteStore(store.name)} 
                   className="bg-gray-700 hover:bg-red-600 text-white p-2 rounded-full transition disabled:opacity-50" 
@@ -453,8 +574,8 @@ function FileSearchStoreList({ stores, onCreateStore, onDeleteStore, onSelectSto
 }
 
 
-// 문서 목록 (변경 없음 - 다중 업로드)
-function DocumentList({ store, documents, onDeleteDocument, onUploadFiles, onSelectDocument, onBack, isLoading }) {
+// [UPDATE] 문서 목록 (스토어 전체 검색 버튼 추가 및 주석 제거)
+function DocumentList({ store, documents, onDeleteDocument, onUploadFiles, onSelectDocument, onBack, isLoading, onSelectStoreForSearch }) {
   const [uploadQueue, setUploadQueue] = useState([]); 
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef(null);
@@ -515,9 +636,19 @@ function DocumentList({ store, documents, onDeleteDocument, onUploadFiles, onSel
         <span>프로젝트 대시보드로 돌아가기</span>
       </button>
       
-      <h2 className="text-2xl font-bold text-white mb-6">
-        문서 관리: <span className="text-blue-400">{store.displayName}</span>
-      </h2>
+      {/* [NEW] 타이틀 영역에 스토어 전체 검색 버튼 추가 */}
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-white">
+          문서 관리: <span className="text-blue-400">{store.displayName}</span>
+        </h2>
+        <button 
+          onClick={() => onSelectStoreForSearch(store)} 
+          className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white font-semibold py-2 px-4 rounded-lg transition text-sm"
+          disabled={documents.length === 0 || isLoading}
+        >
+          <IconSearch /> <span>스토어 전체 검색</span>
+        </button>
+      </div>
       
       <div className={`mb-8 p-6 bg-gray-900 rounded-lg shadow-lg border border-gray-700 transition-all ${isDragging ? 'border-blue-500 border-dashed' : 'border-gray-700'}`}>
         <h3 className="text-xl font-semibold text-white mb-4">새 문서 업로드</h3>
@@ -585,7 +716,7 @@ function DocumentList({ store, documents, onDeleteDocument, onUploadFiles, onSel
           </thead>
           <tbody className="divide-y divide-gray-700">
             {isLoading && !documents.length ? (
-              <tr><td colSpan="5" className="text-center py-8 text-gray-400"><IconSpinner /></td></tr>
+              <tr><td colSpan="5" className="text-center py-8 text-gray-400"><div className="flex justify-center"><IconSpinner /></div></td></tr>
             ) : (
               documents.map(doc => (
                 <tr key={doc.name} className="hover:bg-gray-800">
@@ -678,7 +809,240 @@ function DocumentSearch({ document, apiKey, onBack }) {
 }
 
 
-// 채팅 인터페이스 (변경 없음)
+// [NEW] 스토어 전체 검색 컴포넌트 (병렬 처리 적용됨)
+function StoreSearch({ store, documents, apiKey, onBack }) {
+  const [query, setQuery] = useState('');
+  const [results, setResults] = useState([]); // 스트리밍으로 채워질 결과
+  const [isLoading, setIsLoading] = useState(false);
+  const [geminiStatus, setGeminiStatus] = useState(''); // Gemini 필터링 상태
+  const [searchStatus, setSearchStatus] = useState(''); // 시맨틱 검색 상태
+  const [error, setError] = useState(null);
+  const [downloadReady, setDownloadReady] = useState(false);
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!query.trim()) return;
+
+    console.log(`[StoreSearch] 검색 시작. 쿼리: "${query}"`);
+    setIsLoading(true);
+    setError(null);
+    setResults([]);
+    setGeminiStatus('Gemini가 관련 문서를 필터링 중...');
+    setSearchStatus('');
+    setDownloadReady(false);
+
+    try {
+      // 1. Gemini로 문서 필터링
+      const docNames = documents.map(d => d.displayName || d.name.split('/').pop());
+      const prompt = `사용자 쿼리: "${query}"\n\n문서 목록: [${docNames.join(', ')}]\n\n위 쿼리와 가장 관련성이 높아 보이는 문서의 '표시 이름(displayName)'을 쉼표(,)로 구분된 목록으로 반환해 줘. 다른 설명은 필요 없고, 관련 문서가 없으면 "없음"이라고만 응답해 줘.\n\n관련 문서 목록:`;
+      
+      const geminiResponse = await apiGeminiFilter(prompt, apiKey);
+
+      if (!geminiResponse || geminiResponse.trim().toLowerCase() === '없음') {
+        setGeminiStatus('Gemini가 관련 문서를 찾지 못했습니다.');
+        setIsLoading(false);
+        return;
+      }
+
+      const relevantDocNames = geminiResponse.split(',').map(name => name.trim()).filter(name => name.length > 0);
+      console.log('[StoreSearch] Gemini 추천 문서:', relevantDocNames);
+
+      const docsToSearch = documents.filter(doc => {
+          const docName = doc.displayName || doc.name.split('/').pop();
+          // [FIX] '전체 이름'(docName)이 '단순 이름'(geminiName)을 포함하는지 검사
+          return relevantDocNames.some(geminiName => docName.includes(geminiName));
+      });
+      
+      console.log(`[StoreSearch] ${docsToSearch.length}개의 일치하는 문서를 찾았습니다.`, docsToSearch.map(d => d.displayName));
+
+      if (docsToSearch.length === 0) {
+        setGeminiStatus(`Gemini가 "${geminiResponse}" 문서를 찾았으나, 실제 문서 목록과 일치하는 항목이 없습니다.`);
+        setIsLoading(false);
+        return;
+      }
+
+      setGeminiStatus(`Gemini가 선택한 관련 문서: ${docsToSearch.map(d => d.displayName).join(', ')}`);
+
+      // 2. 필터링된 문서로 시맨틱 검색 (병렬 처리)
+      let allRelevantChunks = [];
+      let resultsFound = false;
+
+      setSearchStatus(`총 ${docsToSearch.length}개 문서에서 병렬 검색을 시작합니다...`);
+
+      // 2. 필터링된 문서로 시맨틱 검색 (스트리밍 -> 병렬 처리로 변경)
+      const searchPromises = docsToSearch.map(doc =>
+        apiRequest(
+          `${doc.name}:query`,
+          {
+            method: 'POST',
+            body: JSON.stringify({ query: query, resultsCount: 100 })
+          },
+          apiKey
+        )
+      );
+
+      // Promise.allSettled를 사용해 모든 요청이 완료될 때까지 기다립니다. (일부 실패해도 계속 진행)
+      const promiseResults = await Promise.allSettled(searchPromises);
+
+      let newResultsBatch = []; // 한 번에 state를 업데이트하기 위한 임시 배열
+
+      promiseResults.forEach((result, index) => {
+        const doc = docsToSearch[index]; // 인덱스를 기준으로 원본 문서 매칭
+        const docDisplayName = doc.displayName || doc.name.split('/').pop();
+
+        if (result.status === 'fulfilled') {
+          const resultData = result.value;
+          if (resultData && resultData.relevantChunks && resultData.relevantChunks.length > 0) {
+            resultsFound = true;
+            const chunksWithDoc = resultData.relevantChunks.map(chunk => ({
+              ...chunk,
+              documentName: docDisplayName
+            }));
+            
+            allRelevantChunks.push(...chunksWithDoc);
+            newResultsBatch.push(...chunksWithDoc); // 임시 배열에 추가
+          }
+          // 검색 결과가 없는 경우는 그냥 넘어갑니다.
+        } else {
+          // result.status === 'rejected'
+          const docError = result.reason;
+          console.warn(`'${docDisplayName}' 문서 검색 실패:`, docError);
+          // UI에 에러 표시
+          newResultsBatch.push({ isError: true, documentName: docDisplayName, error: docError.message });
+        }
+      });
+      
+      // 모든 결과가 처리된 후, React state를 *한 번만* 업데이트합니다.
+      setResults(newResultsBatch);
+      
+      setSearchStatus(resultsFound ? `총 ${allRelevantChunks.length}개의 결과를 찾았습니다.` : '관련된 검색 결과를 찾을 수 없습니다.');
+      if (resultsFound) {
+        setDownloadReady(true);
+      }
+
+    } catch (err) {
+      console.error('[StoreSearch] 검색 오류:', err);
+      setError(err.message);
+      setGeminiStatus('');
+      setSearchStatus('');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const downloadResults = () => {
+    if (results.length === 0 || !downloadReady) return;
+    
+    // 에러가 아닌 결과만 필터링
+    const validResults = results.filter(r => !r.isError);
+    if (validResults.length === 0) {
+        Swal.fire({ title: '오류', text: '다운로드할 유효한 검색 결과가 없습니다.', icon: 'error', background: '#1f2937', color: '#d1d5db' });
+        return;
+    }
+
+    const data = JSON.stringify(validResults, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `search_results_${store.displayName.replace(/[^a-z0-9]/gi, '_')}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <div className="animate-fade-in">
+      <button onClick={onBack} className="flex items-center space-x-2 text-sm text-blue-400 hover:text-blue-300 mb-6">
+        <IconArrowLeft /> <span>문서 목록으로 돌아가기</span>
+      </button>
+      <h2 className="text-2xl font-bold text-white mb-2">
+        스토어 전체 검색: <span className="text-blue-400">{store.displayName}</span>
+      </h2>
+      <p className="text-sm text-gray-500 mb-6">총 {documents.length}개 문서를 대상으로 Gemini가 필터링 후 검색합니다.</p>
+      
+      <form onSubmit={handleSearch} className="mb-6 flex space-x-4">
+        <input
+          type="text" value={query} onChange={(e) => setQuery(e.target.value)}
+          className="flex-1 px-4 py-3 bg-gray-800 text-white rounded-lg border border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          placeholder="스토어 전체에서 검색할 쿼리 입력..." disabled={isLoading}
+        />
+        <button type="submit" className="flex items-center justify-center space-x-2 bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition disabled:opacity-50" disabled={isLoading || !query.trim()}>
+          {isLoading ? <IconSpinner /> : <IconSearch />} <span>검색</span>
+        </button>
+      </form>
+
+      {/* 상태 및 결과 표시 */}
+      <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-lg p-6 min-h-[400px]">
+        <div className="flex justify-between items-center mb-4 border-b border-gray-700 pb-3">
+          <h3 className="text-xl font-semibold text-white">검색 결과</h3>
+          <button 
+            onClick={downloadResults} 
+            className="flex items-center space-x-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-medium text-sm hover:bg-indigo-700 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={!downloadReady || isLoading}
+          >
+            <IconDownload />
+            <span>결과 다운로드 (JSON)</span>
+          </button>
+        </div>
+
+        {error && ( <div className="my-4 bg-red-800 border border-red-600 text-red-200 px-4 py-3 rounded-lg"> <strong>오류:</strong> {error} </div> )}
+
+        {geminiStatus && (
+          <div className="text-sm text-gray-300 mb-4 p-3 bg-blue-900 border border-blue-700 rounded-lg">
+            <strong>Gemini 필터:</strong> {geminiStatus}
+          </div>
+        )}
+        
+        {isLoading && (
+          <div className="flex items-center space-x-3 text-gray-400">
+            <IconSpinner />
+            <span>{searchStatus || '대기 중...'}</span>
+          </div>
+        )}
+
+        {!isLoading && results.length === 0 && searchStatus && (
+           <p className="text-gray-400">{searchStatus}</p>
+        )}
+
+        <div className="space-y-4 mt-4">
+          {results.map((item, index) => {
+            if (item.isError) {
+              return (
+                <div key={index} className="border border-red-700 p-4 rounded-lg bg-red-900 bg-opacity-30">
+                  <p className="text-sm font-medium text-red-400 mb-2">
+                    <strong>출처:</strong> {item.documentName} (검색 실패)
+                  </p>
+                  <p className="text-red-300 text-xs">{item.error}</p>
+                </div>
+              )
+            }
+            
+            const chunk = item.chunk || {};
+            const chunkText = chunk.data?.stringValue || `(텍스트를 찾을 수 없음. JSON: ${JSON.stringify(chunk)})`;
+            const chunkName = chunk.name || '알 수 없는 청크';
+
+            return (
+              <div key={index} className="border border-gray-700 p-4 rounded-lg bg-gray-800 transition hover:shadow-md animate-fade-in">
+                <p className="text-sm font-medium text-blue-400 mb-2">
+                  <strong>출처:</strong> {item.documentName}
+                </p>
+                <p className="text-gray-300 whitespace-pre-wrap text-sm">{chunkText}</p>
+                <p className="text-xs text-gray-500 mt-3 font-mono">
+                  <strong>Chunk ID:</strong> {chunkName.split('/').pop()}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// 채팅 인터페이스 (변경 없음, 주석만 제거)
 function ChatInterface({ chat, apiKey, systemInstruction, onUpdateChat }) {
   const [messages, setMessages] = useState(chat.messages || []);
   const [input, setInput] = useState('');
@@ -697,11 +1061,12 @@ function ChatInterface({ chat, apiKey, systemInstruction, onUpdateChat }) {
   const generateChatResponse = async (userMessage) => {
     setIsLoading(true);
     setError(null);
+    console.log('[Chat] 응답 생성 시작...'); // [LOG]
     
     const model = 'gemini-flash-latest';
     const endpoint = `models/${model}:generateContent`;
 
-    const instructionText = systemInstruction || `반드시 모든 답변에는 출처를 특정하여 기술하세요. 예를 들면 법 조문, 문헌명 등등을 말합니다.`;
+    const instructionText = systemInstruction || `모든 문장 하나하나는 정확한 출처를 명시해야 합니다. 정보를 찾을 때에는 법원 실무제요를 잘 뒤져보고, 그밖의 도서와 법률을 잘 뒤져봐. 정확한 정보출처 표기해서(책의 경우, 목차 어디에 있다, 법의 경우 조문, 판례의 경우 판례번호) 상세히 설명해`;
     
     const systemInstructionPayload = {
         parts: [ { text: instructionText } ]
@@ -737,12 +1102,16 @@ function ChatInterface({ chat, apiKey, systemInstruction, onUpdateChat }) {
         contents,
         tools
     };
+    
+    console.log('[Chat] API Payload:', payload); // [LOG]
 
     try {
       const data = await apiRequest(endpoint, {
         method: 'POST',
         body: JSON.stringify(payload),
       }, apiKey);
+      
+      console.log('[Chat] API Response:', data); // [LOG]
 
       const modelResponse = data.candidates[0].content.parts[0].text;
       const groundingMetadata = data.candidates[0].groundingMetadata;
@@ -753,6 +1122,7 @@ function ChatInterface({ chat, apiKey, systemInstruction, onUpdateChat }) {
       };
 
     } catch (err) {
+      console.error('[Chat] API Error:', err); // [LOG]
       setError(err.message);
       setIsLoading(false);
       return null;
@@ -785,8 +1155,10 @@ function ChatInterface({ chat, apiKey, systemInstruction, onUpdateChat }) {
       const finalMessages = [...newMessages, botMessage];
       setMessages(finalMessages);
       onUpdateChat({ ...updatedChat, messages: finalMessages });
+      console.log('[Chat] 채팅 업데이트됨 (응답 포함).'); // [LOG]
     } else {
-      onUpdateChat(updatedChat);
+      onUpdateChat(updatedChat); // 에러가 났어도 유저 메시지는 저장
+      console.log('[Chat] 채팅 업데이트됨 (유저 메시지만).'); // [LOG]
     }
   };
   
@@ -933,7 +1305,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [globalError, setGlobalError] = useState(null);
   
-  const [currentView, setCurrentView] = useState('STORES');
+  // [UPDATE] 'STORE_SEARCH' 뷰 추가
+  const [currentView, setCurrentView] = useState('STORES'); // 'STORES', 'DOCS', 'DOC_SEARCH', 'CHAT', 'STORE_SEARCH'
   const [selectedStore, setSelectedStore] = useState(null);
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [selectedChat, setSelectedChat] = useState(null);
@@ -945,23 +1318,37 @@ function App() {
   const [pendingOperations, setPendingOperations] = useState({});
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
-  // *** [신규] 스토어 삭제 로딩 상태 ***
   const [deletingStoreName, setDeletingStoreName] = useState(null);
 
 
-  const addOperation = (id, description) => { setPendingOperations(prev => ({ ...prev, [id]: { id, description, status: 'processing' } })); };
-  const updateOperation = (id, status, error = null) => { setPendingOperations(prev => ({ ...prev, [id]: { ...prev[id], status, error } })); };
-  const removeOperation = (id) => { setPendingOperations(prev => { const newState = { ...prev }; delete newState[id]; return newState; }); };
+  const addOperation = (id, description) => { 
+    console.log('[Operation] Add:', id, description); // [LOG]
+    setPendingOperations(prev => ({ ...prev, [id]: { id, description, status: 'processing' } })); 
+  };
+  const updateOperation = (id, status, error = null) => { 
+    console.log('[Operation] Update:', id, status, error); // [LOG]
+    setPendingOperations(prev => ({ ...prev, [id]: { ...prev[id], status, error } })); 
+  };
+  const removeOperation = (id) => { 
+    console.log('[Operation] Remove:', id); // [LOG]
+    setPendingOperations(prev => { const newState = { ...prev }; delete newState[id]; return newState; }); 
+  };
 
   // API 키 유효성 검사
   const validateApiKey = useCallback(async (key) => {
-    if (!key) { setApiKeyValid(false); setIsLoading(false); return; }
+    console.log('[Auth] API 키 유효성 검사 중...'); // [LOG]
+    if (!key) { 
+      console.log('[Auth] API 키 없음.'); // [LOG]
+      setApiKeyValid(false); setIsLoading(false); return; 
+    }
     setIsLoading(true); setGlobalError(null);
     try {
       await apiRequest('fileSearchStores', { method: 'GET' }, key);
+      console.log('[Auth] API 키 유효성 검사 성공.'); // [LOG]
       setApiKeyValid(true);
       localStorage.setItem('gemini-api-key', key);
     } catch (error) {
+      console.error('[Auth] API 키 유효성 검사 실패:', error); // [LOG]
       setApiKeyValid(false);
       setGlobalError('API 키가 유효하지 않거나, 네트워크 오류가 발생했습니다.');
       localStorage.removeItem('gemini-api-key');
@@ -977,8 +1364,16 @@ function App() {
 
   // 데이터 로딩
   useEffect(() => {
-    if (apiKeyValid) { listStores(); loadChats(); } 
-    else { setStores([]); setChats([]); }
+    if (apiKeyValid) { 
+      console.log('[Data] API 키 유효, 스토어 및 채팅 로드.'); // [LOG]
+      listStores(); 
+      loadChats(); 
+    } 
+    else { 
+      console.log('[Data] API 키 유효하지 않음, 데이터 초기화.'); // [LOG]
+      setStores([]); 
+      setChats([]); 
+    }
   }, [apiKeyValid]);
 
 
@@ -987,23 +1382,32 @@ function App() {
   // 스토어
   const listStores = useCallback(async () => {
     if (!apiKeyValid) return;
+    console.log('[Data] 스토어 목록 로드 중...'); // [LOG]
     setIsLoading(true);
     try {
       const data = await apiRequest('fileSearchStores', { method: 'GET' }, apiKey);
       setStores(data.fileSearchStores || []);
-    } catch (error) { setGlobalError(error.message); } finally { setIsLoading(false); }
+      console.log(`[Data] 스토어 ${data.fileSearchStores?.length || 0}개 로드 완료.`); // [LOG]
+    } catch (error) { 
+      console.error('[Data] 스토어 목록 로드 실패:', error); // [LOG]
+      setGlobalError(error.message); 
+    } finally { setIsLoading(false); }
   }, [apiKey, apiKeyValid]);
 
   const createStore = async (displayName) => {
+    console.log(`[Data] 스토어 생성 중: ${displayName}`); // [LOG]
     try {
       const newStore = await apiRequest('fileSearchStores', { method: 'POST', body: JSON.stringify({ displayName }), }, apiKey);
+      console.log(`[Data] 스토어 생성 성공:`, newStore); // [LOG]
       setStores([newStore, ...stores]);
-    } catch (error) { setGlobalError(`스토어 생성 실패: ${error.message}`); }
+    } catch (error) { 
+      console.error(`[Data] 스토어 생성 실패:`, error); // [LOG]
+      setGlobalError(`스토어 생성 실패: ${error.message}`); 
+    }
   };
 
-  // *** [수정] deleteStore 함수 (확인창, 로딩 상태 추가) ***
   const deleteStore = async (storeName) => {
-    // 1. 사용자 확인
+    console.log(`[Data] 스토어 삭제 요청: ${storeName}`); // [LOG]
     const result = await Swal.fire({
       title: '정말 삭제하시겠습니까?',
       text: "이 스토어와 관련된 모든 문서 및 채팅 기록(로컬)이 영구적으로 삭제됩니다.",
@@ -1011,39 +1415,39 @@ function App() {
       showCancelButton: true,
       confirmButtonText: '삭제',
       cancelButtonText: '취소',
-      confirmButtonColor: '#e53e3e', // Tailwind red-600
-      background: '#1f2937', // Tailwind gray-800
-      color: '#d1d5db' // Tailwind gray-300
+      confirmButtonColor: '#e53e3e',
+      background: '#1f2937', 
+      color: '#d1d5db'
     });
 
     if (!result.isConfirmed) {
-      return; // 사용자가 취소
+      console.log('[Data] 스토어 삭제 취소됨.'); // [LOG]
+      return;
     }
     
-    // 2. 로딩 상태 시작
     setDeletingStoreName(storeName); 
-    setGlobalError(null); // 이전 에러 초기화
+    setGlobalError(null); 
 
-    // 3. 로컬 채팅 삭제
+    console.log(`[Data] 로컬 채팅 삭제 중...`); // [LOG]
     const chatsToDelete = chats.filter(c => c.storeName === storeName);
     for (const chat of chatsToDelete) { await deleteChatFromDB(chat.id); }
     setChats(prev => prev.filter(c => c.storeName !== storeName));
     
-    // 4. API 스토어 삭제
     try {
-      // 'force: true'가 이제 apiRequest 수정으로 인해 올바르게 전송됩니다.
+      console.log(`[Data] API 스토어 삭제 중 (force=true): ${storeName}`); // [LOG]
       await apiRequest(storeName, { method: 'DELETE', params: { force: true } }, apiKey);
       setStores(stores.filter(s => s.name !== storeName));
+      console.log(`[Data] 스토어 삭제 완료: ${storeName}`); // [LOG]
     } catch (error) { 
+      console.error(`[Data] 스토어 삭제 실패:`, error); // [LOG]
       setGlobalError(`스토어 삭제 실패: ${error.message}`); 
     } finally {
-      // 5. 로딩 상태 종료
       setDeletingStoreName(null); 
     }
   };
 
-  // 문서 (페이지네이션)
-  const listDocuments = useCallback(async (storeName) => {
+  // [UPDATE] 문서 (전체 로드 - 페이지 크기 20으로 복구)
+  const listDocuments = useCallback(async (storeName) => {
     if (!apiKeyValid) return;
     setIsLoading(true);
     setDocuments([]); 
@@ -1080,6 +1484,7 @@ function App() {
 
   // 다중 파일 업로드
   const uploadFiles = async (storeName, files) => {
+    console.log(`[Data] ${files.length}개 파일 업로드 시작...`); // [LOG]
     for (const file of files) {
       const opId = `upload-${crypto.randomUUID()}`;
       addOperation(opId, `${file.name} 업로드 중...`);
@@ -1090,10 +1495,11 @@ function App() {
         const operation = await apiUploadRequest(
           `${storeName}:uploadToFileSearchStore`, file, metadata, apiKey
         );
+        console.log(`[Data] ${file.name} 업로드 성공, 인덱싱 시작... Op: ${operation.name}`); // [LOG]
         updateOperation(opId, 'indexing', '파일 인덱싱 중...');
         pollOperation(operation.name, opId);
       } catch (error) {
-        console.error('Upload Failed:', error);
+        console.error(`[Data] ${file.name} 업로드 실패:`, error); // [LOG]
         updateOperation(opId, 'failed', error.message);
       }
     }
@@ -1101,33 +1507,72 @@ function App() {
 
 
   const deleteDocument = async (docName) => {
+    console.log(`[Data] 문서 삭제 요청: ${docName}`); // [LOG]
     try {
       await apiRequest(docName, { method: 'DELETE', params: { force: true } }, apiKey);
       setDocuments(documents.filter(d => d.name !== docName));
-    } catch (error) { setGlobalError(`문서 삭제 실패: ${error.message}`); }
+      console.log(`[Data] 문서 삭제 성공: ${docName}`); // [LOG]
+    } catch (error) { 
+      console.error(`[Data] 문서 삭제 실패:`, error); // [LOG]
+      setGlobalError(`문서 삭제 실패: ${error.message}`); 
+    }
   };
 
   // 작업 폴링
   const pollOperation = useCallback(async (opName, uiOpId) => {
     try {
+      console.log(`[Poll] ${uiOpId} 상태 확인 중...`); // [LOG]
       const operation = await apiRequest(opName, { method: 'GET' }, apiKey);
       if (operation.done) {
-        if (operation.error) { throw new Error(operation.error.message); }
+        if (operation.error) { 
+          console.error(`[Poll] ${uiOpId} 작업 실패:`, operation.error); // [LOG]
+          throw new Error(operation.error.message); 
+        }
+        console.log(`[Poll] ${uiOpId} 작업 성공.`); // [LOG]
         updateOperation(uiOpId, 'succeeded', '완료');
         if (currentView === 'STORES') listStores();
         if (currentView === 'DOCS' && selectedStore) listDocuments(selectedStore.name);
         setTimeout(() => removeOperation(uiOpId), 3000);
       } else {
+        console.log(`[Poll] ${uiOpId} 아직 진행 중...`); // [LOG]
         setTimeout(() => pollOperation(opName, uiOpId), 3000);
       }
-    } catch (error) { updateOperation(uiOpId, 'failed', error.message); }
-  }, [apiKey, currentView, selectedStore, listStores, listDocuments]); 
+    } catch (error) { 
+      console.error(`[Poll] ${uiOpId} 폴링 오류:`, error); // [LOG]
+      updateOperation(uiOpId, 'failed', error.message); 
+    }
+  }, [apiKey, currentView, selectedStore, listStores, listDocuments]); // [FIX] listDocuments, listStores 의존성 추가
 
-  // 채팅 (변경 없음)
-  const loadChats = async () => { const dbChats = await getChatsFromDB(); setChats(dbChats); };
-  const createNewChat = (store) => { const newChat = { id: crypto.randomUUID(), storeName: store.name, storeDisplayName: store.displayName, title: "새 채팅", messages: [], createdAt: new Date().toISOString(), }; setChats([newChat, ...chats]); setSelectedChat(newChat); saveChatToDB(newChat); setCurrentView('CHAT'); };
-  const updateChat = (chat) => { setSelectedChat(chat); saveChatToDB(chat); setChats(prev => prev.map(c => c.id === chat.id ? chat : c)); };
-  const deleteChat = (chatId) => { deleteChatFromDB(chatId); setChats(prev => prev.filter(c => c.id !== chatId)); if (selectedChat?.id === chatId) { setSelectedChat(null); setCurrentView('STORES'); } };
+  // 채팅
+  const loadChats = async () => { 
+    console.log('[Data] 로컬 채팅 기록 로드 중...'); // [LOG]
+    const dbChats = await getChatsFromDB(); 
+    setChats(dbChats); 
+    console.log(`[Data] 로컬 채팅 ${dbChats.length}개 로드 완료.`); // [LOG]
+  };
+  const createNewChat = (store) => { 
+    console.log(`[Data] 새 채팅 생성 (스토어: ${store.displayName})`); // [LOG]
+    const newChat = { id: crypto.randomUUID(), storeName: store.name, storeDisplayName: store.displayName, title: "새 채팅", messages: [], createdAt: new Date().toISOString(), }; 
+    setChats([newChat, ...chats]); 
+    setSelectedChat(newChat); 
+    saveChatToDB(newChat); 
+    setCurrentView('CHAT'); 
+  };
+  const updateChat = (chat) => { 
+    console.log(`[Data] 채팅 업데이트: ${chat.title}`); // [LOG]
+    setSelectedChat(chat); 
+    saveChatToDB(chat); 
+    setChats(prev => prev.map(c => c.id === chat.id ? chat : c)); 
+  };
+  const deleteChat = (chatId) => { 
+    console.log(`[Data] 채팅 삭제: ${chatId}`); // [LOG]
+    deleteChatFromDB(chatId); 
+    setChats(prev => prev.filter(c => c.id !== chatId)); 
+    if (selectedChat?.id === chatId) { 
+      setSelectedChat(null); 
+      setCurrentView('STORES'); 
+    } 
+  };
 
 
   /* --- UI 렌더링 로직 --- */
@@ -1135,19 +1580,60 @@ function App() {
   const handleApiKeySubmit = (e) => {
     e.preventDefault();
     const key = e.target.elements.apiKey.value;
+    console.log('[Auth] 새 API 키 제출됨.'); // [LOG]
     setApiKey(key);
-    validateApiKey(key); // (수정) 로그인 폼에서도 즉시 검증
+    validateApiKey(key);
   };
 
-  // 화면 전환 로직 (변경 없음)
-  const selectStoreForDocs = (store) => { setSelectedStore(store); listDocuments(store.name); setCurrentView('DOCS'); };
-  const selectStoreForChat = (store) => { setSelectedStore(store); const existingChat = chats.find(c => c.storeName === store.name); if (existingChat) { setSelectedChat(existingChat); setCurrentView('CHAT'); } else { createNewChat(store); } };
-  const selectDocForSearch = (doc) => { setSelectedDoc(doc); setCurrentView('DOC_SEARCH'); };
-  const navigateTo = (view) => { setCurrentView(view); if (view === 'STORES') { setSelectedStore(null); setSelectedDoc(null); setSelectedChat(null); listStores(); } };
-  const selectChat = (chat) => { setSelectedChat(chat); setCurrentView('CHAT'); };
+  // 화면 전환 로직
+  const selectStoreForDocs = (store) => { 
+    console.log(`[View] 문서 관리로 전환: ${store.displayName}`); // [LOG]
+    setSelectedStore(store); 
+    listDocuments(store.name); 
+    setCurrentView('DOCS'); 
+  };
+  const selectStoreForChat = (store) => { 
+    console.log(`[View] 채팅으로 전환: ${store.displayName}`); // [LOG]
+    setSelectedStore(store); 
+    const existingChat = chats.find(c => c.storeName === store.name); 
+    if (existingChat) { 
+      setSelectedChat(existingChat); 
+      setCurrentView('CHAT'); 
+    } else { 
+      createNewChat(store); 
+    } 
+  };
+  const selectDocForSearch = (doc) => { 
+    console.log(`[View] 단일 문서 검색으로 전환: ${doc.displayName}`); // [LOG]
+    setSelectedDoc(doc); 
+    setCurrentView('DOC_SEARCH'); 
+  };
+  // [NEW] 스토어 전체 검색 뷰로 전환
+  const selectStoreForSearch = (store) => {
+    console.log(`[View] 스토어 전체 검색으로 전환: ${store.displayName}`); // [LOG]
+    setSelectedStore(store);
+    // 문서는 DocumentList에서 이미 로드됨 (documents state에 있음)
+    setCurrentView('STORE_SEARCH');
+  };
+  
+  const navigateTo = (view) => { 
+    console.log(`[View] 뷰 전환: ${view}`); // [LOG]
+    setCurrentView(view); 
+    if (view === 'STORES') { 
+      setSelectedStore(null); 
+      setSelectedDoc(null); 
+      setSelectedChat(null); 
+      listStores(); 
+    } 
+  };
+  const selectChat = (chat) => { 
+    console.log(`[View] 기존 채팅 선택: ${chat.title}`); // [LOG]
+    setSelectedChat(chat); 
+    setCurrentView('CHAT'); 
+  };
   
   // 렌더링
-  if (isLoading && !apiKeyValid && !apiKey) { // (수정) 키가 아예 없을 때의 초기 로딩
+  if (isLoading && !apiKeyValid && !apiKey) {
       return <div className="flex h-screen w-full items-center justify-center bg-gray-950 text-white"><IconSpinner /> 로딩 중...</div>; 
   }
 
@@ -1229,6 +1715,7 @@ function App() {
         <Header 
           apiKey={apiKey} 
           onLogout={() => {
+            console.log('[Auth] 로그아웃.'); // [LOG]
             setApiKey('');
             setApiKeyValid(false);
             localStorage.removeItem('gemini-api-key');
@@ -1243,7 +1730,7 @@ function App() {
             <div className="m-4 md:m-8 bg-red-800 border border-red-600 text-red-200 px-4 py-3 rounded-lg relative" role="alert">
               <span className="block sm:inline">{globalError}</span>
               <button className="absolute top-0 bottom-0 right-0 px-4 py-3" onClick={() => setGlobalError(null)}>
-                 <IconXSmall />
+                  <IconXSmall />
               </button>
             </div>
           )}
@@ -1269,12 +1756,23 @@ function App() {
                 onSelectDocument={selectDocForSearch}
                 onBack={() => navigateTo('STORES')}
                 isLoading={isLoading}
+                onSelectStoreForSearch={selectStoreForSearch} // [NEW] 핸들러 전달
               />
             )}
 
             {currentView === 'DOC_SEARCH' && selectedDoc && (
               <DocumentSearch
                 document={selectedDoc}
+                apiKey={apiKey}
+                onBack={() => setCurrentView('DOCS')}
+              />
+            )}
+            
+            {/* [NEW] 스토어 전체 검색 뷰 렌더링 */}
+            {currentView === 'STORE_SEARCH' && selectedStore && (
+              <StoreSearch
+                store={selectedStore}
+                documents={documents}
                 apiKey={apiKey}
                 onBack={() => setCurrentView('DOCS')}
               />
