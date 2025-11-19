@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>KNBASE 1.1.1</title>
+    <title>KNBASE 1.1.5</title>
     
     <!-- Icons & Fonts -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -44,6 +44,10 @@
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         .slide-up { animation: slideUp 0.2s ease-out; }
         @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .slide-right { animation: slideRight 0.3s ease-out; }
+        @keyframes slideRight { from { transform: translateX(-100%); } to { transform: translateX(0); } }
+        .slide-left { animation: slideLeft 0.3s ease-out; }
+        @keyframes slideLeft { from { transform: translateX(0); } to { transform: translateX(-100%); } }
 
         /* Markdown & Code */
         .prose p { margin-bottom: 0.5rem; line-height: 1.5; }
@@ -71,6 +75,28 @@
         }
         .dropdown-item:hover { background-color: #fafafa; }
         .dropdown-item.danger { color: var(--danger); }
+        
+        /* Project Sidebar (was Chat List) */
+        .project-sidebar-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 40;
+            background: rgba(0,0,0,0.3); backdrop-filter: blur(2px);
+            display: flex;
+        }
+        .project-sidebar-desktop {
+             width: 280px; 
+             border-r: 1px solid var(--border);
+             flex-shrink: 0;
+        }
+        @media (min-width: 768px) {
+            /* On Desktop, make the overlay static, allowing it to take space as a flex item */
+            .project-sidebar-overlay { 
+                position: static;
+                width: 280px;
+                background: none;
+                backdrop-filter: none;
+                z-index: 1;
+            }
+        }
     </style>
 </head>
 <body>
@@ -108,18 +134,38 @@
     /* --- SERVICES --- */
     class GeminiService {
         constructor(apiKey) { this.apiKey = apiKey; this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta/'; }
+        
         async request(ep, opts={}) {
             let url = `${this.baseUrl}${ep}`;
             const cfg = { ...opts, headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey, ...opts.headers } };
+            
+            // Handle params
             if (opts.params) {
                 const p = new URLSearchParams();
                 Object.entries(opts.params).forEach(([k,v]) => { if (v!=null) p.append(k,v); });
                 const qs = p.toString(); if (qs) url += `?${qs}`; delete cfg.params;
             }
-            const res = await fetch(url, cfg);
-            if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message || res.statusText); }
-            return res.json();
+
+            // Exponential Backoff Retry Logic
+            for (let i = 0; i < 5; i++) {
+                try {
+                    const res = await fetch(url, cfg);
+                    if (!res.ok) { 
+                        const e = await res.json().catch(()=>({})); 
+                        const errorMessage = e.error?.message || res.statusText;
+                        if (res.status === 429 || res.status >= 500) { // Throttle or Server Error: Retry
+                             if (i < 4) { await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000)); continue; }
+                             throw new Error(`API Error: ${errorMessage}`);
+                        }
+                        throw new Error(errorMessage);
+                    }
+                    return res.json();
+                } catch (error) {
+                    if (i === 4 || !error.message.includes('API Error')) throw error; // Re-throw unretryable errors immediately
+                }
+            }
         }
+        
         async generateContent(model, msgs, instr, store) {
             const payload = {
                 contents: msgs.map(m => ({ role: m.role, parts: [{ text: m.text }] })),
@@ -129,7 +175,7 @@
             return this.request(`models/${model}:generateContent`, { method: 'POST', body: JSON.stringify(payload) });
         }
         async listStores() { return (await this.request('fileSearchStores')).fileSearchStores || []; }
-        async createStore(n) { return this.request('fileSearchStores', { method: 'POST', body: JSON.stringify({ displayName: n }) }); }
+        async createStore(n, d) { return this.request('fileSearchStores', { method: 'POST', body: JSON.stringify({ displayName: n, description: d }) }); }
         async deleteStore(n) { return this.request(n, { method: 'DELETE', params: { force: true } }); }
         async listDocuments(s) {
             let all=[], pt=null;
@@ -137,11 +183,25 @@
             return all;
         }
         async queryDocument(d, q) { return this.request(`${d}:query`, { method: 'POST', body: JSON.stringify({ query: q, resultsCount: 10 }) }); }
+        
+        // Polling logic for long-running operations
+        async pollOperation(opName) {
+            const op = await this.request(opName, { method: 'GET' });
+            if (op.done) {
+                if (op.error) throw new Error(op.error.message);
+                return op.response;
+            }
+            return new Promise(resolve => setTimeout(() => resolve(this.pollOperation(opName)), 2000));
+        }
+
         async uploadFile(s, f) {
              const url = `https://generativelanguage.googleapis.com/upload/v1beta/${s}:uploadToFileSearchStore?displayName=${encodeURIComponent(f.name)}`;
              const fd = new FormData(); fd.append('file', f);
+             
+             // Simple fetch without retry for file upload due to complexity of re-uploading
              const res = await fetch(url, { method: 'POST', headers: { 'x-goog-api-key': this.apiKey }, body: fd });
-             if(!res.ok) throw new Error('Upload failed');
+             
+             if(!res.ok) { const text = await res.text(); throw new Error(`Upload Failed: ${text}`); }
              return res.json();
         }
     }
@@ -158,10 +218,32 @@
         }
         async getChats() {
             if (!this.db) await this.init();
-            return new Promise(res => { const tx = this.db.transaction('chats', 'readonly'); const req = tx.objectStore('chats').getAll(); req.onsuccess = () => res(req.result.sort((a,b) => (b.updated||0) - (a.updated||0))); });
+            return new Promise(res => { 
+                const tx = this.db.transaction('chats', 'readonly'); 
+                const req = tx.objectStore('chats').getAll(); 
+                req.onsuccess = () => res(req.result.sort((a,b) => (b.updated||0) - (a.updated||0))); 
+            });
         }
-        async saveChat(c) { if (!this.db) await this.init(); return new Promise(res => { const tx = this.db.transaction('chats', 'readwrite'); tx.objectStore('chats').put({ ...c, updated: Date.now() }); tx.oncomplete = res; }); }
-        async deleteChat(id) { if (!this.db) await this.init(); return new Promise(res => { const tx = this.db.transaction('chats', 'readwrite'); tx.objectStore('chats').delete(id); tx.oncomplete = res; }); }
+        async saveChat(c) { 
+            if (!this.db) await this.init(); 
+            return new Promise(res => { 
+                const tx = this.db.transaction('chats', 'readwrite'); 
+                tx.objectStore('chats').put({ ...c, updated: Date.now() }); 
+                tx.oncomplete = res; 
+            }); 
+        }
+        async deleteChat(id) { 
+            if (!this.db) await this.init(); 
+            return new Promise(res => { 
+                const tx = this.db.transaction('chats', 'readwrite'); 
+                tx.objectStore('chats').delete(id); 
+                tx.oncomplete = res; 
+            }); 
+        }
+        async getChatsByStore(storeName) {
+            const allChats = await this.getChats();
+            return allChats.filter(c => c.storeName === storeName);
+        }
     }
 
     /* --- CONSTANTS --- */
@@ -188,7 +270,7 @@
             {isModel ? (icon ? <span className="text-sm">{icon}</span> : <Icon name="stars" size={14}/>) : <Icon name="person-fill" size={16}/>}
         </div>
     );
-    const NavBar = ({ currentPath }) => {
+    const NavBar = ({ currentPath, onStatusClick, operationCount }) => {
         const nav = (path) => window.location.hash = path;
         const items = [
             { id: '/', icon: 'house-door', activeIcon: 'house-door-fill', label: '홈' },
@@ -197,10 +279,16 @@
         return (
             <>
                 <div className="hidden md:flex flex-col w-[244px] border-r border-[#dbdbdb] h-full px-3 py-8 bg-white z-20 flex-shrink-0">
-                    <div className="px-4 mb-8"><h1 className="text-xl font-bold italic tracking-tight" style={{fontFamily:'cursive'}}>KNBASE</h1></div>
+                    <div className="px-4 mb-8 flex items-center justify-between">
+                         <h1 className="text-xl font-bold italic tracking-tight" style={{fontFamily:'cursive'}}>KNBASE 1.1.5</h1>
+                         <button onClick={onStatusClick} className="relative p-2 rounded-full hover:bg-gray-100 text-gray-500">
+                            <Icon name="cloud-arrow-up-fill" size={20}/>
+                            {operationCount > 0 && <span className="absolute top-0 right-0 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] text-white font-bold">!</span>}
+                         </button>
+                    </div>
                     <div className="space-y-2">
                         {items.map(item => (
-                            <button key={item.id} onClick={()=>nav(item.id)} className={`flex items-center gap-4 p-3 rounded-lg transition-all hover:bg-gray-50 ${currentPath===item.id ? 'font-bold' : ''} w-full`}>
+                            <button key={item.id} onClick={()=>nav(item.id)} className={`flex items-center gap-4 p-3 rounded-lg transition-all hover:bg-gray-50 ${currentPath===item.id ? 'font-bold bg-gray-50' : ''} w-full`}>
                                 <Icon name={currentPath===item.id ? item.activeIcon : item.icon} size={24} className="transition-transform group-hover:scale-110"/>
                                 <span className="text-md">{item.label}</span>
                             </button>
@@ -213,12 +301,16 @@
                             <Icon name={currentPath===item.id ? item.activeIcon : item.icon} size={24} />
                         </button>
                     ))}
+                    <button onClick={onStatusClick} className="relative p-3">
+                         <Icon name="cloud-arrow-up-fill" size={24}/>
+                         {operationCount > 0 && <span className="absolute top-1 right-1 flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] text-white font-bold">!</span>}
+                    </button>
                 </div>
             </>
         );
     };
 
-    const ProjectMenu = ({ isOpen, onClose, onOpen, onRename, onDelete }) => {
+    const ProjectMenu = ({ isOpen, onClose, onOpen, onDelete }) => {
         if (!isOpen) return null;
         return (
             <div className="absolute top-8 right-2 bg-white border border-[#dbdbdb] rounded-lg shadow-lg z-20 w-32 overflow-hidden fade-in">
@@ -227,6 +319,158 @@
             </div>
         );
     };
+    
+    // [NEW] Project Modal Component
+    const ProjectModal = ({ isOpen, onClose, onCreate }) => {
+        const [name, setName] = React.useState('');
+        const [desc, setDesc] = React.useState('');
+        if (!isOpen) return null;
+
+        const handleSubmit = () => {
+            if (!name.trim()) return;
+            onCreate(name.trim(), desc.trim());
+            setName(''); setDesc(''); onClose();
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 fade-in">
+                <div className="bg-white rounded-xl p-6 w-11/12 max-w-sm shadow-2xl slide-up">
+                    <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Icon name="folder-plus" size={20}/> 새 프로젝트 생성</h3>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">프로젝트 이름*</label>
+                            <input type="text" className="w-full border rounded p-2 text-sm focus:ring-1 focus:ring-blue-400" placeholder="예: 2024년 법률 자문" value={name} onChange={e=>setName(e.target.value)} />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 mb-1">설명 (선택)</label>
+                            <textarea className="w-full border rounded p-2 text-sm h-16 resize-none focus:ring-1 focus:ring-blue-400" placeholder="프로젝트에 대한 간단한 설명" value={desc} onChange={e=>setDesc(e.target.value)} />
+                        </div>
+                    </div>
+                    <div className="flex justify-end gap-3 mt-6">
+                        <button onClick={onClose} className="px-4 py-2 border border-gray-300 rounded-lg text-sm hover:bg-gray-50">취소</button>
+                        <button onClick={handleSubmit} disabled={!name.trim()} className="px-4 py-2 bg-black text-white rounded-lg text-sm font-semibold hover:bg-gray-800 disabled:opacity-50">생성</button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+
+    // New Component: Operation Status Drawer
+    const OperationStatus = ({ isOpen, onClose, operations, removeOperation }) => {
+        if (!isOpen) return null;
+        const opArray = Object.values(operations).sort((a,b) => b.timestamp - a.timestamp);
+
+        return (
+            <div className="fixed inset-0 md:left-[280px] bg-black/30 backdrop-blur-sm z-40 flex justify-end">
+                <div className="bg-white w-full max-w-xs h-full border-l border-[#dbdbdb] shadow-xl slide-right flex flex-col">
+                    <div className="p-4 border-b border-[#efefef] flex justify-between items-center flex-shrink-0">
+                        <h3 className="font-bold text-lg">작업 상태 ({opArray.length})</h3>
+                        <button onClick={onClose} className="p-2 rounded-full hover:bg-gray-100 text-gray-600"><Icon name="x-lg" size={16}/></button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                        {opArray.length === 0 && <div className="text-center text-gray-400 py-10 text-sm">진행 중인 작업이 없습니다.</div>}
+                        {opArray.map(op => (
+                            <div key={op.id} className={`p-3 rounded-lg border shadow-sm ${op.status==='failed'?'border-red-400 bg-red-50':op.status==='succeeded'?'border-green-400 bg-green-50':(op.status==='indexing' || op.status==='processing')?'border-blue-400 bg-blue-50':'border-gray-300 bg-gray-50'}`}>
+                                <div className="flex items-start justify-between">
+                                    <div className="font-medium text-sm text-[#262626] truncate pr-2">{op.description}</div>
+                                    {op.status === 'processing' && <div className="spinner w-4 h-4 text-blue-500 border-blue-200 border-t-blue-500 flex-shrink-0"></div>}
+                                    {op.status === 'indexing' && <div className="spinner w-4 h-4 text-amber-500 border-amber-200 border-t-amber-500 flex-shrink-0"></div>}
+                                    {op.status === 'succeeded' && <Icon name="check-circle-fill" className="text-green-500 flex-shrink-0"/>}
+                                    {op.status === 'failed' && <Icon name="x-circle-fill" className="text-red-500 flex-shrink-0"/>}
+                                </div>
+                                <div className="text-xs mt-1 text-gray-600">
+                                    {op.status === 'processing' && '파일 업로드 중...'}
+                                    {op.status === 'indexing' && '문서 색인 생성 중...'}
+                                    {op.status === 'succeeded' && '작업 성공'}
+                                    {op.status === 'failed' && `오류: ${op.error || '알 수 없음'}`}
+                                </div>
+                                {(op.status === 'succeeded' || op.status === 'failed') && (
+                                     <button onClick={()=>removeOperation(op.id)} className="text-xs text-gray-500 hover:underline mt-1">닫기</button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
+    // Renamed ChatList to ProjectSidebar
+    const ProjectSidebar = ({ store, chats, activeChat, onSelectChat, onNewChat, onDeleteChat, onRenameChat, onBackToHome, isOpen, onClose }) => {
+        const [editId, setEditId] = React.useState(null);
+        const [editTitle, setEditTitle] = React.useState('');
+
+        const handleRename = (chat) => {
+            if (editTitle.trim() && editTitle !== chat.title) {
+                onRenameChat(chat.id, editTitle.trim());
+            }
+            setEditId(null);
+            setEditTitle('');
+        };
+        
+        // Use `isOpen` only for the mobile overlay logic
+        const isDesktop = window.matchMedia('(min-width: 768px)').matches;
+        if (!isDesktop && !isOpen) return null;
+
+        const listContent = (
+            // w-64 is for mobile overlay width, md:w-full makes it fill the flex container on desktop
+            <div className={`w-64 md:w-full bg-white h-full flex flex-col flex-shrink-0 shadow-lg md:shadow-none ${!isDesktop && isOpen ? 'slide-right' : 'slide-left'} transition-transform duration-300`}>
+                
+                {/* DESKTOP/MOBILE HEADER FOR SIDEBAR: Back to Home + Project Name */}
+                <div className="p-4 border-b border-[#efefef] flex items-center flex-shrink-0">
+                    <button onClick={onBackToHome} className="text-gray-500 hover:text-black p-1 mr-2 rounded-full hover:bg-gray-100"><Icon name="arrow-left" size={20}/></button>
+                    <h3 className="font-bold text-lg truncate min-w-0 flex-1" title={store.displayName}>{store.displayName}</h3>
+                    {/* Mobile close button for overlay */}
+                    <button onClick={onClose} className="md:hidden p-2 rounded-full hover:bg-gray-100 text-gray-600"><Icon name="x-lg" size={16}/></button>
+                </div>
+                
+                <div className="p-3 flex-shrink-0">
+                    {/* NOTE: onNewChat does not call onClose() so the sidebar stays open on desktop */}
+                    <button onClick={() => { onNewChat(); if(!isDesktop) onClose(); }} className="w-full flex items-center justify-center gap-2 py-2 bg-[#0095f6] text-white rounded-lg font-semibold text-sm hover:opacity-90">
+                        <Icon name="chat-left-text" size={16}/> 새 대화 시작
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto px-2 space-y-1 no-scrollbar">
+                    {chats.map(c => (
+                        <div key={c.id} className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition hover:bg-gray-50 group ${activeChat?.id === c.id ? 'bg-blue-50 font-semibold' : ''}`}
+                             onClick={() => { onSelectChat(c); if(!isDesktop) onClose(); }}>
+                            
+                            {editId === c.id ? (
+                                <input 
+                                    autoFocus 
+                                    className="border rounded px-2 py-1 text-sm w-3/4"
+                                    value={editTitle} 
+                                    onChange={e => setEditTitle(e.target.value)} 
+                                    onBlur={() => handleRename(c)}
+                                    onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+                                    onClick={e => e.stopPropagation()} 
+                                />
+                            ) : (
+                                <>
+                                    <span className="text-sm truncate pr-2">{c.title || '제목 없음'}</span>
+                                    <div className={`flex gap-1 opacity-0 group-hover:opacity-100 transition flex-shrink-0 ${activeChat?.id === c.id ? 'opacity-100' : ''}`}>
+                                        <button onClick={e=>{e.stopPropagation(); setEditId(c.id); setEditTitle(c.title || '새 대화');}} className="p-1 rounded hover:bg-gray-200 text-gray-500"><Icon name="pencil" size={14}/></button>
+                                        <button onClick={e=>{e.stopPropagation(); if(confirm('이 대화 기록을 삭제하시겠습니까?')) onDeleteChat(c.id);}} className="p-1 rounded hover:bg-red-200 text-red-500"><Icon name="trash" size={14}/></button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    ))}
+                    {!chats.length && <div className="text-center text-gray-400 py-10 text-sm">대화 기록이 없습니다.</div>}
+                </div>
+            </div>
+        );
+
+        return (
+            // This div is fixed/full screen on mobile, and static/flex item on desktop (due to CSS).
+            <div className="project-sidebar-overlay"> 
+                {listContent}
+            </div>
+        );
+    };
+
 
     // New Component: ContextCard for Better Search Results
     const ContextCard = ({ result }) => {
@@ -285,7 +529,7 @@
         const [form, setForm] = React.useState({ name: '', icon: '', instr: '' });
 
         const handleSave = () => {
-            if (!form.name || !form.instr) return alert('이름과 프롬프트를 입력하세요.');
+            if (!form.name || !form.instr) return console.error('이름과 프롬프트를 입력하세요.');
             let updated;
             if (editId) {
                 updated = (config.personas || DEFAULT_PERSONAS).map(p => p.id === editId ? { ...form, id: editId } : p);
@@ -300,7 +544,7 @@
 
         const handleEdit = (p) => { setEditId(p.id); setForm({ name: p.name, icon: p.icon, instr: p.instr }); };
         const handleCancel = () => { setEditId(null); setForm({ name: '', icon: '', instr: '' }); };
-        const handleDelete = (id) => { if(confirm('삭제하시겠습니까?')) { setConfig({ ...config, personas: config.personas.filter(p => p.id !== id) }); if (editId === id) handleCancel(); } };
+        const handleDelete = (id) => { if(window.confirm('삭제하시겠습니까?')) { setConfig({ ...config, personas: config.personas.filter(p => p.id !== id) }); if (editId === id) handleCancel(); } };
 
         return (
             <div className="flex flex-col h-full bg-white fade-in">
@@ -365,19 +609,49 @@
         );
     };
 
-    const HomeView = ({ stores, onCreate, onSelect, onDelete }) => {
+    const HomeView = ({ stores, onCreate, onSelect, onDelete, isLoading, error, navigate }) => {
         const [menuOpenId, setMenuOpenId] = React.useState(null);
+        const [isModalOpen, setIsModalOpen] = React.useState(false);
+
         React.useEffect(() => {
             const closeMenu = () => setMenuOpenId(null);
             window.addEventListener('click', closeMenu);
             return () => window.removeEventListener('click', closeMenu);
         }, []);
 
+        if (isLoading) {
+            return (
+                <div className="flex-1 overflow-y-auto pt-8 px-6 pb-24 no-scrollbar">
+                    <div className="flex flex-col items-center justify-center py-20 text-gray-400">
+                        <div className="spinner w-12 h-12 mb-4 border-gray-400 border-t-gray-600"></div>
+                        <p className="text-lg font-light">프로젝트 목록을 불러오는 중...</p>
+                        <p className="text-sm text-gray-400 mt-2">API 키와 연결 상태를 확인하고 있습니다.</p>
+                    </div>
+                </div>
+            );
+        }
+        
+        if (error && error !== "API Key가 설정되지 않았습니다.") {
+            return (
+                <div className="flex-1 overflow-y-auto pt-8 px-6 pb-24 no-scrollbar">
+                    <div className="flex flex-col items-center justify-center py-20 bg-red-50/50 border-2 border-dashed border-red-300 rounded-xl mx-auto max-w-lg">
+                        <Icon name="exclamation-triangle-fill" size={40} className="text-red-500 mb-4"/>
+                        <p className="text-lg font-bold text-red-700">API 연결 오류</p>
+                        <p className="text-sm text-red-500 mt-2 text-center px-4">프로젝트 목록을 불러오는 데 실패했습니다. API 키를 확인하거나 권한을 확인하세요.</p>
+                        <p className="text-xs text-red-400 mt-1 text-center px-4">오류 상세: {error}</p>
+                        <button onClick={() => navigate('/settings')} className="mt-4 text-[#0095f6] font-semibold text-sm hover:underline">API 키 설정으로 이동</button>
+                    </div>
+                </div>
+            );
+        }
+
         return (
             <div className="w-full h-full flex flex-col overflow-hidden">
+                <ProjectModal isOpen={isModalOpen} onClose={()=>setIsModalOpen(false)} onCreate={onCreate}/>
                 <div className="flex-1 overflow-y-auto pt-8 px-6 pb-24 no-scrollbar">
+                    {/* 프로젝트 생성 버튼을 가장 앞에 배치 */}
                     <div className="flex gap-4 mb-8 overflow-x-auto pb-2 no-scrollbar">
-                        <div onClick={onCreate} className="flex flex-col items-center gap-2 cursor-pointer min-w-[72px]">
+                        <div onClick={()=>setIsModalOpen(true)} className="flex flex-col items-center gap-2 cursor-pointer min-w-[72px]">
                             <div className="w-16 h-16 rounded-full border-[1px] border-gray-300 flex items-center justify-center bg-white hover:bg-gray-50 shadow-sm transition">
                                 <Icon name="plus-lg" size={24} className="text-gray-400"/>
                             </div>
@@ -394,6 +668,7 @@
                             </div>
                         ))}
                     </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 w-full">
                         {stores.map(s => (
                             <div key={s.name} className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden shadow-sm hover:shadow-md transition slide-up group flex flex-col min-w-0 relative">
@@ -414,15 +689,15 @@
                                 </div>
                                 <div onClick={()=>onSelect(s)} className="bg-gray-50 h-40 flex flex-col items-center justify-center cursor-pointer relative">
                                     <Icon name="files" size={48} className="text-gray-300 group-hover:scale-110 transition-transform duration-300"/>
-                                    <span className="text-xs text-gray-400 mt-2 font-medium">터치하여 열기</span>
+                                    <span className="text-xs text-gray-400 mt-2 font-medium">{s.description || '문서 분석 프로젝트'}</span>
                                 </div>
                                 <div className="p-4 bg-[#fafafa] border-t border-[#efefef]">
                                      <div className="flex justify-between items-center text-xs text-gray-500 mb-2">
-                                        <span>{new Date().toLocaleDateString()}</span>
+                                        <span>{new Date(s.createTime).toLocaleDateString()}</span>
                                      </div>
                                      <div className="flex gap-4 text-xs font-medium text-gray-500 items-center">
-                                        <div className="flex items-center gap-1"><Icon name="file-text" size={14}/> <span className="mt-0.5">{fmtCount(12)}</span></div>
-                                        <div className="flex items-center gap-1"><Icon name="hdd" size={14}/> <span className="mt-0.5">{fmtSize(15400000)}</span></div>
+                                        <div className="flex items-center gap-1"><Icon name="file-text" size={14}/> <span className="mt-0.5">{fmtCount(s.activeDocumentsCount || 0)}</span></div>
+                                        <div className="flex items-center gap-1"><Icon name="hdd" size={14}/> <span className="mt-0.5">{fmtSize(s.sizeBytes || 0)}</span></div>
                                      </div>
                                 </div>
                             </div>
@@ -432,7 +707,7 @@
                         <div className="flex flex-col items-center justify-center py-20 text-gray-400">
                             <div className="w-24 h-24 rounded-full border-2 border-gray-200 flex items-center justify-center mb-4"><Icon name="camera" size={40}/></div>
                             <p className="text-lg font-light">프로젝트가 없습니다</p>
-                            <button onClick={onCreate} className="mt-4 text-[#0095f6] font-semibold text-sm hover:underline">첫 프로젝트 만들기</button>
+                            <button onClick={()=>setIsModalOpen(true)} className="mt-4 text-[#0095f6] font-semibold text-sm hover:underline">첫 프로젝트 만들기</button>
                         </div>
                     )}
                 </div>
@@ -440,29 +715,36 @@
         );
     };
 
-    const ChatView = ({ activeStore, messages, isLoading, onSend, onBack, onDocs, personas, activePersonaId, onPersonaChange }) => {
+    const ChatView = ({ activeStore, messages, isLoading, onSend, onDocs, 
+                        personas, activePersonaId, onPersonaChange, 
+                        chats, activeChat, onSelectChat, onNewChat, onDeleteChat, onRenameChat, onShowSidebar }) => {
+        
         const [input, setInput] = React.useState('');
         const [showPersonas, setShowPersonas] = React.useState(false);
         const bottomRef = React.useRef(null);
+        
         React.useEffect(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), [messages, isLoading]);
+        
         const activePersona = personas.find(p => p.id === activePersonaId) || personas[0];
         const handleSend = () => { if(!input.trim()) return; onSend(input); setInput(''); };
 
         return (
-            <div className="flex flex-col h-full bg-white">
+            <div className="flex-1 flex flex-col h-full min-w-0">
                 <div className="h-[60px] border-b border-[#dbdbdb] flex items-center justify-between px-4 bg-white/90 backdrop-blur z-10 flex-shrink-0">
                     <div className="flex items-center gap-3">
-                        <button onClick={onBack}><Icon name="arrow-left" size={24}/></button>
+                        {/* Mobile: Toggle Sidebar */}
+                        <button onClick={onShowSidebar} className="md:hidden"><Icon name="list" size={24}/></button> 
                         <div className="flex items-center gap-2">
                             <Avatar isModel={true} icon={activePersona.icon} />
                             <div>
-                                <div className="font-bold text-sm">{activeStore?.displayName}</div>
+                                <div className="font-bold text-sm truncate max-w-[150px]">{activeChat?.title || '새 대화'}</div>
                                 <div className="text-xs text-gray-500">{activePersona.name}</div>
                             </div>
                         </div>
                     </div>
                     <button onClick={onDocs}><Icon name="info-circle" size={24}/></button>
                 </div>
+
                 <div className="flex-1 overflow-y-auto p-4 bg-white no-scrollbar">
                     {!messages.length && (
                         <div className="h-full flex flex-col items-center justify-center text-gray-300 gap-2">
@@ -492,10 +774,11 @@
                             </div>
                         );
                     })}
-                    {isLoading && <div className="flex justify-start mb-3 pl-10"><div className="bg-[#efefef] px-4 py-3 rounded-[20px] rounded-tl-none"><div className="spinner w-4 h-4 border-gray-400 border-top-gray-600"/></div></div>}
+                    {isLoading && <div className="flex justify-start mb-3 pl-10"><div className="bg-[#efefef] px-4 py-3 rounded-[20px] rounded-tl-none"><div className="spinner w-4 h-4 border-gray-400 border-t-gray-600"/></div></div>}
                     <div ref={bottomRef} />
                 </div>
-                <div className="p-3 bg-white border-t border-[#dbdbdb] pb-safe relative">
+                
+                <div className="p-3 bg-white border-t border-[#dbdbdb] pb-safe relative flex-shrink-0">
                     {showPersonas && (
                         <div className="absolute bottom-full left-4 mb-2 bg-white border border-[#dbdbdb] rounded-xl shadow-xl p-2 w-64 slide-up z-20 max-h-64 overflow-y-auto">
                             <div className="text-xs font-bold text-gray-400 px-2 py-1 mb-1">페르소나 변경</div>
@@ -522,20 +805,51 @@
         );
     };
 
-    const DocsView = ({ api, activeStore, onBack, onChat, onSearchDoc }) => {
+    const DocsView = ({ api, activeStore, onBack, onChat, onSearchDoc, onUploadFiles, operations, onShowSidebar }) => {
         const [docs, setDocs] = React.useState([]);
         const [loading, setLoading] = React.useState(false);
-        React.useEffect(() => { if(api) { setLoading(true); api.listDocuments(activeStore.name).then(setDocs).finally(()=>setLoading(false)); } }, [api]);
-        const upload = async (e) => { setLoading(true); for(const f of e.target.files) await api.uploadFile(activeStore.name, f); setDocs(await api.listDocuments(activeStore.name)); setLoading(false); };
+        
+        const loadDocs = React.useCallback(async () => { if(api) { setLoading(true); api.listDocuments(activeStore.name).then(setDocs).finally(()=>setLoading(false)); } }, [api, activeStore]);
+        React.useEffect(() => { loadDocs(); }, [loadDocs]);
+        
+        // Reload when an operation related to this store finishes
+        React.useEffect(() => {
+            const completedOps = Object.values(operations).filter(op => op.status !== 'processing' && op.status !== 'indexing' && op.storeName === activeStore.name);
+            if (completedOps.length > 0) {
+                 loadDocs();
+            }
+        }, [operations, activeStore.name, loadDocs]);
+
+        const upload = async (e) => { 
+            if (e.target.files) onUploadFiles(activeStore.name, Array.from(e.target.files));
+        };
+        
+        // Filter out documents that are currently being processed (optimistic UI)
+        const activeOpNames = Object.values(operations).filter(op => op.storeName === activeStore.name && (op.status === 'processing' || op.status === 'indexing')).map(op => op.fileResourceName);
+        const filteredDocs = docs.filter(d => !activeOpNames.includes(d.name));
+
         return (
             <div className="flex flex-col h-full bg-white">
                 <div className="h-[60px] border-b border-[#dbdbdb] flex items-center justify-between px-4 bg-white flex-shrink-0">
-                    <button onClick={onBack}><Icon name="arrow-left" size={24}/></button>
-                    <div className="font-bold text-md">{activeStore?.displayName} 문서</div>
+                    <div className="flex items-center gap-3">
+                         {/* Mobile: Toggle Sidebar */}
+                        <button onClick={onShowSidebar} className="md:hidden"><Icon name="list" size={24}/></button> 
+                        <div className="font-bold text-md truncate max-w-[200px]">{activeStore?.displayName} 문서</div>
+                    </div>
+                    
                     <label className="cursor-pointer text-[#0095f6] hover:text-[#00376b]"><Icon name="plus-lg" size={24}/><input type="file" multiple className="hidden" onChange={upload}/></label>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 no-scrollbar w-full">
-                    {docs.map(d => (
+                    {Object.values(operations).filter(op => op.storeName === activeStore.name && (op.status === 'processing' || op.status === 'indexing')).map(op => (
+                        <div key={op.id} className="flex items-center justify-between p-4 border-b border-[#efefef] bg-blue-50/50">
+                             <div className="flex items-center gap-3 overflow-hidden">
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0 text-blue-500"><div className="spinner w-5 h-5 border-blue-300 border-t-blue-500"></div></div>
+                                <div className="flex flex-col min-w-0"><span className="text-sm font-medium truncate text-[#262626]">{op.displayName || '업로드 파일'}</span><span className={`text-[10px] px-1.5 py-0.5 rounded w-fit bg-blue-100 text-blue-600`}>{op.status === 'processing' ? '업로드 중...' : '색인 중...'}</span></div>
+                            </div>
+                        </div>
+                    ))}
+                    
+                    {filteredDocs.map(d => (
                         <div key={d.name} className="flex items-center justify-between p-4 border-b border-[#efefef] hover:bg-gray-50">
                             <div className="flex items-center gap-3 overflow-hidden">
                                 <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 text-gray-500"><Icon name="file-text" size={20}/></div>
@@ -544,26 +858,31 @@
                             <button onClick={() => onSearchDoc(d)} className="p-2 text-[#0095f6] bg-blue-50 rounded-full hover:bg-blue-100"><Icon name="search"/></button>
                         </div>
                     ))}
-                    {loading && <div className="p-6 text-center"><div className="spinner mx-auto"></div></div>}
+                    {loading && filteredDocs.length === 0 && <div className="p-6 text-center"><div className="spinner mx-auto"></div></div>}
+                    {!loading && filteredDocs.length === 0 && Object.values(operations).filter(op => op.storeName === activeStore.name).length === 0 && (
+                        <div className="p-10 text-center text-gray-400 text-sm">등록된 문서가 없습니다.</div>
+                    )}
                 </div>
                 <div className="p-4 border-t border-[#dbdbdb] flex-shrink-0"><button onClick={onChat} className="w-full bg-[#0095f6] text-white py-3 rounded-lg font-semibold text-sm shadow">채팅으로 돌아가기</button></div>
             </div>
         );
     };
 
-    const DocSearchView = ({ api, activeDoc, onBack }) => {
+    const DocSearchView = ({ api, activeDoc, onBack, onShowSidebar }) => {
         const [q, setQ] = React.useState(''); const [res, setRes] = React.useState([]); const [loading, setLoading] = React.useState(false);
-        const search = async () => { if(!q.trim()) return; setLoading(true); try { const r = await api.queryDocument(activeDoc.name, q); setRes(r.relevantChunks||[]); } catch(e) { alert(e.message); } finally { setLoading(false); } };
+        const search = async () => { if(!q.trim()) return; setLoading(true); try { const r = await api.queryDocument(activeDoc.name, q); setRes(r.relevantChunks||[]); } catch(e) { console.error(e.message); } finally { setLoading(false); } };
         return (
             <div className="flex flex-col h-full bg-white">
                 <div className="h-[60px] border-b border-[#dbdbdb] flex items-center px-4 gap-3 bg-white flex-shrink-0">
-                    <button onClick={onBack}><Icon name="arrow-left" size={24}/></button>
+                    {/* Mobile: Toggle Sidebar */}
+                    <button onClick={onShowSidebar} className="md:hidden"><Icon name="list" size={24}/></button>
                     <div className="flex-1 bg-[#efefef] rounded-lg px-4 py-2 flex items-center gap-2"><Icon name="search" className="text-gray-500" size={16}/><input className="bg-transparent outline-none text-sm w-full" value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>{if(e.key==='Enter') search()}} autoFocus placeholder="문서 검색..."/></div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 bg-[#fafafa] no-scrollbar">
                     <div className="max-w-6xl mx-auto w-full">
                         {res.map((r, i) => <ContextCard key={i} result={r}/>)}
                         {loading && <div className="p-10 text-center"><div className="spinner mx-auto"></div></div>}
+                        {!loading && res.length === 0 && q.trim() && <div className="p-10 text-center text-gray-400 text-sm">검색 결과가 없습니다.</div>}
                     </div>
                 </div>
             </div>
@@ -575,89 +894,362 @@
         const [api, setApi] = React.useState(null);
         const [db] = React.useState(new StorageService());
         const [config, setConfig] = React.useState(JSON.parse(localStorage.getItem('gemini_kn_config')) || { key: '', model: 'gemini-2.5-flash', personas: DEFAULT_PERSONAS, activePersonaId: 'default' });
+        
         const [view, setView] = React.useState('HOME');
         const [stores, setStores] = React.useState([]);
+        const [allChats, setAllChats] = React.useState([]); // All chats for all stores
         const [activeStore, setActiveStore] = React.useState(null);
         const [activeChat, setActiveChat] = React.useState(null);
         const [activeDoc, setActiveDoc] = React.useState(null);
-        const [messages, setMessages] = React.useState([]);
         const [loading, setLoading] = React.useState(false);
         const [hash, setHash] = React.useState(window.location.hash);
+        
+        // HomeView Loading and Error States
+        const [isHomeLoading, setIsHomeLoading] = React.useState(false); 
+        const [initError, setInitError] = React.useState(null); 
+        
+        // Project Sidebar State (Mobile Only)
+        const [isSidebarOpen, setIsSidebarOpen] = React.useState(false); 
 
+        const [pendingOperations, setPendingOperations] = React.useState({});
+        const [isStatusOpen, setIsStatusOpen] = React.useState(false);
+        const addOperation = (id, desc, storeName, fileResourceName) => setPendingOperations(p => ({...p, [id]: {id, description: desc, status: 'processing', storeName, fileResourceName, timestamp: Date.now()}}));
+        const updateOperation = (id, status, error) => setPendingOperations(p => { if(!p[id]) return p; return {...p, [id]: {...p[id], status, error}}; });
+        const removeOperation = (id) => setPendingOperations(p => { const n={...p}; delete n[id]; return n; });
+
+        // --- Core Services and Data Fetching ---
+        const loadStores = React.useCallback(async (service) => { 
+            if (!service) return [];
+            try { 
+                const s = await service.listStores(); 
+                setStores(s); 
+                setInitError(null);
+                return s; 
+            } catch(e) { 
+                console.error("Failed to load stores:", e); 
+                setInitError(e.message); 
+                return []; 
+            } 
+        }, []); 
+        
+        const loadAllChats = React.useCallback(async () => { 
+            try { const c = await db.getChats(); setAllChats(c); return c; } catch(e) { console.error("Failed to load chats:", e); return []; } 
+        }, [db]);
+        
         React.useEffect(() => {
             const onHashChange = () => setHash(window.location.hash);
             window.addEventListener('hashchange', onHashChange);
             return () => window.removeEventListener('hashchange', onHashChange);
         }, []);
 
-        React.useEffect(() => { if (config.key) { const s = new GeminiService(config.key); setApi(s); s.listStores().then(setStores).catch(console.error); } }, [config.key]);
+        React.useEffect(() => { 
+            if (config.key) { 
+                setIsHomeLoading(true); 
+                setInitError(null); 
+                
+                const s = new GeminiService(config.key); 
+                setApi(s); 
+                
+                loadStores(s).finally(() => setIsHomeLoading(false));
+                loadAllChats();
+            } else {
+                 setInitError("API Key가 설정되지 않았습니다.");
+                 setIsHomeLoading(false); 
+            }
+        }, [config.key, loadStores, loadAllChats]); 
+        
         React.useEffect(() => { localStorage.setItem('gemini_kn_config', JSON.stringify(config)); }, [config]);
 
-        // Router Logic
-        React.useEffect(() => {
-            const route = hash.replace('#', '');
-            if (!route || route === '/') { setView('HOME'); setActiveStore(null); }
-            else if (route === '/settings') { setView('SETTINGS'); }
-            else if (route.startsWith('/project/')) {
-                const parts = route.split('/');
-                const storeNamePartial = parts[2];
-                const action = parts[3];
-                if (stores.length > 0) {
-                    const targetStore = stores.find(s => s.displayName === decodeURIComponent(storeNamePartial));
-                    if (targetStore) {
-                        setActiveStore(targetStore);
-                        if (action === 'docs') setView('DOCS');
-                        else if (action === 'chat') {
-                             const chatId = parts[4];
-                             db.getChats().then(chats => {
-                                 const chat = chats.find(c => c.id === chatId);
-                                 if (chat) { setActiveChat(chat); setMessages(chat.messages); setView('CHAT'); }
-                                 else setView('HOME');
-                             });
-                        } else if (action === 'explore') {
-                            const docName = decodeURIComponent(parts[4]);
-                             setActiveDoc({ name: docName, displayName: 'Document' });
-                             setView('EXPLORE');
-                        }
-                    }
+        // --- Polling Logic ---
+        const pollOperation = React.useCallback(async (opName, uiOpId) => {
+            try {
+                const op = await api.request(opName, { method: 'GET' });
+                if(op.done) {
+                    if(op.error) throw new Error(op.error.message);
+                    updateOperation(uiOpId, 'succeeded');
+                    if (activeStore) loadStores(api); 
+                    setTimeout(() => removeOperation(uiOpId), 5000);
+                } else {
+                    updateOperation(uiOpId, 'indexing');
+                    setTimeout(() => pollOperation(opName, uiOpId), 3000);
                 }
+            } catch(e) {
+                updateOperation(uiOpId, 'failed', e.message);
+                setTimeout(() => removeOperation(uiOpId), 5000);
             }
-        }, [hash, stores, db]);
+        }, [api, activeStore, loadStores]);
 
+
+        // --- Routing and Navigation ---
         const navigate = (path) => window.location.hash = path;
 
+        React.useEffect(() => {
+            const processHash = async () => {
+                const route = hash.replace('#', '');
+                if (!route || route === '/') { setView('HOME'); setActiveStore(null); setActiveChat(null); return; }
+                if (route === '/settings') { setView('SETTINGS'); return; }
+
+                if (route.startsWith('/project/')) {
+                    const parts = route.split('/');
+                    const storeNamePartial = parts[2]; 
+                    const action = parts[3];
+                    const targetStore = stores.find(s => s.name.includes(storeNamePartial));
+
+                    if (targetStore) {
+                        setActiveStore(targetStore);
+                        const storeChats = allChats.filter(c => c.storeName === targetStore.name);
+                        
+                        if (action === 'docs') { setView('DOCS'); setActiveChat(null); }
+                        else if (action === 'chat') {
+                             const chatId = parts[4];
+                             const chat = storeChats.find(c => c.id === chatId);
+                             if (chat) { setActiveChat(chat); setView('CHAT'); }
+                             else if (storeChats.length > 0) { navigate(`/project/${targetStore.name.split('/').pop()}/chat/${storeChats[0].id}`); }
+                             else { handleNewChat(targetStore, true); } 
+                        } else if (action === 'explore') {
+                            const docName = decodeURIComponent(parts[4]);
+                            setActiveDoc({ name: docName, displayName: 'Document' });
+                            setView('EXPLORE');
+                        }
+                    } else if (stores.length > 0) {
+                         setView('HOME'); 
+                    }
+                }
+            };
+            
+            if (api) processHash();
+        }, [hash, stores, allChats, api]);
+
+
+        // --- Chat Management Functions ---
+        const getChatsForActiveStore = () => allChats.filter(c => c.storeName === activeStore?.name).sort((a,b) => (b.updated||0) - (a.updated||0)); 
+
+        const handleNewChat = (store, navigateTo=false) => {
+            const newChat = { 
+                id: crypto.randomUUID(), 
+                storeName: store.name, 
+                title: '새 대화', 
+                messages: [], 
+                created: Date.now(),
+                updated: Date.now()
+            };
+            db.saveChat(newChat).then(() => {
+                setAllChats(p => [newChat, ...p.filter(c => c.storeName !== store.name || c.id !== newChat.id)].sort((a,b) => (b.updated||0) - (a.updated||0)));
+                if (navigateTo) navigate(`/project/${store.name.split('/').pop()}/chat/${newChat.id}`);
+            });
+        };
+
+        const handleSelectChat = (chat) => {
+             navigate(`/project/${activeStore.name.split('/').pop()}/chat/${chat.id}`);
+        };
+
+        const handleDeleteChat = (chatId) => {
+            db.deleteChat(chatId).then(() => {
+                setAllChats(p => p.filter(c => c.id !== chatId));
+                if (activeChat?.id === chatId) {
+                    const remainingChats = getChatsForActiveStore().filter(c => c.id !== chatId);
+                    if (remainingChats.length > 0) { handleSelectChat(remainingChats[0]); }
+                    else { handleNewChat(activeStore, true); }
+                }
+            });
+        };
+
+        const handleRenameChat = (chatId, newTitle) => {
+            const chat = allChats.find(c => c.id === chatId);
+            if (chat) {
+                const updatedChat = { ...chat, title: newTitle, updated: Date.now() };
+                db.saveChat(updatedChat).then(() => {
+                    setAllChats(p => p.map(c => c.id === chatId ? updatedChat : c).sort((a,b) => (b.updated||0) - (a.updated||0)));
+                    if (activeChat?.id === chatId) setActiveChat(updatedChat);
+                });
+            }
+        };
+
         const handleSend = async (txt) => {
-            if(!txt.trim() || !api) return;
-            const newMsgs = [...messages, { role: 'user', text: txt }];
-            setMessages(newMsgs); if(activeChat) db.saveChat({ ...activeChat, messages: newMsgs });
+            if(!txt.trim() || !api || !activeChat || !activeStore) return;
+            const newMsgs = [...activeChat.messages, { role: 'user', text: txt }];
+            
+            const updatedChat = { ...activeChat, messages: newMsgs, title: activeChat.title === '새 대화' ? txt.substring(0, 30) + '...' : activeChat.title };
+            setActiveChat(updatedChat); 
+            db.saveChat(updatedChat);
+            setAllChats(p => p.map(c => c.id === activeChat.id ? updatedChat : c).sort((a,b) => (b.updated||0) - (a.updated||0)));
+
             setLoading(true);
             try {
                 const p = (config.personas || DEFAULT_PERSONAS).find(p => p.id === config.activePersonaId) || DEFAULT_PERSONAS[0];
-                const res = await api.generateContent(config.model, newMsgs, p.instr, activeStore?.name);
+                const res = await api.generateContent(config.model, newMsgs, p.instr, activeStore.name);
                 const botMsg = { role: 'model', text: res.candidates[0].content.parts[0].text, grounding: res.candidates[0].groundingMetadata };
                 const finalMsgs = [...newMsgs, botMsg];
-                setMessages(finalMsgs); if(activeChat) db.saveChat({ ...activeChat, messages: finalMsgs });
-            } catch(e) { setMessages([...newMsgs, { role: 'model', text: `⚠️ Error: ${e.message}` }]); } finally { setLoading(false); }
+                
+                const finalChat = { ...updatedChat, messages: finalMsgs };
+                setActiveChat(finalChat);
+                db.saveChat(finalChat);
+                setAllChats(p => p.map(c => c.id === activeChat.id ? finalChat : c).sort((a,b) => (b.updated||0) - (a.updated||0)));
+
+            } catch(e) { 
+                const errorMsg = `⚠️ Error: ${e.message}`;
+                const finalMsgs = [...newMsgs, { role: 'model', text: errorMsg }];
+                setActiveChat({ ...updatedChat, messages: finalMsgs });
+                db.saveChat({ ...updatedChat, messages: finalMsgs });
+                console.error(errorMsg);
+            } finally { setLoading(false); }
         };
+
+        // --- File/Store Management Functions ---
+        const handleCreateStore = async (name, desc) => { 
+            const opId = crypto.randomUUID();
+            addOperation(opId, `프로젝트 '${name}' 생성 중...`, null, null);
+            try {
+                const newStore = await api.createStore(name, desc);
+                loadStores(api); 
+                updateOperation(opId, 'succeeded');
+                setTimeout(() => removeOperation(opId), 5000);
+            } catch(e) {
+                updateOperation(opId, 'failed', e.message);
+                setTimeout(() => removeOperation(opId), 5000);
+            }
+        };
+
+        const handleDeleteStore = async (name) => {
+            if (!window.confirm('프로젝트와 모든 문서를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+            const opId = crypto.randomUUID();
+            addOperation(opId, `프로젝트 삭제 중...`, null, null);
+            try {
+                await api.deleteStore(name);
+                loadStores(api); 
+                updateOperation(opId, 'succeeded');
+                setTimeout(() => removeOperation(opId), 5000);
+            } catch(e) {
+                updateOperation(opId, 'failed', e.message);
+                setTimeout(() => removeOperation(opId), 5000);
+            }
+        };
+        
+        const handleUploadFiles = async (storeName, files) => {
+            for(const f of files) {
+                const opId = crypto.randomUUID();
+                addOperation(opId, `'${f.name}' 업로드`, storeName, `${storeName}/documents/${f.name}`);
+                try {
+                    const op = await api.uploadFile(storeName, f);
+                    updateOperation(opId, 'indexing');
+                    // Start polling for the long-running operation
+                    pollOperation(op.name, opId);
+                } catch(e) {
+                    updateOperation(opId, 'failed', e.message);
+                    setTimeout(() => removeOperation(opId), 5000);
+                }
+            }
+        };
+
+        const isProjectView = ['CHAT', 'DOCS', 'EXPLORE'].includes(view);
 
         const renderContent = () => {
             if (!config.key) return <SettingsView config={config} setConfig={setConfig} />; 
+            
+            const activeStoreChats = activeStore ? getChatsForActiveStore() : [];
+            const chatMessages = activeChat ? activeChat.messages : [];
+            
             switch(view) {
-                case 'HOME': return <HomeView stores={stores} onCreate={async()=>{const n=prompt('프로젝트 명'); if(n&&api){await api.createStore(n); setStores(await api.listStores());}}} onSelect={async(s)=>{const cs=await db.getChats(); let c=cs.find(x=>x.storeName===s.name); if(!c) {c={id:crypto.randomUUID(), storeName:s.name, messages:[]}; await db.saveChat(c);} navigate(`/project/${s.displayName}/chat/${c.id}`);}} onDelete={async(n)=>{if(confirm('삭제?')){await api.deleteStore(n); setStores(await api.listStores());}}} api={api} />;
-                case 'CHAT': return <ChatView activeStore={activeStore} messages={messages} isLoading={loading} onSend={handleSend} onBack={()=>navigate('/')} onDocs={()=>navigate(`/project/${activeStore.displayName}/docs`)} personas={config.personas || DEFAULT_PERSONAS} activePersonaId={config.activePersonaId} onPersonaChange={(id)=>setConfig({...config, activePersonaId:id})} />;
-                case 'DOCS': return <DocsView api={api} activeStore={activeStore} onBack={()=>navigate('/')} onChat={async()=>{const cs=await db.getChats(); let c=cs.find(x=>x.storeName===activeStore.name); if(c) navigate(`/project/${activeStore.displayName}/chat/${c.id}`); else navigate('/');}} onSearchDoc={(d)=>{navigate(`/project/${activeStore.displayName}/explore/${encodeURIComponent(d.name)}`);}} />;
-                case 'EXPLORE': return <DocSearchView api={api} activeDoc={activeDoc} onBack={()=>navigate(`/project/${activeStore?.displayName}/docs`)} />;
-                case 'SETTINGS': return <SettingsView config={config} setConfig={setConfig} />;
-                default: return <HomeView stores={stores} />;
+                case 'HOME': 
+                    return <HomeView 
+                                stores={stores} 
+                                onCreate={handleCreateStore} 
+                                onSelect={(s)=>{
+                                    const storeChats = allChats.filter(c => c.storeName === s.name);
+                                    if(storeChats.length > 0) { navigate(`/project/${s.name.split('/').pop()}/chat/${storeChats[0].id}`); }
+                                    else { handleNewChat(s, true); }
+                                }} 
+                                onDelete={handleDeleteStore} 
+                                api={api}
+                                isLoading={isHomeLoading}
+                                error={initError}
+                                navigate={navigate}
+                            />;
+                case 'CHAT': 
+                    return <ChatView 
+                                activeStore={activeStore} 
+                                messages={chatMessages} 
+                                isLoading={loading} 
+                                onSend={handleSend} 
+                                onDocs={()=>navigate(`/project/${activeStore.name.split('/').pop()}/docs`)} 
+                                personas={config.personas || DEFAULT_PERSONAS} 
+                                activePersonaId={config.activePersonaId} 
+                                onPersonaChange={(id)=>setConfig({...config, activePersonaId:id})} 
+                                chats={activeStoreChats}
+                                activeChat={activeChat}
+                                onSelectChat={handleSelectChat}
+                                onNewChat={()=>handleNewChat(activeStore, true)}
+                                onDeleteChat={handleDeleteChat}
+                                onRenameChat={handleRenameChat}
+                                onShowSidebar={()=>setIsSidebarOpen(true)}
+                            />;
+                case 'DOCS': 
+                    return <DocsView 
+                                api={api} 
+                                activeStore={activeStore} 
+                                onBack={()=>navigate('/')} 
+                                onChat={()=>{
+                                    const storeChats = allChats.filter(c => c.storeName === activeStore.name);
+                                    if(storeChats.length > 0) { navigate(`/project/${activeStore.name.split('/').pop()}/chat/${storeChats[0].id}`); }
+                                    else { handleNewChat(activeStore, true); }
+                                }} 
+                                onSearchDoc={(d)=>{navigate(`/project/${activeStore.name.split('/').pop()}/explore/${encodeURIComponent(d.name)}`);}} 
+                                onUploadFiles={handleUploadFiles}
+                                operations={pendingOperations}
+                                onShowSidebar={()=>setIsSidebarOpen(true)}
+                            />;
+                case 'EXPLORE': 
+                    return <DocSearchView 
+                                api={api} 
+                                activeDoc={activeDoc} 
+                                onBack={()=>navigate(`/project/${activeStore?.name.split('/').pop()}/docs`)} 
+                                onShowSidebar={()=>setIsSidebarOpen(true)}
+                            />;
+                case 'SETTINGS': 
+                    return <SettingsView 
+                                config={config} 
+                                setConfig={setConfig} 
+                            />;
+                default: return <HomeView stores={stores} onCreate={handleCreateStore} onSelect={(s)=>{const cs=allChats.filter(c=>c.storeName===s.name); if(cs.length>0) navigate(`/project/${s.name.split('/').pop()}/chat/${cs[0].id}`); else handleNewChat(s, true);}} onDelete={handleDeleteStore} api={api} isLoading={isHomeLoading} error={initError} navigate={navigate}/>;
             }
         };
 
         return (
             <div className="w-full h-full flex flex-col md:flex-row bg-[#fafafa]">
-                <NavBar currentPath={hash.replace('#','')} />
+                {/* 1. PROJECT SIDEBAR / NAVBAR SLOT - Renders either ProjectSidebar (static on desktop, mobile overlay is controlled by state) or NavBar */}
+                {isProjectView && activeStore ? (
+                    <ProjectSidebar 
+                        isOpen={isSidebarOpen} // Controls mobile overlay visibility
+                        onClose={()=>setIsSidebarOpen(false)}
+                        store={activeStore}
+                        chats={activeStore ? getChatsForActiveStore() : []}
+                        activeChat={activeChat}
+                        onSelectChat={handleSelectChat}
+                        onNewChat={()=>handleNewChat(activeStore, true)}
+                        onDeleteChat={handleDeleteChat}
+                        onRenameChat={handleRenameChat}
+                        onBackToHome={()=>navigate('/')}
+                    />
+                ) : (
+                    <NavBar 
+                        currentPath={hash.replace('#','')} 
+                        onStatusClick={()=>setIsStatusOpen(true)} 
+                        operationCount={Object.values(pendingOperations).filter(op => op.status !== 'succeeded' && op.status !== 'failed').length}
+                    />
+                )}
+                
+                {/* 2. MAIN CONTENT AREA */}
                 <main className="flex-1 flex flex-col min-w-0 h-full relative bg-white md:border-l border-[#dbdbdb] w-full shadow-sm">
                     {renderContent()}
                 </main>
+                
+                {/* 3. OPERATION STATUS DRAWER */}
+                <OperationStatus 
+                    isOpen={isStatusOpen} 
+                    onClose={()=>setIsStatusOpen(false)} 
+                    operations={pendingOperations}
+                    removeOperation={removeOperation}
+                />
             </div>
         );
     };
