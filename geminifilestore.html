@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>KNBASE 1.1.0</title>
+    <title>KNBASE 1.1.1</title>
     
     <!-- Icons & Fonts -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
@@ -91,8 +91,6 @@
         try { document.execCommand('copy'); } catch (err) { console.error('Copy failed', err); }
         document.body.removeChild(ta);
     };
-    
-    // Insta-style Metrics
     const fmtCount = (n) => {
         if (!n) return '0';
         if (n >= 1000000) return (n/1000000).toFixed(1) + 'm';
@@ -190,7 +188,6 @@
             {isModel ? (icon ? <span className="text-sm">{icon}</span> : <Icon name="stars" size={14}/>) : <Icon name="person-fill" size={16}/>}
         </div>
     );
-    
     const NavBar = ({ currentPath }) => {
         const nav = (path) => window.location.hash = path;
         const items = [
@@ -221,14 +218,62 @@
         );
     };
 
-    // Dropdown Menu Component
     const ProjectMenu = ({ isOpen, onClose, onOpen, onRename, onDelete }) => {
         if (!isOpen) return null;
         return (
             <div className="absolute top-8 right-2 bg-white border border-[#dbdbdb] rounded-lg shadow-lg z-20 w-32 overflow-hidden fade-in">
                 <button onClick={(e)=>{e.stopPropagation(); onOpen(); onClose();}} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-gray-700">열기</button>
-                {/* Rename logic placeholder */}
                 <button onClick={(e)=>{e.stopPropagation(); onDelete(); onClose();}} className="w-full text-left px-4 py-2 text-sm hover:bg-gray-50 text-red-500 border-t border-gray-100">삭제</button>
+            </div>
+        );
+    };
+
+    // New Component: ContextCard for Better Search Results
+    const ContextCard = ({ result }) => {
+        const [expanded, setExpanded] = React.useState(false);
+        
+        // Safely extract content
+        const rawText = result.chunk?.data?.stringValue || result.chunk?.text || '';
+        const cleanText = rawText.replace(/<[^>]*>/g, ''); // Simple strip tags for preview
+        const score = result.chunkRelevanceScore || result.score || 0;
+        const scorePercent = (score * 100).toFixed(0);
+        
+        let scoreColor = 'bg-gray-100 text-gray-600';
+        if(score > 0.7) scoreColor = 'bg-green-100 text-green-700';
+        else if(score > 0.5) scoreColor = 'bg-yellow-100 text-yellow-700';
+
+        const copyJson = () => {
+            copyToClipboard(JSON.stringify(result, null, 2));
+        };
+
+        return (
+            <div className="bg-white border border-[#dbdbdb] rounded-lg p-4 mb-4 shadow-sm hover:shadow-md transition slide-up">
+                <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center flex-shrink-0"><Icon name="file-earmark-text" size={14}/></div>
+                        <div className="min-w-0 flex-1">
+                             <div className="text-sm font-bold text-[#262626] truncate">{result.document?.displayName || 'Unknown Document'}</div>
+                             <div className={`text-[10px] font-bold px-1.5 py-0.5 rounded w-fit ${scoreColor}`}>{scorePercent}% Match</div>
+                        </div>
+                    </div>
+                    <button onClick={()=>setExpanded(!expanded)} className="text-gray-400 hover:text-black p-1"><Icon name={expanded ? "chevron-up" : "chevron-down"}/></button>
+                </div>
+                
+                <div className={`text-sm text-[#262626] leading-relaxed ${expanded ? '' : 'line-clamp-3'} whitespace-pre-wrap break-words`}>
+                    {expanded ? rawText : cleanText}
+                </div>
+                
+                {expanded && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                        <div className="flex justify-between items-center mb-2">
+                             <span className="text-xs font-mono text-gray-400">RAW JSON</span>
+                             <button onClick={copyJson} className="text-xs text-[#0095f6] hover:underline flex items-center gap-1"><Icon name="clipboard"/> Copy JSON</button>
+                        </div>
+                        <div className="bg-[#1e1e1e] rounded p-3 overflow-x-auto text-xs font-mono text-green-400 max-h-60">
+                            <pre>{JSON.stringify(result, null, 2)}</pre>
+                        </div>
+                    </div>
+                )}
             </div>
         );
     };
@@ -322,8 +367,6 @@
 
     const HomeView = ({ stores, onCreate, onSelect, onDelete }) => {
         const [menuOpenId, setMenuOpenId] = React.useState(null);
-        
-        // Close menu on click outside
         React.useEffect(() => {
             const closeMenu = () => setMenuOpenId(null);
             window.addEventListener('click', closeMenu);
@@ -333,7 +376,6 @@
         return (
             <div className="w-full h-full flex flex-col overflow-hidden">
                 <div className="flex-1 overflow-y-auto pt-8 px-6 pb-24 no-scrollbar">
-                    {/* Stories Bar */}
                     <div className="flex gap-4 mb-8 overflow-x-auto pb-2 no-scrollbar">
                         <div onClick={onCreate} className="flex flex-col items-center gap-2 cursor-pointer min-w-[72px]">
                             <div className="w-16 h-16 rounded-full border-[1px] border-gray-300 flex items-center justify-center bg-white hover:bg-gray-50 shadow-sm transition">
@@ -352,8 +394,6 @@
                             </div>
                         ))}
                     </div>
-
-                    {/* Grid Area */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 w-full">
                         {stores.map(s => (
                             <div key={s.name} className="bg-white border border-[#dbdbdb] rounded-xl overflow-hidden shadow-sm hover:shadow-md transition slide-up group flex flex-col min-w-0 relative">
@@ -381,7 +421,6 @@
                                         <span>{new Date().toLocaleDateString()}</span>
                                      </div>
                                      <div className="flex gap-4 text-xs font-medium text-gray-500 items-center">
-                                        {/* Mock Data for Demo purpose since API list doesn't provide it */}
                                         <div className="flex items-center gap-1"><Icon name="file-text" size={14}/> <span className="mt-0.5">{fmtCount(12)}</span></div>
                                         <div className="flex items-center gap-1"><Icon name="hdd" size={14}/> <span className="mt-0.5">{fmtSize(15400000)}</span></div>
                                      </div>
@@ -458,7 +497,7 @@
                 </div>
                 <div className="p-3 bg-white border-t border-[#dbdbdb] pb-safe relative">
                     {showPersonas && (
-                        <div className="absolute bottom-full left-4 mb-2 bg-white border border-[#dbdbdb] rounded-xl shadow-xl p-2 w-64 slide-up z-20">
+                        <div className="absolute bottom-full left-4 mb-2 bg-white border border-[#dbdbdb] rounded-xl shadow-xl p-2 w-64 slide-up z-20 max-h-64 overflow-y-auto">
                             <div className="text-xs font-bold text-gray-400 px-2 py-1 mb-1">페르소나 변경</div>
                             {personas.map(p => (
                                 <button key={p.id} onClick={()=>{onPersonaChange(p.id); setShowPersonas(false);}} 
@@ -513,13 +552,8 @@
     };
 
     const DocSearchView = ({ api, activeDoc, onBack }) => {
-        const [q, setQ] = React.useState(''); const [res, setRes] = React.useState([]); const [loading, setLoading] = React.useState(false); const [showJson, setShowJson] = React.useState({});
+        const [q, setQ] = React.useState(''); const [res, setRes] = React.useState([]); const [loading, setLoading] = React.useState(false);
         const search = async () => { if(!q.trim()) return; setLoading(true); try { const r = await api.queryDocument(activeDoc.name, q); setRes(r.relevantChunks||[]); } catch(e) { alert(e.message); } finally { setLoading(false); } };
-        const JsonViewer = ({ data }) => {
-             const [c, setC] = React.useState(false);
-             const cp = () => { copyToClipboard(JSON.stringify(data, null, 2)); setC(true); setTimeout(()=>setC(false),2000); };
-             return <div className="mt-2 bg-[#1e1e1e] rounded p-2 text-xs font-mono text-green-400 relative"><button onClick={cp} className="absolute top-2 right-2 text-gray-400 hover:text-white">{c?'Copied':'Copy'}</button><pre className="overflow-auto max-h-40">{JSON.stringify(data, null, 2)}</pre></div>;
-        };
         return (
             <div className="flex flex-col h-full bg-white">
                 <div className="h-[60px] border-b border-[#dbdbdb] flex items-center px-4 gap-3 bg-white flex-shrink-0">
@@ -528,13 +562,7 @@
                 </div>
                 <div className="flex-1 overflow-y-auto p-4 bg-[#fafafa] no-scrollbar">
                     <div className="max-w-6xl mx-auto w-full">
-                        {res.map((r, i) => (
-                            <div key={i} className="bg-white border border-[#dbdbdb] rounded-lg p-4 mb-4 shadow-sm">
-                                <div className="flex justify-between mb-2"><span className="text-xs font-bold text-[#0095f6]">{Math.round(r.score*100)}% Match</span><button onClick={()=>setShowJson(p=>({...p,[i]:!p[i]}))} className="text-xs text-gray-400">JSON</button></div>
-                                <div className="text-sm text-[#262626] whitespace-pre-wrap">{r.chunk.text}</div>
-                                {showJson[i] && <JsonViewer data={r}/>}
-                            </div>
-                        ))}
+                        {res.map((r, i) => <ContextCard key={i} result={r}/>)}
                         {loading && <div className="p-10 text-center"><div className="spinner mx-auto"></div></div>}
                     </div>
                 </div>
