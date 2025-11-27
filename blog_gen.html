@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Content Master Pro v2.5</title>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        glass: "rgba(255, 255, 255, 0.05)",
+                        glassBorder: "rgba(255, 255, 255, 0.1)",
+                        glassHover: "rgba(255, 255, 255, 0.1)",
+                    },
+                    backdropBlur: {
+                        xs: '2px',
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                        'float': 'float 6s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-10px)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    
+    <!-- Babel (Standalone) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Pretendard', sans-serif; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        .glass-panel { 
+            background: rgba(17, 25, 40, 0.75); 
+            backdrop-filter: blur(16px); 
+            -webkit-backdrop-filter: blur(16px); 
+            border: 1px solid rgba(255, 255, 255, 0.125); 
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        .glass-button {
+            background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, rgba(255,255,255,0.05) 100%);
+            border: 1px solid rgba(255,255,255,0.1);
+            backdrop-filter: blur(4px);
+            transition: all 0.3s ease;
+        }
+        .glass-button:hover {
+            background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, rgba(255,255,255,0.1) 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            border-color: rgba(255,255,255,0.2);
+        }
+
+        .gradient-text {
+            background: linear-gradient(to right, #818cf8, #c084fc, #f472b6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .gradient-border-bottom {
+            position: relative;
+        }
+        .gradient-border-bottom::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0) 100%);
+        }
+    </style>
+</head>
+<body class="bg-[#0f172a] text-slate-200 overflow-hidden relative">
+    <div class="fixed inset-0 z-0 pointer-events-none">
+        <div class="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-indigo-900/30 blur-[120px] animate-pulse-slow"></div>
+        <div class="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-purple-900/30 blur-[120px] animate-pulse-slow" style="animation-delay: 2s;"></div>
+    </div>
+
+    <div id="root" class="relative z-10 w-full h-full"></div>
+
+    <script type="text/babel" data-type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, updateDoc, doc, deleteDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- GLOBAL FIREBASE INIT LOGIC ---
+        const LS_KEY = 'firebase_app_config_v2';
+        let firebaseApp = null, auth = null, db = null;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+        let configData = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+
+        if (!configData) {
+            const saved = localStorage.getItem(LS_KEY);
+            if (saved) {
+                try { configData = JSON.parse(saved); } catch (e) { console.error("Invalid cached config", e); }
+            }
+        }
+
+        if (configData && configData.apiKey) {
+            try {
+                firebaseApp = initializeApp(configData);
+                auth = getAuth(firebaseApp);
+                db = getFirestore(firebaseApp);
+            } catch (e) {
+                console.error("Firebase Init Failed:", e);
+            }
+        }
+
+        // --- Constants ---
+        const DB_NAME = 'AIContentMasterDB';
+        const DB_VERSION = 1;
+        const STORES = { MEDIA: 'media' };
+        
+        const JOB_STATUS = { PENDING: 'pending', PROCESSING: 'processing', COMPLETED: 'completed', FAILED: 'failed' };
+        const KEY_STATUS = { READY: 'ready', BUSY: 'busy', COOLDOWN: 'cooldown', DEAD: 'dead' };
+        const AVAILABLE_MODELS = [
+            { id: 'gemini-2.5-flash-preview-09-2025', name: 'Gemini 2.5 Flash Preview' },
+            { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
+            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+            { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
+        ];
+
+        // --- IndexedDB & Utils ---
+        const idb = {
+            open: () => new Promise((resolve, reject) => {
+                const request = indexedDB.open(DB_NAME, DB_VERSION);
+                request.onerror = () => reject(request.error);
+                request.onsuccess = () => resolve(request.result);
+                request.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains(STORES.MEDIA)) db.createObjectStore(STORES.MEDIA, { keyPath: 'id' });
+                };
+            }),
+            put: async (storeName, data) => {
+                const db = await idb.open();
+                return new Promise((resolve, reject) => {
+                    const tx = db.transaction(storeName, 'readwrite');
+                    tx.objectStore(storeName).put(data);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            },
+            get: async (storeName, id) => {
+                const db = await idb.open();
+                return new Promise((resolve, reject) => {
+                    const req = db.transaction(storeName, 'readonly').objectStore(storeName).get(id);
+                    req.onsuccess = () => resolve(req.result);
+                    req.onerror = () => reject(req.error);
+                });
+            }
+        };
+
+        const processImage = async (file) => {
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    const scale = Math.min(1, 1200 / img.width);
+                    canvas.width = img.width * scale; canvas.height = img.height * scale;
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 20; ctx.strokeRect(0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const data = imageData.data;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const noise = (Math.random() - 0.5) * 30;
+                        data[i] = Math.min(255, Math.max(0, data[i] + noise));
+                        data[i+1] = Math.min(255, Math.max(0, data[i+1] + noise));
+                        data[i+2] = Math.min(255, Math.max(0, data[i+2] + noise));
+                    }
+                    ctx.putImageData(imageData, 0, 0);
+                    canvas.toBlob((blob) => resolve(blob), 'image/webp', 0.85);
+                };
+                img.src = URL.createObjectURL(file);
+            });
+        };
+
+        const cleanText = (text) => {
+            if (!text) return "";
+            let cleaned = text.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/\[\d+\]/g, '');
+            cleaned = cleaned.replace(/!\[[^\]]*\]\((?:[^)]+)\)/g, '').replace(/\[([^\]]+)\]\((?:[^)]+)\)/g, '$1');
+            cleaned = cleaned.replace(/(\*\*|__)(.*?)\1/g, '$2').replace(/(\*|_)(.*?)\1/g, '$2').replace(/`([^`]+)`/g, '$1');
+            cleaned = cleaned.replace(/^(?:[#]{1,6}|[*\-+]|[>\s]+|[0-9]+\.)\s*/gm, '').replace(/^---*|^===*|^___*/gm, '');
+            [ /^대표사진 삭제/, /^사진 설명/, /^이미지 썸네일/, /^출처 입력/, /^\s*#.*/ ].forEach(p => cleaned = cleaned.replace(new RegExp(p, 'gm'), ''));
+            return cleaned.split('\n').map(l => l.trim()).filter(l => l.length > 0).map(l => l.endsWith('?') ? '\n' + l + '\n\n' : l + '\n\n').join('').trim();
+        };
+
+        // --- COMPONENTS ---
+
+        function ConfigWizard() {
+            const [jsonInput, setJsonInput] = useState('');
+            const [error, setError] = useState(null);
+
+            const handleSave = () => {
+                try {
+                    const parsed = JSON.parse(jsonInput);
+                    if (!parsed.apiKey || !parsed.projectId) throw new Error("유효하지 않은 Firebase Config JSON입니다.");
+                    localStorage.setItem(LS_KEY, JSON.stringify(parsed));
+                    window.location.reload();
+                } catch (e) {
+                    setError(e.message);
+                }
+            };
+
+            return (
+                <div className="flex h-screen items-center justify-center relative z-20">
+                    <div className="glass-panel p-10 rounded-3xl w-full max-w-lg shadow-2xl border border-white/10">
+                        <div className="text-center mb-8">
+                            <div className="w-16 h-16 bg-indigo-600 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg"><i className="bi bi-gear-wide-connected text-3xl text-white"></i></div>
+                            <h1 className="text-3xl font-bold text-white mb-2">시스템 설정</h1>
+                            <p className="text-slate-400">Firebase 연결 정보가 필요합니다.</p>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            <div className="bg-indigo-900/30 border border-indigo-500/30 p-4 rounded-xl text-sm text-indigo-200 leading-relaxed">
+                                <i className="bi bi-info-circle-fill mr-2"></i>
+                                Firebase Console &gt; 프로젝트 설정 &gt; 내 앱 &gt; SDK 설정 및 구성에서 <code>const firebaseConfig = {'{...}'}</code> 내부의 JSON 객체를 복사하여 붙여넣으세요.
+                            </div>
+                            <textarea 
+                                className="w-full h-40 bg-black/30 border border-white/10 rounded-xl p-4 text-slate-300 font-mono text-xs focus:border-indigo-500 outline-none resize-none"
+                                placeholder='{ "apiKey": "...", "authDomain": "...", ... }'
+                                value={jsonInput}
+                                onChange={e => setJsonInput(e.target.value)}
+                            />
+                            {error && <p className="text-red-400 text-sm flex items-center gap-2"><i className="bi bi-exclamation-triangle"></i> {error}</p>}
+                            <button onClick={handleSave} className="w-full py-4 bg-gradient-to-r from-indigo-600 to-violet-600 rounded-xl font-bold text-white shadow-lg hover:shadow-indigo-500/30 transition-all transform hover:-translate-y-1">
+                                설정 저장 및 시작
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function AuthScreen({ onLogin, onAnon }) {
+            return (
+                <div className="flex h-screen items-center justify-center relative z-20">
+                    <div className="glass-panel p-10 rounded-3xl w-full max-w-md text-center shadow-2xl border border-white/10 relative overflow-hidden group">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                        <div className="w-24 h-24 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-3xl mx-auto mb-8 flex items-center justify-center shadow-lg shadow-indigo-500/30 group-hover:scale-105 transition-transform duration-500">
+                            <i className="bi bi-stars text-4xl text-white"></i>
+                        </div>
+                        <h1 className="text-4xl font-bold mb-3 gradient-text">AI Content Master</h1>
+                        <p className="text-slate-400 mb-10 font-light text-lg">Next-Gen Creative Automation</p>
+                        <div className="space-y-4">
+                            <button onClick={onLogin} className="w-full py-4 px-6 bg-white hover:bg-slate-50 text-slate-900 font-bold rounded-2xl transition flex items-center justify-center gap-3 shadow-xl hover:shadow-2xl transform hover:-translate-y-1">
+                                <i className="bi bi-google text-xl text-red-500"></i> Google Login
+                            </button>
+                            <button onClick={onAnon} className="w-full py-4 px-6 glass-button rounded-2xl font-medium text-slate-200 flex items-center justify-center gap-3">
+                                <i className="bi bi-incognito text-xl"></i> Guest Access
+                            </button>
+                        </div>
+                        <div className="mt-8 pt-4 border-t border-white/5">
+                            <button onClick={() => { localStorage.removeItem(LS_KEY); window.location.reload(); }} className="text-xs text-slate-600 hover:text-slate-400">설정 초기화</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function Sidebar({ activeTab, setActiveTab }) {
+            const menu = [
+                { id: 'dashboard', icon: 'bi-grid-1x2-fill', label: '대시보드' },
+                { id: 'references', icon: 'bi-collection-play-fill', label: '자료 센터' },
+                { id: 'generator', icon: 'bi-magic', label: '콘텐츠 생성' },
+                { id: 'jobs', icon: 'bi-list-check', label: '작업 관리' },
+                { id: 'settings', icon: 'bi-gear-fill', label: '시스템 설정' }
+            ];
+            return (
+                <aside className="w-20 lg:w-72 glass-panel border-r border-white/5 flex flex-col justify-between z-20 h-full">
+                    <div className="p-4 lg:p-6">
+                        <div className="h-16 flex items-center justify-center lg:justify-start lg:px-2 mb-8">
+                            <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-violet-600 rounded-xl flex items-center justify-center mr-0 lg:mr-3 shadow-lg shadow-indigo-500/20">
+                                <i className="bi bi-cpu-fill text-white text-lg"></i>
+                            </div>
+                            <span className="hidden lg:block font-bold text-xl tracking-tight text-white">AI Master <span className="text-xs font-normal text-indigo-400 ml-1">Pro</span></span>
+                        </div>
+                        <nav className="space-y-2">
+                            {menu.map(item => (
+                                <button key={item.id} onClick={() => setActiveTab(item.id)} 
+                                    className={`w-full flex items-center p-4 rounded-2xl transition-all duration-300 group relative overflow-hidden ${activeTab === item.id ? 'bg-gradient-to-r from-indigo-600/90 to-violet-600/90 text-white shadow-lg shadow-indigo-500/20' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
+                                    <i className={`bi ${item.icon} text-xl ${activeTab === item.id ? 'animate-pulse' : 'group-hover:scale-110 transition-transform'}`}></i>
+                                    <span className="hidden lg:block ml-4 font-medium tracking-wide">{item.label}</span>
+                                    {activeTab === item.id && <div className="absolute right-0 top-1/2 transform -translate-y-1/2 w-1 h-8 bg-white/50 rounded-l-full"></div>}
+                                </button>
+                            ))}
+                        </nav>
+                    </div>
+                    <div className="p-6">
+                        <button onClick={() => auth.signOut()} className="w-full flex items-center p-4 rounded-2xl text-slate-400 hover:bg-red-500/10 hover:text-red-400 transition-all border border-transparent hover:border-red-500/20 group">
+                            <i className="bi bi-box-arrow-left text-xl group-hover:-translate-x-1 transition-transform"></i>
+                            <span className="hidden lg:block ml-4 font-medium">로그아웃</span>
+                        </button>
+                    </div>
+                </aside>
+            );
+        }
+
+        function Dashboard({ jobs, queueStatus }) {
+            return (
+                <div className="space-y-8 animate-fade-in-up">
+                    <div className="flex items-center justify-between gradient-border-bottom pb-6">
+                        <div><h2 className="text-3xl font-bold text-white mb-2">대시보드</h2><p className="text-slate-400">작업 현황 및 통계 요약</p></div>
+                        <div className="flex items-center gap-2 px-4 py-2 rounded-full glass-panel text-sm text-indigo-300"><span className="relative flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-indigo-500"></span></span>System Online</div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="glass-panel p-8 rounded-3xl relative overflow-hidden group hover:-translate-y-1 transition-transform duration-300">
+                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i className="bi bi-check-circle-fill text-8xl text-emerald-400"></i></div>
+                            <p className="text-emerald-400 text-sm font-bold uppercase tracking-wider mb-2">Completed</p><h3 className="text-5xl font-bold text-white mb-1">{queueStatus.completed}</h3>
+                        </div>
+                        <div className="glass-panel p-8 rounded-3xl relative overflow-hidden group hover:-translate-y-1 transition-transform duration-300">
+                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i className="bi bi-hourglass-split text-8xl text-amber-400"></i></div>
+                            <p className="text-amber-400 text-sm font-bold uppercase tracking-wider mb-2">Pending</p><h3 className="text-5xl font-bold text-white mb-1">{queueStatus.pending}</h3>
+                        </div>
+                        <div className="glass-panel p-8 rounded-3xl relative overflow-hidden group hover:-translate-y-1 transition-transform duration-300">
+                            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity"><i className="bi bi-layers-fill text-8xl text-indigo-400"></i></div>
+                            <p className="text-indigo-400 text-sm font-bold uppercase tracking-wider mb-2">Total Jobs</p><h3 className="text-5xl font-bold text-white mb-1">{jobs.length}</h3>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function ReferenceManager({ user, references, showToast }) {
+            const [title, setTitle] = useState('');
+            const [content, setContent] = useState('');
+            const [isDragging, setIsDragging] = useState(false);
+            const addReference = async () => {
+                if (!title.trim() || !content.trim()) return showToast('제목/내용 필수', 'error');
+                await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'references'), { title, content, createdAt: Date.now() });
+                setTitle(''); setContent(''); showToast('자료가 안전하게 저장되었습니다.', 'success');
+            };
+            const deleteRef = async (id) => { if(confirm('이 자료를 삭제하시겠습니까?')) await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'references', id)); };
+            const handleDrop = async (e) => {
+                e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files[0];
+                if(file && file.type.startsWith('text/')) { setTitle(file.name.replace('.txt','')); setContent(await file.text()); showToast('파일이 로드되었습니다.', 'success'); }
+            };
+            return (
+                <div className="h-full flex flex-col space-y-6 animate-fade-in-up">
+                    <div className="flex items-center justify-between gradient-border-bottom pb-6"><div><h2 className="text-3xl font-bold text-white mb-2">자료 관리 센터</h2><p className="text-slate-400">프롬프트 컨텍스트 자원 관리</p></div></div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-8 flex-1 min-h-0">
+                        <div className="md:col-span-1 flex flex-col gap-6">
+                            <div onDragOver={e=>{e.preventDefault();setIsDragging(true)}} onDragLeave={()=>setIsDragging(false)} onDrop={handleDrop} className={`flex-1 glass-panel p-6 rounded-3xl flex flex-col gap-5 transition-all duration-300 ${isDragging ? 'border-indigo-500 bg-indigo-500/10 scale-[1.02]' : 'hover:border-white/20'}`}>
+                                <div className="flex justify-between items-center"><h3 className="font-bold text-xl text-white flex items-center gap-2"><i className="bi bi-file-earmark-text-fill text-indigo-400"></i> 새 자료 등록</h3><span className="text-xs bg-white/10 px-2 py-1 rounded text-slate-400">Drag & Drop .txt</span></div>
+                                <input className="bg-black/20 border border-white/10 rounded-xl p-4 text-white placeholder-slate-500 focus:border-indigo-500 focus:bg-indigo-900/10 outline-none transition-colors" placeholder="자료 제목 (예: 2024 트렌드 보고서)" value={title} onChange={e=>setTitle(e.target.value)} />
+                                <textarea className="flex-1 bg-black/20 border border-white/10 rounded-xl p-4 text-white placeholder-slate-500 focus:border-indigo-500 focus:bg-indigo-900/10 outline-none resize-none transition-colors leading-relaxed font-mono text-sm" placeholder="내용을 붙여넣거나 텍스트 파일을 이곳에 드래그하세요." value={content} onChange={e=>setContent(e.target.value)} />
+                                <button onClick={addReference} className="py-4 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-xl font-bold text-white shadow-lg transition-all transform active:scale-95 flex items-center justify-center gap-2"><i className="bi bi-cloud-arrow-up-fill text-lg"></i> 저장하기</button>
+                            </div>
+                        </div>
+                        <div className="md:col-span-2 glass-panel rounded-3xl overflow-hidden flex flex-col">
+                            <div className="p-6 border-b border-white/5 bg-black/20 flex justify-between items-center"><h3 className="font-bold text-lg text-white">보관된 라이브러리</h3><span className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-full text-xs font-bold">{references.length} Items</span></div>
+                            <div className="flex-1 overflow-y-auto p-6 space-y-4 scrollbar-hide">
+                                {references.length === 0 ? <div className="h-full flex flex-col items-center justify-center text-slate-600 gap-4"><i className="bi bi-inbox-fill text-6xl opacity-20"></i><p>등록된 자료가 없습니다.</p></div> : references.map(r=>(
+                                    <div key={r.id} className="bg-white/5 hover:bg-white/10 p-5 rounded-2xl border border-white/5 hover:border-indigo-500/30 transition-all group relative">
+                                        <div className="flex justify-between items-start mb-3"><span className="font-bold text-indigo-100 flex items-center gap-2"><i className="bi bi-bookmark-fill text-indigo-500"></i> {r.title}</span><button onClick={()=>deleteRef(r.id)} className="text-slate-500 hover:text-red-400 transition-colors p-2 hover:bg-white/5 rounded-full"><i className="bi bi-trash3-fill"></i></button></div>
+                                        <p className="text-sm text-slate-400 line-clamp-2 font-mono leading-relaxed pl-6 border-l-2 border-white/5">{r.content}</p>
+                                        <div className="mt-3 pl-6 text-xs text-slate-600">{new Date(r.createdAt).toLocaleDateString()}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function Generator({ user, apiKeys, references, showToast, genState, setGenState, savedPrompts }) {
+            const [selectedRefIds, setSelectedRefIds] = useState([]);
+            const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash-preview-09-2025');
+
+            const savePromptTemplate = async () => {
+                if (!genState.basePrompt.trim()) return showToast('저장할 프롬프트 내용이 없습니다.', 'error');
+                const title = prompt('템플릿 이름을 입력하세요 (예: 블로그 작성용):');
+                if (!title) return;
+                await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'prompts'), { title, content: genState.basePrompt, createdAt: Date.now() });
+                showToast('프롬프트가 저장되었습니다.', 'success');
+            };
+            
+            const loadPromptTemplate = (e) => {
+                const targetId = e.target.value;
+                if (!targetId) return;
+                const template = savedPrompts.find(p => p.id === targetId);
+                if (template) {
+                if (confirm('현재 작성 중인 프롬프트가 덮어씌워집니다. 진행하시겠습니까?')) {
+                    setGenState(p => ({ ...p, basePrompt: template.content }));
+                    showToast(`'${template.title}' 템플릿을 불러왔습니다.`, 'success');
+                }
+                }
+                e.target.value = ""; // Reset selection
+            };
+
+            const deleteTemplate = async (id, title) => {
+                if(confirm(`'${title}' 템플릿을 영구 삭제하시겠습니까?`)) {
+                await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'prompts', id));
+                showToast('삭제되었습니다.', 'success');
+                }
+            };
+
+            const handleBulkGenerate = async () => {
+                if(apiKeys.length===0) return showToast('API 키를 먼저 등록해주세요.', 'error');
+                const list = genState.topics.split('\n').filter(t=>t.trim());
+                if(list.length===0) return showToast('주제를 하나 이상 입력해주세요.', 'error');
+                const refs = selectedRefIds.map(id => references.find(r=>r.id===id)?.content).join('\n\n');
+                
+                const batch = list.map(topic => addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'jobs'), {
+                    topic: topic.trim(),
+                    prompt: genState.basePrompt.replace('{{주제}}', topic).replace('{{자료}}', refs || '없음'),
+                    model: selectedModel,
+                    status: JOB_STATUS.PENDING,
+                    createdAt: Date.now(),
+                    images: []
+                }));
+                await Promise.all(batch);
+                showToast(`${list.length}개의 작업이 대기열에 추가되었습니다.`, 'success');
+                setGenState(p => ({...p, topics: ''}));
+            };
+
+            return (
+                <div className="h-full flex flex-col space-y-6 animate-fade-in-up">
+                    <div className="flex items-center justify-between gradient-border-bottom pb-6">
+                        <div><h2 className="text-3xl font-bold text-white mb-2">크리에이티브 스튜디오</h2><p className="text-slate-400">대량 콘텐츠 생성 및 프롬프트 엔지니어링</p></div>
+                        <div className="glass-panel px-4 py-2 rounded-xl flex items-center gap-3 border border-indigo-500/30"><i className="bi bi-cpu text-indigo-400"></i><select className="bg-transparent text-sm text-white font-medium outline-none cursor-pointer" value={selectedModel} onChange={e=>setSelectedModel(e.target.value)}>{AVAILABLE_MODELS.map(m=><option key={m.id} value={m.id} className="bg-slate-900">{m.name}</option>)}</select></div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1 min-h-0">
+                        <div className="flex flex-col gap-6">
+                            <div className="glass-panel p-6 rounded-3xl flex-1 flex flex-col border border-white/10 hover:border-indigo-500/30 transition-colors">
+                                <label className="mb-4 font-bold text-white flex items-center gap-2"><i className="bi bi-list-task text-indigo-400"></i> 주제 목록 (Bulk Input)</label>
+                                <textarea className="flex-1 bg-black/20 border border-white/10 rounded-xl p-5 text-white placeholder-slate-600 focus:border-indigo-500 outline-none resize-none leading-relaxed text-sm" placeholder="한 줄에 하나씩 주제를 입력하세요..." value={genState.topics} onChange={e=>setGenState(p=>({...p, topics:e.target.value}))}/>
+                            </div>
+                            <div className="glass-panel p-6 rounded-3xl h-72 flex flex-col border border-white/10 hover:border-indigo-500/30 transition-colors">
+                                <label className="mb-4 font-bold text-white flex items-center gap-2"><i className="bi bi-link-45deg text-indigo-400"></i> 참고 자료 연결</label>
+                                <div className="flex-1 overflow-y-auto space-y-2 scrollbar-hide pr-2">
+                                    {references.length === 0 ? <p className="text-center text-slate-600 py-10">자료 없음</p> : references.map(r=>(
+                                        <label key={r.id} className={`flex items-center gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedRefIds.includes(r.id)?'bg-indigo-600/20 border-indigo-500':'border-white/5 hover:bg-white/5'}`}><input type="checkbox" className="w-4 h-4 rounded border-slate-500 text-indigo-500 focus:ring-indigo-500 bg-transparent" checked={selectedRefIds.includes(r.id)} onChange={()=>setSelectedRefIds(p=>p.includes(r.id)?p.filter(x=>x!==r.id):[...p,r.id])}/><span className="text-sm font-medium text-slate-200 truncate flex-1">{r.title}</span></label>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="glass-panel p-6 rounded-3xl flex flex-col border border-white/10 hover:border-indigo-500/30 transition-colors relative">
+                            <div className="flex justify-between items-center mb-4">
+                                <label className="font-bold text-white flex items-center gap-2"><i className="bi bi-code-slash text-indigo-400"></i> 프롬프트 엔지니어링</label>
+                                <div className="flex items-center gap-2">
+                                <select onChange={loadPromptTemplate} className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-300 outline-none hover:bg-white/10">
+                                    <option value="">📂 템플릿 불러오기...</option>
+                                    {savedPrompts && savedPrompts.map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
+                                </select>
+                                <button onClick={savePromptTemplate} className="px-3 py-1.5 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 rounded-lg text-xs border border-indigo-500/30 transition-colors"><i className="bi bi-save"></i> 저장</button>
+                                </div>
+                            </div>
+                            <div className="relative flex-1">
+                                <textarea className="w-full h-full bg-black/20 border border-white/10 rounded-xl p-5 text-slate-300 focus:border-indigo-500 outline-none resize-none font-mono text-sm leading-relaxed pb-12" value={genState.basePrompt} onChange={e=>setGenState(p=>({...p, basePrompt:e.target.value}))}/>
+                                <div className="absolute bottom-4 right-4 flex gap-2 text-xs text-slate-500">
+                                    <span className="px-2 py-1 bg-black/40 rounded border border-white/5 text-indigo-300">{'{{주제}}'}</span>
+                                    <span className="px-2 py-1 bg-black/40 rounded border border-white/5 text-indigo-300">{'{{자료}}'}</span>
+                                </div>
+                            </div>
+                            {/* Template List Mini View */}
+                            {savedPrompts && savedPrompts.length > 0 && (
+                                <div className="mt-4 pt-4 border-t border-white/5 overflow-x-auto flex gap-2 scrollbar-hide">
+                                {savedPrompts.map(p => (
+                                    <div key={p.id} className="flex-shrink-0 px-3 py-1.5 bg-white/5 rounded-lg border border-white/5 flex items-center gap-2 text-xs text-slate-400">
+                                        <span className="truncate max-w-[100px]">{p.title}</span>
+                                        <button onClick={() => deleteTemplate(p.id, p.title)} className="hover:text-red-400"><i className="bi bi-x"></i></button>
+                                    </div>
+                                ))}
+                                </div>
+                            )}
+                            </div>
+                    </div>
+                    <button onClick={handleBulkGenerate} className="w-full py-5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 rounded-2xl font-bold text-lg text-white shadow-xl hover:shadow-indigo-500/20 transition-all transform active:scale-[0.99] flex items-center justify-center gap-3 border border-white/10"><i className="bi bi-stars"></i> 작업 큐에 등록하기</button>
+                </div>
+            );
+        }
+
+        function JobBoard({ jobs, user, showToast }) {
+            const [filter, setFilter] = useState('all');
+            const [selectedJob, setSelectedJob] = useState(null);
+            const filtered = jobs.filter(j => filter==='all' || j.status===filter);
+            const copy = (txt) => { if(!txt) return showToast('복사할 내용이 없습니다.', 'error'); navigator.clipboard.writeText(cleanText(txt)); showToast('텍스트가 정제되어 복사되었습니다.', 'success'); };
+            const copyCode = (code) => { if(!code) return; navigator.clipboard.writeText(code); showToast('코드가 복사되었습니다.', 'success'); };
+            return (
+                <div className="space-y-8 animate-fade-in-up">
+                    <div className="flex justify-between items-center gradient-border-bottom pb-6"><div><h2 className="text-3xl font-bold text-white mb-2">작업 관리 센터</h2><p className="text-slate-400">실시간 진행 상황 모니터링 및 결과 확인</p></div><div className="flex bg-black/30 rounded-xl p-1.5 border border-white/10 backdrop-blur-md">{['all','completed','pending','failed'].map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-4 py-2 rounded-lg capitalize text-sm font-medium transition-all ${filter===f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>{f}</button>)}</div></div>
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        {filtered.map(j => (
+                            <div key={j.id} className="glass-panel rounded-3xl flex flex-col h-80 group hover:border-indigo-500/50 hover:bg-white/[0.02] transition-all duration-300 relative overflow-hidden">
+                                <div className="absolute top-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                <div className="p-5 border-b border-white/5 flex justify-between items-center bg-white/[0.02]"><div className="flex items-center gap-2.5"><div className={`w-2.5 h-2.5 rounded-full ${j.status==='completed'?'bg-emerald-400 shadow-[0_0_10px_#34d399]':j.status==='failed'?'bg-red-500':'bg-amber-400 animate-pulse'}`}></div><span className="text-xs font-bold uppercase tracking-wider text-slate-400">{j.status}</span></div><button onClick={()=>setSelectedJob(j)} className="text-slate-400 hover:text-white transition-colors p-1"><i className="bi bi-three-dots-vertical"></i></button></div>
+                                <div onClick={()=>setSelectedJob(j)} className="p-6 flex-1 relative overflow-hidden cursor-pointer group-inner"><h3 className="font-bold text-lg mb-3 line-clamp-2 text-white group-hover:text-indigo-300 transition-colors">{j.topic}</h3><p className="text-sm text-slate-400 line-clamp-3 leading-relaxed font-light">{j.result || '대기열에서 처리를 기다리고 있습니다...'}</p><div className="absolute inset-0 bg-gradient-to-t from-[#111928] via-transparent opacity-90"></div></div>
+                                <div className="p-4 border-t border-white/5 flex justify-between items-center bg-black/20 backdrop-blur-sm"><div className="flex gap-2"><button onClick={()=>copy(j.result)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-indigo-600/20 hover:text-indigo-300 text-slate-400 rounded-lg text-xs font-medium border border-white/5 transition-all"><i className="bi bi-clipboard-check"></i> 텍스트</button><button disabled={!j.chartCode} onClick={()=>copyCode(j.chartCode)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/5 transition-all ${j.chartCode?'bg-white/5 hover:bg-purple-600/20 hover:text-purple-300 text-slate-400':'opacity-30 cursor-not-allowed'}`}><i className="bi bi-pie-chart-fill"></i> 도표</button></div><button onClick={async(e)=>{e.stopPropagation(); if(confirm('영구 삭제하시겠습니까?')) await deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'jobs',j.id))}} className="text-slate-600 hover:text-red-400 p-2 transition-colors"><i className="bi bi-trash3-fill"></i></button></div>
+                            </div>
+                        ))}
+                    </div>
+                    {selectedJob && <JobModal job={selectedJob} onClose={()=>setSelectedJob(null)} user={user} showToast={showToast}/>}
+                </div>
+            );
+        }
+
+        function JobModal({ job, onClose, user, showToast }) {
+            const [tab, setTab] = useState('text');
+            const [imgs, setImgs] = useState([]);
+            const [vidUrl, setVidUrl] = useState(null);
+            const [genVid, setGenVid] = useState(false);
+            const [isDragging, setIsDragging] = useState(false);
+
+            useEffect(() => {
+                const load = async () => {
+                    if(job.images?.length) {
+                        const blobs = await Promise.all(job.images.map(async id => { const d = await idb.get(STORES.MEDIA, id); return d ? URL.createObjectURL(d.blob) : null; }));
+                        setImgs(blobs.filter(Boolean));
+                    }
+                    if(job.video) { const d = await idb.get(STORES.MEDIA, job.video); if(d) setVidUrl(URL.createObjectURL(d.blob)); }
+                    }; load();
+        }, [job]);
+
+        const processFiles = async (files) => {
+            const newIds = [];
+            const processSingle = async (blob) => {
+            const processed = await processImage(blob);
+            const id = `${job.id}_img_${Date.now()}_${Math.random().toString(36).substr(2,5)}`;
+            await idb.put(STORES.MEDIA, { id, blob: processed });
+            newIds.push(id);
+            };
+            for(const f of files) {
+            if(f.name.toLowerCase().endsWith('.zip') && window.JSZip) {
+                try {
+                const zip = new JSZip();
+                const loaded = await zip.loadAsync(f);
+                for(const filename of Object.keys(loaded.files)) {
+                    const fileData = loaded.files[filename];
+                    if(!fileData.dir && filename.match(/\.(jpg|jpeg|png|webp)$/i)) {
+                    await processSingle(await fileData.async('blob'));
+                    }
+                }
+                showToast('ZIP 파일 처리가 완료되었습니다.', 'success');
+                } catch(e) { showToast('ZIP 처리 오류: ' + e.message, 'error'); }
+            } else if(f.type.startsWith('image/')) {
+                await processSingle(f);
+            }
+            }
+            if(newIds.length) {
+            await updateDoc(doc(db,'artifacts',appId,'users',user.uid,'jobs',job.id), { images: [...(job.images||[]), ...newIds] });
+            const urls = await Promise.all(newIds.map(async id => URL.createObjectURL((await idb.get(STORES.MEDIA, id)).blob)));
+            setImgs(p => [...p, ...urls]);
+            }
+        };
+
+        const handleUpload = (e) => processFiles(Array.from(e.target.files));
+        const handleDrop = async (e) => { e.preventDefault(); setIsDragging(false); if(e.dataTransfer.files?.length) await processFiles(Array.from(e.dataTransfer.files)); };
+
+        const makeVideo = async () => {
+                if(imgs.length===0) return showToast('이미지가 없습니다.', 'error');
+                setGenVid(true);
+                try {
+                    const cvs = document.createElement('canvas'); cvs.width=640; cvs.height=360;
+                    const ctx = cvs.getContext('2d');
+                    const stream = cvs.captureStream(30);
+                    const rec = new MediaRecorder(stream, { mimeType: 'video/webm' });
+                    const chunks = [];
+                    rec.ondataavailable = e => chunks.push(e.data);
+                    rec.onstop = async () => {
+                        const blob = new Blob(chunks, {type:'video/webm'});
+                        const vidId = `${job.id}_vid_${Date.now()}`;
+                        await idb.put(STORES.MEDIA, { id: vidId, blob });
+                        await updateDoc(doc(db,'artifacts',appId,'users',user.uid,'jobs',job.id), { video: vidId });
+                        setVidUrl(URL.createObjectURL(blob)); setGenVid(false);
+                    };
+                    rec.start();
+                    const imgsEl = await Promise.all(imgs.map(src => new Promise(r => {const i=new Image(); i.onload=()=>r(i); i.src=src})));
+                    const dur = 2000; const fade = 500; const total = imgs.length * dur;
+                    let start = null;
+                    const anim = (t) => {
+                        if(!start) start=t; const el=t-start; if(el> total){rec.stop();return;}
+                        const i=Math.floor(el/dur)%imgs.length; const next=(i+1)%imgs.length; const p=el%dur;
+                        ctx.fillStyle='#000'; ctx.fillRect(0,0,640,360);
+                        const draw=(img,a)=>{ctx.globalAlpha=a; const s=Math.min(640/img.width,360/img.height); ctx.drawImage(img,(640-img.width*s)/2,(360-img.height*s)/2,img.width*s,img.height*s)};
+                        draw(imgsEl[i],1); if(p>dur-fade) draw(imgsEl[next],(p-(dur-fade))/fade);
+                        requestAnimationFrame(anim);
+                    };
+                    requestAnimationFrame(anim);
+                } catch(e) { setGenVid(false); showToast('생성 실패: 브라우저 호환성을 확인하세요.', 'error'); }
+            };
+
+            return (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fade-in-up">
+                    <div className="bg-[#0f172a] w-full max-w-6xl h-[90vh] rounded-3xl flex flex-col border border-white/10 shadow-2xl overflow-hidden relative">
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
+                            <h3 className="font-bold text-2xl text-white flex items-center gap-3"><i className="bi bi-stars text-yellow-400"></i> {job.topic}</h3>
+                            <button onClick={onClose} className="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center transition-colors"><i className="bi bi-x-lg"></i></button>
+                        </div>
+                        <div className="flex-1 flex overflow-hidden">
+                            <div className="flex-1 flex flex-col min-w-0">
+                                <div className="px-8 py-4 border-b border-white/5 bg-[#0f172a] flex gap-4 sticky top-0 z-10">
+                                    {[
+                                        {id:'text', label:'원문 보기', icon:'bi-file-text'},
+                                        {id:'media', label:`미디어 (${imgs.length})`, icon:'bi-images'},
+                                        {id:'chart', label:'데이터 시각화', icon:'bi-graph-up'}
+                                    ].map(t=>(
+                                        <button key={t.id} onClick={()=>setTab(t.id)} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${tab===t.id?'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25':'text-slate-400 hover:text-white hover:bg-white/5'}`}>
+                                            <i className={`bi ${t.icon}`}></i> {t.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="flex-1 overflow-y-auto p-8 scrollbar-hide bg-[#0f172a]">
+                                {tab==='text' && <div className="prose prose-invert max-w-none whitespace-pre-wrap leading-8 text-slate-300 font-light text-lg">{job.result}</div>}
+                                {tab==='media' && <div 
+                                    className={`space-y-8 rounded-2xl transition-all relative ${isDragging ? 'bg-indigo-500/20 ring-2 ring-indigo-500 ring-offset-2 ring-offset-[#0f172a] p-4 min-h-[400px]' : ''}`}
+                                    onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                                    onDragLeave={() => setIsDragging(false)}
+                                    onDrop={handleDrop}
+                                >
+                                    {isDragging && (
+                                    <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/60 backdrop-blur-sm rounded-2xl pointer-events-none">
+                                        <i className="bi bi-cloud-arrow-up-fill text-6xl text-indigo-400 mb-4 animate-bounce"></i>
+                                        <h3 className="text-2xl font-bold text-white">파일을 여기에 놓으세요</h3>
+                                        <p className="text-slate-300">이미지 또는 ZIP 파일 지원</p>
+                                    </div>
+                                    )}
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                                    {imgs.map((s,i)=><div key={i} className="aspect-square bg-slate-900 rounded-2xl overflow-hidden border border-white/10 shadow-lg group relative hover:scale-[1.02] transition-transform duration-300"><img src={s} className="w-full h-full object-cover"/></div>)}
+                                            <label className="aspect-square border-2 border-dashed border-white/10 rounded-2xl flex flex-col items-center justify-center cursor-pointer hover:border-indigo-500 hover:bg-indigo-500/5 transition-all group">
+                                                <i className="bi bi-plus-lg text-3xl text-slate-600 group-hover:text-indigo-400 mb-2 transition-colors"></i>
+                                                <span className="text-sm text-slate-500 group-hover:text-indigo-300 transition-colors">이미지 추가</span>
+                                                <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload}/>
+                                            </label>
+                                        </div>
+                                        <div className="glass-panel p-8 rounded-3xl text-center border border-white/10">
+                                            <h4 className="font-bold text-white mb-6 text-xl">비디오 생성 스튜디오</h4>
+                                            {vidUrl ? (
+                                                <div className="max-w-2xl mx-auto">
+                                                    <video src={vidUrl} controls className="w-full rounded-2xl shadow-2xl mb-4 border border-white/10"/>
+                                                    <a href={vidUrl} download={`video_${job.id}.webm`} className="inline-flex items-center gap-2 px-6 py-3 bg-slate-800 hover:bg-slate-700 rounded-xl text-white font-medium transition-colors"><i className="bi bi-download"></i> 다운로드</a>
+                                                </div>
+                                            ) : (
+                                                <button onClick={makeVideo} className="px-8 py-4 bg-gradient-to-r from-pink-600 to-rose-600 hover:from-pink-500 hover:to-rose-500 rounded-2xl font-bold text-white shadow-xl hover:shadow-pink-500/25 transition-all transform active:scale-95 flex items-center justify-center gap-3 mx-auto">
+                                                    {genVid ? <><span className="animate-spin"><i className="bi bi-arrow-repeat"></i></span> 렌더링 중...</> : <><i className="bi bi-film"></i> 쇼츠 영상 만들기</>}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>}
+                                    {tab==='chart' && (
+                                        <div className="glass-panel p-6 rounded-2xl border border-white/10 h-full">
+                                            <textarea readOnly className="w-full h-full bg-transparent outline-none font-mono text-sm text-indigo-200 leading-relaxed resize-none" value={job.chartCode||'생성된 차트 코드가 없습니다.'}/>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function SettingsPage({ user, apiKeys, settings, setSettings, showToast }) {
+            const [key, setKey] = useState('');
+            const add = async () => { if(key.trim()) { await addDoc(collection(db,'artifacts',appId,'users',user.uid,'apikeys'), {key:key.trim(), status:'ready'}); setKey(''); } };
+            
+            const saveGlobalSettings = async () => {
+                try {
+                await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'general'), settings);
+                showToast('전역 설정이 클라우드에 저장되었습니다.', 'success');
+                } catch(e) { showToast('설정 저장 실패: ' + e.message, 'error'); }
+            };
+
+            return (
+                <div className="max-w-3xl mx-auto space-y-8 animate-fade-in-up">
+                <div className="flex items-center justify-between gradient-border-bottom pb-6"><div><h2 className="text-3xl font-bold text-white mb-2">환경 설정</h2><p className="text-slate-400">API 키 및 시스템 전역 변수 관리</p></div></div>
+                <div className="glass-panel p-8 rounded-3xl border border-white/10">
+                    <h3 className="font-bold text-xl text-white mb-6 flex items-center gap-2"><i className="bi bi-key-fill text-indigo-400"></i> API 키 관리</h3>
+                    <div className="flex gap-3 mb-6"><input className="flex-1 bg-black/20 border border-white/10 rounded-xl px-5 py-3 outline-none text-white placeholder-slate-500 focus:border-indigo-500 transition-colors" value={key} onChange={e=>setKey(e.target.value)} placeholder="Gemini API Key 입력"/><button onClick={add} className="px-8 bg-indigo-600 hover:bg-indigo-500 rounded-xl font-bold text-white transition-colors shadow-lg">추가</button></div>
+                    <div className="space-y-3">{apiKeys.map(k=>(<div key={k.id} className="flex justify-between items-center bg-white/5 p-4 rounded-xl border border-white/5 hover:border-white/10 transition-colors"><div className="flex items-center gap-3"><div className={`w-2 h-2 rounded-full ${k.status==='ready'?'bg-emerald-500 shadow-[0_0_8px_#10b981]':k.status==='busy'?'bg-red-500':'bg-amber-500'}`}></div><span className="font-mono text-slate-300 text-sm tracking-wide">{k.key.substr(0,8)}... <span className="text-slate-600">••••</span></span></div><button onClick={()=>deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'apikeys',k.id))} className="text-slate-500 hover:text-red-400 transition-colors p-2"><i className="bi bi-trash3"></i></button></div>))}</div>
+                </div>
+                <div className="glass-panel p-8 rounded-3xl border border-white/10">
+                    <div className="flex justify-between items-center mb-6">
+                    <h3 className="font-bold text-xl text-white flex items-center gap-2"><i className="bi bi-code-square text-indigo-400"></i> 도표 생성 템플릿</h3>
+                    <button onClick={saveGlobalSettings} className="px-4 py-2 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 rounded-lg text-sm border border-indigo-500/30 transition-colors flex items-center gap-2"><i className="bi bi-cloud-upload"></i> 설정 저장</button>
+                    </div>
+                    <textarea className="w-full h-48 bg-black/20 border border-white/10 rounded-xl p-5 outline-none font-mono text-sm text-slate-300 focus:border-indigo-500 transition-colors leading-relaxed" value={settings.chartPrompt} onChange={e=>setSettings(p=>({...p,chartPrompt:e.target.value}))}/>
+                    <p className="mt-2 text-xs text-slate-500">* 위 프롬프트는 <code>SettingsPage</code>를 벗어나더라도 유지되지만, 브라우저 종료 후에도 유지하려면 [설정 저장]을 누르세요.</p>
+                </div>
+                </div>
+            );
+            }
+
+        function Footer({ queueStatus, apiKeyStatus }) {
+            return (
+                <footer className="h-14 bg-[#0f172a]/80 backdrop-blur-md border-t border-white/5 flex items-center justify-between px-8 text-xs text-slate-500 font-medium z-20">
+                    <div className="flex gap-8">
+                        <span className="flex items-center gap-2"><i className="bi bi-activity text-indigo-400"></i> Active Jobs: <span className="text-white">{queueStatus.active}</span></span>
+                        <span className="flex items-center gap-2"><i className="bi bi-check2-circle text-emerald-400"></i> Ready Keys: <span className="text-white">{apiKeyStatus.filter(k=>k.status==='ready').length}</span></span>
+                    </div>
+                    <span className="opacity-40 font-light tracking-wider">AI CONTENT MASTER PRO v2.4</span>
+                </footer>
+            );
+        }
+
+        // --- MAIN APP COMPONENT ---
+        function App() {
+            const [user, setUser] = useState(null);
+            const [activeTab, setActiveTab] = useState('dashboard');
+            const [toast, setToast] = useState(null);
+            const [queueStatus, setQueueStatus] = useState({ active: 0, pending: 0, completed: 0 });
+            
+            const [jobs, setJobs] = useState([]);
+            const [apiKeys, setApiKeys] = useState([]);
+            const [references, setReferences] = useState([]);
+            const [savedPrompts, setSavedPrompts] = useState([]);
+            
+            const [genState, setGenState] = useState({
+                topics: '',
+                basePrompt: '다음 주제에 대해 전문적이고 흥미로운 블로그 글을 작성해줘:\n주제: {{주제}}\n\n[참고 자료]\n{{자료}}\n\n조건:\n- 독자가 이해하기 쉽게 설명\n- SEO를 고려한 키워드 포함\n- 이모지 적절히 사용'
+            });
+            const [settings, setSettings] = useState({
+                chartPrompt: '위 텍스트 내용을 바탕으로 Recharts 라이브러리를 사용해 시각화할 수 있는 React 컴포넌트 코드를 작성해줘. 데이터는 JSON 형태로 포함시켜야 해. 오직 코드만 출력해.\n\n[기반 텍스트]\n{{글}}',
+                defaultImageId: null
+            });
+
+            // JobManager Refs
+            const keyUsageTimestamps = useRef(new Map());
+            const activelyProcessingJobs = useRef(new Set());
+            const KEY_FAILURE_COOLDOWN_MS = 60000;
+            const MAX_FAILURE_COUNT = 5;
+
+            // Auth
+            useEffect(() => {
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    }
+                };
+                initAuth();
+                return onAuthStateChanged(auth, setUser);
+            }, []);
+
+            // Data Listeners
+            useEffect(() => {
+                if (!user) return;
+                const qJobs = query(collection(db, 'artifacts', appId, 'users', user.uid, 'jobs'), orderBy('createdAt', 'desc'));
+                const unsubJobs = onSnapshot(qJobs, (snapshot) => {
+                    const jobList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    setJobs(jobList);
+                    setQueueStatus({
+                        active: jobList.filter(j => j.status === JOB_STATUS.PROCESSING).length,
+                        pending: jobList.filter(j => j.status === JOB_STATUS.PENDING).length,
+                        completed: jobList.filter(j => j.status === JOB_STATUS.COMPLETED).length
+                    });
+                });
+                
+                const unsubKeys = onSnapshot(collection(db, 'artifacts', appId, 'users', user.uid, 'apikeys'), (snap) => {
+                    setApiKeys(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                });
+                
+                const unsubRefs = onSnapshot(query(collection(db, 'artifacts', appId, 'users', user.uid, 'references'), orderBy('createdAt', 'desc')), (snap) => {
+                    setReferences(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                    });
+
+                    const unsubPrompts = onSnapshot(query(collection(db, 'artifacts', appId, 'users', user.uid, 'prompts'), orderBy('createdAt', 'desc')), (snap) => {
+                    setSavedPrompts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+                    });
+
+                    const unsubSettings = onSnapshot(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'general'), (doc) => {
+                    if (doc.exists()) {
+                        setSettings(prev => ({ ...prev, ...doc.data() }));
+                    }
+                    });
+
+                    return () => { unsubJobs(); unsubKeys(); unsubRefs(); unsubPrompts(); unsubSettings(); };
+                }, [user]);
+
+            const showToast = useCallback((message, type = 'info') => {
+                setToast({ message, type });
+                setTimeout(() => setToast(null), 3000);
+            }, []);
+
+            // --- JobManager Logic ---
+            const updateApiKeyStatus = async (keyId, status, extraData = {}) => {
+                await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'apikeys', keyId), { status, lastUsed: Date.now(), ...extraData });
+            };
+
+            const recoverKeys = async (keysToRecover) => {
+                if(keysToRecover.length === 0) return;
+                const uniqueKeys = [...new Map(keysToRecover.map(k => [k.id, k])).values()];
+                uniqueKeys.forEach(k => updateApiKeyStatus(k.id, 'ready'));
+            };
+
+            const getAvailableKeys = useCallback(() => {
+                const now = Date.now();
+                const TIME_THRESHOLD = 30000;
+                
+                const potentiallyReadyKeys = [];
+                const keysToRecover = [];
+
+                for (const key of apiKeys) {
+                    if (key.status === KEY_STATUS.READY) {
+                        if (now - (key.lastUsed || 0) > TIME_THRESHOLD) potentiallyReadyKeys.push(key);
+                        continue;
+                    }
+                    if (key.status === KEY_STATUS.COOLDOWN || key.status === KEY_STATUS.BUSY) {
+                        const lastUsed = key.lastUsed || 0;
+                        if (lastUsed === 0 || (now - lastUsed > KEY_FAILURE_COOLDOWN_MS)) {
+                            keysToRecover.push(key);
+                            potentiallyReadyKeys.push({ ...key, status: 'ready' }); 
+                        }
+                    }
+                }
+                if (keysToRecover.length > 0) recoverKeys(keysToRecover);
+
+                return potentiallyReadyKeys.filter(key => {
+                    const timestamps = keyUsageTimestamps.current.get(key.id) || [];
+                    const validTimestamps = timestamps.filter(t => (now - t) < 60000);
+                    keyUsageTimestamps.current.set(key.id, validTimestamps);
+                    return validTimestamps.length < 2;
+                });
+            }, [apiKeys]);
+
+            const fetchWithBackoff = async (url, options, retries = 3, delay = 1000) => {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.status === 429) return response;
+                    if (response.status >= 500 && retries > 0) throw new Error(`Server error ${response.status}`);
+                    return response;
+                } catch (error) {
+                    if (retries > 0) {
+                        await new Promise(r => setTimeout(r, delay));
+                        return fetchWithBackoff(url, options, retries - 1, delay * 2);
+                    }
+                    throw error;
+                }
+            };
+
+            const callGeminiAPI = async (prompt, apiKey, modelId) => {
+                const targetModel = modelId || 'gemini-2.5-flash-preview-09-2025';
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+                try {
+                    const response = await fetchWithBackoff(endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    });
+                    if (response.status === 429) return { success: false, error: 'Rate Limit Exceeded (429)' };
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        return { success: false, error: `API Error ${response.status}` };
+                    }
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!text) return { success: false, error: 'No content' };
+                    return { success: true, text };
+                } catch (e) {
+                    return { success: false, error: e.message };
+                }
+            };
+
+            const executeJob = async (job, key) => {
+                const now = Date.now();
+                await updateApiKeyStatus(key.id, 'busy');
+                await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', job.id), { status: JOB_STATUS.PROCESSING, startedAt: now });
+
+                const result = await callGeminiAPI(job.prompt, key.key, job.model);
+
+                if (result.success) {
+                    let chartCode = null;
+                    if (settings.chartPrompt) {
+                        await new Promise(r => setTimeout(r, 2000));
+                        const chartRes = await callGeminiAPI(settings.chartPrompt.replace('{{글}}', result.text), key.key, job.model);
+                        if (chartRes.success) chartCode = chartRes.text;
+                    }
+                    await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', job.id), {
+                        status: JOB_STATUS.COMPLETED,
+                        result: result.text,
+                        chartCode: chartCode,
+                        completedAt: Date.now()
+                    });
+                    await updateApiKeyStatus(key.id, 'ready');
+                    showToast(`'${job.topic}' 완료!`, 'success');
+                } else {
+                    await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', job.id), {
+                        status: result.error.includes('429') ? JOB_STATUS.PENDING : JOB_STATUS.FAILED,
+                        error: result.error
+                    });
+                    await updateApiKeyStatus(key.id, 'cooldown', { failureCount: (key.failureCount || 0) + 1 });
+                }
+                activelyProcessingJobs.current.delete(job.id);
+            };
+
+            useEffect(() => {
+                if (!user) return;
+                const interval = setInterval(() => {
+                    const pendingJobs = jobs.filter(j => j.status === JOB_STATUS.PENDING);
+                    if (pendingJobs.length === 0) return;
+                    const availableKeys = getAvailableKeys();
+                    if (availableKeys.length === 0) return;
+
+                    const jobsToDispatch = Math.min(pendingJobs.length, availableKeys.length);
+                    for (let i = 0; i < jobsToDispatch; i++) {
+                        const job = pendingJobs[i];
+                        if (activelyProcessingJobs.current.has(job.id)) continue;
+                        activelyProcessingJobs.current.add(job.id);
+                        executeJob(job, availableKeys[i]);
+                    }
+                }, 1000);
+                return () => clearInterval(interval);
+            }, [jobs, apiKeys, user, getAvailableKeys]);
+
+            if (!user) return <AuthScreen onLogin={() => signInWithPopup(auth, new GoogleAuthProvider())} onAnon={() => signInAnonymously(auth)} />;
+
+            return (
+                <div className="flex h-screen w-full">
+                    <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+                    <div className="flex-1 flex flex-col min-w-0 h-full relative z-10">
+                        <main className="flex-1 overflow-y-auto p-8 scrollbar-hide">
+                            <div className="max-w-7xl mx-auto h-full flex flex-col">
+                                {activeTab === 'dashboard' && <Dashboard jobs={jobs} queueStatus={queueStatus} />}
+                                {activeTab === 'references' && <ReferenceManager user={user} references={references} showToast={showToast} />}
+                                {activeTab === 'generator' && <Generator user={user} apiKeys={apiKeys} references={references} showToast={showToast} genState={genState} setGenState={setGenState} savedPrompts={savedPrompts} />}
+                                {activeTab === 'jobs' && <JobBoard jobs={jobs} user={user} showToast={showToast} />}
+                                {activeTab === 'settings' && <SettingsPage user={user} apiKeys={apiKeys} settings={settings} setSettings={setSettings} showToast={showToast} />}
+                            </div>
+                        </main>
+                        <Footer queueStatus={queueStatus} apiKeyStatus={apiKeys} />
+                    </div>
+                    {toast && (
+                        <div className={`fixed bottom-8 right-8 px-6 py-4 rounded-xl shadow-2xl z-50 animate-fade-in-up flex items-center gap-3 backdrop-blur-xl border ${toast.type === 'error' ? 'bg-red-500/20 border-red-500/50 text-red-200' : 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200'}`}>
+                            <i className={`bi ${toast.type === 'error' ? 'bi-x-circle-fill' : 'bi-check-circle-fill'} text-xl`}></i>
+                            <span className="font-medium tracking-wide">{toast.message}</span>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // --- ROOT RENDER ---
+        function Root() {
+            // Check if app is initialized (valid config)
+            if (!firebaseApp) return <ConfigWizard />;
+            return <App />;
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<Root />);
+    </script>
+</body>
+</html>
