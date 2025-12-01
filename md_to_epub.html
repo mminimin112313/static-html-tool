@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown to EPUB 변환기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 마크다운 파서 -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.1/dist/markdown-it.min.js"></script>
+    <!-- ZIP 파일 생성 라이브러리 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- 아이콘 -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
+        /* 미리보기 영역 스타일 (책 느낌) */
+        .preview-content h1 { font-size: 2em; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.2em; }
+        .preview-content h2 { font-size: 1.5em; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
+        .preview-content h3 { font-size: 1.25em; font-weight: bold; margin-bottom: 0.5em; margin-top: 1em; }
+        .preview-content p { margin-bottom: 1em; line-height: 1.7; text-align: justify; }
+        .preview-content ul, .preview-content ol { margin-bottom: 1em; padding-left: 1.5em; }
+        .preview-content ul { list-style-type: disc; }
+        .preview-content ol { list-style-type: decimal; }
+        .preview-content blockquote { border-left: 4px solid #3b82f6; padding-left: 1em; color: #475569; font-style: italic; margin: 1em 0; background: #f8fafc; padding: 1em; border-radius: 0 4px 4px 0; }
+        .preview-content pre { background: #1e293b; color: #f8fafc; padding: 1em; border-radius: 6px; overflow-x: auto; margin-bottom: 1em; }
+        .preview-content code { background: #f1f5f9; color: #ef4444; padding: 0.2em 0.4em; border-radius: 4px; font-family: monospace; font-size: 0.9em; }
+        .preview-content pre code { background: transparent; color: inherit; padding: 0; }
+        .preview-content img { max-width: 100%; height: auto; border-radius: 6px; margin: 1em auto; display: block; }
+        .preview-content hr { border: 0; border-top: 2px dashed #cbd5e1; margin: 2em 0; }
+        .preview-content table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
+        .preview-content th, .preview-content td { border: 1px solid #cbd5e1; padding: 0.5em; text-align: left; }
+        .preview-content th { background-color: #f1f5f9; font-weight: bold; }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen flex flex-col overflow-hidden text-gray-800">
+
+    <!-- 헤더 -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shrink-0 shadow-sm z-10">
+        <div class="flex items-center gap-2">
+            <i data-lucide="book-open" class="text-blue-600 w-6 h-6"></i>
+            <h1 class="text-xl font-bold text-gray-800">MD to EPUB 변환기</h1>
+        </div>
+        <div class="flex items-center gap-3">
+            <button onclick="document.getElementById('fileInput').click()" class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                <i data-lucide="upload" class="w-4 h-4"></i>
+                MD 파일 열기
+            </button>
+            <input type="file" id="fileInput" accept=".md,.txt" class="hidden" onchange="handleFileUpload(event)">
+            
+            <button onclick="downloadEpub()" id="downloadBtn" class="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors shadow-sm">
+                <i data-lucide="download" class="w-4 h-4"></i>
+                EPUB 다운로드
+            </button>
+        </div>
+    </header>
+
+    <!-- 메인 콘텐츠 -->
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- 왼쪽: 설정 및 에디터 -->
+        <div class="w-1/2 flex flex-col border-r border-gray-200 bg-white">
+            <!-- 책 정보 입력 -->
+            <div class="p-4 bg-gray-50 border-b border-gray-200 grid grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">책 제목</label>
+                    <input type="text" id="bookTitle" value="나의 전자책" class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500 transition-colors">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 uppercase mb-1">저자</label>
+                    <input type="text" id="bookAuthor" value="저자 미상" class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:border-blue-500 transition-colors">
+                </div>
+            </div>
+
+            <!-- 마크다운 입력창 -->
+            <div class="flex-1 relative">
+                <textarea id="markdownInput" class="w-full h-full p-6 resize-none focus:outline-none font-mono text-sm leading-relaxed text-gray-700" placeholder="# 여기에 Markdown을 입력하세요...&#10;&#10;## 챕터 1&#10;&#10;이곳에 내용을 작성하면 오른쪽에서 미리보기가 가능합니다."></textarea>
+            </div>
+        </div>
+
+        <!-- 오른쪽: 미리보기 -->
+        <div class="w-1/2 bg-gray-100 flex flex-col">
+            <div class="flex items-center justify-between px-4 py-2 bg-gray-200 border-b border-gray-300 text-xs text-gray-600 font-medium">
+                <span>미리보기 (eReader 스타일)</span>
+                <span id="wordCount">0자</span>
+            </div>
+            <div class="flex-1 overflow-y-auto p-8 lg:p-12">
+                <div class="bg-white shadow-lg rounded-sm max-w-2xl mx-auto min-h-[600px] p-8 lg:p-12 preview-content" id="previewArea">
+                    <!-- 변환된 HTML이 여기에 표시됩니다 -->
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 토스트 메시지 -->
+    <div id="toast" class="fixed bottom-5 right-5 bg-gray-800 text-white px-4 py-3 rounded shadow-lg transform translate-y-20 opacity-0 transition-all duration-300 z-50 flex items-center gap-2">
+        <i data-lucide="check-circle" class="w-5 h-5 text-green-400"></i>
+        <span id="toastMessage">작업 완료</span>
+    </div>
+
+    <script>
+        // 초기화
+        lucide.createIcons();
+        const md = window.markdownit({
+            html: true,
+            breaks: true,
+            linkify: true
+        });
+
+        const markdownInput = document.getElementById('markdownInput');
+        const previewArea = document.getElementById('previewArea');
+        const bookTitleInput = document.getElementById('bookTitle');
+        const bookAuthorInput = document.getElementById('bookAuthor');
+        const wordCount = document.getElementById('wordCount');
+
+        // 기본 텍스트 설정
+        const defaultText = `# 환영합니다!
+
+이 도구는 Markdown 텍스트를 **EPUB 전자책**으로 변환해줍니다.
+
+## 사용 방법
+1. 왼쪽 창에 글을 쓰거나 \`.md\` 파일을 엽니다.
+2. 상단에서 **책 제목**과 **저자**를 수정합니다.
+3. **EPUB 다운로드** 버튼을 누릅니다.
+
+## 지원하는 기능
+* **굵게**, *기울임*, ~~취소선~~
+* 목록 (순서 있는/없는)
+* > 인용문
+* 코드 블록
+* 링크 및 이미지
+
+즐거운 글쓰기 되세요!`;
+
+        markdownInput.value = defaultText;
+
+        // 실시간 미리보기 함수
+        function updatePreview() {
+            const markdownText = markdownInput.value;
+            const htmlContent = md.render(markdownText);
+            previewArea.innerHTML = htmlContent;
+            wordCount.textContent = `${markdownText.length.toLocaleString()}자`;
+        }
+
+        // 입력 이벤트 리스너
+        markdownInput.addEventListener('input', updatePreview);
+        
+        // 초기 실행
+        updatePreview();
+
+        // 파일 업로드 처리
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                markdownInput.value = e.target.result;
+                // 파일명에서 확장자 제거 후 제목으로 설정
+                const fileName = file.name.replace(/\.[^/.]+$/, "");
+                bookTitleInput.value = fileName;
+                updatePreview();
+                showToast("파일을 성공적으로 불러왔습니다.");
+            };
+            reader.readAsText(file);
+        }
+
+        // UUID 생성 (EPUB 필수 요소)
+        function generateUUID() {
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
+
+        // EPUB 생성 및 다운로드 로직
+        async function downloadEpub() {
+            const zip = new JSZip();
+            const title = bookTitleInput.value || "Untitled";
+            const author = bookAuthorInput.value || "Unknown";
+            const uuid = generateUUID();
+            const date = new Date().toISOString().split('T')[0];
+            
+            // Markdown을 HTML로 변환
+            const contentHtml = md.render(markdownInput.value);
+
+            // 1. mimetype (압축하지 않음, 무조건 첫 번째 파일이어야 함)
+            zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+
+            // 2. META-INF/container.xml
+            zip.folder("META-INF").file("container.xml", `<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+    <rootfiles>
+        <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+    </rootfiles>
+</container>`);
+
+            // 3. OEBPS 폴더 생성
+            const oebps = zip.folder("OEBPS");
+
+            // 4. style.css
+            const css = `
+body { font-family: sans-serif; line-height: 1.6; padding: 1em; }
+h1, h2, h3 { color: #333; margin-top: 1.5em; margin-bottom: 0.5em; }
+h1 { border-bottom: 1px solid #ddd; padding-bottom: 0.2em; font-size: 2em; }
+p { margin-bottom: 1em; text-align: justify; }
+img { max-width: 100%; height: auto; }
+code { background-color: #f4f4f4; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+pre { background-color: #f4f4f4; padding: 1em; overflow-x: auto; border-radius: 5px; }
+blockquote { border-left: 4px solid #ccc; margin: 1em 0; padding-left: 1em; color: #666; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #f2f2f2; }
+`;
+            oebps.file("style.css", css);
+
+            // 5. content.xhtml (실제 내용)
+            const xhtml = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="ko" xml:lang="ko">
+<head>
+    <title>${title}</title>
+    <link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+    <h1>${title}</h1>
+    ${contentHtml}
+</body>
+</html>`;
+            oebps.file("content.xhtml", xhtml);
+
+            // 6. content.opf (패키지 정의 파일)
+            const opf = `<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0">
+    <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+        <dc:title>${title}</dc:title>
+        <dc:creator>${author}</dc:creator>
+        <dc:identifier id="BookId">urn:uuid:${uuid}</dc:identifier>
+        <dc:language>ko</dc:language>
+        <meta property="dcterms:modified">${new Date().toISOString().replace(/\.[0-9]{3}/, '')}</meta>
+    </metadata>
+    <manifest>
+        <item id="style" href="style.css" media-type="text/css"/>
+        <item id="content" href="content.xhtml" media-type="application/xhtml+xml"/>
+        <item id="toc" href="toc.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    </manifest>
+    <spine>
+        <itemref idref="content"/>
+    </spine>
+</package>`;
+            oebps.file("content.opf", opf);
+
+            // 7. toc.xhtml (목차 - 필수)
+            const toc = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops">
+<head>
+    <title>${title}</title>
+</head>
+<body>
+    <nav epub:type="toc" id="toc">
+        <h1>목차</h1>
+        <ol>
+            <li><a href="content.xhtml">본문</a></li>
+        </ol>
+    </nav>
+</body>
+</html>`;
+            oebps.file("toc.xhtml", toc);
+
+            // 파일 생성 및 다운로드 트리거
+            try {
+                const blob = await zip.generateAsync({ type: "blob" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${title.replace(/[^a-zA-Z0-9가-힣]/g, "_")}.epub`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast("EPUB 변환 및 다운로드가 완료되었습니다!");
+            } catch (error) {
+                console.error(error);
+                showToast("오류가 발생했습니다: " + error.message);
+            }
+        }
+
+        // 토스트 메시지 표시 함수
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            toastMessage.textContent = message;
+            
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
