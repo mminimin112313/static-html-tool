@@ -36,6 +36,11 @@
 
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;700;900&display=swap" rel="stylesheet">
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
     <!-- React & ReactDOM -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
@@ -102,7 +107,7 @@
     <script type="text/babel" data-type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js";
         import { getAuth, signInWithPopup, GoogleAuthProvider, signInAnonymously, onAuthStateChanged, signInWithCustomToken, signOut } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js";
-        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, updateDoc, doc, deleteDoc, setDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, query, orderBy, onSnapshot, updateDoc, doc, deleteDoc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js";
 
         const { useState, useEffect, useRef, useCallback } = React;
 
@@ -138,11 +143,108 @@
         const JOB_STATUS = { PENDING: 'pending', PROCESSING: 'processing', COMPLETED: 'completed', FAILED: 'failed' };
         const KEY_STATUS = { READY: 'ready', BUSY: 'busy', COOLDOWN: 'cooldown', DEAD: 'dead' };
         const AVAILABLE_MODELS = [
+            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
             { id: 'gemini-2.5-flash-preview-09-2025', name: 'Gemini 2.5 Flash Preview' },
             { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro' },
-            { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
-            { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash Lite' },
+            { id: 'gemini-2.0-flash-exp', name: 'Gemini 2.0 Flash Exp' },
+            { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro' },
+            { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash' },
         ];
+
+        // --- Cover Themes (Ported from User File) ---
+        // --- Cover Themes (Hardcoded Styles for Stability) ---
+        const COVER_THEMES = [
+        {
+            id: 2, name: "Statute Insight", desc: "법령 스타일, 깔끔한 라인",
+            render: (data) => `
+            <div class="w-full h-full bg-white flex flex-col relative border-[20px] border-slate-100" style="font-family: 'Pretendard', sans-serif;">
+                <div class="h-2 w-full bg-[#0F172A]"></div>
+                <div class="flex-1 p-16 flex flex-col justify-center relative overflow-hidden">
+                <div class="absolute right-[-50px] top-[-50px] text-[15rem] text-slate-50 opacity-80"><i class="bi bi-paragraph"></i></div>
+                <div class="w-14 h-14 bg-[#0F172A] flex items-center justify-center text-white text-2xl mb-10 shadow-sm rounded-sm"><i class="bi ${data.icon}"></i></div>
+                <div class="relative z-10">
+                    <span class="text-[#B45309] text-sm uppercase block mb-6 font-bold" style="letter-spacing: 0.3em;">${data.category}</span>
+                    <h1 class="text-slate-900 text-[4.8rem] font-bold leading-[1.15] mb-10 break-keep" style="letter-spacing: -2px;">${data.title.replace(/\n/g, '<br/>')}</h1>
+                    <p class="text-slate-500 text-2xl leading-relaxed border-l-4 border-slate-200 pl-6 max-w-2xl" style="font-family: 'Noto Serif KR', serif; letter-spacing: -0.5px;">${data.subtitle}</p>
+                </div>
+                </div>
+                <div class="h-[120px] bg-[#0F172A] flex items-center justify-between px-16">
+                <div class="text-white/80 text-lg font-light" style="letter-spacing: 0.05em;">${data.author}</div>
+                <div class="bg-[#B45309] text-white px-6 py-2 text-lg font-bold">자세히 보기 <i class="bi bi-arrow-right ml-2"></i></div>
+                </div>
+            </div>`
+        },
+        {
+            id: 3, name: "Expert Column", desc: "칼럼 스타일, 텍스트 중심",
+            render: (data) => `
+            <div class="w-full h-full bg-[#0F172A] flex flex-col items-center justify-center p-20 text-center relative overflow-hidden" style="font-family: 'Pretendard', sans-serif;">
+                <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] border border-white/5 rounded-full"></div>
+                <div class="relative z-10">
+                <div class="inline-flex items-center gap-3 mb-10 border border-white/20 px-5 py-2 rounded-full">
+                    <span class="w-2 h-2 rounded-full bg-[#B45309]"></span>
+                    <span class="text-slate-300 text-sm uppercase font-bold" style="letter-spacing: 0.15em;">${data.category}</span>
+                </div>
+                <h1 class="text-white text-[5rem] font-bold leading-[1.2] mb-12" style="font-family: 'Noto Serif KR', serif; letter-spacing: -2px;">${data.title.replace(/\n/g, '<br/>')}</h1>
+                <p class="text-slate-400 text-2xl font-light max-w-2xl mx-auto leading-relaxed" style="letter-spacing: -0.5px;">${data.subtitle}</p>
+                </div>
+                <div class="absolute bottom-12 text-[#B45309] opacity-50 text-sm uppercase" style="letter-spacing: 0.5em;">${data.author}</div>
+            </div>`
+        },
+        {
+            id: 4, name: "Case Study", desc: "카드형 디자인",
+            render: (data) => `
+            <div class="w-full h-full bg-slate-100 flex items-center justify-center p-14" style="font-family: 'Pretendard', sans-serif;">
+                <div class="bg-white w-full h-full shadow-xl flex flex-col border-t-8 border-[#0F172A]">
+                <div class="flex-[1] border-b border-slate-100 relative p-10 flex items-start justify-between">
+                    <div class="bg-white px-4 py-2 shadow-sm border border-slate-100"><span class="text-slate-400 text-xs font-bold uppercase" style="letter-spacing: 0.05em;">Case No. 2025</span></div>
+                    <i class="bi ${data.icon} text-5xl text-slate-200"></i>
+                </div>
+                <div class="flex-[2] p-12 flex flex-col justify-center">
+                    <span class="text-[#B45309] font-bold uppercase text-sm mb-4 block" style="letter-spacing: 0.15em;">${data.category}</span>
+                    <h1 class="text-slate-800 text-[4.5rem] font-bold leading-[1.15] mb-8 break-keep" style="letter-spacing: -2px;">${data.title.replace(/\n/g, ' ')}</h1>
+                    <p class="text-slate-500 text-2xl leading-relaxed" style="letter-spacing: -0.5px;">${data.subtitle}</p>
+                </div>
+                <div class="px-12 py-8 bg-slate-50 border-t border-slate-100 flex items-center justify-between">
+                    <span class="text-slate-400 font-bold text-sm">${data.author}</span>
+                    <div class="text-[#0F172A] font-bold text-lg flex items-center gap-2">Read Case <i class="bi bi-chevron-right text-xs"></i></div>
+                </div>
+                </div>
+            </div>`
+        },
+        {
+            id: 5, name: "Core Message", desc: "강조형 디자인",
+            render: (data) => `
+            <div class="w-full h-full bg-[#FDFBF7] flex flex-col items-center justify-center p-16 text-center border-[24px] border-white shadow-inner" style="font-family: 'Pretendard', sans-serif;">
+                <i class="bi bi-quote text-6xl text-[#B45309]/30 mb-8"></i>
+                <h1 class="text-slate-900 text-[4.2rem] font-black leading-[1.25] mb-12 max-w-4xl break-keep" style="font-family: 'Noto Serif KR', serif; letter-spacing: -2px;">${data.title.replace(/\n/g, '<br/>')}</h1>
+                <div class="w-16 h-1 bg-[#0F172A] mb-10"></div>
+                <p class="text-slate-600 text-2xl font-medium max-w-2xl leading-relaxed mb-12" style="letter-spacing: -0.5px;">${data.subtitle}</p>
+                <div class="inline-block border border-slate-300 px-6 py-2 rounded-full">
+                <span class="text-slate-400 text-sm font-bold uppercase" style="letter-spacing: 0.1em;">${data.author}</span>
+                </div>
+            </div>`
+        },
+        {
+            id: 6, name: "Daily Brief", desc: "뉴스레터 스타일",
+            render: (data) => `
+            <div class="w-full h-full bg-[#1E293B] text-white flex flex-col p-16 justify-between relative overflow-hidden" style="font-family: 'Pretendard', sans-serif;">
+                <div class="absolute left-0 top-0 bottom-0 w-3 bg-[#B45309]"></div>
+                <div class="flex justify-between items-start pl-8 border-b border-slate-700 pb-8 z-10">
+                <div class="bg-[#B45309] text-white px-4 py-1 font-bold uppercase text-sm" style="letter-spacing: 0.1em;">${data.category}</div>
+                <span class="text-slate-500 italic text-lg" style="font-family: 'Noto Serif KR', serif;">Legal Report</span>
+                </div>
+                <div class="flex-1 flex flex-col justify-center pl-8 z-10">
+                <h1 class="text-[5rem] font-bold leading-[1.1] mb-10 text-white/95" style="letter-spacing: -2px;">${data.title.replace(/\n/g, '<br/>')}</h1>
+                <p class="text-slate-400 text-2xl max-w-2xl leading-relaxed" style="letter-spacing: -0.5px;">${data.subtitle}</p>
+                </div>
+                <div class="pl-8 pt-8 flex items-center gap-4 border-t border-slate-700">
+                <div class="w-12 h-12 bg-slate-800 rounded-full flex items-center justify-center text-slate-300"><i class="bi ${data.icon} text-2xl"></i></div>
+                <div><div class="text-sm font-bold text-slate-300 uppercase">Writer</div><div class="text-white font-medium">${data.author}</div></div>
+                </div>
+            </div>`
+        }
+        ];
+            
 
         // --- IndexedDB & Utils ---
         const idb = {
@@ -220,6 +322,20 @@
             cleaned = cleaned.replace(/^(?:[#]{1,6}|[*\-+]|[>\s]+|[0-9]+\.)\s*/gm, '');
             cleaned = cleaned.replace(/^---*|^===*|^___*/gm, '');
 
+            // 3. 상용구 패턴 제거 (확장됨)
+            const boilerplatePatterns = [
+                /^대표사진 삭제링크AI 활용 설정/,
+                /^사진 설명을 입력하세요/,
+                /^이미지 썸네일 삭제/,
+                /^출처 입력/,
+                /^김무관법무사사무소/,
+                /^경기도 수원시 영통구.*$/,
+                /^\s*#.*/,
+                /^대표사진 삭제/, /^사진 설명/
+            ];
+            boilerplatePatterns.forEach(pattern => {
+                cleaned = cleaned.replace(new RegExp(pattern, 'gm'), '');
+            });
 
             // 4. 가짜 공백(Unicode Fake Space) 제거
             const fakeSpaceRegex = /[\u00A0\u1680\u180E\u2000-\u200A\u202F\u205F\u3000\u200B\u200C\u200D\uFEFF]/g;
@@ -412,12 +528,11 @@
             );
         }
 
-        function Generator({ user, apiKeys, references, showToast, genState, setGenState, savedPrompts }) {
-                const [selectedRefIds, setSelectedRefIds] = useState([]);
-                const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash-preview-09-2025');
-                const [refSearch, setRefSearch] = useState('');
+        function Generator({ user, apiKeys, references, showToast, genState, setGenState, savedPrompts, modelConfig, setModelConfig }) {
+            const [selectedRefIds, setSelectedRefIds] = useState([]);
+            const [refSearch, setRefSearch] = useState('');
 
-                const applyTemplateDirect = (template) => {
+            const applyTemplateDirect = (template) => {
                     if (confirm('현재 작성 중인 프롬프트가 덮어씌워집니다. 진행하시겠습니까?')) {
                     setGenState(p => ({ ...p, basePrompt: template.content }));
                     showToast(`'${template.title}' 템플릿을 불러왔습니다.`, 'success');
@@ -461,7 +576,7 @@
                 const batch = list.map(topic => addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'jobs'), {
                     topic: topic.trim(),
                     prompt: genState.basePrompt.replace('{{주제}}', topic).replace('{{자료}}', refs || '없음'),
-                    model: selectedModel,
+                    modelConfig: modelConfig, // Save all model settings
                     status: JOB_STATUS.PENDING,
                     createdAt: Date.now(),
                     images: []
@@ -475,15 +590,47 @@
                 <div className="h-full flex flex-col space-y-6 animate-fade-in-up">
                     <div className="flex items-center justify-between gradient-border-bottom pb-6">
                         <div><h2 className="text-3xl font-bold text-white mb-2">크리에이티브 스튜디오</h2><p className="text-slate-400">대량 콘텐츠 생성 및 프롬프트 엔지니어링</p></div>
-                        <div className="glass-panel px-4 py-2 rounded-xl flex items-center gap-3 border border-indigo-500/30"><i className="bi bi-cpu text-indigo-400"></i><select className="bg-transparent text-sm text-white font-medium outline-none cursor-pointer" value={selectedModel} onChange={e=>setSelectedModel(e.target.value)}>{AVAILABLE_MODELS.map(m=><option key={m.id} value={m.id} className="bg-slate-900">{m.name}</option>)}</select></div>
                     </div>
+                    
+                    {/* Model & Theme Configuration Panel */}
+                    <div className="glass-panel p-4 rounded-2xl border border-white/10 flex flex-wrap gap-4 items-center justify-between bg-white/[0.02]">
+                         <div className="flex gap-4 flex-wrap">
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">✍️ 글 작성 모델</label>
+                                <select className="bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none" value={modelConfig.text} onChange={e=>setModelConfig(p=>({...p,text:e.target.value}))}>
+                                    {AVAILABLE_MODELS.map(m=><option key={m.id} value={m.id} className="bg-slate-900">{m.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">📊 도표 모델</label>
+                                <select className="bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none" value={modelConfig.chart} onChange={e=>setModelConfig(p=>({...p,chart:e.target.value}))}>
+                                    {AVAILABLE_MODELS.map(m=><option key={m.id} value={m.id} className="bg-slate-900">{m.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">🎨 표지 모델</label>
+                                <select className="bg-black/30 border border-white/10 rounded-lg px-2 py-1.5 text-xs text-white outline-none" value={modelConfig.cover} onChange={e=>setModelConfig(p=>({...p,cover:e.target.value}))}>
+                                    {AVAILABLE_MODELS.map(m=><option key={m.id} value={m.id} className="bg-slate-900">{m.name}</option>)}
+                                </select>
+                            </div>
+                         </div>
+                         <div className="flex flex-col gap-1 w-full md:w-auto">
+                            <label className="text-[10px] text-indigo-400 font-bold uppercase tracking-wider">🖼️ 표지 디자인 테마</label>
+                            <select className="bg-indigo-900/30 border border-indigo-500/30 rounded-lg px-3 py-1.5 text-xs text-white outline-none font-bold" value={modelConfig.themeId} onChange={e=>setModelConfig(p=>({...p,themeId:Number(e.target.value)}))}>
+                                {COVER_THEMES.map(t=><option key={t.id} value={t.id} className="bg-slate-900">{t.id}. {t.name}</option>)}
+                            </select>
+                         </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-8 flex-1 min-h-0">
-                        <div className="flex flex-col gap-6">
-                            <div className="glass-panel p-6 rounded-3xl flex-1 flex flex-col border border-white/10 hover:border-indigo-500/30 transition-colors">
+                        <div className="flex flex-col gap-6 h-full min-h-0">
+                            {/* 주제 목록: 높이 축소 (flex-1 -> h-48) */}
+                            <div className="glass-panel p-6 rounded-3xl h-48 flex-shrink-0 flex flex-col border border-white/10 hover:border-indigo-500/30 transition-colors">
                                 <label className="mb-4 font-bold text-white flex items-center gap-2"><i className="bi bi-list-task text-indigo-400"></i> 주제 목록 (Bulk Input)</label>
                                 <textarea className="flex-1 bg-black/20 border border-white/10 rounded-xl p-5 text-white placeholder-slate-600 focus:border-indigo-500 outline-none resize-none leading-relaxed text-sm" placeholder="한 줄에 하나씩 주제를 입력하세요..." value={genState.topics} onChange={e=>setGenState(p=>({...p, topics:e.target.value}))}/>
                             </div>
-                            <div className="glass-panel p-6 rounded-3xl h-72 flex flex-col border border-white/10 hover:border-indigo-500/30 transition-colors">
+                            {/* 참고 자료: 높이 확대 (h-72 -> flex-1) */}
+                            <div className="glass-panel p-6 rounded-3xl flex-1 flex flex-col border border-white/10 hover:border-indigo-500/30 transition-colors min-h-0 overflow-hidden">
                                 <label className="mb-2 font-bold text-white flex items-center gap-2"><i className="bi bi-link-45deg text-indigo-400"></i> 참고 자료 연결</label>
                                 <div className="mb-3"><input className="w-full bg-black/20 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-slate-500 focus:border-indigo-500 outline-none transition-colors" placeholder="자료 검색..." value={refSearch} onChange={e=>setRefSearch(e.target.value)} /></div>
                                 <div className="flex-1 overflow-y-auto space-y-2 scrollbar-hide pr-2">
@@ -529,26 +676,161 @@
             );
         }
 
-        function JobBoard({ jobs, user, showToast }) {
+        function BatchCoverModal({ isOpen, onClose, onConfirm, count, models }) {
+            const [selectedModel, setSelectedModel] = useState('gemini-2.5-flash-lite');
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in-up">
+                    <div className="bg-[#0f172a] border border-white/10 p-8 rounded-3xl max-w-md w-full shadow-2xl relative">
+                        <h3 className="text-2xl font-bold text-white mb-2">미완성 작업 일괄 처리</h3>
+                        <p className="text-slate-400 mb-6">표지가 없는 <span className="text-indigo-400 font-bold">{count}</span>개의 작업을 발견했습니다.<br/>일괄 생성에 사용할 모델을 선택하세요.</p>
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs text-slate-500 font-bold uppercase mb-2">Select AI Model</label>
+                                <select className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white outline-none focus:border-indigo-500 transition-colors" value={selectedModel} onChange={e=>setSelectedModel(e.target.value)}>
+                                    {models.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                                </select>
+                            </div>
+                            <div className="flex gap-3 pt-4">
+                                <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-white/10 text-slate-400 hover:bg-white/5 transition-colors">취소</button>
+                                <button onClick={() => onConfirm(selectedModel)} className="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg shadow-indigo-500/20 transition-all">작업 시작</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function JobBoard({ jobs, user, showToast, onSelectJob, onOpenBatch }) {
             const [filter, setFilter] = useState('all');
-            const [selectedJob, setSelectedJob] = useState(null);
             const filtered = jobs.filter(j => filter==='all' || j.status===filter);
+            const missingCoverCount = jobs.filter(j => j.status === 'completed' && !j.coverJson).length;
             const copy = (txt) => { if(!txt) return showToast('복사할 내용이 없습니다.', 'error'); navigator.clipboard.writeText(cleanText(txt)); showToast('텍스트가 정제되어 복사되었습니다.', 'success'); };
             const copyCode = (code) => { if(!code) return; navigator.clipboard.writeText(code); showToast('코드가 복사되었습니다.', 'success'); };
             return (
                 <div className="space-y-8 animate-fade-in-up">
-                    <div className="flex justify-between items-center gradient-border-bottom pb-6"><div><h2 className="text-3xl font-bold text-white mb-2">작업 관리 센터</h2><p className="text-slate-400">실시간 진행 상황 모니터링 및 결과 확인</p></div><div className="flex bg-black/30 rounded-xl p-1.5 border border-white/10 backdrop-blur-md">{['all','completed','pending','failed'].map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-4 py-2 rounded-lg capitalize text-sm font-medium transition-all ${filter===f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>{f}</button>)}</div></div>
+                    <div className="flex justify-between items-center gradient-border-bottom pb-6">
+                        <div><h2 className="text-3xl font-bold text-white mb-2">작업 관리 센터</h2><p className="text-slate-400">실시간 진행 상황 모니터링 및 결과 확인</p></div>
+                        <div className="flex gap-3">
+                            {missingCoverCount > 0 && (
+                                <button onClick={onOpenBatch} className="px-4 py-2 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 border border-indigo-500/30 rounded-xl text-sm font-bold transition-all flex items-center gap-2 animate-pulse">
+                                    <i className="bi bi-magic"></i> 미완성 해결 ({missingCoverCount})
+                                </button>
+                            )}
+                            <div className="flex bg-black/30 rounded-xl p-1.5 border border-white/10 backdrop-blur-md">{['all','completed','pending','failed'].map(f=><button key={f} onClick={()=>setFilter(f)} className={`px-4 py-2 rounded-lg capitalize text-sm font-medium transition-all ${filter===f ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}>{f}</button>)}</div>
+                        </div>
+                    </div>
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                         {filtered.map(j => (
                             <div key={j.id} className="glass-panel rounded-3xl flex flex-col h-80 group hover:border-indigo-500/50 hover:bg-white/[0.02] transition-all duration-300 relative overflow-hidden">
                                 <div className="absolute top-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
-                                <div className="p-5 border-b border-white/5 flex justify-between items-center bg-white/[0.02]"><div className="flex items-center gap-2.5"><div className={`w-2.5 h-2.5 rounded-full ${j.status==='completed'?'bg-emerald-400 shadow-[0_0_10px_#34d399]':j.status==='failed'?'bg-red-500':'bg-amber-400 animate-pulse'}`}></div><span className="text-xs font-bold uppercase tracking-wider text-slate-400">{j.status}</span></div><button onClick={()=>setSelectedJob(j)} className="text-slate-400 hover:text-white transition-colors p-1"><i className="bi bi-three-dots-vertical"></i></button></div>
-                                <div onClick={()=>setSelectedJob(j)} className="p-6 flex-1 relative overflow-hidden cursor-pointer group-inner"><h3 className="font-bold text-lg mb-3 line-clamp-2 text-white group-hover:text-indigo-300 transition-colors">{j.topic}</h3><p className="text-sm text-slate-400 line-clamp-3 leading-relaxed font-light">{j.result || '대기열에서 처리를 기다리고 있습니다...'}</p><div className="absolute inset-0 bg-gradient-to-t from-[#111928] via-transparent opacity-90"></div></div>
+                                <div className="p-5 border-b border-white/5 flex justify-between items-center bg-white/[0.02]"><div className="flex items-center gap-2.5"><div className={`w-2.5 h-2.5 rounded-full ${j.status==='completed'?'bg-emerald-400 shadow-[0_0_10px_#34d399]':j.status==='failed'?'bg-red-500':'bg-amber-400 animate-pulse'}`}></div><span className="text-xs font-bold uppercase tracking-wider text-slate-400">{j.status}</span></div><button onClick={()=>onSelectJob(j)} className="text-slate-400 hover:text-white transition-colors p-1"><i className="bi bi-three-dots-vertical"></i></button></div>
+                                <div onClick={()=>onSelectJob(j)} className="p-6 flex-1 relative overflow-hidden cursor-pointer group-inner"><h3 className="font-bold text-lg mb-3 line-clamp-2 text-white group-hover:text-indigo-300 transition-colors">{j.topic}</h3><p className="text-sm text-slate-400 line-clamp-3 leading-relaxed font-light">{j.result || '대기열에서 처리를 기다리고 있습니다...'}</p><div className="absolute inset-0 bg-gradient-to-t from-[#111928] via-transparent opacity-90"></div></div>
                                 <div className="p-4 border-t border-white/5 flex justify-between items-center bg-black/20 backdrop-blur-sm"><div className="flex gap-2"><button onClick={()=>copy(j.result)} className="flex items-center gap-2 px-3 py-1.5 bg-white/5 hover:bg-indigo-600/20 hover:text-indigo-300 text-slate-400 rounded-lg text-xs font-medium border border-white/5 transition-all"><i className="bi bi-clipboard-check"></i> 텍스트</button><button disabled={!j.chartCode} onClick={()=>copyCode(j.chartCode)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium border border-white/5 transition-all ${j.chartCode?'bg-white/5 hover:bg-purple-600/20 hover:text-purple-300 text-slate-400':'opacity-30 cursor-not-allowed'}`}><i className="bi bi-pie-chart-fill"></i> 도표</button></div><button onClick={async(e)=>{e.stopPropagation(); if(confirm('영구 삭제하시겠습니까?')) await deleteDoc(doc(db,'artifacts',appId,'users',user.uid,'jobs',j.id))}} className="text-slate-600 hover:text-red-400 p-2 transition-colors"><i className="bi bi-trash3-fill"></i></button></div>
                             </div>
                         ))}
                     </div>
-                    {selectedJob && <JobModal job={selectedJob} onClose={()=>setSelectedJob(null)} user={user} showToast={showToast}/>}
+                </div>
+            );
+        }
+
+        function CoverEditor({ job, user, showToast, appId }) {
+            const [coverData, setCoverData] = useState(null);
+            const [themeId, setThemeId] = useState(2);
+            const previewRef = useRef(null);
+            
+            useEffect(() => {
+                if (job.coverJson) {
+                    try {
+                        const parsed = typeof job.coverJson === 'string' ? JSON.parse(job.coverJson) : job.coverJson;
+                        setCoverData(parsed);
+                    } catch(e) { console.error(e); }
+                }
+                if (job.modelConfig?.themeId) setThemeId(job.modelConfig.themeId);
+            }, [job]);
+
+            const downloadImage = async () => {
+                    if (!previewRef.current) return;
+                    try {
+                    // 업로드해주신 파일의 로직 적용: 렌더링 안정화를 위해 0.1초 대기
+                    await new Promise(resolve => setTimeout(resolve, 100));
+
+                    const canvas = await html2canvas(previewRef.current, {
+                        scale: 2,           // 고해상도 (업로드 파일 설정 유지)
+                        useCORS: true,      // 외부 이미지 허용 (업로드 파일 설정 유지)
+                        logging: false,
+                        backgroundColor: '#ffffff',
+                        // React 앱에서는 미리보기가 축소(scale-0.6)되어 있으므로, 
+                        // 저장할 때만 강제로 100% 크기로 복구해야 깨지지 않습니다.
+                        onclone: (clonedDoc) => {
+                        const el = clonedDoc.getElementById('cover-capture-target');
+                        
+                        }
+                    });
+
+                    const link = document.createElement('a');
+                    link.download = `cover_${job.id}.png`;
+                    link.href = canvas.toDataURL('image/png');
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    
+                    showToast('표지 이미지가 다운로드되었습니다.', 'success');
+                    } catch(e) { showToast('이미지 저장 실패: '+e.message, 'error'); }
+                };
+
+            const saveChanges = async () => {
+                try {
+                    await updateDoc(doc(db,'artifacts',appId,'users',user.uid,'jobs',job.id), { 
+                        coverJson: JSON.stringify(coverData),
+                        'modelConfig.themeId': themeId 
+                    });
+                    showToast('표지 설정이 저장되었습니다.', 'success');
+                } catch(e) { showToast('저장 실패', 'error'); }
+            };
+
+            if (!coverData) return <div className="flex items-center justify-center h-full text-slate-500">표지 데이터가 생성되지 않았습니다.</div>;
+
+            return (
+                <div className="flex flex-col xl:flex-row gap-8 h-full">
+                    {/* Controls */}
+                    <div className="w-full xl:w-1/3 space-y-6">
+                        <div className="glass-panel p-6 rounded-2xl border border-white/10">
+                            <h3 className="font-bold text-white mb-4 flex items-center gap-2"><i className="bi bi-palette text-indigo-400"></i> 디자인 설정</h3>
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="text-xs text-slate-400 block mb-1">테마 선택</label>
+                                    <select className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none" value={themeId} onChange={e=>setThemeId(Number(e.target.value))}>
+                                        {COVER_THEMES.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-slate-400 block mb-1">제목 (Title)</label>
+                                    <textarea className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none resize-none" rows="2" value={coverData.title} onChange={e=>setCoverData({...coverData, title:e.target.value})}/>
+                                </div>
+                                <div>
+                                    <label className="text-xs text-slate-400 block mb-1">부제 (Subtitle)</label>
+                                    <input className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none" value={coverData.subtitle} onChange={e=>setCoverData({...coverData, subtitle:e.target.value})}/>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div><label className="text-xs text-slate-400 block mb-1">카테고리</label><input className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none" value={coverData.category} onChange={e=>setCoverData({...coverData, category:e.target.value})}/></div>
+                                    <div><label className="text-xs text-slate-400 block mb-1">작성자</label><input className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none" value={coverData.author} onChange={e=>setCoverData({...coverData, author:e.target.value})}/></div>
+                                </div>
+                                <div><label className="text-xs text-slate-400 block mb-1">아이콘 (Bootstrap)</label><input className="w-full bg-black/30 border border-white/10 rounded-lg p-2 text-sm text-white outline-none" value={coverData.icon} onChange={e=>setCoverData({...coverData, icon:e.target.value})}/></div>
+                            </div>
+                            <div className="flex gap-2 mt-6">
+                                <button onClick={saveChanges} className="flex-1 py-2 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-200 rounded-lg text-sm border border-indigo-500/30 transition-colors">저장</button>
+                                <button onClick={downloadImage} className="flex-1 py-2 bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 rounded-lg text-sm border border-emerald-500/30 transition-colors"><i className="bi bi-download"></i> 다운로드</button>
+                            </div>
+                        </div>
+                    </div>
+                    {/* Preview */}
+                    <div className="flex-1 flex items-center justify-center bg-slate-900/50 rounded-3xl border border-white/5 overflow-hidden relative min-h-[500px]">
+                        <div className="scale-[0.6] sm:scale-[0.8] origin-center shadow-2xl">
+                             {/* 캡처 대상 식별을 위한 ID 추가 */}
+                             <div id="cover-capture-target" ref={previewRef} className="w-[800px] h-[800px] bg-white text-slate-900 overflow-hidden" dangerouslySetInnerHTML={{__html: (COVER_THEMES.find(t=>t.id===themeId) || COVER_THEMES[0])?.render(coverData) || ''}}></div>
+                        </div>
+                    </div>
                 </div>
             );
         }
@@ -651,7 +933,8 @@
                                     {[
                                         {id:'text', label:'원문 보기', icon:'bi-file-text'},
                                         {id:'media', label:`미디어 (${imgs.length})`, icon:'bi-images'},
-                                        {id:'chart', label:'데이터 시각화', icon:'bi-graph-up'}
+                                        {id:'chart', label:'데이터 시각화', icon:'bi-graph-up'},
+                                        {id:'cover', label:'스마트 표지', icon:'bi-card-image'}
                                     ].map(t=>(
                                         <button key={t.id} onClick={()=>setTab(t.id)} className={`px-5 py-2.5 rounded-xl text-sm font-medium transition-all flex items-center gap-2 ${tab===t.id?'bg-indigo-600 text-white shadow-lg shadow-indigo-500/25':'text-slate-400 hover:text-white hover:bg-white/5'}`}>
                                             <i className={`bi ${t.icon}`}></i> {t.label}
@@ -659,6 +942,7 @@
                                     ))}
                                 </div>
                                 <div className="flex-1 overflow-y-auto p-8 scrollbar-hide bg-[#0f172a]">
+                                {tab==='cover' && <CoverEditor job={job} user={user} showToast={showToast} appId={appId} />}
                                 {tab==='text' && <div className="prose prose-invert max-w-none whitespace-pre-wrap leading-8 text-slate-300 font-light text-lg">{job.result}</div>}
                                 {tab==='media' && <div 
                                     className={`space-y-8 rounded-2xl transition-all relative ${isDragging ? 'bg-indigo-500/20 ring-2 ring-indigo-500 ring-offset-2 ring-offset-[#0f172a] p-4 min-h-[400px]' : ''}`}
@@ -735,6 +1019,16 @@
                     <textarea className="w-full h-48 bg-black/20 border border-white/10 rounded-xl p-5 outline-none font-mono text-sm text-slate-300 focus:border-indigo-500 transition-colors leading-relaxed" value={settings.chartPrompt} onChange={e=>setSettings(p=>({...p,chartPrompt:e.target.value}))}/>
                     <p className="mt-2 text-xs text-slate-500">* 위 프롬프트는 <code>SettingsPage</code>를 벗어나더라도 유지되지만, 브라우저 종료 후에도 유지하려면 [설정 저장]을 누르세요.</p>
                 </div>
+
+                <div className="glass-panel p-8 rounded-3xl border border-white/10">
+                    <h3 className="font-bold text-xl text-white mb-6 flex items-center gap-2"><i className="bi bi-card-image text-indigo-400"></i> 표지 생성 프롬프트</h3>
+                    <textarea className="w-full h-48 bg-black/20 border border-white/10 rounded-xl p-5 outline-none font-mono text-sm text-slate-300 focus:border-indigo-500 transition-colors leading-relaxed" value={settings.coverPrompt} onChange={e=>setSettings(p=>({...p,coverPrompt:e.target.value}))}/>
+                    <div className="mt-2 flex gap-2 text-xs text-slate-500">
+                         <span className="bg-white/5 px-2 py-1 rounded">{'{{글}}'} : 생성된 본문</span>
+                         <span className="bg-white/5 px-2 py-1 rounded">{'{{테마}}'} : 선택한 테마 이름</span>
+                    </div>
+                </div>
+
                 </div>
             );
             }
@@ -757,8 +1051,19 @@
             const [activeTab, setActiveTab] = useState('dashboard');
             const [toast, setToast] = useState(null);
             const [queueStatus, setQueueStatus] = useState({ active: 0, pending: 0, completed: 0 });
+            const [selectedJob, setSelectedJob] = useState(null); 
+            const [showBatchModal, setShowBatchModal] = useState(false);
             
             const [jobs, setJobs] = useState([]);
+            
+            // Shared State for Persistence
+            const [modelConfig, setModelConfig] = useState({
+                text: 'gemini-2.5-flash-preview-09-2025',
+                chart: 'gemini-2.5-flash',
+                cover: 'gemini-2.5-flash-lite',
+                themeId: 2 // Default changed to 2 (Statute Insight)
+            });
+
             const [apiKeys, setApiKeys] = useState([]);
             const [references, setReferences] = useState([]);
             const [savedPrompts, setSavedPrompts] = useState([]);
@@ -769,8 +1074,33 @@
             });
             const [settings, setSettings] = useState({
                 chartPrompt: '위 텍스트 내용을 바탕으로 Recharts 라이브러리를 사용해 시각화할 수 있는 React 컴포넌트 코드를 작성해줘. 데이터는 JSON 형태로 포함시켜야 해. 오직 코드만 출력해.\n\n[기반 텍스트]\n{{글}}',
+                coverPrompt: '다음 텍스트를 분석하여 블로그 표지 디자인에 들어갈 내용을 JSON 형식으로 추출해줘.\n\n[디자인 테마]\n{{테마}}\n\n[본문 내용]\n{{글}}\n\n[필수 JSON 형식]\n{\n  "title": "표지 제목 (한글 15자 이내, 2줄 권장, 줄바꿈은 \\n)",\n  "subtitle": "부제 또는 핵심 요약",\n  "category": "카테고리 (예: 생활법률)",\n  "author": "작성자 (기본값: AI Master)",\n  "icon": "bi-bootstrap-icon-name (bi- 접두사 제외, 예: house-check)"\n}',
                 defaultImageId: null
             });
+
+            // Load Environment Config
+            useEffect(() => {
+                if (!user) return;
+                getDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'env')).then(snap => {
+                    if (snap.exists()) {
+                        const data = snap.data();
+                        if (data.basePrompt) setGenState(p => ({ ...p, basePrompt: data.basePrompt }));
+                        if (data.modelConfig) setModelConfig(p => ({ ...p, ...data.modelConfig }));
+                    }
+                });
+            }, [user]);
+
+            // Auto-save Environment Config (Debounced)
+            useEffect(() => {
+                if (!user) return;
+                const timer = setTimeout(() => {
+                    setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'settings', 'env'), {
+                        basePrompt: genState.basePrompt,
+                        modelConfig
+                    }, { merge: true });
+                }, 2000);
+                return () => clearTimeout(timer);
+            }, [user, genState.basePrompt, modelConfig]);
 
             // JobManager Refs
             const keyUsageTimestamps = useRef(new Map());
@@ -908,24 +1238,87 @@
                 }
             };
 
+            const processBatchCovers = async (modelId) => {
+                setShowBatchModal(false);
+                const targets = jobs.filter(j => j.status === JOB_STATUS.COMPLETED && !j.coverJson);
+                if (targets.length === 0) return showToast('처리할 작업이 없습니다.', 'error');
+                
+                showToast(`${targets.length}개의 표지 생성을 시작합니다...`, 'info');
+                
+                for (const job of targets) {
+                    const keys = getAvailableKeys();
+                    if (keys.length === 0) {
+                        showToast('사용 가능한 API 키가 없습니다. 잠시 후 다시 시도합니다.', 'error');
+                        await new Promise(r => setTimeout(r, 5000));
+                        continue;
+                    }
+                    const key = keys[0]; // Simple selection strategy
+                    
+                    try {
+                        await updateApiKeyStatus(key.id, 'busy');
+                        const themeName = COVER_THEMES.find(t => t.id === (job.modelConfig?.themeId || 2))?.name || 'Statute Insight';
+                        const coverPrompt = settings.coverPrompt.replace('{{글}}', job.result.substring(0, 3000)).replace('{{테마}}', themeName);
+                        
+                        const res = await callGeminiAPI(coverPrompt, key.key, modelId);
+                        
+                        if (res.success) {
+                            const jsonMatch = res.text.match(/\{[\s\S]*\}/);
+                            const coverJson = jsonMatch ? jsonMatch[0] : null;
+                            if (coverJson) {
+                                await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', job.id), { coverJson });
+                            }
+                        }
+                        await updateApiKeyStatus(key.id, 'ready');
+                    } catch (e) {
+                        console.error(e);
+                        await updateApiKeyStatus(key.id, 'cooldown');
+                    }
+                    await new Promise(r => setTimeout(r, 2000)); // Rate limit buffer
+                }
+                showToast('일괄 처리가 완료되었습니다.', 'success');
+            };
+
             const executeJob = async (job, key) => {
                 const now = Date.now();
                 await updateApiKeyStatus(key.id, 'busy');
                 await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', job.id), { status: JOB_STATUS.PROCESSING, startedAt: now });
 
-                const result = await callGeminiAPI(job.prompt, key.key, job.model);
+                // 1. Text Generation
+                const textModel = job.modelConfig?.text || job.model || 'gemini-2.5-flash-preview-09-2025';
+                const result = await callGeminiAPI(job.prompt, key.key, textModel);
 
                 if (result.success) {
                     let chartCode = null;
+                    let coverJson = null;
+
+                    // 2. Chart Generation
                     if (settings.chartPrompt) {
-                        await new Promise(r => setTimeout(r, 2000));
-                        const chartRes = await callGeminiAPI(settings.chartPrompt.replace('{{글}}', result.text), key.key, job.model);
+                        await new Promise(r => setTimeout(r, 1500));
+                        const chartModel = job.modelConfig?.chart || textModel;
+                        const chartRes = await callGeminiAPI(settings.chartPrompt.replace('{{글}}', result.text), key.key, chartModel);
                         if (chartRes.success) chartCode = chartRes.text;
                     }
+
+                    // 3. Cover Generation
+                    if (settings.coverPrompt) {
+                        await new Promise(r => setTimeout(r, 1500));
+                        const coverModel = job.modelConfig?.cover || textModel;
+                        const themeName = COVER_THEMES.find(t => t.id === (job.modelConfig?.themeId || 1))?.name || 'Standard';
+                        const coverPrompt = settings.coverPrompt.replace('{{글}}', result.text.substring(0, 3000)).replace('{{테마}}', themeName);
+                        
+                        const coverRes = await callGeminiAPI(coverPrompt, key.key, coverModel);
+                        if (coverRes.success) {
+                             // Clean JSON
+                             const jsonMatch = coverRes.text.match(/\{[\s\S]*\}/);
+                             coverJson = jsonMatch ? jsonMatch[0] : null;
+                        }
+                    }
+
                     await updateDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'jobs', job.id), {
                         status: JOB_STATUS.COMPLETED,
                         result: result.text,
                         chartCode: chartCode,
+                        coverJson: coverJson,
                         completedAt: Date.now()
                     });
                     await updateApiKeyStatus(key.id, 'ready');
@@ -969,13 +1362,15 @@
                             <div className="max-w-7xl mx-auto h-full flex flex-col">
                                 {activeTab === 'dashboard' && <Dashboard jobs={jobs} queueStatus={queueStatus} />}
                                 {activeTab === 'references' && <ReferenceManager user={user} references={references} showToast={showToast} />}
-                                {activeTab === 'generator' && <Generator user={user} apiKeys={apiKeys} references={references} showToast={showToast} genState={genState} setGenState={setGenState} savedPrompts={savedPrompts} />}
-                                {activeTab === 'jobs' && <JobBoard jobs={jobs} user={user} showToast={showToast} />}
+                                {activeTab === 'generator' && <Generator user={user} apiKeys={apiKeys} references={references} showToast={showToast} genState={genState} setGenState={setGenState} savedPrompts={savedPrompts} modelConfig={modelConfig} setModelConfig={setModelConfig} />}
+                                {activeTab === 'jobs' && <JobBoard jobs={jobs} user={user} showToast={showToast} onSelectJob={setSelectedJob} onOpenBatch={()=>setShowBatchModal(true)} />}
                                 {activeTab === 'settings' && <SettingsPage user={user} apiKeys={apiKeys} settings={settings} setSettings={setSettings} showToast={showToast} />}
                             </div>
                         </main>
                         <Footer queueStatus={queueStatus} apiKeyStatus={apiKeys} />
                     </div>
+                    <BatchCoverModal isOpen={showBatchModal} onClose={()=>setShowBatchModal(false)} onConfirm={processBatchCovers} count={jobs.filter(j => j.status === JOB_STATUS.COMPLETED && !j.coverJson).length} models={AVAILABLE_MODELS} />
+                    {selectedJob && <JobModal job={selectedJob} onClose={()=>setSelectedJob(null)} user={user} showToast={showToast} />}
                     {toast && (
                         <div className={`fixed bottom-8 right-8 px-6 py-4 rounded-xl shadow-2xl z-50 animate-fade-in-up flex items-center gap-3 backdrop-blur-xl border ${toast.type === 'error' ? 'bg-red-500/20 border-red-500/50 text-red-200' : 'bg-emerald-500/20 border-emerald-500/50 text-emerald-200'}`}>
                             <i className={`bi ${toast.type === 'error' ? 'bi-x-circle-fill' : 'bi-check-circle-fill'} text-xl`}></i>
