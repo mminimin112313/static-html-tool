@@ -201,12 +201,36 @@
 
         const cleanText = (text) => {
             if (!text) return "";
-            let cleaned = text.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '').replace(/\[\d+\]/g, '');
-            cleaned = cleaned.replace(/!\[[^\]]*\]\((?:[^)]+)\)/g, '').replace(/\[([^\]]+)\]\((?:[^)]+)\)/g, '$1');
-            cleaned = cleaned.replace(/(\*\*|__)(.*?)\1/g, '$2').replace(/(\*|_)(.*?)\1/g, '$2').replace(/`([^`]+)`/g, '$1');
-            cleaned = cleaned.replace(/^(?:[#]{1,6}|[*\-+]|[>\s]+|[0-9]+\.)\s*/gm, '').replace(/^---*|^===*|^___*/gm, '');
-            [ /^대표사진 삭제/, /^사진 설명/, /^이미지 썸네일/, /^출처 입력/, /^\s*#.*/ ].forEach(p => cleaned = cleaned.replace(new RegExp(p, 'gm'), ''));
-            return cleaned.split('\n').map(l => l.trim()).filter(l => l.length > 0).map(l => l.endsWith('?') ? '\n' + l + '\n\n' : l + '\n\n').join('').trim();
+            let cleaned = text;
+
+            // 1. HTML 태그 및 엔티티 처리
+            cleaned = cleaned.replace(/<br\s*\/?>/gi, '\n');
+            const entities = { 'amp': '&', 'gt': '>', 'lt': '<', 'quot': '"', 'apos': "'", 'nbsp': ' ' };
+            cleaned = cleaned.replace(/&([a-z\d]+);/gi, (match, entity) => entities[entity.toLowerCase()] || match);
+            cleaned = cleaned.replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(dec));
+            cleaned = cleaned.replace(/<[^>]*>/g, '');
+
+            // 2. [숫자] 형태 주석 및 마크다운 제거
+            cleaned = cleaned.replace(/\[\d+\]/g, '');
+            cleaned = cleaned.replace(/!\[[^\]]*\]\((?:[^)]+)\)/g, ''); // 이미지 제거
+            cleaned = cleaned.replace(/\[([^\]]+)\]\((?:[^)]+)\)/g, '$1'); // 링크 텍스트 유지
+            cleaned = cleaned.replace(/(\*\*|__)(.*?)\1/g, '$2');
+            cleaned = cleaned.replace(/(\*|_)(.*?)\1/g, '$2');
+            cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
+            cleaned = cleaned.replace(/^(?:[#]{1,6}|[*\-+]|[>\s]+|[0-9]+\.)\s*/gm, '');
+            cleaned = cleaned.replace(/^---*|^===*|^___*/gm, '');
+
+
+            // 4. 가짜 공백(Unicode Fake Space) 제거
+            const fakeSpaceRegex = /[\u00A0\u1680\u180E\u2000-\u200A\u202F\u205F\u3000\u200B\u200C\u200D\uFEFF]/g;
+            cleaned = cleaned.replace(fakeSpaceRegex, ' ');
+
+            // 5. 최종 포맷팅 (빈 줄 제거 및 개행 규칙 적용)
+            return cleaned.split('\n')
+                .map(l => l.trim())
+                .filter(l => l.length > 0)
+                .map(l => l.endsWith('?') ? '\n' + l + '\n\n' : l + '\n\n')
+                .join('').trim();
         };
 
         // --- COMPONENTS ---
