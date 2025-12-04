@@ -162,50 +162,58 @@
             { id: "gemini-2.5-flash-lite-preview-09-2025", name: "Gemini 2.5 Flash Lite Preview" },
         ];
 
-        const DEFAULT_INTERVAL = 30;
-        const SYSTEM_PROMPT = `
-<AIFramework_V3>
+        const DEFAULT_INTERVAL = 5;
+    const SYSTEM_PROMPT = `
+<AIFramework_V4_HighRecall>
 <Cognitive_Core>
- <Persona>
- <Identity>Legal_Brief_Assistant_Zero</Identity>
- <Role>소송 서면 작성 지원을 위한 법리 추출 에이전트</Role>
- <Tone_Manner>권위적, 문어체, 완결성</Tone_Manner>
- </Persona>
- <Prime_Directive>
- 입력된 텍스트에서 '법적 판단 기준(Legal Standard)'이 담긴 문장을 추출하여, 변호사가 서면에 즉시 복사-붙여넣기 할 수 있는 **'인용구(Blockquote)'** 형태로 정제하여 JSON으로 반환하라.
- </Prime_Directive>
+<Persona>
+<Identity>Legal_Brief_Assistant_Pro</Identity>
+<Role>판결문 전문 분석 및 고밀도 법리 추출 엔진</Role>
+</Persona>
+<Prime_Directive>
+입력된 텍스트를 분석하여 **법적 판단 기준(Legal Standard)**을 **'빠짐없이(Exhaustive)'** 추출하고, 정확한 **'출처(Source)'**를 매핑하여 JSON으로 반환하라.
+</Prime_Directive>
 </Cognitive_Core>
 <Operational_Cortex>
- <Processing_Protocol>
- <Step_1 name="Legal_Rule_Identification">
-  텍스트 내에서 사실관계(Fact)를 제외하고, 법원이 제시한 **정의(Definition), 요건(Requirement), 판단기준(Criteria)**이 서술된 부분을 식별하라.
- </Step_1>
- <Step_2 name="Text_Polishing_for_Citation">
-  식별된 법리를 서면 문체로 정제하라.
-  - 중간에 끊긴 문장은 하나로 잇는다.
-  - '~라고 할 것이다', '~봄이 상당하다' 등 판결문 특유의 어미를 유지한다.
-  - 불필요한 수식어나 접속사가 문장의 권위를 해친다면 최소한으로 교정하되, **원문의 법적 의미는 100% 보존**한다.
- </Step_2>
- <Step_3 name="Source_Parsing">
-  문장 끝에 붙은 '(대법원 ... 판결 참조)'와 같은 출처 표기를 분리하여 별도 메타데이터로 저장하라. 없으면 "출처 미상" 또는 추정되는 사건번호 기재.
- </Step_3>
- <Step_4 name="JSON_Construction">
-  결과물을 JSON 배열([]) 형태로 반환하라.
- </Step_4>
- </Processing_Protocol>
+<Processing_Protocol>
+
+<Step_1 name="Header_Recognition">
+ 우선, 텍스트의 최상단이나 서두를 스캔하여 **'대상 판결 정보(Current Case Info)'**를 식별하라.
+ - 포맷 예시: "창원지방법원 2021. 9. 9. 선고 2020구합54140 판결", "대법원 2023. 1. 1. 선고 2022다12345 판결" 등.
+ - 이 정보를 변수 <Current_Source>에 저장하라.
+</Step_1>
+
+<Step_2 name="Atomic_Extraction">
+ 본문에서 사실관계(Fact)를 제외하고, 법원의 **판단(Judgment), 법리(Doctrine), 해석(Interpretation)**이 포함된 모든 문장을 추출하라.
+ - **고밀도 추출 원칙**: 한 문단 내에 서로 다른 요건이나 판단 기준이 섞여 있다면, 이를 뭉뚱그리지 말고 **의미 단위로 분리(Split)**하여 개별 항목으로 생성하라.
+</Step_2>
+
+<Step_3 name="Source_Resolution_Logic">
+ 추출된 각 법리 문장(Text)에 대해 출처(Source)를 다음과 같은 우선순위로 결정하라.
+ 1. **Inline Citation (내부 인용)**: 문장 끝이나 중간에 "(대법원 ... 판결 참조)"와 같이 명시적인 타 판례 인용이 있다면, 그 인용구를 <source_ref>로 사용하라.
+ 2. **Context Inheritance (문맥 상속)**: 내부 인용이 없다면, 해당 법리는 <Step_1>에서 식별한 **<Current_Source>(대상 판결 정보)**의 독자적인 판단이므로 이를 <source_ref>로 할당하라.
+ 3. **Fallback**: 위 두 가지 모두 발견되지 않으면 "출처 미상"으로 기재하라.
+</Step_3>
+
+<Step_4 name="Text_Polishing">
+ - 추출된 문장은 서면에 즉시 사용할 수 있도록 문어체(예: "~라고 봄이 타당하다")를 유지하며 정제하라.
+ - 문장 내에 포함된 '(~판결 참조)' 텍스트는 <citation_text>에서는 제거하고 <source_ref>로만 남겨라.
+</Step_4>
+
+</Processing_Protocol>
 </Operational_Cortex>
 <Output_Schema type="JSON">
- [
-  {
-  "citation_text": "서면에 바로 붙여넣을 수 있는 정제된 법리 문장 (출처 제외)",
-  "source_ref": "판례번호 또는 법령명",
-  "core_keywords": ["핵심쟁점1", "핵심쟁점2"],
-  "legal_category": "대분류 (예: 성희롱 성립요건)"
-  }
- ]
- </Output_Schema>
-</AIFramework_V3>
-        `;
+[
+ {
+ "citation_text": "정제된 법리 본문 (인용 출처 표기 제거됨)",
+ "source_ref": "판별된 출처 (예: 창원지방법원 2021. 9. 9. 선고 2020구합54140 판결)",
+ "core_keywords": ["세부쟁점1", "세부쟁점2"],
+ "legal_category": "대분류 (예: 처분의 적법성, 계약의 해석)"
+ }
+]
+</Output_Schema>
+</AIFramework_V4_HighRecall>
+    `;
 
         // --- Utils ---
         const generateId = () => Math.random().toString(36).substr(2, 9);
@@ -429,361 +437,409 @@
             );
         };
 
-        const Workspace = ({ 
-            project, 
-            apiKeys, 
-            selectedModel,
-            onBack, 
-            addToast, 
-            updateProjectStats 
-        }) => {
-            const [inputMode, setInputMode] = useState('ai');
-            const [textInput, setTextInput] = useState('');
-            const [jsonInput, setJsonInput] = useState('');
-            const [parsedData, setParsedData] = useState([]);
-            const [jobQueue, setJobQueue] = useState([]);
-            const [isQueueOpen, setIsQueueOpen] = useState(false);
-            const [extractionLog, setExtractionLog] = useState(new Set());
-            
-            const [activeCategories, setActiveCategories] = useState([]);
-            const [activeKeywords, setActiveKeywords] = useState([]);
-            const [searchTerm, setSearchTerm] = useState('');
-            const [sortOption, setSortOption] = useState('date_desc');
+const Workspace = ({
+      project,
+      apiKeys,
+      selectedModel,
+      onBack,
+      addToast,
+      updateProjectStats,
+      onKeyUsed
+      }) => {
+      const [inputMode, setInputMode] = useState('ai');
+      const [textInput, setTextInput] = useState('');
+      const [parsedData, setParsedData] = useState([]);
+      const [jobQueue, setJobQueue] = useState([]);
+      const [isQueueOpen, setIsQueueOpen] = useState(false);
+      const [extractionLog, setExtractionLog] = useState(new Set());
+      
+      const [activeCategories, setActiveCategories] = useState([]);
+      const [activeKeywords, setActiveKeywords] = useState([]);
+      const [searchTerm, setSearchTerm] = useState('');
+      const [sortOption, setSortOption] = useState('date_desc');
 
-            const dropdownRef = useRef(null);
+      const dropdownRef = useRef(null);
 
-            const toggleCategory = (cat) => {
-                setActiveCategories(prev => {
-                    if (cat === 'ALL') return [];
-                    if (prev.includes(cat)) return prev.filter(c => c !== cat);
-                    return [...prev, cat];
-                });
-            };
+      // --- Refs for Interval Closure Issue ---
+      // setInterval 내에서 최신 apiKeys에 접근하기 위해 Ref 사용
+      const apiKeysRef = useRef(apiKeys);
+      useEffect(() => { apiKeysRef.current = apiKeys; }, [apiKeys]);
 
-            useEffect(() => {
-                const loadData = async () => {
-                    const data = await dbManager.getCitationsByProject(project.id);
-                    setParsedData(data);
-                    const log = new Set();
-                    data.forEach(d => { if(d.sourceTextHash) log.add(d.sourceTextHash); });
-                    setExtractionLog(log);
-                };
-                loadData();
-            }, [project.id]);
+      const toggleCategory = (cat) => {
+        setActiveCategories(prev => {
+          if (cat === 'ALL') return [];
+          if (prev.includes(cat)) return prev.filter(c => c !== cat);
+          return [...prev, cat];
+        });
+      };
 
-            useEffect(() => {
-                updateProjectStats(project.id, parsedData.length);
-            }, [parsedData.length]);
+      useEffect(() => {
+        const loadData = async () => {
+          const data = await dbManager.getCitationsByProject(project.id);
+          setParsedData(data);
+          const log = new Set();
+          data.forEach(d => { if(d.sourceTextHash) log.add(d.sourceTextHash); });
+          setExtractionLog(log);
+        };
+        loadData();
+      }, [project.id]);
 
-            useEffect(() => {
-                const handleClickOutside = (event) => {
-                    if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsQueueOpen(false);
-                };
-                document.addEventListener('mousedown', handleClickOutside);
-                return () => document.removeEventListener('mousedown', handleClickOutside);
-            }, []);
+      useEffect(() => {
+        updateProjectStats(project.id, parsedData.length);
+      }, [parsedData.length]);
 
-            useEffect(() => {
-                const tick = setInterval(() => processQueue(), 1000);
-                return () => clearInterval(tick);
-            }, [apiKeys, jobQueue, selectedModel, parsedData]);
+      useEffect(() => {
+        const handleClickOutside = (event) => {
+          if (dropdownRef.current && !dropdownRef.current.contains(event.target)) setIsQueueOpen(false);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+      }, []);
 
-            const processQueue = async () => {
-                const pendingIdx = jobQueue.findIndex(j => j.status === 'queued');
-                if (pendingIdx === -1) return;
-                
-                const now = Date.now();
-                const availableKeyIdx = apiKeys.findIndex(k => k.active && (now - k.lastUsed > k.interval));
-                if (availableKeyIdx === -1) return;
+      // Queue Processor
+      useEffect(() => {
+        const tick = setInterval(() => processQueue(), 1000);
+        return () => clearInterval(tick);
+      }, [selectedModel, parsedData]); // apiKeys 제거 (Ref 사용)
 
-                const job = jobQueue[pendingIdx];
-                
-                setJobQueue(prev => prev.map((j, i) => i === pendingIdx ? { ...j, status: 'processing' } : j));
+      const processQueue = async () => {
+        // 1. 대기 중인 작업 찾기
+        setJobQueue(prevQueue => {
+          const pendingIdx = prevQueue.findIndex(j => j.status === 'queued');
+          if (pendingIdx === -1) return prevQueue; // 대기중인 작업 없으면 리턴
 
-                try {
-                    const existingCats = [...new Set(parsedData.map(p => p.legal_category))];
-                    const existingKws = [...new Set(parsedData.flatMap(p => p.core_keywords))]; // Collect all unique keywords
-                    const result = await callGeminiAPI(job.text, apiKeys[availableKeyIdx].key, selectedModel, existingCats, existingKws);
-                    
-                    const enrichedResult = result.map(item => ({
-                        ...item,
-                        id: generateId(),
-                        projectId: project.id,
-                        dateAdded: Date.now(),
-                        lastCopied: null,
-                        sourceTextHash: job.textHash
-                    }));
+          const job = prevQueue[pendingIdx];
+          const now = Date.now();
+          
+          // 2. 유효한 API Key 찾기 (Ref 사용) - Round Robin & Flash Optimization
+          // 공백 제거(.trim) 후 길이가 있는 키만 필터링
+          const currentKeys = apiKeysRef.current;
+          const readyKeys = currentKeys.filter(k => 
+            k.active && 
+            k.key && k.key.trim().length > 0 && 
+            (now - k.lastUsed > k.interval)
+          );
 
-                    for(const item of enrichedResult) {
-                        await dbManager.addCitation(item);
-                    }
+          if (readyKeys.length === 0) return prevQueue; // 사용 가능한 키가 없으면 다음 틱까지 대기
 
-                    setJobQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'completed' } : j));
-                    setParsedData(prev => [...enrichedResult, ...prev]);
-                    addToast({ title: 'Extraction Complete', message: `${enrichedResult.length} citations added.`, type: 'success' });
+          // 3. 작업 시작 (상태 변경: processing)
+          // Round-Robin: 가장 오래전에 사용된 키(lastUsed가 가장 작은 키)를 선택하여 순차 순환 보장
+          readyKeys.sort((a, b) => a.lastUsed - b.lastUsed);
+          const selectedKey = readyKeys[0];
 
-                } catch (error) {
-                    console.error(error);
-                    setJobQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: error.message } : j));
-                    addToast({ title: 'Job Failed', message: error.message, type: 'error' });
-                }
-            };
+          // 키 사용 시간 업데이트 요청 (App 상태 갱신)
+          if (onKeyUsed) onKeyUsed(selectedKey.id);
+          
+          executeJob(job, selectedKey.key);
+          
+          return prevQueue.map((j, i) => i === pendingIdx ? { ...j, status: 'processing' } : j);
+        });
+      };
 
-            const callGeminiAPI = async (text, key, modelId, existingCategories = [], existingKeywords = []) => {
+      const executeJob = async (job, apiKey) => {
+        try {
+          const existingCats = [...new Set(parsedData.map(p => p.legal_category))];
+          const existingKws = [...new Set(parsedData.flatMap(p => p.core_keywords))];
+          
+          const result = await callGeminiAPI(job.text, apiKey, selectedModel, existingCats, existingKws);
+          
+          const enrichedResult = result.map(item => ({
+            ...item,
+            id: generateId(),
+            projectId: project.id,
+            dateAdded: Date.now(),
+            lastCopied: null,
+            sourceTextHash: job.textHash
+          }));
+
+          for(const item of enrichedResult) {
+            await dbManager.addCitation(item);
+          }
+
+          setJobQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'completed' } : j));
+          setParsedData(prev => [...enrichedResult, ...prev]);
+          addToast({ title: 'Extraction Complete', message: `${enrichedResult.length} citations added.`, type: 'success' });
+
+        } catch (error) {
+          console.error(error);
+          setJobQueue(prev => prev.map(j => j.id === job.id ? { ...j, status: 'failed', error: error.message } : j));
+          addToast({ title: 'Job Failed', message: error.message, type: 'error' });
+        }
+      };
+
+      const callGeminiAPI = async (text, rawKey, modelId, existingCategories = [], existingKeywords = []) => {
+        // [FIX] API Key 공백 제거 및 검증 강화
+        const key = rawKey ? rawKey.trim() : "";
+        if (!key) throw new Error("API Key is missing or invalid (Client Check). Please check Settings.");
+
         let dynamicPrompt = SYSTEM_PROMPT;
-        
         let contextInjection = "";
+        
         if (existingCategories.length > 0) {
           contextInjection += `1. 기존 쟁점(Categories): ${JSON.stringify(existingCategories)}\n - 추출된 법리가 위 목록 중 하나에 해당한다면, 새로운 쟁점명을 만드는 대신 기존 쟁점명을 우선적으로 사용하라.\n`;
         }
         if (existingKeywords.length > 0) {
           contextInjection += `2. 기존 태그(Keywords): ${JSON.stringify(existingKeywords.slice(0, 50))}\n - 핵심 키워드 추출 시, 위 목록에 있는 단어가 적절하다면 우선적으로 사용하여 태그의 일관성을 유지하라.\n`;
         }
-
         if (contextInjection) {
           dynamicPrompt += `\n<Context_Injection>\n[참고: 기존 데이터베이스 현황]\n${contextInjection}</Context_Injection>`;
         }
 
-        // Rule: Use Standard REST Headers for Auth (x-goog-api-key) instead of URL params
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
-          {
-            method: "POST", 
-            headers: { 
-              "Content-Type": "application/json",
-              "x-goog-api-key": key 
-            },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: text }] }],
-              systemInstruction: { parts: [{ text: dynamicPrompt }] },
-              generationConfig: { responseMimeType: "application/json", temperature: 0.1 }
-            }),
+        try {
+          const response = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                system_instruction: { parts: [{ text: dynamicPrompt }] },
+                generationConfig: { temperature: 0.1 }, // 온도를 낮춰서 환각 방지
+                contents: [{ parts: [{ text: text }] }]
+              })
+            }
+          );
+
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error?.message || `API Error: ${response.status}`);
           }
-        );
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`API Error (${response.status}): ${errorText}`);
+          const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+          if (!resultText) throw new Error("Empty response from AI");
+
+          const cleanedText = resultText.replace(/```json|```/g, '').trim();
+          return JSON.parse(cleanedText);
+
+        } catch (error) {
+          console.error("Gemini API Call Failed:", error);
+          throw error;
         }
-
-        const result = await response.json();
-        
-        if (!result.candidates || !result.candidates[0]?.content?.parts?.[0]?.text) {
-          throw new Error("Invalid API response structure");
-        }
-
-        const jsonText = result.candidates[0].content.parts[0].text;
-        return JSON.parse(jsonText);
       };
 
-            const handleAddJob = () => {
-                const text = textInput.trim();
-                if (!text) return;
+      const handleAddJob = () => {
+        const text = textInput.trim();
+        if (!text) return;
 
-                const textHash = text.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0);
-                
-                if (extractionLog.has(textHash)) {
-                    if (!confirm("⚠️ Duplicate Warning: This text seems to have been processed already. Continue?")) return;
-                }
-                
-                if (apiKeys.filter(k => k.active).length === 0) { 
-                    addToast({ title: "No API Key", message: "Please configure API keys in settings.", type: "error" });
-                    return; 
-                }
+        const textHash = text.split('').reduce((a,b)=>{a=((a<<5)-a)+b.charCodeAt(0);return a&a},0);
+        
+        if (extractionLog.has(textHash)) {
+          if (!confirm("⚠️ Duplicate Warning: This text seems to have been processed already. Continue?")) return;
+        }
+        
+        // [FIX] 키 검사 시 공백 키 제외
+        if (apiKeys.filter(k => k.active && k.key.trim().length > 0).length === 0) { 
+          addToast({ title: "No Valid API Key", message: "Please check API keys in settings. Remove empty keys.", type: "error" });
+          return; 
+        }
 
-                setExtractionLog(prev => new Set(prev).add(textHash));
-                setJobQueue(prev => [...prev, { id: generateId(), text, textHash, status: 'queued' }]);
-                setTextInput('');
-                setIsQueueOpen(true);
-            };
+        setExtractionLog(prev => new Set(prev).add(textHash));
+        setJobQueue(prev => [...prev, { id: generateId(), text, textHash, status: 'queued' }]);
+        setTextInput('');
+        setIsQueueOpen(true);
+      };
 
-            const handleDeleteCard = async (id) => {
-                await dbManager.deleteCitation(id);
-                setParsedData(prev => prev.filter(p => p.id !== id));
-                addToast({ title: "Deleted", message: "Citation removed.", type: "info" });
-            };
+      const handleRetryJob = (jobId) => {
+        setJobQueue(prev => prev.map(j => 
+        j.id === jobId ? { ...j, status: 'queued', error: null } : j
+        ));
+        addToast({ title: "Retrying", message: "Task added back to queue.", type: "info" });
+      };
 
-            const toggleKeyword = (kw) => {
-                setActiveKeywords(prev => prev.includes(kw) ? prev.filter(k => k !== kw) : [...prev, kw]);
-            };
+      const handleDeleteCard = async (id) => {
+        await dbManager.deleteCitation(id);
+        setParsedData(prev => prev.filter(p => p.id !== id));
+        addToast({ title: "Deleted", message: "Citation removed.", type: "info" });
+      };
 
-            const categoryStats = useMemo(() => {
-                const counts = {};
-                parsedData.forEach(item => { counts[item.legal_category] = (counts[item.legal_category] || 0) + 1; });
-                const list = Object.entries(counts).map(([name, count]) => ({ name, count }));
-                list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-                return [{ name: 'ALL', count: parsedData.length }, ...list];
-            }, [parsedData]);
+      const toggleKeyword = (kw) => {
+        setActiveKeywords(prev => prev.includes(kw) ? prev.filter(k => k !== kw) : [...prev, kw]);
+      };
 
-            const keywordStats = useMemo(() => {
-                const counts = {};
-                parsedData.forEach(item => {
-                    item.core_keywords.forEach(kw => { counts[kw] = (counts[kw] || 0) + 1; });
-                });
-                const list = Object.entries(counts).map(([name, count]) => ({ name, count }));
-                list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-                return list;
-            }, [parsedData]);
+      const categoryStats = useMemo(() => {
+        const counts = {};
+        parsedData.forEach(item => { counts[item.legal_category] = (counts[item.legal_category] || 0) + 1; });
+        const list = Object.entries(counts).map(([name, count]) => ({ name, count }));
+        list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+        return [{ name: 'ALL', count: parsedData.length }, ...list];
+      }, [parsedData]);
 
-            const filteredData = useMemo(() => {
-                let data = parsedData.filter(item => {
-                    const matchesCat = activeCategories.length === 0 || activeCategories.includes(item.legal_category);
-                    const matchesKw = activeKeywords.length === 0 || item.core_keywords.some(k => activeKeywords.includes(k));
-                    const searchLower = searchTerm.toLowerCase();
-                    const matchesSearch = searchTerm === '' || item.citation_text.toLowerCase().includes(searchLower) || item.source_ref.toLowerCase().includes(searchLower) || item.legal_category.toLowerCase().includes(searchLower);
-                    return matchesCat && matchesKw && matchesSearch;
-                });
-                
-                data.sort((a, b) => {
-                    switch (sortOption) {
-                        case 'date_desc': return (b.dateAdded || 0) - (a.dateAdded || 0);
-                        case 'date_asc': return (a.dateAdded || 0) - (b.dateAdded || 0);
-                        case 'issue_asc': return a.legal_category.localeCompare(b.legal_category, 'ko');
-                        default: return 0;
-                    }
-                });
-                return data;
-            }, [parsedData, activeCategories, activeKeywords, searchTerm, sortOption]);
+      const keywordStats = useMemo(() => {
+        const counts = {};
+        parsedData.forEach(item => {
+          item.core_keywords.forEach(kw => { counts[kw] = (counts[kw] || 0) + 1; });
+        });
+        const list = Object.entries(counts).map(([name, count]) => ({ name, count }));
+        list.sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+        return list;
+      }, [parsedData]);
 
-            const clearFilters = () => {
-                setActiveCategories([]); 
-                setActiveKeywords([]);
-                setSearchTerm('');
-            };
+      const filteredData = useMemo(() => {
+        let data = parsedData.filter(item => {
+          const matchesCat = activeCategories.length === 0 || activeCategories.includes(item.legal_category);
+          const matchesKw = activeKeywords.length === 0 || item.core_keywords.some(k => activeKeywords.includes(k));
+          const searchLower = searchTerm.toLowerCase();
+          const matchesSearch = searchTerm === '' || item.citation_text.toLowerCase().includes(searchLower) || item.source_ref.toLowerCase().includes(searchLower) || item.legal_category.toLowerCase().includes(searchLower);
+          return matchesCat && matchesKw && matchesSearch;
+        });
+        
+        data.sort((a, b) => {
+          switch (sortOption) {
+            case 'date_desc': return (b.dateAdded || 0) - (a.dateAdded || 0);
+            case 'date_asc': return (a.dateAdded || 0) - (b.dateAdded || 0);
+            case 'issue_asc': return a.legal_category.localeCompare(b.legal_category, 'ko');
+            default: return 0;
+          }
+        });
+        return data;
+      }, [parsedData, activeCategories, activeKeywords, searchTerm, sortOption]);
 
-            return (
-                <div className="flex flex-col h-full animate-enter">
-                    <div className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 flex-shrink-0">
-                        <div className="flex items-center gap-4">
-                            <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
-                                <i className="ph-bold ph-arrow-left text-lg"></i>
-                            </button>
-                            <div>
-                                <h2 className="font-bold text-slate-800">{project.name}</h2>
-                            </div>
-                        </div>
-                        <div className="relative" ref={dropdownRef}>
-                            <button onClick={() => setIsQueueOpen(!isQueueOpen)} className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-brand-600 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200">
-                                <i className="ph-bold ph-queue"></i>
-                                <span>Queue: {jobQueue.filter(j=>['queued','processing'].includes(j.status)).length}</span>
-                            </button>
-                             {isQueueOpen && (
-                                <div className="absolute top-full right-0 mt-2 w-72 bg-white shadow-xl border border-slate-100 rounded-xl p-2 z-50">
-                                    <div className="text-xs font-bold text-slate-400 uppercase p-2">Tasks</div>
-                                    <div className="max-h-60 overflow-y-auto">
-                                        {jobQueue.length === 0 ? <div className="p-4 text-center text-slate-400 text-xs">No active tasks</div> : 
-                                         [...jobQueue].reverse().map(j => (
-                                             <div key={j.id} className="p-2 border-b border-slate-50 text-xs flex justify-between">
-                                                 <span className="truncate w-40">{j.text}</span>
-                                                 <span className={j.status === 'completed' ? 'text-green-500' : j.status === 'failed' ? 'text-red-500' : 'text-amber-500'}>{j.status}</span>
-                                             </div>
-                                         ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+      const clearFilters = () => {
+        setActiveCategories([]); 
+        setActiveKeywords([]);
+        setSearchTerm('');
+      };
+
+      return (
+        <div className="flex flex-col h-full animate-enter">
+          <div className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 flex-shrink-0">
+            <div className="flex items-center gap-4">
+              <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                <i className="ph-bold ph-arrow-left text-lg"></i>
+              </button>
+              <div>
+                <h2 className="font-bold text-slate-800">{project.name}</h2>
+              </div>
+            </div>
+            <div className="relative" ref={dropdownRef}>
+              <button onClick={() => setIsQueueOpen(!isQueueOpen)} className="flex items-center gap-2 text-xs font-bold text-slate-500 hover:text-brand-600 bg-slate-50 px-3 py-1.5 rounded-full border border-slate-200">
+                <i className="ph-bold ph-queue"></i>
+                <span>Queue: {jobQueue.filter(j=>['queued','processing'].includes(j.status)).length}</span>
+              </button>
+              {isQueueOpen && (
+                <div className="absolute top-full right-0 mt-2 w-72 bg-white shadow-xl border border-slate-100 rounded-xl p-2 z-50">
+                  <div className="text-xs font-bold text-slate-400 uppercase p-2">Tasks</div>
+                  <div className="max-h-60 overflow-y-auto">
+                    {jobQueue.length === 0 ? <div className="p-4 text-center text-slate-400 text-xs">No active tasks</div> : 
+                    [...jobQueue].reverse().map(j => (
+                    <div key={j.id} className="p-2 border-b border-slate-50 text-xs flex justify-between items-center">
+                      <span className="truncate w-40">{j.text}</span>
+                      <div className="flex items-center gap-2">
+                      <span className={j.status === 'completed' ? 'text-green-500' : j.status === 'failed' ? 'text-red-500' : 'text-amber-500'}>{j.status}</span>
+                      {j.status === 'failed' && (
+                        <button onClick={(e) => { e.stopPropagation(); handleRetryJob(j.id); }} className="text-slate-400 hover:text-brand-600 p-0.5 rounded hover:bg-slate-100" title="Retry">
+                        <i className="ph-bold ph-arrow-counter-clockwise"></i>
+                        </button>
+                      )}
+                      </div>
                     </div>
-
-                    <div className="flex-1 flex overflow-hidden">
-                        <div className="w-[360px] flex-shrink-0 bg-slate-50 border-r border-slate-200 overflow-y-auto p-4 flex flex-col gap-6">
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                                <div className="flex gap-2 mb-2">
-                                    <button onClick={() => setInputMode('ai')} className={`flex-1 py-1.5 text-xs font-bold rounded ${inputMode==='ai' ? 'bg-brand-50 text-brand-700' : 'text-slate-400'}`}>AI</button>
-                                    <button onClick={() => setInputMode('json')} className={`flex-1 py-1.5 text-xs font-bold rounded ${inputMode==='json' ? 'bg-brand-50 text-brand-700' : 'text-slate-400'}`}>JSON</button>
-                                </div>
-                                {inputMode === 'ai' ? (
-                                    <>
-                                        <textarea className="w-full h-32 p-2 text-sm border border-slate-200 rounded-lg resize-none focus:outline-none focus:border-brand-500" placeholder="Paste judgment here..." value={textInput} onChange={e=>setTextInput(e.target.value)}></textarea>
-                                        <div className="mt-2 flex justify-between items-center text-xs text-slate-400 mb-1">
-                                            <span>Model: {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name.split(' (')[0]}</span>
-                                        </div>
-                                        <button onClick={handleAddJob} disabled={!textInput.trim()} className="w-full bg-slate-900 text-white py-2 rounded-lg text-sm font-bold hover:bg-slate-800 disabled:opacity-50">Extraction</button>
-                                    </>
-                                ) : (
-                                    <div className="text-center py-10 text-xs text-slate-400">JSON Import via Dashboard</div>
-                                )}
-                            </div>
-
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Issues (Multi-Select)</h3>
-                                <div className="space-y-1">
-                                    {categoryStats.map(cat => {
-                                        const isActive = cat.name === 'ALL' ? activeCategories.length === 0 : activeCategories.includes(cat.name);
-                                        return (
-                                            <button key={cat.name} onClick={()=>toggleCategory(cat.name)} className={`w-full flex justify-between px-2 py-1.5 text-xs rounded ${isActive ? 'bg-slate-800 text-white' : 'hover:bg-slate-50 text-slate-600'}`}>
-                                                <span className="truncate">{cat.name === 'ALL' ? '전체 쟁점' : cat.name}</span>
-                                                <span className="opacity-70">{cat.count}</span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                            
-                            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-                                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Tags (Multi-Select)</h3>
-                                <div className="flex flex-wrap gap-1">
-                                    {keywordStats.map(kw => (
-                                        <button key={kw.name} onClick={()=>toggleKeyword(kw.name)} className={`px-2 py-1 text-[10px] rounded border ${activeKeywords.includes(kw.name) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-slate-200'}`}>
-                                            {kw.name}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
-                            <div className="flex gap-4 mb-6 sticky top-0 z-20">
-                                <div className="flex-1 relative">
-                                    <i className="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                                    <input type="text" placeholder="Global Search..." className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-100" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
-                                </div>
-                                <select value={sortOption} onChange={e=>setSortOption(e.target.value)} className="bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold shadow-sm outline-none">
-                                    <option value="date_desc">최신순</option>
-                                    <option value="issue_asc">쟁점순</option>
-                                </select>
-                            </div>
-
-                            {/* Filter Toolbar Chips */}
-                            <div className="flex flex-wrap gap-2 mb-4">
-                                {activeCategories.length > 0 && activeCategories.map(cat => (
-                                    <span key={cat} className="animate-enter inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-800 text-white shadow-sm whitespace-nowrap">
-                                        {cat}
-                                        <button onClick={() => toggleCategory(cat)} className="hover:text-slate-300"><i className="ph-bold ph-x"></i></button>
-                                    </span>
-                                ))}
-                                {activeKeywords.map(kw => (
-                                    <span key={kw} className="animate-enter inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-brand-50 text-brand-700 border border-brand-100 whitespace-nowrap">
-                                        #{kw}
-                                        <button onClick={() => toggleKeyword(kw)} className="hover:text-brand-900"><i className="ph-bold ph-x"></i></button>
-                                    </span>
-                                ))}
-                                {activeCategories.length > 0 || activeKeywords.length > 0 || searchTerm ? (
-                                    <button onClick={clearFilters} className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Clear All">
-                                        <i className="ph-bold ph-trash"></i>
-                                    </button>
-                                ) : (
-                                    <span className="text-xs text-slate-400 font-medium italic pl-1">No active filters applied</span>
-                                )}
-                            </div>
-
-                            <div className="space-y-4 pb-20">
-                                {filteredData.map(item => (
-                                    <div key={item.id} className="animate-enter">
-                                        <CitationCard 
-                                            item={item}
-                                            onCategoryClick={toggleCategory}
-                                            onKeywordClick={toggleKeyword}
-                                            onDelete={handleDeleteCard}
-                                            onCopy={(id) => { addToast({title:'Copied', message:'Clipboard updated.', type:'success'}) }}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
+                    ))}
+                  </div>
                 </div>
-            );
-        };
+              )}
+            </div>
+          </div>
+
+          <div className="flex-1 flex overflow-hidden">
+            <div className="w-[360px] flex-shrink-0 bg-slate-50 border-r border-slate-200 overflow-y-auto p-4 flex flex-col gap-6">
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <div className="flex gap-2 mb-2">
+                  <button onClick={() => setInputMode('ai')} className={`flex-1 py-1.5 text-xs font-bold rounded ${inputMode==='ai' ? 'bg-brand-50 text-brand-700' : 'text-slate-400'}`}>AI</button>
+                  <button onClick={() => setInputMode('json')} className={`flex-1 py-1.5 text-xs font-bold rounded ${inputMode==='json' ? 'bg-brand-50 text-brand-700' : 'text-slate-400'}`}>JSON</button>
+                </div>
+                {inputMode === 'ai' ? (
+                  <>
+                    <textarea className="w-full h-32 p-2 text-sm border border-slate-200 rounded-lg resize-none focus:outline-none focus:border-brand-500" placeholder="Paste judgment here..." value={textInput} onChange={e=>setTextInput(e.target.value)}></textarea>
+                    <div className="mt-2 flex justify-between items-center text-xs text-slate-400 mb-1">
+                      <span>Model: {AVAILABLE_MODELS.find(m => m.id === selectedModel)?.name.split(' (')[0]}</span>
+                    </div>
+                    <button onClick={handleAddJob} disabled={!textInput.trim()} className="w-full bg-slate-900 text-white py-2 rounded-lg text-sm font-bold hover:bg-slate-800 disabled:opacity-50">Extraction</button>
+                  </>
+                ) : (
+                  <div className="text-center py-10 text-xs text-slate-400">JSON Import via Dashboard</div>
+                )}
+              </div>
+
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Issues (Multi-Select)</h3>
+                <div className="space-y-1">
+                  {categoryStats.map(cat => {
+                    const isActive = cat.name === 'ALL' ? activeCategories.length === 0 : activeCategories.includes(cat.name);
+                    return (
+                      <button key={cat.name} onClick={()=>toggleCategory(cat.name)} className={`w-full flex justify-between px-2 py-1.5 text-xs rounded ${isActive ? 'bg-slate-800 text-white' : 'hover:bg-slate-50 text-slate-600'}`}>
+                        <span className="truncate">{cat.name === 'ALL' ? '전체 쟁점' : cat.name}</span>
+                        <span className="opacity-70">{cat.count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              
+              <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
+                <h3 className="text-xs font-bold text-slate-400 uppercase mb-3">Tags (Multi-Select)</h3>
+                <div className="flex flex-wrap gap-1">
+                  {keywordStats.map(kw => (
+                    <button key={kw.name} onClick={()=>toggleKeyword(kw.name)} className={`px-2 py-1 text-[10px] rounded border ${activeKeywords.includes(kw.name) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-slate-600 border-slate-200'}`}>
+                      {kw.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6 bg-slate-50">
+              <div className="flex gap-4 mb-6 sticky top-0 z-20">
+                <div className="flex-1 relative">
+                  <i className="ph-bold ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                  <input type="text" placeholder="Global Search..." className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-brand-100" value={searchTerm} onChange={e=>setSearchTerm(e.target.value)} />
+                </div>
+                <select value={sortOption} onChange={e=>setSortOption(e.target.value)} className="bg-white border border-slate-200 rounded-xl px-4 text-sm font-bold shadow-sm outline-none">
+                  <option value="date_desc">최신순</option>
+                  <option value="issue_asc">쟁점순</option>
+                </select>
+              </div>
+
+              {/* Filter Toolbar Chips */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {activeCategories.length > 0 && activeCategories.map(cat => (
+                  <span key={cat} className="animate-enter inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-slate-800 text-white shadow-sm whitespace-nowrap">
+                    {cat}
+                    <button onClick={() => toggleCategory(cat)} className="hover:text-slate-300"><i className="ph-bold ph-x"></i></button>
+                  </span>
+                ))}
+                {activeKeywords.map(kw => (
+                  <span key={kw} className="animate-enter inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold bg-brand-50 text-brand-700 border border-brand-100 whitespace-nowrap">
+                    #{kw}
+                    <button onClick={() => toggleKeyword(kw)} className="hover:text-brand-900"><i className="ph-bold ph-x"></i></button>
+                  </span>
+                ))}
+                {activeCategories.length > 0 || activeKeywords.length > 0 || searchTerm ? (
+                  <button onClick={clearFilters} className="flex-shrink-0 w-8 h-8 flex items-center justify-center rounded-full bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-500 transition-colors" title="Clear All">
+                    <i className="ph-bold ph-trash"></i>
+                  </button>
+                ) : (
+                  <span className="text-xs text-slate-400 font-medium italic pl-1">No active filters applied</span>
+                )}
+              </div>
+
+              <div className="space-y-4 pb-20">
+                {filteredData.map(item => (
+                  <div key={item.id} className="animate-enter">
+                    <CitationCard 
+                      item={item}
+                      onCategoryClick={toggleCategory}
+                      onKeywordClick={toggleKeyword}
+                      onDelete={handleDeleteCard}
+                      onCopy={(id) => { addToast({title:'Copied', message:'Clipboard updated.', type:'success'}) }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
 
         const App = () => {
             const [view, setView] = useState('dashboard');
@@ -912,12 +968,17 @@
                 const p = await dbManager._getAll('projects');
                 const target = p.find(x => x.id === projectId);
                 if(target) {
-                    target.citationCount = count;
-                    await dbManager.createProject(target);
+                  target.citationCount = count;
+                  await dbManager.createProject(target);
                 }
-            };
+              };
 
-            return (
+              // 키 사용 시점 업데이트 (Round-Robin 로직을 위해 필수)
+              const handleKeyUsed = (keyId) => {
+                setApiKeys(prev => prev.map(k => k.id === keyId ? { ...k, lastUsed: Date.now() } : k));
+              };
+
+              return (
                 <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
                     <header className="glass h-16 fixed top-0 w-full z-30 px-6 flex items-center justify-between">
                         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setView('dashboard')}>
@@ -946,78 +1007,84 @@
                                 onImportData={handleImportData}
                             />
                         ) : (
-                            <Workspace 
-                                project={currentProject} 
-                                apiKeys={apiKeys}
-                                selectedModel={selectedModel}
-                                onBack={() => { setView('dashboard'); refreshProjects(); }}
-                                addToast={addToast}
-                                updateProjectStats={updateProjectStats}
-                            />
-                        )}
+                    <Workspace
+                      project={currentProject}
+                      apiKeys={apiKeys}
+                      selectedModel={selectedModel}
+                      onBack={() => { setView('dashboard'); refreshProjects(); }}
+                      addToast={addToast}
+                      updateProjectStats={updateProjectStats}
+                      onKeyUsed={handleKeyUsed}
+                    />
+                  )}
                     </main>
 
                     <ToastManager toasts={toasts} removeToast={removeToast} />
                     
                     {isSettingsOpen && (
-                        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={() => setIsSettingsOpen(false)}>
-                            <div className="bg-white rounded-2xl w-full max-w-lg p-6 animate-enter flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                                <h2 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2">
-                                    <i className="ph-bold ph-gear"></i> Settings
-                                </h2>
-                                
-                                <div className="space-y-6 overflow-y-auto pr-2 custom-scrollbar">
-                                    <div className="space-y-2">
-                                        <h3 className="text-xs font-bold text-slate-400 uppercase">AI Model Selection</h3>
-                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                            <label className="block text-sm font-medium text-slate-700 mb-2">Gemini Model</label>
-                                            <select 
-                                                value={selectedModel} 
-                                                onChange={(e) => setSelectedModel(e.target.value)}
-                                                className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500 shadow-sm"
-                                            >
-                                                {AVAILABLE_MODELS.map(model => (
-                                                    <option key={model.id} value={model.id}>
-                                                        {model.name}
-                                                    </option>
-                                                ))}
-                                            </select>
-                                            <p className="text-xs text-slate-500 mt-2">
-                                                Select the AI model used for extraction. 'Preview' models may have different limits or features.
-                                            </p>
-                                        </div>
-                                    </div>
+            <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex justify-center items-center z-50 p-4" onClick={() => setIsSettingsOpen(false)}>
+              <div className="bg-white rounded-2xl w-full max-w-lg p-6 animate-enter flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <h2 className="font-bold text-lg mb-4 text-slate-800 flex items-center gap-2">
+                  <i className="ph-bold ph-gear"></i> Settings
+                </h2>
+                
+                <div className="space-y-6 overflow-y-auto pr-2 custom-scrollbar">
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase">AI Model Selection</h3>
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                      <label className="block text-sm font-medium text-slate-700 mb-2">Gemini Model</label>
+                      <select 
+                        value={selectedModel} 
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500 shadow-sm"
+                      >
+                        {AVAILABLE_MODELS.map(model => (
+                          <option key={model.id} value={model.id}>
+                            {model.name}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-slate-500 mt-2">
+                        Select the AI model used for extraction. 'Preview' models may have different limits or features.
+                      </p>
+                    </div>
+                  </div>
 
-                                    <div className="space-y-2">
-                                        <h3 className="text-xs font-bold text-slate-400 uppercase">API Keys</h3>
-                                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
-                                            <div className="flex gap-2 mb-3">
-                                                <input id="newKeyInput" type="text" className="flex-1 border rounded px-3 py-2 text-sm focus:outline-none focus:border-brand-500" placeholder="sk-..." />
-                                                <button onClick={() => {
-                                                    const input = document.getElementById('newKeyInput');
-                                                    if(input.value) {
-                                                        setApiKeys(prev => [...prev, { id: Date.now(), key: input.value, active: true, interval: 30000, lastUsed: 0 }]);
-                                                        input.value = '';
-                                                    }
-                                                }} className="bg-brand-600 hover:bg-brand-700 text-white px-4 rounded text-sm font-bold transition-colors">Add</button>
-                                            </div>
-                                            <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
-                                                {apiKeys.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No keys added.</p>}
-                                                {apiKeys.map(k => (
-                                                    <div key={k.id} className="flex justify-between items-center p-2 bg-white border rounded text-sm shadow-sm">
-                                                        <span className="truncate w-40 font-mono text-slate-600">{k.key.substring(0,8)}...</span>
-                                                        <button onClick={() => setApiKeys(prev => prev.filter(x => x.id !== k.id))} className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors">
-                                                            <i className="ph-bold ph-trash"></i>
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                  <div className="space-y-2">
+                    <h3 className="text-xs font-bold text-slate-400 uppercase">API Keys</h3>
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
+                      <div className="flex gap-2 mb-3">
+                        <input id="newKeyInput" type="text" className="flex-1 border rounded px-3 py-2 text-sm focus:outline-none focus:border-brand-500" placeholder="sk-..." />
+                        <button onClick={() => {
+                          const input = document.getElementById('newKeyInput');
+                          // [FIX] 입력 시 공백 제거 및 유효성 검사
+                          const rawVal = input.value;
+                          if(rawVal && rawVal.trim().length > 0) {
+                            setApiKeys(prev => [...prev, { id: Date.now(), key: rawVal.trim(), active: true, interval: 30000, lastUsed: 0 }]);
+                            input.value = '';
+                          } else {
+                            alert("Please enter a valid API key (no empty spaces).");
+                          }
+                        }} className="bg-brand-600 hover:bg-brand-700 text-white px-4 rounded text-sm font-bold transition-colors">Add</button>
+                      </div>
+                      <div className="space-y-2 max-h-40 overflow-y-auto custom-scrollbar">
+                        {apiKeys.length === 0 && <p className="text-xs text-slate-400 text-center py-2">No keys added.</p>}
+                        {apiKeys.map(k => (
+                          <div key={k.id} className="flex justify-between items-center p-2 bg-white border rounded text-sm shadow-sm">
+                            {/* [FIX] 키 마스킹 처리하여 UI 개선 */}
+                            <span className="truncate w-40 font-mono text-slate-600">{k.key.substring(0,6)}...{k.key.slice(-4)}</span>
+                            <button onClick={() => setApiKeys(prev => prev.filter(x => x.id !== k.id))} className="text-red-500 hover:text-red-700 p-1 rounded hover:bg-red-50 transition-colors">
+                              <i className="ph-bold ph-trash"></i>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
                 </div>
             );
         };
