@@ -3,1732 +3,694 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TrAssist Pro — 4-Panel Viewer</title>
+    <title>Zenith Translator</title>
     
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     
-    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/diff@5.1.0/dist/diff.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- JSZip -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 
     <style>
-    :root {
-        --font-ui: 'Inter', sans-serif;
-        --font-mono: 'JetBrains Mono', monospace;
-        --color-primary: #2563EB;
-        --color-primary-hover: #1D4ED8;
-        --color-primary-text: #FFFFFF;
-        --color-text-primary: #111827;
-        --color-text-secondary: #6B7280;
-        --color-text-placeholder: #9CA3AF;
-        --color-bg: #F9FAFB;
-        --color-surface: #FFFFFF;
-        --color-border: #E5E7EB;
-        --color-border-hover: #D1D5DB;
-        --color-danger: #DC2626;
-        --color-green: #059669;
-        --color-red: #B91C1C;
-        --status-todo: #9CA3AF;
-        --status-wip: #F59E0B;
-        --status-done: #10B981;
-        --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.04);
-        --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.08), 0 2px 4px -2px rgb(0 0 0 / 0.08);
-        --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-    }
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html { -webkit-font-smoothing: antialiased; }
-    body {
-        font-family: var(--font-ui);
-        background-color: var(--color-bg);
-        color: var(--color-text-primary);
-        font-size: 15px;
-        line-height: 1.6;
-    }
+        /* Theme Variables - Classic Minimalist */
+        :root {
+            /* Dark Mode (Default) */
+            --bg-base: #09090b;      /* Zinc 950 */
+            --bg-surface: #18181b;   /* Zinc 900 */
+            --bg-hover: #27272a;     /* Zinc 800 */
+            --border-color: #27272a; /* Zinc 800 */
+            
+            --text-primary: #f4f4f5; /* Zinc 100 */
+            --text-secondary: #a1a1aa; /* Zinc 400 */
+            --text-tertiary: #52525b;  /* Zinc 600 */
+            
+            --accent-color: #fff;    /* White Accent in Dark Mode */
+            --accent-text: #000;
+            
+            --status-translating: #38bdf8; /* Sky 400 */
+            --status-completed: #4ade80;   /* Green 400 */
+            --status-error: #fb7185;       /* Rose 400 */
+        }
 
-    #dropZoneOverlay {
-        display: none;
-        position: fixed;
-        inset: 0;
-        background-color: rgba(249, 250, 251, 0.95);
-        z-index: 9998;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        border: 3px dashed var(--color-primary);
-        pointer-events: none;
-    }
+        [data-theme="light"] {
+            /* Light Mode - Classic Swiss Style */
+            --bg-base: #ffffff;
+            --bg-surface: #f8fafc;   /* Slate 50 */
+            --bg-hover: #f1f5f9;     /* Slate 100 */
+            --border-color: #e2e8f0; /* Slate 200 */
+            
+            --text-primary: #0f172a; /* Slate 900 */
+            --text-secondary: #64748b; /* Slate 500 */
+            --text-tertiary: #94a3b8;  /* Slate 400 */
+            
+            --accent-color: #0f172a; /* Slate 900 */
+            --accent-text: #fff;
+            
+            --status-translating: #0ea5e9; /* Sky 500 */
+            --status-completed: #22c55e;   /* Green 500 */
+            --status-error: #f43f5e;       /* Rose 500 */
+        }
 
-    .app-header {
-        position: sticky;
-        top: 0;
-        background-color: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(12px);
-        border-bottom: 1px solid var(--color-border);
-        padding: 10px 24px;
-        display: flex;
-        align-items: center;
-        gap: 16px;
-        z-index: 10;
-    }
-    .logo {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        font-weight: 600;
-        font-size: 1.125rem;
-    }
-    .logo i { color: var(--color-primary); }
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-primary);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            overflow: hidden;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
 
-    .header-group {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        height: 100%;
-    }
-    .header-group--separator {
-        padding-left: 16px;
-        margin-left: 16px;
-        border-left: 1px solid var(--color-border);
-    }
+        /* Utility Classes */
+        .bg-base { background-color: var(--bg-base); }
+        .bg-surface { background-color: var(--bg-surface); }
+        .bg-hover:hover { background-color: var(--bg-hover); }
+        .border-classic { border-color: var(--border-color); }
+        .text-primary { color: var(--text-primary); }
+        .text-secondary { color: var(--text-secondary); }
+        .text-tertiary { color: var(--text-tertiary); }
 
-    .project-switcher { position: relative; }
-    .project-switcher__button {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-width: 200px;
-        max-width: 350px;
-        padding: 8px 12px;
-        border: 1px solid var(--color-border-hover);
-        border-radius: 8px;
-        font-family: inherit;
-        font-size: 0.9rem;
-        background-color: var(--color-surface);
-        cursor: pointer;
-        transition: border-color 0.2s;
-    }
-    .project-switcher__button:hover { border-color: #9CA3AF; }
-    .project-switcher__name {
-        font-weight: 500;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-    .project-switcher__progress {
-        margin-left: auto;
-        font-size: 0.8rem;
-        color: var(--color-text-secondary);
-        font-family: var(--font-mono);
-    }
-    .project-switcher .dropdown-menu {
-        padding: 6px;
-        min-width: 250px;
-        left: 0;
-        top: calc(100% + 6px);
-    }
-    .project-switcher .dropdown-divider {
-        height: 1px;
-        background-color: var(--color-border);
-        margin: 6px 0;
-    }
-    
-    [data-tooltip] {
-        position: relative;
-    }
-    [data-tooltip]::after {
-        content: attr(data-tooltip);
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%) translateY(8px);
-        background-color: #333;
-        color: white;
-        padding: 6px 10px;
-        border-radius: 6px;
-        font-size: 0.8rem;
-        font-weight: 500;
-        white-space: nowrap;
-        opacity: 0;
-        pointer-events: none;
-        transition: opacity 0.2s ease, transform 0.2s ease;
-        z-index: 100;
-    }
-    [data-tooltip]:hover::after {
-        opacity: 1;
-        transform: translateX(-50%) translateY(4px);
-    }
+        /* Solid UI Elements */
+        .panel {
+            background-color: var(--bg-base);
+            border: 1px solid var(--border-color);
+        }
+        
+        .panel-surface {
+            background-color: var(--bg-surface);
+            border-right: 1px solid var(--border-color);
+        }
 
-    .btn:focus-visible, .project-switcher__button:focus-visible {
-        outline: 2px solid var(--color-primary);
-        outline-offset: 2px;
-    }
+        .input-classic {
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            transition: all 0.2s ease;
+        }
+        .input-classic:focus {
+            border-color: var(--text-secondary);
+            outline: none;
+        }
 
-    .main-workspace {
-        display: grid;
-        grid-template-columns: minmax(280px, 0.7fr) 1.2fr 1.2fr 1fr;
-        gap: 20px;
-        padding: 20px;
-        height: calc(100vh - 67px);
-        max-width: 2560px;
-        margin: 0 auto;
-    }
-    .pane {
-        background-color: var(--color-surface);
-        border: 1px solid var(--color-border);
-        border-radius: 12px;
-        box-shadow: var(--shadow-sm);
-        display: flex;
-        flex-direction: column;
-        overflow: hidden;
-        max-height: calc(50vh - 55px);
-    }
-    .pane.hidden { display: none; }
-    .pane__header {
-        padding: 12px 16px;
-        border-bottom: 1px solid var(--color-border);
-        flex-shrink: 0;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-    }
-    .pane__title {
-        font-weight: 600;
-        font-size: 0.95rem;
-        color: var(--color-text-primary);
-    }
-    .pane__body { padding: 8px; overflow-y: auto; flex-grow: 1; }
-    .pane__body--padded { padding: 16px; }
-    .btn {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        font-family: inherit;
-        font-weight: 500;
-        font-size: 0.875rem;
-        padding: 8px 14px;
-        border-radius: 8px;
-        border: 1px solid transparent;
-        cursor: pointer;
-        transition: all 0.15s ease-out;
-        white-space: nowrap;
-    }
-    .btn:disabled { cursor: not-allowed; opacity: 0.5; }
-    .btn i { width: 16px; height: 16px; }
-    .btn .animate-spin { animation: spin 1s linear infinite; }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .btn-classic {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            font-weight: 500;
+            transition: all 0.15s ease;
+        }
+        .btn-classic:hover:not(:disabled) {
+            background-color: var(--bg-hover);
+            border-color: var(--text-secondary);
+        }
+        .btn-classic:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
 
-    .btn--primary {
-        background-color: var(--color-primary);
-        color: var(--color-primary-text);
-        border-color: var(--color-primary);
-        box-shadow: var(--shadow-sm);
-    }
-    .btn--primary:not(:disabled):hover { background-color: var(--color-primary-hover); }
-    .btn--secondary {
-        background-color: var(--color-surface);
-        color: var(--color-text-primary);
-        border-color: var(--color-border-hover);
-        box-shadow: var(--shadow-sm);
-    }
-    .btn--secondary:not(:disabled):hover {
-        border-color: #9CA3AF;
-        background-color: var(--color-bg);
-    }
-    .btn--icon {
-        padding: 8px;
-        background: transparent;
-        color: var(--color-text-secondary);
-        border-color: transparent;
-    }
-    .btn--icon:not(:disabled):hover {
-        color: var(--color-text-primary);
-        background-color: var(--color-bg);
-    }
-    
-    .pane-toggle-controls {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-    }
-    .btn-toggle-pane {
-        padding: 8px;
-        background-color: var(--color-surface);
-        color: var(--color-text-secondary);
-        border: 1px solid var(--color-border);
-        cursor: grab;
-    }
-    .btn-toggle-pane.active {
-        background-color: var(--color-primary);
-        color: var(--color-primary-text);
-        border-color: var(--color-primary);
-    }
-    .btn-toggle-pane:not(.active):hover {
-        background-color: var(--color-bg);
-        border-color: var(--color-border-hover);
-    }
-    .btn-toggle-pane.dragging {
-        opacity: 0.5;
-        cursor: grabbing;
-    }
-    .drag-over {
-        background-color: var(--color-primary-hover) !important;
-        border-color: var(--color-primary) !important;
-    }
+        .btn-accent {
+            background-color: var(--accent-color);
+            color: var(--accent-text);
+            border: 1px solid var(--accent-color);
+            font-weight: 600;
+        }
+        .btn-accent:hover:not(:disabled) {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+        .btn-accent:disabled {
+            opacity: 0.5;
+            transform: none;
+            cursor: not-allowed;
+        }
 
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border: 2px solid var(--bg-base); /* Creates padding effect */
+            border-radius: 5px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-tertiary);
+        }
 
-    .dropdown { position: relative; }
-    .dropdown-menu {
-        display: none;
-        position: absolute;
-        right: 0;
-        left: auto; 
-        top: calc(100% + 8px);
-        background: white;
-        border: 1px solid var(--color-border);
-        border-radius: 8px;
-        box-shadow: var(--shadow-md);
-        z-index: 20;
-        min-width: 200px;
-        overflow: hidden;
-    }
-    .dropdown-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 10px 14px;
-        background: none;
-        border: none;
-        width: 100%;
-        text-align: left;
-        cursor: pointer;
-        font-size: 0.875rem;
-    }
-    .dropdown-item:hover, .project-list-item:hover { background-color: var(--color-bg); }
-    
-    #welcomeScreen {
-        position: fixed;
-        inset: 0;
-        background-color: var(--color-bg);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        z-index: 100;
-        transition: opacity 0.3s ease-out;
-    }
-    #welcomeScreen.hidden { opacity: 0; pointer-events: none; }
+        .editor-font {
+            font-family: 'JetBrains Mono', monospace;
+            line-height: 1.6;
+        }
 
-    .file-tree { display: flex; flex-direction: column; gap: 2px; padding: 4px; }
-    .tree-item {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 8px 12px;
-        border-radius: 6px;
-        cursor: pointer;
-        user-select: none;
-        font-size: 0.875rem;
-    }
-    .tree-item:hover { background-color: #F3F4F6; }
-    .tree-item.active {
-        background-color: #E0E7FF;
-        color: var(--color-primary);
-        font-weight: 600;
-    }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-    .status-dot--0 { background-color: var(--status-todo); }
-    .status-dot--1 { background-color: var(--status-wip); }
-    .status-dot--2 { background-color: var(--status-done); }
-
-    .source-blocks-container { padding: 8px; display: flex; flex-direction: column; gap: 12px; }
-    .source-block {
-        border: 1px solid var(--color-border);
-        border-radius: 10px;
-        padding: 12px 16px;
-        cursor: pointer;
-        transition: all 0.15s ease-out;
-    }
-    .source-block:hover { border-color: var(--color-border-hover); background-color: #F9FAFB; }
-    .source-block.active {
-        border-color: var(--color-primary);
-        border-width: 2px;
-        background-color: #EFF6FF;
-        box-shadow: 0 0 0 1px var(--color-primary);
-    }
-    .source-block__meta {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.75rem;
-        color: var(--color-text-secondary);
-        margin-bottom: 8px;
-        font-family: var(--font-mono);
-    }
-    .source-block__text {
-        white-space: pre-wrap;
-        word-break: break-word;
-        font-size: 0.92rem;
-        line-height: 1.7;
-        max-height: 100px;
-        overflow-y: auto;
-    }
-
-    .translation-pane-body { display: flex; flex-direction: column; gap: 16px; }
-    #translationArea {
-        width: 100%;
-        flex-grow: 1;
-        padding: 12px;
-        border: 1px solid var(--color-border);
-        border-radius: 10px;
-        font-size: 0.92rem;
-        line-height: 1.7;
-        font-family: var(--font-mono);
-        resize: none;
-    }
-    #translationArea:focus { outline: none; border-color: var(--color-primary); }
-    .action-group { display: flex; align-items: center; gap: 12px; }
-    #saveStatus {
-        font-size: 0.8rem;
-        color: var(--color-text-secondary);
-        transition: opacity 0.3s;
-        flex-grow: 1;
-        text-align: right;
-        padding-right: 8px;
-    }
-    
-    #promptChunkContainer {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-top: 12px;
-        padding-top: 12px;
-        border-top: 1px solid var(--color-border);
-    }
-    
-    #viewerContent {
-        font-size: 0.92rem;
-        line-height: 1.7;
-        word-break: break-word;
-    }
-    #viewerContent h1, #viewerContent h2, #viewerContent h3 { margin-top: 1em; margin-bottom: 0.5em; font-weight: 600; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
-    #viewerContent h1 { font-size: 1.5em; }
-    #viewerContent h2 { font-size: 1.3em; }
-    #viewerContent h3 { font-size: 1.1em; }
-    #viewerContent p { margin-bottom: 1em; }
-    #viewerContent ul, #viewerContent ol { margin-left: 20px; margin-bottom: 1em; }
-    #viewerContent li { margin-bottom: 0.4em; }
-    #viewerContent code { font-family: var(--font-mono); background-color: #F3F4F6; padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.9em; }
-    #viewerContent pre { background-color: #1F2937; color: #F9FAFB; padding: 16px; border-radius: 8px; overflow-x: auto; margin-bottom: 1em; }
-    #viewerContent pre code { background: none; padding: 0; }
-    #viewerContent blockquote { border-left: 4px solid var(--color-border); padding-left: 16px; margin: 0 0 1em 0; color: var(--color-text-secondary); }
-    #viewerContent table { width: 100%; border-collapse: collapse; margin-bottom: 1em; }
-    #viewerContent th, #viewerContent td { border: 1px solid var(--color-border); padding: 8px 12px; text-align: left; }
-    #viewerContent th { background-color: var(--color-bg); font-weight: 600; }
-
-    dialog { border: none; border-radius: 12px; padding: 0; box-shadow: var(--shadow-lg); max-width: 90vw; }
-    dialog::backdrop { background-color: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px); }
-    .dialog__header { padding: 16px 24px; border-bottom: 1px solid var(--color-border); display: flex; justify-content: space-between; align-items: center; }
-    .dialog__body { padding: 24px; }
-    .dialog__footer { padding: 12px 24px; border-top: 1px solid var(--color-border); background-color: var(--color-bg); display: flex; justify-content: flex-end; gap: 12px; }
-    #historyDialog .revision-list { max-height: 400px; overflow-y: auto; border: 1px solid var(--color-border); border-radius: 8px; }
-    #historyDialog .revision-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--color-border); font-size: 0.875rem; display: flex; justify-content: space-between; align-items: center; }
-    #historyDialog .revision-item:last-child { border-bottom: none; }
-    #historyDialog .revision-item:hover { background-color: #F3F4F6; }
-    #historyDialog .revision-item.selected { background-color: #E0E7FF; }
-    #diffOutput { margin-top: 16px; padding: 16px; border-radius: 8px; background-color: var(--color-bg); max-height: 300px; overflow-y: auto; white-space: pre-wrap; font-family: var(--font-mono); font-size: 0.85rem; line-height: 1.6; }
-    #diffOutput ins { background-color: #D1FAE5; color: var(--color-green); text-decoration: none; }
-    #diffOutput del { background-color: #FEE2E2; color: var(--color-red); text-decoration: none; }
-
-    .toast-wrap { position: fixed; right: 24px; bottom: 24px; display: flex; flex-direction: column; gap: 12px; z-index: 9999; }
-    .toast { padding: 12px 18px; border-radius: 8px; box-shadow: var(--shadow-md); background-color: var(--color-surface); border: 1px solid var(--color-border); border-left: 4px solid var(--color-primary); animation: toast-in 0.3s ease-out; display: flex; align-items: center; gap: 10px; font-weight: 500; }
-    .toast.ok { border-left-color: var(--status-done); }
-    .toast.error { border-left-color: var(--color-danger); }
-    @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-
-    .btn:active { transform: scale(0.95); }
-    
-    .project-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid var(--color-border); cursor: pointer; }
-    .project-item:last-child { border-bottom: none; }
-    .project-item:hover { background-color: #F3F4F6; }
-    .project-name { font-weight: 500; }
-    .project-progress { display: flex; align-items: center; gap: 8px; min-width: 120px; }
-    .project-progress-bar { flex-grow: 1; height: 8px; background-color: var(--color-border); border-radius: 4px; overflow: hidden; position: relative; }
-    .project-progress-bar__fill { height: 100%; background-color: var(--color-primary); width: 0%; }
-
-    #settingsDlg[open], #projectMgmtDlg[open], #exportOptionsDlg[open] { 
-        position: fixed; 
-        top: 50%; 
-        left: 50%; 
-        transform: translate(-50%, -50%); 
-        margin: 0; 
-    }
-
-    .settings-tabs { display: flex; border-bottom: 1px solid var(--color-border); margin-bottom: 16px; }
-    .settings-tab { flex: 1 1 0; padding: 10px 12px; border: none; background: none; font-weight: 500; font-size: 0.95rem; color: var(--color-text-secondary); cursor: pointer; border-bottom: 2px solid transparent; transition: color 0.2s ease, border-bottom-color 0.2s ease; }
-    .settings-tab.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
-    .settings-content { display: none; }
-    .settings-content.active { display: block; }
-    .settings-content > div { margin-bottom: 24px; }
-    .settings-content label.form-label { display: block; margin-bottom: 6px; font-size: 0.9rem; font-weight: 500; }
-    .settings-content textarea, .settings-content select, .settings-content input { width: 100%; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 8px; font-family: var(--font-ui); font-size: 0.9rem; }
-    .settings-content textarea { min-height: 100px; }
-
-    @media (max-width: 1400px) { .main-workspace { grid-template-columns: 1fr 1fr; grid-template-rows: auto auto; height: auto; } }
-    @media (max-width: 768px) {
-        .app-header { flex-wrap: wrap; gap: 8px; }
-        .main-workspace { grid-template-columns: 1fr; grid-template-rows: auto; height: auto; padding: 12px; gap: 12px; }
-        .app-header .btn { padding: 10px; }
-        #fileTree { max-height: 300px; overflow-y: auto; }
-        .pane-toggle-controls, .header-group--separator { display: none; }
-    }
+        /* Animations */
+        @keyframes fade-in-up {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fade-in-up 0.3s ease-out forwards;
+        }
     </style>
 </head>
 <body>
-    <div id="welcomeScreen">
-        <div style="max-width: 500px;">
-            <i data-lucide="file-text" style="width: 48px; height: 48px; margin: 0 auto 16px; color: var(--color-primary);"></i>
-            <h1 style="font-size: 2.25rem; font-weight: 700;">TrAssist에 오신 것을 환영합니다</h1>
-            <p style="color: var(--color-text-secondary); margin: 8px 0 24px;">텍스트 파일 번역을 효율적으로 도와주는 간단한 도구입니다.</p>
-            <button id="btnOpenZip" class="btn btn--primary" style="font-size: 1rem; padding: 12px 24px;">
-                <i data-lucide="plus-circle"></i> ZIP에서 새 프로젝트 만들기
-            </button>
-        </div>
-    </div>
-    
-    <header class="app-header">
-        <div class="header-group">
-            <div class="logo"><i data-lucide="file-text"></i><span>TrAssist</span></div>
-            <div id="projectSwitcher" class="project-switcher dropdown">
-                <button id="projectSwitcherBtn" class="project-switcher__button" data-tooltip="프로젝트 전환 및 관리">
-                    <span id="currentProjectName" class="project-switcher__name">프로젝트 로드 중...</span>
-                    <span id="currentProjectProgress" class="project-switcher__progress"></span>
-                    <i data-lucide="chevrons-up-down" style="width: 16px; color: var(--color-text-secondary);"></i>
-                </button>
-                <div id="projectSwitcherMenu" class="dropdown-menu"></div>
-            </div>
-        </div>
-        
-        <div style="flex-grow: 1;"></div>
+    <div id="root"></div>
 
-        <div class="header-group header-group--separator">
-             <div id="paneToggleControls" class="pane-toggle-controls">
-                <!-- Buttons will be populated by JS to allow reordering -->
-             </div>
-        </div>
+    <script type="text/babel">
+        const { useState, useEffect, useReducer, useRef, useMemo, useContext, createContext } = React;
 
-        <div style="flex-grow: 1;"></div>
+        // --- ICONS ---
+        const Icon = ({ name, size = 16, className = "" }) => {
+            return <i className={`bi bi-${name} ${className}`} style={{ fontSize: size }}></i>;
+        };
 
-        <div class="header-group">
-            <button id="btnExport" class="btn btn--primary"><i data-lucide="send"></i><span>번역 내보내기</span></button>
-            <div class="dropdown">
-                <button id="btnSettingsMenu" class="btn btn--icon" data-tooltip="설정 및 데이터 관리"><i data-lucide="settings-2"></i></button>
-                <div id="settingsDropdownMenu" class="dropdown-menu">
-                    <button id="btnSettings" class="dropdown-item"><i data-lucide="sliders-horizontal"></i><span>앱 설정</span></button>
-                    <div class="dropdown-divider"></div>
-                    <button id="btnFullExport" class="dropdown-item"><i data-lucide="download"></i><span>전체 백업 내보내기</span></button>
-                    <button id="btnFullImport" class="dropdown-item"><i data-lucide="upload"></i><span>전체 백업 가져오기</span></button>
-                    <button id="btnExportAllPrompts" class="dropdown-item"><i data-lucide="file-terminal"></i><span>전체 프롬프트 내보내기</span></button>
-                </div>
-            </div>
-        </div>
+        // --- EXPORT/IMPORT LOGIC ---
+        const ProjectUtils = {
+            // Save Project State (Native JSON)
+            saveProject: (fileTree, name) => {
+                const projectData = {
+                    version: '1.0',
+                    timestamp: Date.now(),
+                    name: name,
+                    tree: fileTree
+                };
+                const blob = new Blob([JSON.stringify(projectData)], { type: "application/json" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${name.replace(/\.[^/.]+$/, "")}.zenith`;
+                a.click();
+                URL.revokeObjectURL(url);
+            },
 
-        <input id="importFile" type="file" accept=".json" style="display:none;" />
-        <input id="zipFileInput" type="file" accept=".zip" style="display: none;" />
-    </header>
-
-    <main id="mainWorkspace" class="main-workspace" style="display: none;">
-        <aside id="paneFileTree" class="pane">
-            <div class="pane__header"><span class="pane__title">프로젝트 파일</span></div>
-            <div id="fileTree" class="pane__body file-tree"></div>
-        </aside>
-
-        <section id="paneEditor" class="pane">
-            <div class="pane__header">
-                <span class="pane__title">번역 편집기</span>
-                <button id="btnHistory" class="btn btn--icon" data-tooltip="버전 기록"><i data-lucide="history"></i></button>
-                <div style="flex-grow:1;"></div>
-                <span id="langBadge" style="font-family: var(--font-mono); font-size: 0.8rem; background: #F3F4F6; padding: 2px 8px; border-radius: 6px;"></span>
-            </div>
-            <div class="pane__body--padded translation-pane-body">
-                <div class="prompt-buttons" style="display:flex; flex-wrap:wrap; gap:8px; width:100%;">
-                    <button id="btnCopyPrompt" class="btn btn--primary" style="flex:1 1 auto;"><i data-lucide="clipboard-copy"></i><span>AI 프롬프트 복사</span></button>
-                    <button id="btnQA" class="btn btn--secondary" data-tooltip="QA 검사" style="flex:1 1 auto;"><i data-lucide="check-square"></i><span>QA 검사</span></button>
-                    <button id="btnGlossaryPrompt" class="btn btn--secondary" data-tooltip="용어집 생성 프롬프트" style="flex:1 1 auto;"><i data-lucide="book-plus"></i><span>용어집 생성</span></button>
-                </div>
-                <textarea id="translationArea" placeholder="여기에 번역을 붙여넣으세요. (자동 저장 및 미리보기 업데이트)"></textarea>
-                <div id="promptChunkContainer"></div>
-                <div id="tmSuggestions" style="margin-top: 8px;"></div>
-                <div id="projectGlossaryPane" style="margin-top: 8px;">
-                    <label for="projectGlossaryEdit" style="display:block; font-size:0.85rem; font-weight:500; margin-bottom:4px;">공통 용어집 (편집 가능)</label>
-                    <textarea id="projectGlossaryEdit" style="width:100%; min-height: 80px; resize: vertical; font-family:var(--font-mono); font-size:0.85rem; padding: 8px 12px; border: 1px solid var(--color-border); border-radius: 8px;"></textarea>
-                    <p style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top:4px;">각 줄에 "용어=번역" 형태로 입력하세요.</p>
-                </div>
-                <div class="action-group">
-                    <span id="saveStatus"></span>
-                </div>
-            </div>
-        </section>
-
-        <section id="paneViewer" class="pane">
-            <div class="pane__header"><span class="pane__title">번역 뷰어 (마크다운)</span></div>
-            <div id="viewerContent" class="pane__body pane__body--padded"></div>
-        </section>
-        
-        <section id="paneSource" class="pane">
-            <div class="pane__header"><span id="pathLabel" class="pane__title" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-weight: 400; font-size: 0.875rem;">파일 선택</span></div>
-            <div id="sourceContainer" class="pane__body source-blocks-container"></div>
-        </section>
-    </main>
-    
-    <div id="dropZoneOverlay">
-        <i data-lucide="upload-cloud" style="width: 80px; height: 80px; color: var(--color-primary); margin-bottom: 24px;"></i>
-        <h2 style="font-size: 2rem; font-weight: 600; color: var(--color-primary);">번역 파일 가져오기</h2>
-        <p style="font-size: 1.1rem; color: var(--color-text-secondary); margin-top: 8px;">ZIP 또는 텍스트 파일을 여기에 놓아 번역을 자동으로 업데이트하세요.</p>
-    </div>
-
-    <dialog id="settingsDlg"></dialog>
-    <dialog id="historyDialog" style="width: 800px; max-width: 95vw;"></dialog>
-    <dialog id="projectMgmtDlg" style="width: 600px; max-width: 95vw;"></dialog>
-    <dialog id="exportOptionsDlg" style="width: 400px; max-width: 90vw;"></dialog>
-    <div class="toast-wrap" id="toastWrap"></div>
-
-<script src="https://unpkg.com/lucide@latest"></script>
-
-<script>
-'use strict';
-
-// Fallback for lucide global
-if (typeof window.lucide === 'undefined') {
-    window.lucide = { createIcons: () => {} };
-}
-var lucide = window.lucide;
-
-// Constants
-const DB_NAME = 'trassist-v7-4panel';
-const DB_VERSION = 1;
-let db;
-
-// --- UTILITIES ---
-function debounce(func, delay) {
-  let t;
-  return (...a) => {
-    clearTimeout(t);
-    t = setTimeout(() => func.apply(this, a), delay);
-  };
-}
-function toast(msg, type = 'info') {
-  const div = document.createElement('div');
-  div.className = `toast ${type}`;
-  div.innerHTML = `<span>${msg}</span>`;
-  els.toastWrap.appendChild(div);
-  setTimeout(() => div.remove(), 2800);
-}
-
-/**
- * [FIXED] Splits a text into chunks, respecting a character limit, while trying to preserve line breaks.
- * This revised function correctly handles single lines that are longer than the character limit by splitting them intelligently.
- * @param {string} text The text to be chunked.
- * @param {number} limit The maximum number of characters per chunk.
- * @returns {string[]} An array of text chunks.
- */
-function chunkTextByLinesAndLimit(text, limit) {
-    if (!text || limit <= 0) return [];
-
-    const lines = text.split('\n');
-    const chunks = [];
-    let currentChunk = "";
-
-    for (let line of lines) {
-        // Handle oversized lines by breaking them down first.
-        while (line.length > limit) {
-            // If there's a current chunk, push it to finalize it before dealing with the oversized line.
-            if (currentChunk.length > 0) {
-                chunks.push(currentChunk);
-                currentChunk = "";
-            }
-
-            // Find a smart split position, preferring a space to avoid breaking words.
-            let splitPos = line.lastIndexOf(' ', limit);
-
-            // If no space is found or it's too early in the line, perform a hard split at the limit.
-            if (splitPos <= 0) { // Also handles splitPos === -1
-                splitPos = limit;
-            }
-
-            chunks.push(line.substring(0, splitPos));
-            line = line.substring(splitPos).trimStart(); // Prepare the remainder of the line for the next iteration.
-        }
-
-        // After handling potential oversized parts, process the remaining (or original) line.
-        const lengthWithNewline = currentChunk.length > 0 ? currentChunk.length + 1 + line.length : line.length;
-
-        if (lengthWithNewline > limit && currentChunk.length > 0) {
-            chunks.push(currentChunk);
-            currentChunk = line;
-        } else {
-            if (currentChunk.length > 0) {
-                currentChunk += '\n' + line;
-            } else {
-                currentChunk = line;
-            }
-        }
-    }
-
-    // Add the last remaining chunk if it exists.
-    if (currentChunk.length > 0) {
-        chunks.push(currentChunk);
-    }
-
-    // In case the input was just one long string with no newlines,
-    // the loop might produce an empty first chunk. Filter it out.
-    return chunks.filter(chunk => chunk.length > 0);
-}
-
-
-// --- DATABASE HELPERS ---
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: ['projectId', 'path'] });
-      if (!db.objectStoreNames.contains('settings')) db.createObjectStore('settings', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('revisions')) {
-          const revStore = db.createObjectStore('revisions', { keyPath: 'id', autoIncrement: true });
-          revStore.createIndex('file_idx', ['projectId', 'path']);
-      }
-    };
-    req.onsuccess = (e) => { db = e.target.result; resolve(); };
-    req.onerror = (e) => reject(e.target.error);
-  });
-}
-function tx(store, mode='readonly') { return db.transaction(store, mode).objectStore(store); }
-function idbGet(store, key) {
-  return new Promise((res, rej) => {
-    const r = tx(store).get(key);
-    r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
-  });
-}
-function idbPut(store, val) {
-  return new Promise((res, rej) => {
-    const r = tx(store, 'readwrite').put(val);
-    r.onsuccess = () => res();
-    r.onerror = () => rej(r.error);
-  });
-}
-function idbGetAll(store, index, query) {
-    return new Promise((res, rej) => {
-        const objectStore = tx(store);
-        const request = index ? objectStore.index(index).getAll(query) : objectStore.getAll(query);
-        request.onsuccess = () => res(request.result);
-        request.onerror = () => rej(request.error);
-    });
-}
-function idbClear(storeName) {
-  return new Promise((res, rej) => {
-    const r = tx(storeName, 'readwrite').clear();
-    r.onsuccess = res;
-    r.onerror = rej;
-  });
-}
-
-// --- GLOBAL STATE & DOM ELEMENTS ---
-let currentProjectId = null;
-let currentFilePath = null;
-let currentSourceBlocks = [];
-let activeBlockIndex = null;
-const els = Object.fromEntries(Array.from(document.querySelectorAll('[id]')).map(el => [el.id, el]));
-const PANE_IDS = ['paneFileTree', 'paneEditor', 'paneViewer', 'paneSource'];
-
-// --- PROMPT TEMPLATES ---
-const DEFAULT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?><metaPrompt><purpose>천천히 심혈을 기울여서 essentialContext에 제공된 특정 문서를 입력받아, 원문의 모든 정보와 톤앤매너를 완벽하게 유지하면서도 가장 유려하고 자연스러운 문어체 한국어 문장으로 차근차근 천천히 변환한다. 최종 결과물은 즉시 출판 가능하도록 가독성, 읽기 쉬우면서, 학문적 엄밀성을 보전하고, 의미 전달의 정확성, 어법 준수성 등 좋은 글의 모든 특성을 최고 수준으로 충족해야 한다.</purpose><promptDesignFramework><objectiveDefinition id="1" title="목표 정의: 과업의 제1원칙"><finalDeliverable id="1.1" description="프롬프트를 통해 얻고자 하는 최종 결과물">이 문서의 콘텐츠는 사용자가 제공한 원문을 한국어 문어체 문장으로 변환 하고, 전문가 수준으로 다듬어 즉시 출판하여 베스트셀러가 될 수 있는 상태의 글이다.</finalDeliverable><coreTask id="1.2" description="LLM이 수행해야 할 핵심적인 동사">번역(Translate), 교정(Refine), 그리고 형식화(Format). 단순히 단어를 옮기는 것을 넘어, 전문 편집자로서 원문의 의미와 뉘앙스를 살리면서 한국어 독자에게 최적화된 콘텐츠로 재구성하고, 지정된 XML 형식에 맞춰 구조화해야 한다.</coreTask><successCriteria id="1.3" description="결과물이 '성공'이라고 판단할 객관적인 기준">- 결과물은 문법적으로 완벽한(well-formed) 한국어 - 학문적 엄밀성 및 정홛성 - 결과물이 읽기 쉬움 - 일문 일의주의에 따라 문장을 작성 - 번역문은 원문의 핵심 의미, 세부 뉘앙스, 그리고 저자의 의도를 100% 보존한다. - 한국어 문장은 문법적으로 완벽하며, 원문의 어조와 스타일을 유지하면서도 자연스럽고 유려하다. - 제목, 요약, 소제목, 문단 나누기 등 내용의 논리적 흐름을 반영하여 가독성을 극대화한다. - '[여기에 입력]'과 같은 플레이스홀더 텍스트가 최종 결과물에 남아있지 않다. - **문장 무결성: 어떤 문장도 중간에 끊기거나 생략되지 않고, 시작부터 끝까지 완전한 형태로 번역되어야 한다.**</successCriteria></objectiveDefinition><personaAssignment id="2" title="역할 부여: 최적의 인지 모델 설계"><expertPersona id="2.1" description="과업을 가장 잘 수행할 전문가의 상세한 묘사">당신은 '마스터 번역가 겸 콘텐츠 전략가'입니다. 20년 경력의 국제회의 통역사이자 여러 권의 베스트셀러 기술 서적을 번역한 경험이 있습니다. 당신은 단순히 언어를 변환하는 것을 넘어, 문화적 맥락과 미묘한 뉘앙스까지 포착하여 독자의 마음을 움직이는 글을 만들어내는 전문가입니다. 또한, 디지털 콘텐츠의 가독성과 검색엔진최적화(SEO)에 대한 깊은 이해를 바탕으로, 번역된 콘텐츠가 온라인 환경에서 최고의 성과를 낼 수 있도록 구조화하는 능력을 갖추고 있습니다.</expertPersona><audience id="2.2" description="결과물을 소비할 대상과 그들의 지식 수준">제공될 원문의 내용, 어휘, 스타일을 분석하여 잠재 독자층(예: 기술 전문가, 일반 대중, 특정 분야의 학생 등)을 추론하고, 그들의 지식 수준과 관심사에 맞춰 가장 이해하기 쉬운 어휘와 문장 구조를 선택해야 한다.</audience><toneAndStyle id="2.3" description="결과물의 어조와 스타일 및 정신적 도구">- **톤앤매너 복제:** 원문의 톤(예: 학술적, 유머러스함, 진지함, 대중적)을 정확히 분석하고, 그 느낌을 한국어의 표현으로 완벽하게 재현해야 한다. 직역으로 어색해지는 관용구나 문화적 표현은 한국 독자가 즉시 이해할 수 있는 자연스러운 표현으로 의역한다. - 문어체의 사용 : 베스트셀러처럼 잘 읽히는 문어체를 사용하여, 원본의 모든 내용과 정보를 포함하면서도 술술 읽혀야만 한다. - **정신적 도구 (Mental Model):** '독자의 입장에서 생각하기'. 문장을 완성하기 전에, 잠재 독자의 관점에서 그 문장을 소리 내어 읽어본다고 상상하라. '이 문장은 명확한가? 매력적인가? 이전 내용과 자연스럽게 연결되는가?'를 끊임없이 자문하며 결과물을 다듬어라.</toneAndStyle></personaAssignment><contextAndFormat id="3" title="맥락 제공 및 형식 지정"><essentialContext id="3.1" description="과업 수행에 필요한 모든 배경 정보, 데이터, 이전 대화 내용"><![CDATA[{{text}}]]></essentialContext><outputFormat id="3.2" description="결과물이 출력되어야 할 정확한 형식 또는 템플릿"><![CDATA[입력에 따라서 적절한 형식으로.]]></outputFormat></contextAndFormat><reasoningDesign id="4" title="추론 과정 설계: 생각의 경로 구축"><reasoningFramework id="4.1" description="과업 복잡성에 따른 추론 방식 선택"><option type="ProblemDecomposition" description="복잡한 프로젝트 수행 시 사용"><instruction>아래의 최종 목표를 달성하기 위해, 다음의 하위 작업들을 명시된 순서대로 반드시 수행하라. 각 단계의 결과는 다음 단계의 입력으로 사용된다.</instruction><subTasks><task id="1">**1단계: 원문 심층 분석 (Analyze):** 제공된 원문을 최소 3회 이상 정독하여 핵심 메시지, 논리 구조, 저자의 어조와 문체, 그리고 숨은 의도를 완벽하게 파악한다.</task><task id="2">**2단계: 초벌 번역 및 뉘앙스 포착 (Translate & Capture):** 원문의 의미를 정확하게 전달하는 데 초점을 맞춰 초벌 번역을 수행한다. 특히 기술 용어, 관용 표현, 문화적 배경이 담긴 뉘앙스를 놓치지 않도록 주의한다.</task><task id="3">**3단계: 윤문 및 유려함 확보 (Refine & Polish):** 초벌 번역 결과물을 한국어 독자의 시각에서 어색함이 없도록 다듬는다. 그러면서 동시에 문어체로 작성항다.  딱딱한 번역투 문장을 자연스러운 한국어 문장으로 재구성하고, 더 적절한 어휘를 선택하여 글 전체의 유려함을 극대화한다.</task><task id="4">**4단계: 콘텐츠 구조화 및 형식화 (Structure & Format):** 완성된 내용을 가독성을 높이기 위해 본문을 논리적인 문단과 소제목으로 나누고, 핵심 키워드를 추출하여 태그를 생성한다.</task></subTasks></option></reasoningFramework></reasoningDesign><constraints id="5" title="제약 조건 설정: 탐색 공간 제어"><mustAvoid id="5.2" description="반드시 피해야 할 주제, 표현, 단어, 편향, 가정">- 단어 대 단어 식의 기계적인 직역. - 원문의 정보를 누락하거나, 원문에 없는 내용을 임의로 추가하는 행위. - 한국어 독자가 읽기에 어색하거나 부자연스러운 번역투 문장. - 최종 결과물에 '여기를 채우세요'와 같은 미완성된 플레이스홀더를 남기는 것. - **문장 중간에서 번역을 임의로 중단하거나 생략하는 행위.**</mustAvoid><selfCorrectionCommand id="5.3" description="생성될 프롬프트 마지막에 포함될 최종 검증 명령"><![CDATA[모든 지시사항을 완수한 후, 최종 답변을 제출하기 전에 잠시 멈추고 스스로 '레드팀'의 역할을 수행하라. 내가 제시한 모든 요구사항(역할, 형식, 내용, 제약 조건 등)이 100% 충족되었는지, 논리적 비약이나 모순은 없는지, 더 나은 대안은 없는지 최소 세 번 이상 교차 검증하고, 그 결과를 반영하여 최종적으로 완벽하고 군더더기 없는 결과물만 출력하라.]]></selfCorrectionCommand></constraints></promptDesignFramework><variables><sourceLang>{{source_lang}}</sourceLang><targetLang>{{target_lang}}</targetLang><path>{{path}}</path><filename>{{filename}}</filename><instructions>{{instructions}}</instructions><glossary>{{glossary}}</glossary></variables></metaPrompt>`;
-const DEFAULT_QA_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?><qaMetaPrompt><purpose>번역 문서의 품질을 종합적으로 검수하고 개선합니다. 원문과 번역문을 비교하여 의미가 정확히 전달되었는지, 내용이 완전한지, 문법·맞춤법· 형식적 오류가 없는지, 그리고 용어집과 지침을 준수했는지 세밀하게 확인합니다. 검수자는 또한 번역투 표현을 자연스럽고 유려한 문어체로 다듬어 최종 결과물이 최고 수준의 완성도를 갖추도록 해야 합니다.</purpose><promptDesignFramework><objectiveDefinition id="1" title="검수 목표 정의"><finalDeliverable id="1.1" description="검수 결과의 최종 형태">본 검수의 결과물은 번역본에 대한 상세한 평가 보고서입니다. 보고서에는 발견된 모든 문제점, 개선이 필요한 부분, 수정 제안, 그리고 번역의 전반적인 품질 등급이 포함되어야 합니다.</finalDeliverable><coreTask id="1.2" description="검수자가 수행해야 할 핵심 작업">평가(Evaluate), 수정 제안(Suggest), 문체 개선(Polish). 검수자는 원문과 번역문을 비교·분석하여 오류를 식별하고, 정확하고 자연스러운 표현으로 수정하는 방법을 제시해야 합니다.</coreTask><successCriteria id="1.3" description="성공적인 검수의 객관적 기준">- 번역본이 원문의 의미, 뉘앙스, 정보 구조를 완벽하게 재현함. - 누락되거나 추가된 정보가 없음. - 맞춤법, 띄어쓰기, 문법, 용어 사용, 서식 등 언어적 오류가 전혀 없음. - 용어집에 정의된 용어가 일관되게 사용됨. - 어색한 번역투가 제거되고 자연스러운 문어체로 표현됨. - 보고서에는 문제점과 수정 제안이 명확하고 구체적으로 기술됨.</successCriteria></objectiveDefinition></promptDesignFramework></qaMetaPrompt>`;
-const DEFAULT_GLOSSARY_PROMPT_TEMPLATE = `<?xml version="1.0" encoding="UTF-8"?><glossaryPrompt><purpose>원문을 분석하여 중요한 용어, 전문 용어, 반복되는 개념을 식별하고 각 용어의 번역어를 제시하는 용어집을 생성합니다. 용어의 정의와 번역은 문맥에 맞게 간결하고 명확해야 하며, 기존 용어집(existingGlossary)이 있다면 이를 참고하여 일관성을 유지하고, 기존 용어집과 중복되거나 모순되는 용어는 새로 생성하지 않습니다.</purpose><context><sourceLang>{{source_lang}}</sourceLang><targetLang>{{target_lang}}</targetLang><path>{{path}}</path><filename>{{filename}}</filename><instructions>{{instructions}}</instructions><existingGlossary>{{glossary}}</existingGlossary><text>{{text}}</text></context><outputFormat><![CDATA[<glossary><entry><term>...</term><translation>...</translation></entry></glossary>]]></outputFormat></glossaryPrompt>`;
-
-// --- CORE LOGIC ---
-function defaultSettings() {
-    return { id: 'global', sourceLang: 'ko', targetLang: 'en', styleNotes: 'Maintain a consistent tone and preserve formatting.', promptTemplate: DEFAULT_TEMPLATE, qaPromptTemplate: DEFAULT_QA_TEMPLATE, glossaryPromptTemplate: DEFAULT_GLOSSARY_PROMPT_TEMPLATE, splitMode: 'auto', maxChunk: 4000 };
-}
-async function loadSettings() {
-    let s = await idbGet('settings', 'global');
-    if (!s) {
-        s = defaultSettings();
-        await idbPut('settings', s);
-    } else {
-        let updated = false;
-        const defaults = defaultSettings();
-        for (const key in defaults) {
-            if (!(key in s)) {
-                s[key] = defaults[key];
-                updated = true;
-            }
-        }
-        if (updated) await idbPut('settings', s);
-    }
-    updateLangBadge(s.sourceLang, s.targetLang);
-    return s;
-}
-function updateLangBadge(source, target) {
-    els.langBadge.textContent = `${(source || 'KO').toUpperCase()} → ${(target || 'EN').toUpperCase()}`;
-}
-const saveCurrentState = () => {
-    if (currentProjectId) localStorage.setItem('lastProjectId', currentProjectId);
-    if (currentFilePath) {
-        localStorage.setItem(`lastFile-${currentProjectId}`, currentFilePath);
-        localStorage.setItem(`activeBlock-${currentProjectId}-${currentFilePath}`, activeBlockIndex);
-    }
-};
-async function renderProjectGlossary() {
-    const glossaryArea = document.getElementById('projectGlossaryEdit');
-    if (!glossaryArea) return;
-    let glossaryText = '';
-    if (currentProjectId) {
-        const proj = await idbGet('projects', currentProjectId);
-        glossaryText = (proj && proj.glossary) ? proj.glossary : '';
-    }
-    glossaryArea.value = glossaryText;
-}
-const debouncedSaveGlossary = debounce(async (text) => {
-    if (!currentProjectId) return;
-    const proj = await idbGet('projects', currentProjectId);
-    if (proj) {
-        proj.glossary = text;
-        await idbPut('projects', proj);
-    }
-}, 1200);
-async function restoreLastState() {
-    const lastProjectId = localStorage.getItem('lastProjectId');
-    if (!lastProjectId) return;
-    const projects = await idbGetAll('projects');
-    const projectExists = projects.some(p => p.id === lastProjectId);
-    if (projectExists) {
-        await switchProject(lastProjectId, true);
-    } else if (projects.length > 0) {
-        await switchProject(projects[0].id, false);
-    }
-}
-const updateSaveStatus = (status) => {
-    if (!els.saveStatus) return;
-    els.saveStatus.style.opacity = '1';
-    if (status === 'saving') els.saveStatus.textContent = '저장 중...';
-    else if (status === 'saved') {
-        els.saveStatus.textContent = `저장됨: ${new Date().toLocaleTimeString()}`;
-        setTimeout(() => { if(els.saveStatus) els.saveStatus.style.opacity = '0'; }, 2000);
-    } else {
-        els.saveStatus.textContent = '';
-        els.saveStatus.style.opacity = '0';
-    }
-};
-function updateViewer(text) {
-    if (els.viewerContent) {
-        els.viewerContent.innerHTML = marked.parse(text || '');
-    }
-}
-const debouncedSave = debounce(async (text) => {
-    if (!currentProjectId || !currentFilePath) return;
-    updateSaveStatus('saving');
-    
-    await idbPut('revisions', { projectId: currentProjectId, path: currentFilePath, content: text, timestamp: Date.now() });
-    
-    const fileRec = await idbGet('files', [currentProjectId, currentFilePath]);
-    if (fileRec) {
-        fileRec.translation = text;
-        
-        // MODIFIED: Automatic status update logic
-        if (text.trim().length > 0) {
-            fileRec.status = 2; // Done
-        } else {
-            // Revert to WIP if text is cleared, but only if it was Done.
-            if (fileRec.status === 2) {
-                fileRec.status = 1; 
-            }
-        }
-        await idbPut('files', fileRec);
-    }
-    
-    await renderTree();
-    await updateProjectSwitcher();
-    updateSaveStatus('saved');
-}, 1500);
-
-async function openFile(path, restoreState = false) {
-    if (els.promptChunkContainer) els.promptChunkContainer.innerHTML = '';
-    if (!path) {
-        els.pathLabel.textContent = '파일 선택';
-        els.sourceContainer.innerHTML = '<p style="padding:16px; color:var(--color-text-secondary); text-align:center;">목록에서 파일을 선택하세요.</p>';
-        els.translationArea.value = '';
-        updateViewer('');
-        currentFilePath = null;
-        return;
-    }
-    const rec = await idbGet('files', [currentProjectId, path]);
-    if (!rec) { toast(`파일을 찾을 수 없습니다: ${path}`, 'error'); return; }
-    currentFilePath = path;
-    els.pathLabel.textContent = path;
-    els.translationArea.value = rec.translation || '';
-    updateViewer(rec.translation || '');
-    updateSaveStatus('');
-    const settings = await idbGet('settings', 'global') || defaultSettings();
-    currentSourceBlocks = splitText(rec.text, settings.splitMode, settings.maxChunk);
-    paintBlocks();
-
-    let blockToActivate = 0;
-    if (restoreState) {
-        const savedIndex = localStorage.getItem(`activeBlock-${currentProjectId}-${path}`);
-        if (savedIndex !== null && savedIndex < currentSourceBlocks.length) {
-            blockToActivate = parseInt(savedIndex, 10);
-        }
-    }
-    setActiveBlock(blockToActivate);
-    
-    document.querySelectorAll('.tree-item').forEach(el => el.classList.toggle('active', el.dataset.path === path));
-    saveCurrentState();
-    await renderProjectGlossary();
-}
-function splitText(text, mode = 'auto', maxLen = 4000) {
-    if (!text || !text.trim()) return [];
-    if (mode === 'none') return text.trim() ? [text.trim()] : [];
-    let chunks = (mode === 'line') ? text.split(/\r?\n/) : text.split(/\n{2,}/);
-    if (mode === 'auto' && chunks.length < 2) chunks = text.split(/\r?\n/);
-    const out = [];
-    let currentChunk = '';
-    for (const chunk of chunks) {
-        const trimmedChunk = chunk.trim();
-        if (!trimmedChunk) continue;
-        if (currentChunk.length > 0 && (currentChunk.length + trimmedChunk.length + 2) > maxLen) {
-            out.push(currentChunk);
-            currentChunk = trimmedChunk;
-        } else {
-            currentChunk = currentChunk ? `${currentChunk}\n\n${trimmedChunk}` : trimmedChunk;
-        }
-    }
-    if (currentChunk) out.push(currentChunk);
-    return out;
-}
-function setActiveBlock(index) {
-    if (index === null || !currentSourceBlocks[index]) {
-        activeBlockIndex = null;
-        return;
-    }
-    activeBlockIndex = index;
-    document.querySelectorAll('.source-block').forEach((el, i) => {
-        el.classList.toggle('active', i === index);
-    });
-    saveCurrentState();
-}
-function paintBlocks() {
-    els.sourceContainer.innerHTML = '';
-    if (!currentSourceBlocks.length) {
-        els.sourceContainer.innerHTML = '<p style="padding:16px; color:var(--color-text-secondary); text-align:center;">이 파일은 비어 있습니다.</p>';
-        return;
-    }
-    currentSourceBlocks.forEach((block, idx) => {
-        const card = document.createElement('div');
-        card.className = 'source-block';
-        card.dataset.index = idx;
-        card.innerHTML = `<div class="source-block__meta"><span>#${idx+1}</span><span>${block.length} chars</span></div><div class="source-block__text"></div>`;
-        card.querySelector('.source-block__text').textContent = block;
-        card.addEventListener('click', () => setActiveBlock(idx));
-        els.sourceContainer.appendChild(card);
-    });
-}
-async function renderTree() {
-    if (!currentProjectId) return;
-    const files = await getFilesOfCurrent();
-    files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }));
-    els.fileTree.innerHTML = '';
-    if (!files.length) {
-        els.fileTree.innerHTML = '<p style="padding:16px; color:var(--color-text-secondary);">텍스트 파일이 없습니다.</p>';
-        return;
-    }
-    files.forEach(file => {
-        const item = document.createElement('div');
-        item.className = 'tree-item';
-        item.dataset.path = file.path;
-        item.innerHTML = `<span class="status-dot status-dot--${file.status}"></span><span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${file.path}</span>`;
-        item.setAttribute('title', file.path);
-        item.addEventListener('click', () => openFile(file.path));
-        item.classList.toggle('active', file.path === currentFilePath);
-        els.fileTree.appendChild(item);
-    });
-    await updateProjectSwitcher();
-}
-async function refreshUI() {
-    const allProjects = await idbGetAll('projects');
-    if (!allProjects.length) {
-        els.welcomeScreen.classList.remove('hidden');
-        els.mainWorkspace.style.display = 'none';
-        return;
-    }
-    els.welcomeScreen.classList.add('hidden');
-    els.mainWorkspace.style.display = 'grid';
-    if (!currentProjectId || !allProjects.some(p => p.id === currentProjectId)) {
-        currentProjectId = allProjects[0].id;
-    }
-    await updateProjectSwitcher();
-    await renderTree();
-    const lastFile = localStorage.getItem(`lastFile-${currentProjectId}`);
-    let fileToOpen = (await getFilesOfCurrent())[0]?.path;
-    if (lastFile) {
-        const fileExists = (await idbGet('files', [currentProjectId, lastFile])) !== undefined;
-        if (fileExists) fileToOpen = lastFile;
-    }
-    await openFile(fileToOpen, true);
-}
-async function createProjectFromZip(file) {
-    const name = file.name.replace(/\.zip$/i, '');
-    const id = 'p_' + Date.now();
-    await idbPut('projects', { id, name, createdAt: Date.now(), glossary: '' });
-    try {
-        const zip = await JSZip.loadAsync(file);
-        const filePromises = [];
-        zip.forEach((path, entry) => {
-            if (entry.dir || !isTextLike(path)) return;
-            const promise = entry.async('string').then(text => idbPut('files', { projectId: id, path, text, status: 0, translation: '' }));
-            filePromises.push(promise);
-        });
-        await Promise.all(filePromises);
-        toast(`프로젝트 "${name}"이(가) 생성되었습니다. 파일 ${filePromises.length}개를 불러왔습니다.`, 'ok');
-        currentProjectId = id;
-        await refreshUI();
-    } catch (e) {
-        toast(`ZIP 파일을 읽는 중 오류가 발생했습니다: ${e.message}`, 'error');
-    }
-}
-function isTextLike(path) {
-    const lower = path.toLowerCase();
-    const textExtensions = ['.txt','.text','.md','.markdown','.html','.htm','.xml','.json','.yaml','.yml','.csv','.log','.rtf','.tex','.js','.ts','.py','.java','.c','.cpp','.h','.cs','.swift','.go','.rb','.php','.sql','.css','.scss','.srt','.vtt','.smi'];
-    return textExtensions.some(ext => lower.endsWith(ext));
-}
-async function getFilesOfCurrent() {
-    if (!currentProjectId) return [];
-    const files = (await idbGetAll('files')).filter(f => f.projectId === currentProjectId);
-    files.sort((a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }));
-    return files;
-}
-async function getProjectProgress(projectId) {
-    const files = (await idbGetAll('files')).filter(f => f.projectId === projectId);
-    const total = files.length;
-    const done = files.filter(f => f.status === 2).length;
-    const percentDone = total ? Math.round((done / total) * 100) : 0;
-    return { total, done, percentDone };
-}
-async function updateProjectSwitcher() {
-    if (!els.projectSwitcher) return;
-    const allProjects = await idbGetAll('projects');
-    const menu = els.projectSwitcherMenu;
-    menu.innerHTML = '';
-    if (!currentProjectId && allProjects.length > 0) currentProjectId = allProjects[0].id;
-    const currentProject = allProjects.find(p => p.id === currentProjectId);
-    if (currentProject) {
-        const { done, total } = await getProjectProgress(currentProjectId);
-        els.currentProjectName.textContent = currentProject.name;
-        els.currentProjectProgress.textContent = `${done}/${total}`;
-    } else {
-        els.currentProjectName.textContent = "프로젝트 없음";
-        els.currentProjectProgress.textContent = "";
-    }
-    allProjects.forEach(p => {
-        const item = document.createElement('button');
-        item.className = 'dropdown-item project-list-item';
-        item.dataset.projectId = p.id;
-        item.innerHTML = `<i data-lucide="check" style="width:16px; visibility: ${p.id === currentProjectId ? 'visible' : 'hidden'}"></i><span>${p.name}</span>`;
-        item.addEventListener('click', () => { switchProject(p.id); menu.style.display = 'none'; });
-        menu.appendChild(item);
-    });
-    menu.appendChild(document.createElement('div')).className = 'dropdown-divider';
-    const manageBtn = document.createElement('button');
-    manageBtn.className = 'dropdown-item';
-    manageBtn.innerHTML = `<i data-lucide="folder-cog"></i><span>프로젝트 관리...</span>`;
-    manageBtn.addEventListener('click', () => { showProjectManagement(); menu.style.display = 'none'; });
-    menu.appendChild(manageBtn);
-    lucide.createIcons();
-}
-async function switchProject(projectId, restoreFile = false) {
-    currentProjectId = projectId;
-    await renderTree();
-    let fileToOpen = (await getFilesOfCurrent())[0]?.path;
-    if (restoreFile) {
-        const lastFile = localStorage.getItem(`lastFile-${projectId}`);
-        const fileExists = lastFile ? (await idbGet('files', [projectId, lastFile])) !== undefined : false;
-        if (fileExists) fileToOpen = lastFile;
-    }
-    await openFile(fileToOpen, restoreFile);
-    await updateProjectSwitcher();
-    await renderProjectGlossary();
-    saveCurrentState();
-}
-async function showProjectManagement() {
-    const dlg = els.projectMgmtDlg;
-    dlg.innerHTML = `<div class="dialog__header"><h2>프로젝트 관리</h2><button class="btn btn--icon" onclick="this.closest('dialog').close()"><i data-lucide="x"></i></button></div><div class="dialog__body"><div style="margin-bottom: 16px;"><button id="btnCreateProjectInMgmt" class="btn btn--primary" style="width: 100%;"><i data-lucide="plus-circle"></i> ZIP에서 새 프로젝트 만들기</button></div><div id="projectList" style="max-height:400px; overflow-y:auto; border: 1px solid var(--color-border); border-radius: 8px;"></div></div><div class="dialog__footer"><button class="btn btn--secondary" onclick="this.closest('dialog').close()">닫기</button></div>`;
-    dlg.querySelector('#btnCreateProjectInMgmt').addEventListener('click', () => { els.zipFileInput.click(); dlg.close(); });
-    const container = dlg.querySelector('#projectList');
-    const projects = await idbGetAll('projects');
-    if (!projects.length) {
-        container.innerHTML = '<p style="padding:16px; color:var(--color-text-secondary); text-align: center;">생성된 프로젝트가 없습니다.</p>';
-    } else {
-        for (const project of projects) {
-            const progress = await getProjectProgress(project.id);
-            const div = document.createElement('div');
-            div.className = 'project-item';
-            div.dataset.projectId = project.id;
-            div.innerHTML = `<span style="display:flex; align-items:center; gap:8px;"><i data-lucide="folder"></i><span class="project-name">${project.name}</span></span><div class="project-progress" style="width:160px;"><div class="project-progress-bar"><div class="project-progress-bar__fill" style="width:${progress.percentDone}%"></div></div><span style="font-size:0.75rem; color:var(--color-text-secondary);">${progress.done}/${progress.total}</span></div>`;
-            div.addEventListener('click', async () => { await switchProject(project.id); dlg.close(); });
-            container.appendChild(div);
-        }
-    }
-    dlg.showModal();
-    lucide.createIcons();
-}
-async function buildGenericPrompt(sourceText, template, qaInfo = {}) {
-    if (!currentFilePath || !sourceText || !sourceText.trim()) return null;
-    const settings = await idbGet('settings', 'global') || defaultSettings();
-    const project = await idbGet('projects', currentProjectId);
-    const glossary = project?.glossary || '';
-    let finalPrompt = template
-        .replaceAll('{{source_lang}}', settings.sourceLang).replaceAll('{{target_lang}}', settings.targetLang)
-        .replaceAll('{{path}}', currentFilePath).replaceAll('{{filename}}', currentFilePath.split('/').pop())
-        .replaceAll('{{instructions}}', settings.styleNotes || '').replaceAll('{{glossary}}', glossary)
-        .replaceAll('{{text}}', sourceText);
-    if (qaInfo.original) finalPrompt = finalPrompt.replaceAll('{{original_text}}', qaInfo.original);
-    if (qaInfo.translated) finalPrompt = finalPrompt.replaceAll('{{translated_text}}', qaInfo.translated);
-    return finalPrompt;
-}
-async function copyGenericPrompt(buttonEl, promptBuilder) {
-    const textEl = buttonEl.querySelector('span');
-    const originalText = textEl.textContent;
-    let iconEl = buttonEl.querySelector('i');
-    buttonEl.disabled = true;
-    if (iconEl) iconEl.classList.add('animate-spin');
-    textEl.textContent = '처리 중...';
-    try {
-        const prompt = await promptBuilder();
-        if (prompt) {
-            await navigator.clipboard.writeText(prompt);
-            toast('프롬프트가 클립보드에 복사되었습니다!', 'ok');
-        }
-    } catch (e) {
-        toast('클립보드 복사에 실패했습니다.', 'error');
-        console.error(e);
-    } finally {
-        setTimeout(() => {
-            buttonEl.disabled = false;
-            if (iconEl) iconEl.classList.remove('animate-spin');
-            textEl.textContent = originalText;
-        }, 1000);
-    }
-}
-async function copyPrompt() {
-    const btn = els.btnCopyPrompt;
-    const textEl = btn.querySelector('span');
-    const originalText = textEl.textContent;
-    let iconEl = btn.querySelector('i');
-
-    btn.disabled = true;
-    if (iconEl) iconEl.classList.add('animate-spin');
-    textEl.textContent = '처리 중...';
-    els.promptChunkContainer.innerHTML = '';
-
-    try {
-        if (activeBlockIndex === null) {
-            toast('프롬프트를 생성할 블록을 선택하세요.', 'error');
-            return;
-        }
-
-        const sourceText = currentSourceBlocks[activeBlockIndex];
-        const settings = await idbGet('settings', 'global') || defaultSettings();
-        const limit = settings.maxChunk || 4000;
-
-        const chunks = chunkTextByLinesAndLimit(sourceText, limit);
-
-        if (chunks.length === 0) {
-            toast('복사할 내용이 없습니다.', 'error');
-            return;
-        }
-
-        if (chunks.length === 1) {
-            const prompt = await buildGenericPrompt(chunks[0], settings.promptTemplate);
-            if (prompt) {
-                await navigator.clipboard.writeText(prompt);
-                toast('프롬프트가 클립보드에 복사되었습니다!', 'ok');
-            }
-        } else {
-            toast(`${chunks.length}개의 부분으로 나뉘었습니다. 각 부분을 복사하세요.`, 'info');
-            chunks.forEach((chunk, index) => {
-                const chunkBtn = document.createElement('button');
-                chunkBtn.className = 'btn btn--secondary';
-                chunkBtn.innerHTML = `<i data-lucide="clipboard-copy"></i><span>프롬프트 복사 (부분 ${index + 1}/${chunks.length})</span>`;
-                chunkBtn.addEventListener('click', async () => {
-                    const chunkPrompt = await buildGenericPrompt(chunk, settings.promptTemplate);
-                    if (chunkPrompt) {
-                        try {
-                            await navigator.clipboard.writeText(chunkPrompt);
-                            toast(`부분 ${index + 1} 프롬프트가 복사되었습니다!`, 'ok');
-                        } catch (e) {
-                            toast(`부분 ${index + 1} 복사에 실패했습니다.`, 'error');
-                        }
-                    }
-                });
-                els.promptChunkContainer.appendChild(chunkBtn);
-            });
-            lucide.createIcons();
-        }
-        
-        // MODIFIED: Update status to WIP after copying
-        if (currentProjectId && currentFilePath) {
-            const rec = await idbGet('files', [currentProjectId, currentFilePath]);
-            if (rec && rec.status === 0) {
-                rec.status = 1; // Change to WIP
-                await idbPut('files', rec);
-                await renderTree();
-                await updateProjectSwitcher();
-            }
-        }
-
-    } catch (e) {
-        toast('프롬프트 생성 중 오류가 발생했습니다.', 'error');
-        console.error(e);
-    } finally {
-        setTimeout(() => {
-            btn.disabled = false;
-            if (iconEl) iconEl.classList.remove('animate-spin');
-            textEl.textContent = originalText;
-        }, 500);
-    }
-}
-async function copyQAPrompt() {
-    await copyGenericPrompt(els.btnQA, async () => {
-        if (activeBlockIndex === null) {
-            toast('QA를 위해 원본 블록을 선택하세요.', 'error');
-            return null;
-        }
-        const originalText = currentSourceBlocks[activeBlockIndex];
-        const translatedText = els.translationArea.value;
-        if (!translatedText.trim()) {
-            toast('QA를 위해 번역문을 입력해야 합니다.', 'error');
-            return null;
-        }
-        const settings = await idbGet('settings', 'global') || defaultSettings();
-        return buildGenericPrompt(originalText, settings.qaPromptTemplate, { original: originalText, translated: translatedText });
-    });
-}
-async function copyGlossaryPrompt() {
-    await copyGenericPrompt(els.btnGlossaryPrompt, async () => {
-        if (activeBlockIndex === null) {
-            toast('용어집을 생성할 블록을 선택하세요.', 'error');
-            return null;
-        }
-        const sourceText = currentSourceBlocks[activeBlockIndex];
-        const settings = await idbGet('settings', 'global') || defaultSettings();
-        return buildGenericPrompt(sourceText, settings.glossaryPromptTemplate);
-    });
-}
-async function showHistory() {
-    if (!currentProjectId || !currentFilePath) return toast('먼저 파일을 열어주세요.');
-    const dlg = els.historyDialog;
-    dlg.innerHTML = `<div class="dialog__header"><h2>버전 기록</h2><button class="btn btn--icon" onclick="this.closest('dialog').close()"><i data-lucide="x"></i></button></div><div class="dialog__body" style="display: flex; gap: 16px; flex-wrap: wrap;"><div style="flex:1; min-width: 250px;"><h4 style="font-weight:500; margin-bottom: 8px;">비교할 버전을 선택하세요</h4><div id="revisionList" class="revision-list"></div></div><div style="flex:2; min-width: 300px;"><h4 style="font-weight:500; margin-bottom: 8px;">현재 버전과의 변경 사항</h4><div id="diffOutput">변경 사항을 보려면 버전을 선택하세요.</div></div></div><div class="dialog__footer"><button class="btn btn--secondary" onclick="this.closest('dialog').close()">닫기</button><button id="btnRestoreVersion" class="btn btn--primary" disabled><i data-lucide="undo-2"></i><span>선택한 버전 복원</span></button></div>`;
-    dlg.querySelector('#btnRestoreVersion').addEventListener('click', async () => {
-        const selectedItem = dlg.querySelector('.revision-item.selected');
-        if (!selectedItem) return;
-        const revId = parseInt(selectedItem.dataset.id, 10);
-        const revision = await idbGet('revisions', revId);
-        if (revision) {
-            els.translationArea.value = revision.content;
-            els.translationArea.dispatchEvent(new Event('input', { bubbles: true }));
-            dlg.close();
-            toast('버전이 복원되었습니다!', 'ok');
-        }
-    });
-    const revisions = (await idbGetAll('revisions', 'file_idx', IDBKeyRange.bound([currentProjectId, currentFilePath], [currentProjectId, currentFilePath, '\uffff']))).sort((a,b) => b.timestamp - a.timestamp);
-    const listEl = dlg.querySelector('#revisionList');
-    if (!revisions.length) {
-        listEl.innerHTML = '<div style="padding:12px; color:var(--color-text-secondary);">기록이 없습니다.</div>';
-    } else {
-        revisions.forEach(rev => {
-            const item = document.createElement('div');
-            item.className = 'revision-item';
-            item.dataset.id = rev.id;
-            item.innerHTML = `<span>${new Date(rev.timestamp).toLocaleString()}</span><i data-lucide="chevron-right" style="width:16px; color:var(--color-text-secondary);"></i>`;
-            item.addEventListener('click', () => {
-                listEl.querySelectorAll('.revision-item').forEach(el => el.classList.remove('selected'));
-                item.classList.add('selected');
-                dlg.querySelector('#btnRestoreVersion').disabled = false;
-                const diffEl = dlg.querySelector('#diffOutput');
-                diffEl.innerHTML = '';
-                const diff = Diff.diffChars(rev.content, els.translationArea.value);
-                diff.forEach(part => {
-                    const node = document.createElement(part.added ? 'ins' : part.removed ? 'del' : 'span');
-                    node.textContent = part.value;
-                    diffEl.appendChild(node);
-                });
-            });
-            listEl.appendChild(item);
-        });
-    }
-    dlg.showModal();
-    lucide.createIcons();
-}
-async function fullExport() {
-    toast('내보내는 중...');
-    try {
-        const data = { projects: await idbGetAll('projects'), files: await idbGetAll('files'), settings: await idbGetAll('settings'), revisions: await idbGetAll('revisions'), };
-        const blob = new Blob([JSON.stringify({ v:2, ts: Date.now(), data })], {type:'application/json'});
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `trassist_backup_${new Date().toISOString().slice(0,10)}.json`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-    } catch(e) { toast('내보내기에 실패했습니다!', 'error'); }
-}
-async function fullImport() {
-    if (!confirm('현재 모든 데이터를 삭제하고 백업 파일로 교체합니다. 계속하시겠습니까?')) return;
-    const file = els.importFile.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        try {
-            const backup = JSON.parse(e.target.result);
-            if (!backup.v || !backup.data) throw new Error('Invalid backup file format.');
-            toast('가져오는 중... 잠시만 기다려 주세요.');
-            await Promise.all([idbClear('projects'), idbClear('files'), idbClear('settings'), idbClear('revisions')]);
-            await Promise.all([
-                ...backup.data.projects.map(item => idbPut('projects', item)),
-                ...backup.data.files.map(item => idbPut('files', item)),
-                ...backup.data.settings.map(item => idbPut('settings', item)),
-                ...backup.data.revisions.map(item => idbPut('revisions', item)),
-            ]);
-            toast('가져오기가 성공했습니다! 다시 로드합니다...', 'ok');
-            setTimeout(() => window.location.reload(), 1500);
-        } catch(err) { toast(`가져오기에 실패했습니다: ${err.message}`, 'error'); }
-    };
-    reader.readAsText(file);
-}
-async function exportAllPrompts() {
-    if (!currentProjectId) return toast('먼저 프로젝트를 선택해주세요.', 'error');
-    toast('프로젝트 전체 프롬프트 ZIP 파일 생성 중...');
-    try {
-        const files = await getFilesOfCurrent();
-        if (!files.length) return toast('프로젝트에 파일이 없습니다.', 'error');
-        const settings = await idbGet('settings', 'global') || defaultSettings();
-        const project = await idbGet('projects', currentProjectId);
-        const glossary = project?.glossary || '';
-        const zip = new JSZip();
-        const translationPromptFolder = zip.folder("TranslationPrompts");
-        const glossaryPromptFolder = zip.folder("GlossaryPrompts");
-        for (const file of files) {
-            if (!file.text || !file.text.trim()) continue;
-            const sourceChunks = splitText(file.text, settings.splitMode, settings.maxChunk);
-            const baseFilename = file.path.split('/').pop();
-            const lastDotIndex = baseFilename.lastIndexOf('.');
-            const filenameWithoutExt = lastDotIndex !== -1 ? baseFilename.substring(0, lastDotIndex) : baseFilename;
-            const isMultiChunk = sourceChunks.length > 1;
-            for (let i = 0; i < sourceChunks.length; i++) {
-                const chunk = sourceChunks[i];
-                const partSuffix = isMultiChunk ? `_part${i + 1}` : '';
-                const chunkFilename = `${filenameWithoutExt}${partSuffix}.txt`;
-                const translationPrompt = buildPromptTextSync(chunk, file.path, baseFilename, settings, glossary);
-                const glossaryPrompt = buildGlossaryPromptTextSync(chunk, file.path, baseFilename, settings, glossary);
-                translationPromptFolder.file(chunkFilename, translationPrompt);
-                glossaryPromptFolder.file(chunkFilename, glossaryPrompt);
-            }
-        }
-        const blob = await zip.generateAsync({ type: 'blob' });
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = `${project.name}_all_prompts.zip`;
-        a.click();
-        URL.revokeObjectURL(a.href);
-        toast('모든 프롬프트가 ZIP 파일로 내보내졌습니다!', 'ok');
-    } catch (e) {
-        toast(`ZIP 파일 생성 중 오류 발생: ${e.message}`, 'error');
-        console.error("Failed to export all prompts as ZIP:", e);
-    }
-}
-function buildPromptTextSync(sourceText, path, filename, settings, glossary) {
-    const template = settings.promptTemplate || DEFAULT_TEMPLATE;
-    return template.replaceAll('{{source_lang}}', settings.sourceLang).replaceAll('{{target_lang}}', settings.targetLang).replaceAll('{{path}}', path).replaceAll('{{filename}}', filename).replaceAll('{{instructions}}', settings.styleNotes || '').replaceAll('{{glossary}}', glossary).replaceAll('{{text}}', sourceText);
-}
-function buildGlossaryPromptTextSync(sourceText, path, filename, settings, glossary) {
-    const template = settings.glossaryPromptTemplate || DEFAULT_GLOSSARY_PROMPT_TEMPLATE;
-    return template.replaceAll('{{source_lang}}', settings.sourceLang).replaceAll('{{target_lang}}', settings.targetLang).replaceAll('{{path}}', path).replaceAll('{{filename}}', filename).replaceAll('{{instructions}}', settings.styleNotes || '').replaceAll('{{glossary}}', glossary).replaceAll('{{text}}', sourceText);
-}
-async function renderSettingsModal() {
-    const s = await idbGet('settings', 'global') || defaultSettings();
-    let glossaryVal = '';
-    if (currentProjectId) {
-        const projForGlossary = await idbGet('projects', currentProjectId);
-        glossaryVal = (projForGlossary && projForGlossary.glossary) ? projForGlossary.glossary : '';
-    }
-    els.settingsDlg.innerHTML = `<form method="dialog" style="width:600px;"><div class="dialog__header"><h2>설정</h2><button class="btn btn--icon" value="cancel" title="닫기"><i data-lucide="x"></i></button></div><div class="dialog__body"><div class="settings-tabs"><button type="button" class="settings-tab active" data-tab="general">일반</button><button type="button" class="settings-tab" data-tab="translation">번역 프롬프트</button><button type="button" class="settings-tab" data-tab="qa">QA 프롬프트</button><button type="button" class="settings-tab" data-tab="glossary">용어집</button></div><div id="tab-general" class="settings-content active"><div style="margin-bottom:16px;"><label class="form-label" style="font-weight:500;">언어</label><div style="display: flex; align-items: center; gap: 12px;"><input id="dlgSourceLang" class="form-select" style="width:100%;" value="${s.sourceLang}" /><i data-lucide="arrow-right" style="color: var(--color-text-secondary);"></i><input id="dlgTargetLang" class="form-select" style="width:100%;" value="${s.targetLang}" /></div></div><div style="margin-bottom:16px;"><label class="form-label" style="font-weight:500;">텍스트 분할 방식</label><select id="dlgSplitMode" class="form-select" style="width:100%;"><option value="none" ${s.splitMode === 'none' ? 'selected' : ''}>분할 안 함 (전체 텍스트)</option><option value="auto" ${s.splitMode === 'auto' ? 'selected' : ''}>자동 (문단 우선)</option><option value="paragraph" ${s.splitMode === 'paragraph' ? 'selected' : ''}>문단별</option><option value="line" ${s.splitMode === 'line' ? 'selected' : ''}>줄별</option></select></div><div style="margin-bottom:16px;"><label class="form-label" style="font-weight:500;" for="dlgMaxChunk">최대 프롬프트 용량 (글자 수)</label><input id="dlgMaxChunk" type="number" class="form-select" value="${s.maxChunk}" min="100" /><p style="font-size: 0.75rem; color: var(--color-text-secondary); margin-top:4px;">프롬프트 복사/내보내기 시 파일이 이 용량을 초과하면 자동으로 분할됩니다.</p></div><div style="margin-bottom:16px;"><label class="form-label" style="font-weight:500;">지침</label><textarea id="dlgStyleNotes" class="form-select" style="width:100%; min-height: 80px;">${s.styleNotes}</textarea></div></div><div id="tab-translation" class="settings-content"><label class="form-label" style="font-weight:500;">번역 프롬프트 템플릿</label><textarea id="dlgPromptTemplate" class="form-select" style="width:100%; min-height: 200px; font-family:var(--font-mono);">${s.promptTemplate}</textarea><button type="button" id="btnResetTranslationTemplate" class="btn btn--secondary" style="margin-top:8px;">템플릿 초기화</button></div><div id="tab-qa" class="settings-content"><label class="form-label" style="font-weight:500;">QA 프롬프트 템플릿</label><textarea id="dlgQAPromptTemplate" class="form-select" style="width:100%; min-height: 200px; font-family:var(--font-mono);">${s.qaPromptTemplate}</textarea><button type="button" id="btnResetQATemplate" class="btn btn--secondary" style="margin-top:8px;">템플릿 초기화</button></div><div id="tab-glossary" class="settings-content"><label class="form-label" style="font-weight:500;">프로젝트 용어집</label><textarea id="dlgProjectGlossary" class="form-select" style="width:100%; min-height: 200px; font-family:var(--font-mono);">${glossaryVal}</textarea></div></div><div class="dialog__footer"><button class="btn btn--secondary" value="cancel">취소</button><button class="btn btn--primary" value="save">저장</button></div></form>`;
-    els.settingsDlg.showModal();
-    lucide.createIcons();
-    const tabButtons = els.settingsDlg.querySelectorAll('.settings-tab');
-    const tabContents = els.settingsDlg.querySelectorAll('.settings-content');
-    tabButtons.forEach(btn => { btn.addEventListener('click', () => { tabButtons.forEach(b => b.classList.remove('active')); btn.classList.add('active'); const tabName = `tab-${btn.dataset.tab}`; tabContents.forEach(content => { content.classList.toggle('active', content.id === tabName); }); }); });
-    els.settingsDlg.querySelector('#btnResetTranslationTemplate').addEventListener('click', () => { els.settingsDlg.querySelector('#dlgPromptTemplate').value = DEFAULT_TEMPLATE; });
-    els.settingsDlg.querySelector('#btnResetQATemplate').addEventListener('click', () => { els.settingsDlg.querySelector('#dlgQAPromptTemplate').value = DEFAULT_QA_TEMPLATE; });
-    els.settingsDlg.onclose = async (e) => {
-        if (e.target.returnValue === 'save') {
-            const newSettings = { id: 'global', sourceLang: els.settingsDlg.querySelector('#dlgSourceLang').value, targetLang: els.settingsDlg.querySelector('#dlgTargetLang').value, styleNotes: els.settingsDlg.querySelector('#dlgStyleNotes').value, promptTemplate: els.settingsDlg.querySelector('#dlgPromptTemplate').value, qaPromptTemplate: els.settingsDlg.querySelector('#dlgQAPromptTemplate').value, glossaryPromptTemplate: s.glossaryPromptTemplate, splitMode: els.settingsDlg.querySelector('#dlgSplitMode').value, maxChunk: parseInt(els.settingsDlg.querySelector('#dlgMaxChunk').value) || 4000 };
-            await idbPut('settings', newSettings);
-            updateLangBadge(newSettings.sourceLang, newSettings.targetLang);
-            const glossaryField = els.settingsDlg.querySelector('#dlgProjectGlossary');
-            if (glossaryField && currentProjectId) {
-                const projToUpdate = await idbGet('projects', currentProjectId);
-                if (projToUpdate) { projToUpdate.glossary = glossaryField.value; await idbPut('projects', projToUpdate); await renderProjectGlossary(); }
-            }
-            toast('설정이 저장되었습니다!', 'ok');
-            if (currentFilePath) {
-                const fileRec = await idbGet('files', [currentProjectId, currentFilePath]);
-                currentSourceBlocks = splitText(fileRec.text, newSettings.splitMode, newSettings.maxChunk);
-                paintBlocks();
-            }
-        }
-    };
-}
-function setupPaneToggles() {
-    let visibility = {};
-    try {
-        const storedVisibility = JSON.parse(localStorage.getItem('paneVisibility'));
-        visibility = (storedVisibility && typeof storedVisibility === 'object') ? storedVisibility : {};
-    } catch (e) { visibility = {}; }
-    PANE_IDS.forEach(id => { if (visibility[id] === undefined) visibility[id] = true; });
-
-    const applyVisibility = () => {
-        PANE_IDS.forEach(paneId => {
-            const paneEl = document.getElementById(paneId);
-            const toggleBtn = document.querySelector(`[data-pane="${paneId}"]`);
-            if (paneEl && toggleBtn) {
-                const isVisible = !!visibility[paneId];
-                paneEl.classList.toggle('hidden', !isVisible);
-                toggleBtn.classList.toggle('active', isVisible);
-            }
-        });
-        localStorage.setItem('paneVisibility', JSON.stringify(visibility));
-    };
-
-    const paneButtonData = [
-        { id: 'paneFileTree', icon: 'folder-kanban', tooltip: '파일 목록 패널' },
-        { id: 'paneEditor', icon: 'file-pen-line', tooltip: '번역 편집기 패널' },
-        { id: 'paneViewer', icon: 'monitor-check', tooltip: '번역 뷰어 패널' },
-        { id: 'paneSource', icon: 'file-text', tooltip: '원본 텍스트 패널' },
-    ];
-
-    const renderToggleButtons = (order) => {
-        const container = els.paneToggleControls;
-        container.innerHTML = '';
-        order.forEach(paneId => {
-            const data = paneButtonData.find(d => d.id === paneId);
-            if (!data) return;
-            const button = document.createElement('button');
-            button.className = 'btn btn-toggle-pane';
-            button.dataset.pane = data.id;
-            button.dataset.tooltip = data.tooltip;
-            button.draggable = true;
-            button.innerHTML = `<i data-lucide="${data.icon}"></i>`;
-            container.appendChild(button);
-        });
-        lucide.createIcons();
-        applyVisibility();
-        addDragDropListeners();
-    };
-    
-    let paneOrder = JSON.parse(localStorage.getItem('paneOrder')) || PANE_IDS;
-    renderToggleButtons(paneOrder);
-
-    let draggedItem = null;
-
-    function addDragDropListeners() {
-        const buttons = document.querySelectorAll('.btn-toggle-pane');
-        buttons.forEach(button => {
-            button.addEventListener('dragstart', (e) => {
-                draggedItem = e.target.closest('.btn-toggle-pane');
-                setTimeout(() => {
-                    draggedItem.classList.add('dragging');
-                }, 0);
-            });
-            
-            button.addEventListener('dragend', () => {
-                setTimeout(() => {
-                    draggedItem.classList.remove('dragging');
-                    draggedItem = null;
-                }, 0);
-            });
-
-            button.addEventListener('dragover', (e) => {
-                e.preventDefault();
-                const target = e.target.closest('.btn-toggle-pane');
-                if (target && draggedItem !== target) {
-                    const container = els.paneToggleControls;
-                    const targetRect = target.getBoundingClientRect();
-                    const isAfter = e.clientY > targetRect.top + targetRect.height / 2;
-                    if (isAfter) {
-                        container.insertBefore(draggedItem, target.nextSibling);
+            // Export Result (ZIP)
+            exportZip: async (rootNode) => {
+                const zip = new JSZip();
+                const addToZip = (folder, node) => {
+                    if (node.isFolder) {
+                        const newFolder = folder.folder(node.name);
+                        node.children.forEach(child => addToZip(newFolder, child));
                     } else {
-                        container.insertBefore(draggedItem, target);
+                        const contentToSave = node.translation || node.content;
+                        if (contentToSave !== null) folder.file(node.name, contentToSave);
                     }
-                }
-            });
+                };
+                rootNode.children.forEach(child => addToZip(zip, child));
+                return await zip.generateAsync({ type: "blob" });
+            },
+            
+            // Export Result (EPUB) - Same logic as before
+            exportEpub: async (rootNode, title) => {
+                 const zip = new JSZip();
+                const uuid = "urn:uuid:" + Math.random().toString(36).substring(2);
+                const textNodes = [];
+                const traverse = (node) => {
+                    if (node.isFolder) node.children.forEach(traverse);
+                    else if (node.isTranslatable && (node.translation || node.content)) textNodes.push(node);
+                };
+                traverse(rootNode);
+                if (textNodes.length === 0) throw new Error("No text content found.");
 
-            button.addEventListener('drop', (e) => {
-                e.preventDefault();
-                savePaneOrder();
-                applyPaneOrder();
-            });
-        });
-    }
+                zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+                zip.folder("META-INF").file("container.xml", `<?xml version="1.0" encoding="UTF-8" ?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+                
+                const oebps = zip.folder("OEBPS");
+                const textFolder = oebps.folder("Text");
+                let manifestItems = "", spineItems = "", navPoints = "";
 
-    const savePaneOrder = () => {
-        const newOrder = Array.from(els.paneToggleControls.children).map(btn => btn.dataset.pane);
-        localStorage.setItem('paneOrder', JSON.stringify(newOrder));
-    };
-
-    const applyPaneOrder = () => {
-        const order = JSON.parse(localStorage.getItem('paneOrder')) || PANE_IDS;
-        const workspace = els.mainWorkspace;
-        order.forEach(paneId => {
-            const pane = document.getElementById(paneId);
-            if (pane) {
-                workspace.appendChild(pane);
-            }
-        });
-    };
-
-    applyPaneOrder(); // Apply order on initial load
-    document.querySelectorAll('.btn-toggle-pane').forEach(button => {
-        button.addEventListener('click', () => {
-            const paneId = button.dataset.pane;
-            if (paneId && PANE_IDS.includes(paneId)) {
-                visibility[paneId] = !visibility[paneId];
-                applyVisibility();
-            }
-        });
-    });
-}
-
-// --- DRAG & DROP IMPORT ---
-let dragCounter = 0;
-
-function handleDragEnter(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter++;
-    if (dragCounter === 1 && currentProjectId) {
-        els.dropZoneOverlay.style.display = 'flex';
-    }
-}
-
-function handleDragLeave(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter--;
-    if (dragCounter === 0) {
-        els.dropZoneOverlay.style.display = 'none';
-    }
-}
-
-function handleDragOver(e) {
-    e.preventDefault();
-    e.stopPropagation();
-}
-
-async function handleDrop(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounter = 0;
-    els.dropZoneOverlay.style.display = 'none';
-
-    if (!currentProjectId) {
-        toast('먼저 프로젝트를 열어주세요.', 'error');
-        return;
-    }
-
-    const files = e.dataTransfer.files;
-    if (!files || files.length === 0) return;
-
-    toast('파일 처리 중... 잠시만 기다려주세요.');
-    
-    const updatedSourceFiles = new Set();
-    const translationsMap = new Map();
-    const projectFiles = await getFilesOfCurrent();
-    const allPromises = [];
-
-    for (const file of files) {
-        allPromises.push(processDroppedItem(file));
-    }
-
-    async function processDroppedItem(item) {
-        const itemName = item.name.toLowerCase();
-        if (itemName.endsWith('.zip')) {
-            try {
-                const zip = await JSZip.loadAsync(item);
-                const zipFilePromises = [];
-                zip.forEach((relativePath, zipEntry) => {
-                    if (!zipEntry.dir && isTextLike(relativePath)) {
-                        zipFilePromises.push(async () => {
-                            const content = await zipEntry.async('string');
-                            await aggregateTranslation({ name: relativePath, content });
-                        });
-                    }
+                textNodes.forEach((node, index) => {
+                    const fileId = `file_${index}`;
+                    const fileName = `Text/${fileId}.xhtml`;
+                    const content = (node.translation || node.content || "").replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').split('\n').map(l => `<p>${l}</p>`).join('');
+                    textFolder.file(`${fileId}.xhtml`, `<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${node.name}</title></head><body><h1>${node.name}</h1>${content}</body></html>`);
+                    manifestItems += `<item id="${fileId}" href="${fileName}" media-type="application/xhtml+xml"/>\n`;
+                    spineItems += `<itemref idref="${fileId}"/>\n`;
+                    navPoints += `<navPoint id="navPoint-${index}" playOrder="${index + 1}"><navLabel><text>${node.name}</text></navLabel><content src="${fileName}"/></navPoint>\n`;
                 });
-                await Promise.all(zipFilePromises.map(p => p()));
-            } catch (err) {
-                toast(`ZIP 파일 처리 중 오류 발생: ${item.name}`, 'error');
+
+                oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"><dc:title>${title}</dc:title><dc:language>ko</dc:language><dc:identifier id="BookId" opf:scheme="UUID">${uuid}</dc:identifier><dc:creator>Zenith</dc:creator></metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>${manifestItems}</manifest><spine toc="ncx">${spineItems}</spine></package>`);
+                oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/></head><docTitle><text>${title}</text></docTitle><navMap>${navPoints}</navMap></ncx>`);
+                return await zip.generateAsync({ type: "blob" });
             }
-        } else if (isTextLike(itemName)) {
-            const content = await item.text();
-            await aggregateTranslation({ name: item.name, content });
-        }
-    }
+        };
 
-    async function aggregateTranslation({ name, content }) {
-        const droppedBasename = name.split('/').pop().replace(/\.[^/.]+$/, "");
-        
-        let bestMatch = null;
-        let longestMatchLength = 0;
+        // --- SERVICE LAYER ---
+        class GeminiService {
+            constructor(apiKeys, config = {}) {
+                this.apiKeys = apiKeys.map(k => ({ key: typeof k === 'string' ? k : k.key, status: 'ready', lastUsed: 0 }));
+                this.config = { textModel: config.textModel || 'gemini-2.5-flash', maxRetries: 3, ...config };
+            }
+            _getRateLimit() { return this.config.textModel.includes('pro') ? 30000 : 4000; }
+            async _fetchWithBackoff(url, options, retries = 3, delay = 1000) {
+                try {
+                    const response = await fetch(url, options);
+                    if (response.status === 429) return response;
+                    if (response.status >= 500 && retries > 0) throw new Error(`Server error ${response.status}`);
+                    return response;
+                } catch (error) {
+                    if (retries > 0) { await new Promise(r => setTimeout(r, delay)); return this._fetchWithBackoff(url, options, retries - 1, delay * 2); }
+                    throw error;
+                }
+            }
+            async _callApiWithKey(prompt, systemPrompt, keyObj) {
+                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.config.textModel}:generateContent?key=${keyObj.key}`;
+                try {
+                    const response = await this._fetchWithBackoff(endpoint, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], systemInstruction: systemPrompt ? { parts: [{ text: systemPrompt }] } : undefined })
+                    }, this.config.maxRetries);
+                    if (response.status === 429) return { success: false, status: 429, error: "Rate limit exceeded" };
+                    if (!response.ok) return { success: false, status: response.status, error: await response.text() };
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    return text ? { success: true, text, usedKey: keyObj.key } : { success: false, error: 'No content' };
+                } catch (e) { return { success: false, error: e.message }; }
+            }
+            
+            // Added back the missing callApi method
+            async callApi(prompt, systemPrompt) {
+                const rateLimit = this._getRateLimit();
+                // Pick the key used least recently
+                const keyObj = this.apiKeys.sort((a, b) => a.lastUsed - b.lastUsed)[0];
+                
+                if (!keyObj) return { success: false, error: "No API keys configured" };
 
-        for (const projFile of projectFiles) {
-            const projBasename = projFile.path.split('/').pop().replace(/\.[^/.]+$/, "");
-            if (droppedBasename.startsWith(projBasename) && projBasename.length > longestMatchLength) {
-                longestMatchLength = projBasename.length;
-                bestMatch = projFile;
+                const now = Date.now();
+                const timeSinceLast = now - keyObj.lastUsed;
+                
+                // Enforce rate limit for single calls too
+                if (timeSinceLast < rateLimit) {
+                    await new Promise(r => setTimeout(r, rateLimit - timeSinceLast));
+                }
+
+                keyObj.lastUsed = Date.now();
+                return await this._callApiWithKey(prompt, systemPrompt, keyObj);
+            }
+
+            async processBatch(items, systemPrompt, callbacks) {
+                const queue = [...items];
+                const rateLimit = this._getRateLimit();
+                const runWorker = async (keyObj) => {
+                    while (queue.length > 0) {
+                        const now = Date.now();
+                        if (now - keyObj.lastUsed < rateLimit) await new Promise(r => setTimeout(r, rateLimit - (now - keyObj.lastUsed)));
+                        if (queue.length === 0) break;
+                        const item = queue.shift();
+                        keyObj.lastUsed = Date.now();
+                        callbacks.onStart(item.id);
+                        const result = await this._callApiWithKey(item.content, systemPrompt, keyObj);
+                        if (result.status === 429) { queue.push(item); await new Promise(r => setTimeout(r, rateLimit * 2)); }
+                        else callbacks.onComplete(item.id, result);
+                        callbacks.onProgress();
+                    }
+                };
+                await Promise.all(this.apiKeys.map(key => runWorker(key)));
             }
         }
 
-        if (bestMatch) {
-            const partRegex = /_part(\d+)$/;
-            const match = droppedBasename.match(partRegex);
-            const partNumber = match ? parseInt(match[1], 10) : 1;
+        // --- COMPONENTS ---
 
-            if (!translationsMap.has(bestMatch.path)) {
-                translationsMap.set(bestMatch.path, []);
+        const Dashboard = ({ onNewProject, onLoadProject }) => {
+            const fileInputRef = useRef(null);
+            
+            const handleFileChange = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    try {
+                        const projectData = JSON.parse(event.target.result);
+                        if (!projectData.tree) throw new Error("Invalid project file");
+                        onLoadProject(projectData);
+                    } catch (err) {
+                        alert("프로젝트 파일 로드 실패: " + err.message);
+                    }
+                };
+                reader.readAsText(file);
+            };
+
+            return (
+                <div className="flex flex-col items-center justify-center h-screen w-full bg-base animate-fade-in p-8">
+                    <div className="max-w-2xl w-full text-center mb-12">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-surface border-classic mb-6">
+                            <Icon name="translate" className="text-3xl text-primary" />
+                        </div>
+                        <h1 className="text-4xl font-bold tracking-tight mb-4 text-primary">Zenith Translator</h1>
+                        <p className="text-secondary text-lg">
+                            Professional localization tool. Simple, fast, and timeless.
+                        </p>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl">
+                        {/* Card 1: New Project */}
+                        <div className="panel p-8 rounded-xl hover:border-gray-400 transition-colors cursor-default">
+                            <Icon name="folder-plus" className="text-3xl mb-4 text-primary" />
+                            <h3 className="text-xl font-semibold mb-2 text-primary">New Project</h3>
+                            <p className="text-tertiary mb-6 text-sm">Start a new localization project from a ZIP file.</p>
+                            <label className="btn-accent w-full py-3 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95">
+                                <span>Select ZIP File</span>
+                                <input type="file" className="hidden" accept=".zip" onChange={onNewProject} />
+                            </label>
+                        </div>
+
+                        {/* Card 2: Load Project */}
+                        <div className="panel p-8 rounded-xl hover:border-gray-400 transition-colors cursor-default">
+                            <Icon name="upload" className="text-3xl mb-4 text-primary" />
+                            <h3 className="text-xl font-semibold mb-2 text-primary">Import Project</h3>
+                            <p className="text-tertiary mb-6 text-sm">Resume work from a saved .zenith file.</p>
+                            <label className="btn-classic w-full py-3 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95">
+                                <span>Load .zenith File</span>
+                                <input type="file" className="hidden" accept=".zenith,.json" onChange={handleFileChange} />
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div className="mt-12 text-tertiary text-xs">
+                        v2.0.0 Classic Edition • Secure Local Processing
+                    </div>
+                </div>
+            );
+        };
+
+        const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
+            const [localSettings, setLocalSettings] = useState(settings);
+            useEffect(() => { setLocalSettings(settings); }, [settings]);
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className="panel p-6 rounded-xl w-[500px] shadow-2xl animate-fade-in">
+                        <div className="flex justify-between items-center mb-6">
+                            <h2 className="text-lg font-semibold flex items-center gap-2">
+                                <Icon name="sliders" /> Settings
+                            </h2>
+                            <button onClick={onClose} className="text-tertiary hover:text-primary"><Icon name="x-lg" /></button>
+                        </div>
+                        <div className="space-y-5">
+                            <div>
+                                <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-tertiary">API Keys</label>
+                                <input type="text" className="input-classic w-full px-3 py-2 rounded-lg text-sm" value={localSettings.apiKeys.join(',')} onChange={e => setLocalSettings({...localSettings, apiKeys: e.target.value.split(',').map(k=>k.trim())})} placeholder="Paste Gemini API Keys..." />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-tertiary">Model</label>
+                                <div className="relative">
+                                    <select className="input-classic w-full px-3 py-2 rounded-lg text-sm appearance-none" value={localSettings.modelId} onChange={e => setLocalSettings({...localSettings, modelId: e.target.value})}>
+                                        <option value="gemini-2.5-flash-preview-09-2025">Gemini 2.5 Flash (Latest)</option>
+                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Stable)</option>
+                                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (High Quality)</option>
+                                    </select>
+                                    <Icon name="chevron-down" className="absolute right-3 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" size={12} />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-tertiary">System Prompt</label>
+                                <textarea className="input-classic w-full px-3 py-2 rounded-lg h-24 editor-font text-sm resize-none" value={localSettings.systemPrompt} onChange={e => setLocalSettings({...localSettings, systemPrompt: e.target.value})} />
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 mt-8">
+                            <button onClick={onClose} className="btn-classic px-4 py-2 rounded-lg text-sm">Cancel</button>
+                            <button onClick={() => { onSave(localSettings); onClose(); }} className="btn-accent px-4 py-2 rounded-lg text-sm">Save Changes</button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const FileTreeItem = ({ node, level, onSelect, selectedId }) => {
+            const [isOpen, setIsOpen] = useState(true);
+            const isSelected = selectedId === node.id;
+            
+            let statusDot = null;
+            if (!node.isFolder && node.isTranslatable) {
+                const color = node.status === 'translating' ? 'var(--status-translating)' : 
+                              node.status === 'completed' ? 'var(--status-completed)' :
+                              node.status === 'error' ? 'var(--status-error)' : 'var(--text-tertiary)';
+                statusDot = <span className="w-1.5 h-1.5 rounded-full ml-auto" style={{ backgroundColor: color }}></span>;
             }
-            translationsMap.get(bestMatch.path).push({ content, partNumber });
-        } else {
-            toast(`일치하는 원본 파일을 찾을 수 없습니다: ${name}`, 'info');
-        }
-    }
-    
-    await Promise.all(allPromises);
 
-    if (translationsMap.size === 0) {
-        toast('가져올 유효한 번역 파일을 찾지 못했습니다.', 'info');
-        return;
-    }
-    
-    let successCount = 0;
-    for (const [path, parts] of translationsMap.entries()) {
-        parts.sort((a, b) => a.partNumber - b.partNumber);
-        const fullTranslation = parts.map(p => p.content).join('\n\n');
+            return (
+                <div className="select-none text-sm font-medium">
+                    <div 
+                        className={`flex items-center py-1.5 px-3 cursor-pointer transition-colors border-l-2
+                            ${isSelected 
+                                ? 'bg-hover border-primary text-primary' 
+                                : 'border-transparent text-secondary hover:text-primary hover:bg-hover'}`}
+                        style={{ paddingLeft: `${level * 16 + 12}px`, borderColor: isSelected ? 'var(--text-primary)' : 'transparent' }}
+                        onClick={() => { if (node.isFolder) setIsOpen(!isOpen); else onSelect(node); }}
+                    >
+                        <span className={`mr-2 ${isSelected ? 'text-primary' : 'text-tertiary'}`}>
+                            <Icon name={node.isFolder ? (isOpen ? "folder2-open" : "folder2") : "file-earmark-text"} size={14} />
+                        </span>
+                        <span className="truncate">{node.name}</span>
+                        {statusDot}
+                    </div>
+                    {node.isFolder && isOpen && (
+                        <div>{node.children.map(child => <FileTreeItem key={child.id} node={child} level={level + 1} onSelect={onSelect} selectedId={selectedId} />)}</div>
+                    )}
+                </div>
+            );
+        };
 
-        const fileRec = await idbGet('files', [currentProjectId, path]);
-        if (fileRec) {
-            fileRec.translation = fullTranslation;
-            fileRec.status = 2; // Mark as done
-            await idbPut('files', fileRec);
-            successCount++;
-            updatedSourceFiles.add(path);
-        }
-    }
-    
-    if (successCount > 0) {
-        toast(`${successCount}개 파일의 번역을 성공적으로 가져왔습니다.`, 'ok');
-        await renderTree();
-        await updateProjectSwitcher();
-        if (updatedSourceFiles.has(currentFilePath)) {
-            await openFile(currentFilePath, false);
-        }
-    }
-}
+        const App = () => {
+            // View State: 'dashboard' | 'workspace'
+            const [view, setView] = useState('dashboard');
+            
+            // Project State
+            const [project, setProject] = useState(null); // { name, tree }
+            const [selectedNodeId, setSelectedNodeId] = useState(null);
+            
+            const [settings, setSettings] = useState({ apiKeys: [], modelId: 'gemini-2.5-flash', systemPrompt: "Translate programming comments and strings to Korean. Keep code logic intact." });
+            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [progress, setProgress] = useState({ current: 0, total: 0 });
+            const [theme, setTheme] = useState('dark');
 
+            // Theme Effect
+            useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
 
-// --- EVENT LISTENERS ---
-function setupEventListeners() {
-    els.btnOpenZip.addEventListener('click', () => els.zipFileInput.click());
-    els.zipFileInput.addEventListener('change', async e => { if(e.target.files[0]) await createProjectFromZip(e.target.files[0]); });
-    els.btnExport.addEventListener('click', () => {
-        if (!currentProjectId) return toast('프로젝트가 로드되지 않았습니다.', 'error');
-        const dlg = els.exportOptionsDlg;
-        dlg.innerHTML = `<div class="dialog__header"><h2>번역 내보내기 옵션</h2><button class="btn btn--icon" onclick="this.closest('dialog').close()"><i data-lucide="x"></i></button></div><div class="dialog__body" style="display: flex; flex-direction: column; gap: 12px;"><p>어떤 형식으로 번역을 내보내시겠습니까?</p><button id="btnExportAsZip" class="btn btn--secondary" style="width:100%; justify-content: flex-start;"><i data-lucide="archive"></i><span>ZIP 파일로 내보내기 (파일 구조 유지)</span></button><button id="btnExportAsTxt" class="btn btn--secondary" style="width:100%; justify-content: flex-start;"><i data-lucide="file-text"></i><span>하나의 텍스트 파일로 합치기</span></button></div><div class="dialog__footer"><button class="btn btn--secondary" onclick="this.closest('dialog').close()">취소</button></div>`;
-        dlg.querySelector('#btnExportAsZip').addEventListener('click', async () => {
-            dlg.close();
-            const project = await idbGet('projects', currentProjectId);
-            const files = await getFilesOfCurrent();
-            const zip = new JSZip();
-            files.filter(f => f.translation?.trim()).forEach(f => zip.file(f.path, f.translation));
-            if (Object.keys(zip.files).length === 0) return toast('내보낼 번역된 파일이 없습니다.', 'error');
-            const blob = await zip.generateAsync({ type: 'blob' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${project.name}_translated.zip`;
-            a.click();
-            URL.revokeObjectURL(a.href);
-        });
-        dlg.querySelector('#btnExportAsTxt').addEventListener('click', async () => {
-            dlg.close();
-            const project = await idbGet('projects', currentProjectId);
-            const files = await getFilesOfCurrent();
-            const translatedFiles = files.filter(f => f.translation?.trim());
-            if (translatedFiles.length === 0) return toast('내보낼 번역된 파일이 없습니다.', 'error');
-            let combinedText = `Project: ${project.name}\nExported on: ${new Date().toLocaleString()}\n\n`;
-            translatedFiles.forEach((file) => { combinedText += `========================================\nFile: ${file.path}\n========================================\n\n${file.translation}\n\n`; });
-            const blob = new Blob([combinedText], { type: 'text/plain;charset=utf-8' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `${project.name}_translations_combined.txt`;
-            a.click();
-            URL.revokeObjectURL(a.href);
-        });
-        dlg.showModal();
-        lucide.createIcons();
-    });
-    els.btnFullImport.addEventListener('click', () => els.importFile.click());
-    els.importFile.addEventListener('change', fullImport);
-    els.btnSettings.addEventListener('click', renderSettingsModal);
-    els.btnFullExport.addEventListener('click', fullExport);
-    els.btnExportAllPrompts.addEventListener('click', exportAllPrompts);
-    els.btnCopyPrompt.addEventListener('click', copyPrompt);
-    els.btnQA.addEventListener('click', copyQAPrompt);
-    els.btnGlossaryPrompt.addEventListener('click', copyGlossaryPrompt);
-    els.translationArea.addEventListener('input', () => { const text = els.translationArea.value; updateViewer(text); debouncedSave(text); });
-    if (els.projectGlossaryEdit) { els.projectGlossaryEdit.addEventListener('input', () => { debouncedSaveGlossary(els.projectGlossaryEdit.value); }); }
-    
-    els.btnHistory.addEventListener('click', showHistory);
-    els.projectSwitcherBtn.addEventListener('click', (e) => { e.stopPropagation(); els.settingsDropdownMenu.style.display = 'none'; els.projectSwitcherMenu.style.display = 'block'; });
-    els.btnSettingsMenu.addEventListener('click', (e) => { e.stopPropagation(); els.projectSwitcherMenu.style.display = 'none'; els.settingsDropdownMenu.style.display = 'block'; });
-    document.addEventListener('click', () => { els.projectSwitcherMenu.style.display = 'none'; els.settingsDropdownMenu.style.display = 'none'; });
-    setupPaneToggles();
+            // Utils
+            const generateId = () => Math.random().toString(36).substr(2, 9);
+            const isTranslatableTarget = (name) => !['png','jpg','jpeg','gif','zip','exe','pdf','mp4'].includes(name.split('.').pop().toLowerCase());
 
-    // Add Drag and Drop listeners
-    const body = document.body;
-    body.addEventListener('dragenter', handleDragEnter);
-    body.addEventListener('dragleave', handleDragLeave);
-    body.addEventListener('dragover', handleDragOver);
-    body.addEventListener('drop', handleDrop);
-}
+            const geminiService = useMemo(() => new GeminiService(settings.apiKeys, { textModel: settings.modelId }), [settings.apiKeys, settings.modelId]);
 
-// --- INITIALIZATION ---
-async function init() {
-    try {
-        await openDB();
-        await loadSettings();
-        await refreshUI();
-        setupEventListeners();
-        await renderProjectGlossary();
-        lucide.createIcons();
-    } catch(e) {
-        console.error("Initialization failed:", e);
-        document.body.innerHTML = `<div style="padding:40px; text-align:center;"><h1>치명적 오류</h1><p>애플리케이션을 초기화할 수 없습니다. 브라우저가 IndexedDB를 지원하지 않거나 개인정보 보호 모드일 수 있습니다.</p><p style="color:red;">${e.message}</p></div>`;
-    }
-}
+            // Tree Helpers
+            const updateNode = (root, id, updater) => {
+                if (root.id === id) return updater(root);
+                if (root.children) return { ...root, children: root.children.map(c => updateNode(c, id, updater)) };
+                return root;
+            };
+            const findNode = (root, id) => {
+                if (root.id === id) return root;
+                if (root.children) { for (let c of root.children) { const found = findNode(c, id); if (found) return found; } }
+                return null;
+            };
+            const getTranslatableNodes = (root) => {
+                let nodes = [];
+                const traverse = (n) => {
+                    if (!n.isFolder && n.isTranslatable && !n.translation) nodes.push(n);
+                    if (n.children) n.children.forEach(traverse);
+                };
+                traverse(root);
+                return nodes;
+            };
 
-document.addEventListener('DOMContentLoaded', init);
-</script>
+            // Handlers
+            const handleNewProject = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                try {
+                    const zip = new JSZip();
+                    const content = await zip.loadAsync(file);
+                    const root = { id: 'root', name: file.name, isFolder: true, children: [] };
+                    
+                    for (const [path, entry] of Object.entries(content.files)) {
+                        if (entry.dir) continue;
+                        const parts = path.split('/');
+                        const fileName = parts.pop();
+                        let current = root.children;
+                        parts.forEach(part => {
+                            let folder = current.find(n => n.name === part && n.isFolder);
+                            if (!folder) { folder = { id: generateId(), name: part, isFolder: true, children: [] }; current.push(folder); }
+                            current = folder.children;
+                        });
+                        const isTranslatable = isTranslatableTarget(fileName);
+                        let textContent = null;
+                        if (isTranslatable) textContent = await entry.async('string');
+                        current.push({ id: generateId(), name: fileName, isFolder: false, isTranslatable, content: textContent, translation: null, status: 'idle' });
+                    }
+                    setProject({ name: file.name, tree: root });
+                    setView('workspace');
+                } catch (e) { alert("Error: " + e.message); }
+            };
+
+            const handleLoadProject = (loadedData) => {
+                setProject({ name: loadedData.name, tree: loadedData.tree });
+                setView('workspace');
+            };
+
+            const handleSaveProject = () => {
+                if (!project) return;
+                ProjectUtils.saveProject(project.tree, project.name);
+            };
+
+            const handleExportFile = async (type) => {
+                if (!project) return;
+                const blob = type === 'zip' ? await ProjectUtils.exportZip(project.tree) : await ProjectUtils.exportEpub(project.tree, project.name);
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `${project.name.replace('.zip','')}_translated.${type}`;
+                a.click();
+            };
+
+            const handleTranslateAll = async () => {
+                if (!settings.apiKeys.length || !settings.apiKeys[0]) { setIsSettingsOpen(true); return; }
+                const nodes = getTranslatableNodes(project.tree);
+                if (!nodes.length) return alert("Nothing to translate.");
+                
+                setIsProcessing(true);
+                setProgress({ current: 0, total: nodes.length });
+                let currentTree = project.tree;
+                
+                // Helper to batch update state to avoid too many re-renders
+                const safeUpdate = (id, updater) => {
+                    currentTree = updateNode(currentTree, id, updater);
+                    setProject(prev => ({ ...prev, tree: currentTree }));
+                };
+
+                await geminiService.processBatch(nodes, settings.systemPrompt, {
+                    onStart: (id) => safeUpdate(id, n => ({ ...n, status: 'translating' })),
+                    onComplete: (id, res) => {
+                        if (res.success) safeUpdate(id, n => ({ ...n, status: 'completed', translation: res.text }));
+                        else safeUpdate(id, n => ({ ...n, status: 'error' }));
+                        setProgress(p => ({ ...p, current: p.current + 1 }));
+                    },
+                    onProgress: () => {}
+                });
+                setIsProcessing(false);
+            };
+
+            const handleSingleTranslate = async (id) => {
+                if (!settings.apiKeys.length) { setIsSettingsOpen(true); return; }
+                const node = findNode(project.tree, id);
+                setProject(p => ({ ...p, tree: updateNode(p.tree, id, n => ({ ...n, status: 'translating' })) }));
+                const res = await geminiService.callApi(node.content, settings.systemPrompt);
+                if (res.success) setProject(p => ({ ...p, tree: updateNode(p.tree, id, n => ({ ...n, status: 'completed', translation: res.text })) }));
+                else setProject(p => ({ ...p, tree: updateNode(p.tree, id, n => ({ ...n, status: 'error' })) }));
+            };
+
+            const selectedNode = useMemo(() => project ? findNode(project.tree, selectedNodeId) : null, [project, selectedNodeId]);
+
+            // --- VIEW RENDER ---
+            if (view === 'dashboard') {
+                return <Dashboard onNewProject={handleNewProject} onLoadProject={handleLoadProject} />;
+            }
+
+            return (
+                <div className="flex h-screen w-screen bg-base text-primary">
+                    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} onSave={setSettings} />
+                    
+                    {/* Sidebar */}
+                    <div className="w-[300px] flex-shrink-0 panel-surface flex flex-col z-20">
+                        {/* Header */}
+                        <div className="h-14 flex items-center justify-between px-4 border-b border-classic bg-base">
+                            <div className="flex items-center gap-2 font-bold text-lg cursor-pointer" onClick={() => setView('dashboard')}>
+                                <Icon name="arrow-left" className="text-secondary hover:text-primary" />
+                                <span>{project.name.length > 15 ? project.name.substr(0,15)+'...' : project.name}</span>
+                            </div>
+                            <div className="flex gap-1">
+                                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 rounded hover:bg-hover text-secondary hover:text-primary"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button>
+                                <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded hover:bg-hover text-secondary hover:text-primary"><Icon name="sliders" /></button>
+                            </div>
+                        </div>
+
+                        {/* File Tree */}
+                        <div className="flex-1 overflow-y-auto py-2">
+                            <FileTreeItem node={project.tree} level={0} onSelect={n => setSelectedNodeId(n.id)} selectedId={selectedNodeId} />
+                        </div>
+
+                        {/* Actions */}
+                        <div className="p-4 border-t border-classic bg-base space-y-3">
+                            <button onClick={handleTranslateAll} disabled={isProcessing} className="btn-accent w-full py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm shadow-sm">
+                                {isProcessing ? <><Icon name="arrow-repeat" className="animate-spin" /> {Math.round((progress.current/progress.total)*100)}%</> : <><Icon name="lightning-charge-fill" /> Translate All</>}
+                            </button>
+                            <div className="grid grid-cols-3 gap-2">
+                                <button onClick={handleSaveProject} className="btn-classic py-2 rounded-lg text-xs flex flex-col items-center justify-center gap-1" title="Save Project State">
+                                    <Icon name="save" /> Save
+                                </button>
+                                <button onClick={() => handleExportFile('zip')} className="btn-classic py-2 rounded-lg text-xs flex flex-col items-center justify-center gap-1" title="Export ZIP">
+                                    <Icon name="file-zip" /> ZIP
+                                </button>
+                                <button onClick={() => handleExportFile('epub')} className="btn-classic py-2 rounded-lg text-xs flex flex-col items-center justify-center gap-1" title="Export EPUB">
+                                    <Icon name="book" /> EPUB
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Workspace */}
+                    <div className="flex-1 flex flex-col bg-base relative">
+                        {selectedNode && selectedNode.isTranslatable ? (
+                            <>
+                                <div className="h-14 border-b border-classic flex items-center justify-between px-6 bg-base">
+                                    <span className="font-mono text-sm text-secondary flex items-center gap-2">
+                                        <Icon name="file-earmark-code" /> {selectedNode.name}
+                                    </span>
+                                    <span className={`text-xs px-2 py-1 rounded font-medium border ${
+                                        selectedNode.status === 'completed' ? 'border-green-900 text-green-500 bg-green-900/10' :
+                                        selectedNode.status === 'translating' ? 'border-sky-900 text-sky-500 bg-sky-900/10' :
+                                        'border-classic text-tertiary'
+                                    }`}>
+                                        {selectedNode.status.toUpperCase()}
+                                    </span>
+                                </div>
+                                <div className="flex-1 flex overflow-hidden">
+                                    <div className="flex-1 flex flex-col border-r border-classic">
+                                        <div className="px-4 py-2 text-xs font-bold text-tertiary bg-surface border-b border-classic uppercase">Original</div>
+                                        <textarea className="flex-1 w-full bg-base p-6 resize-none outline-none editor-font text-sm text-secondary" value={selectedNode.content || ""} readOnly />
+                                    </div>
+                                    <div className="flex-1 flex flex-col">
+                                        <div className="px-4 py-2 text-xs font-bold text-primary bg-surface border-b border-classic uppercase flex justify-between items-center">
+                                            <span>Translation</span>
+                                            <button onClick={() => handleSingleTranslate(selectedNode.id)} className="text-primary hover:text-blue-400"><Icon name="arrow-clockwise" /></button>
+                                        </div>
+                                        <textarea 
+                                            className="flex-1 w-full bg-base p-6 resize-none outline-none editor-font text-sm text-primary" 
+                                            value={selectedNode.translation || ""} 
+                                            onChange={e => setProject(p => ({...p, tree: updateNode(p.tree, selectedNode.id, n => ({...n, translation: e.target.value}))}))}
+                                            placeholder="Translation will appear here..."
+                                        />
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex-1 flex flex-col items-center justify-center text-tertiary">
+                                <Icon name="grid-1x2" className="text-6xl mb-4 opacity-20" />
+                                <p>Select a file to translate</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
-
