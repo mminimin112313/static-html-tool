@@ -213,10 +213,21 @@
                 return await zip.generateAsync({ type: "blob" });
             },
             
-            // Export Result (EPUB) - Same logic as before
+            // Export Result (EPUB) - Fixed XML Escaping
             exportEpub: async (rootNode, title) => {
-                 const zip = new JSZip();
+                const zip = new JSZip();
                 const uuid = "urn:uuid:" + Math.random().toString(36).substring(2);
+                
+                // XML Escape Helper
+                const escapeXml = (unsafe) => {
+                    if (typeof unsafe !== 'string') return "";
+                    return unsafe.replace(/&/g, '&amp;')
+                                 .replace(/</g, '&lt;')
+                                 .replace(/>/g, '&gt;')
+                                 .replace(/"/g, '&quot;')
+                                 .replace(/'/g, '&apos;');
+                };
+
                 const textNodes = [];
                 const traverse = (node) => {
                     if (node.isFolder) node.children.forEach(traverse);
@@ -225,25 +236,35 @@
                 traverse(rootNode);
                 if (textNodes.length === 0) throw new Error("No text content found.");
 
+                // Mimetype must be first and uncompressed
                 zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
                 zip.folder("META-INF").file("container.xml", `<?xml version="1.0" encoding="UTF-8" ?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
                 
                 const oebps = zip.folder("OEBPS");
                 const textFolder = oebps.folder("Text");
                 let manifestItems = "", spineItems = "", navPoints = "";
+                const safeTitle = escapeXml(title);
 
                 textNodes.forEach((node, index) => {
                     const fileId = `file_${index}`;
                     const fileName = `Text/${fileId}.xhtml`;
-                    const content = (node.translation || node.content || "").replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').split('\n').map(l => `<p>${l}</p>`).join('');
-                    textFolder.file(`${fileId}.xhtml`, `<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${node.name}</title></head><body><h1>${node.name}</h1>${content}</body></html>`);
+                    const safeNodeName = escapeXml(node.name);
+                    
+                    // Safe Content Generation
+                    const rawContent = node.translation || node.content || "";
+                    const contentLines = rawContent.split('\n');
+                    const safeContent = contentLines.map(line => `<p>${escapeXml(line)}</p>`).join('');
+
+                    textFolder.file(`${fileId}.xhtml`, `<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${safeNodeName}</title></head><body><h1>${safeNodeName}</h1>${safeContent}</body></html>`);
+                    
                     manifestItems += `<item id="${fileId}" href="${fileName}" media-type="application/xhtml+xml"/>\n`;
                     spineItems += `<itemref idref="${fileId}"/>\n`;
-                    navPoints += `<navPoint id="navPoint-${index}" playOrder="${index + 1}"><navLabel><text>${node.name}</text></navLabel><content src="${fileName}"/></navPoint>\n`;
+                    navPoints += `<navPoint id="navPoint-${index}" playOrder="${index + 1}"><navLabel><text>${safeNodeName}</text></navLabel><content src="${fileName}"/></navPoint>\n`;
                 });
 
-                oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"><dc:title>${title}</dc:title><dc:language>ko</dc:language><dc:identifier id="BookId" opf:scheme="UUID">${uuid}</dc:identifier><dc:creator>Zenith</dc:creator></metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>${manifestItems}</manifest><spine toc="ncx">${spineItems}</spine></package>`);
-                oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/></head><docTitle><text>${title}</text></docTitle><navMap>${navPoints}</navMap></ncx>`);
+                oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"><dc:title>${safeTitle}</dc:title><dc:language>ko</dc:language><dc:identifier id="BookId" opf:scheme="UUID">${uuid}</dc:identifier><dc:creator>Zenith</dc:creator></metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>${manifestItems}</manifest><spine toc="ncx">${spineItems}</spine></package>`);
+                oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/></head><docTitle><text>${safeTitle}</text></docTitle><navMap>${navPoints}</navMap></ncx>`);
+                
                 return await zip.generateAsync({ type: "blob" });
             }
         };
