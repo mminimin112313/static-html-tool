@@ -1,0 +1,1908 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aris Writer - Pro</title>
+    <link rel="icon" href="data:;base64,iVBORw0KGgo=">
+    
+    <!-- Core Libraries -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Pretendard:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Split.js -->
+    <script src="https://unpkg.com/split.js/dist/split.min.js"></script>
+    <script src="https://unpkg.com/dexie/dist/dexie.min.js"></script>
+    
+    <!-- Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+    <!-- Tailwind Config -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        aris: {
+                            bg: '#1e1e1e',
+                            panel: '#252526',
+                            border: '#333333',
+                            primary: '#007acc',
+                            text: '#cccccc',
+                            active: '#ffffff',
+                            hover: '#2a2d2e',
+                            input: '#3c3c3c',
+                        }
+                    },
+                    zIndex: {
+                        'overlay': '50',
+                        'context': '400',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #1e1e1e; color: #cccccc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #424242; border-radius: 5px; border: 2px solid #1e1e1e; }
+        .gutter { background-color: #1e1e1e; border-left: 1px solid #333; border-right: 1px solid #333; }
+        .gutter:hover { background-color: #007acc; }
+        textarea:focus, input:focus { outline: 1px solid #007acc; }
+        
+        /* Drag & Drop Visuals */
+        .drag-over { background-color: #37373d !important; outline: 1px dashed #007acc; }
+        .drag-source { opacity: 0.5; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <div id="portal-root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useContext, createContext, useMemo, useCallback } = React;
+        const { createPortal } = ReactDOM;
+
+        // --- Utils ---
+        const generateId = () => Math.random().toString(36).substr(2, 9);
+        
+        // --- FIXED ICON COMPONENT ---
+        // React가 관리하는 span 안에 Lucide가 조작하는 i 태그를 격리시켜 removeChild 에러 방지
+        const Icon = ({ name, size = 16, className = "", onClick, ...props }) => {
+            const spanRef = useRef(null);
+
+            useEffect(() => {
+                if (window.lucide && spanRef.current) {
+                    // 1. Clean previous icon
+                    spanRef.current.innerHTML = '';
+                    
+                    // 2. Create new element for Lucide to transform
+                    const i = document.createElement('i');
+                    i.setAttribute('data-lucide', name);
+                    i.setAttribute('width', size);
+                    i.setAttribute('height', size);
+                    
+                    // Add classes manually since Lucide transforms them to SVG classes
+                    if (className) i.setAttribute('class', className);
+
+                    // 3. Append and Transform
+                    spanRef.current.appendChild(i);
+                    window.lucide.createIcons({
+                        root: spanRef.current,
+                        nameAttr: 'data-lucide'
+                    });
+                }
+            }, [name, size, className]);
+
+            return (
+                <span 
+                    ref={spanRef} 
+                    onClick={onClick} 
+                    className="inline-flex items-center justify-center select-none"
+                    style={{ width: size, height: size }}
+                    {...props}
+                />
+            );
+        };
+
+        // --- Constants ---
+        const GEMINI_MODELS = [
+            "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-preview-09-2025", 
+            "gemini-2.5-flash-lite", "gemini-2.5-flash-lite-preview-09-2025"
+        ];
+
+        const DEFAULT_SYSTEM_PROMPT = `당신은 전문 소설 집필 보조 AI입니다.\n사용자의 설정과 문맥을 바탕으로 창의적인 제안을 하세요.`;
+
+        // --- Context Menu Component ---
+const ContextMenu = ({ x, y, onClose, onRename, onDelete, onCopy, onDuplicate, onDownload }) => {
+const menuRef = useRef(null);
+
+            useEffect(() => {
+                const handleClickOutside = (e) => {
+                    if (menuRef.current && !menuRef.current.contains(e.target)) onClose();
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, [onClose]);
+
+            if (x === null) return null;
+
+            return createPortal(
+                <div 
+                    ref={menuRef}
+                    className="fixed z-context bg-aris-panel border border-aris-border shadow-xl rounded py-1 w-32 flex flex-col text-sm text-gray-300"
+                    style={{ top: y, left: x }}
+                >
+                    <button className="px-3 py-1.5 hover:bg-aris-primary hover:text-white text-left flex items-center gap-2" onClick={onCopy}>
+<Icon name="copy" size={12}/> 복사
+</button>
+<button className="px-3 py-1.5 hover:bg-aris-primary hover:text-white text-left flex items-center gap-2" onClick={onDuplicate}>
+<Icon name="files" size={12}/> 복제
+</button>
+<button className="px-3 py-1.5 hover:bg-aris-primary hover:text-white text-left flex items-center gap-2" onClick={onDownload}>
+<Icon name="download" size={12}/> .md 다운로드
+</button>
+<div className="h-[1px] bg-aris-border my-1"></div>
+                    <button className="px-3 py-1.5 hover:bg-aris-primary hover:text-white text-left flex items-center gap-2" onClick={onRename}>
+                        <Icon name="pencil" size={12}/> 이름 변경
+                    </button>
+                    <button className="px-3 py-1.5 hover:bg-red-600 hover:text-white text-left flex items-center gap-2" onClick={onDelete}>
+                        <Icon name="trash-2" size={12}/> 삭제
+                    </button>
+                </div>,
+                document.getElementById('portal-root') || document.body
+            );
+        };
+
+        // --- Database & Service Layer (Firebase Prepared) ---
+        // V2로 변경하여 스키마 정규화 (Projects와 Files 분리)
+        const db = new Dexie('ArisWriterDB_V2');
+        db.version(1).stores({
+            projects: 'id', // 메타데이터만 저장
+            files: 'id, projectId, parentId' // 파일 개별 저장 (인덱싱 최적화)
+        });
+
+        // 데이터 서비스: Dexie와 향후 Firebase 연동을 위한 추상화 계층
+        const DataService = {
+            // 프로젝트와 하위 파일들을 조인하여 로드
+            async loadAllProjects() {
+                const projects = await db.projects.toArray();
+                if (projects.length === 0) return [];
+                
+                // 각 프로젝트별 파일 로드 및 조립
+                const fullProjects = await Promise.all(projects.map(async (p) => {
+                    const files = await db.files.where('projectId').equals(p.id).toArray();
+                    return { ...p, files };
+                }));
+                return fullProjects;
+            },
+
+            // 프로젝트 메타데이터 저장
+            async saveProjectMeta(project) {
+                const { files, ...meta } = project; // 파일 제외하고 저장
+                await db.projects.put(meta);
+            },
+
+            // 파일 개별 저장 (내용 변경 시 사용)
+            async saveFile(file, projectId) {
+                await db.files.put({ ...file, projectId });
+            },
+
+            // 파일 삭제
+            async deleteFile(fileId) {
+                await db.files.delete(fileId);
+            },
+            
+            // 프로젝트 전체 삭제 (Cascade)
+            async deleteProjectCascade(projectId) {
+                await db.transaction('rw', db.projects, db.files, async () => {
+                    await db.files.where('projectId').equals(projectId).delete();
+                    await db.projects.delete(projectId);
+                });
+            },
+
+            // Firebase 동기화 준비 (Placeholder)
+            async syncToCloud(apiKey) {
+                console.log("Firebase sync logic will go here. Structure is ready.");
+                // TODO: Firebase Init & Firestore Batch Write implementation
+            }
+        };
+
+        // --- App Context ---
+
+        // --- App Context ---
+        const AppContext = createContext();
+
+        const AppProvider = ({ children }) => {
+            // 1. State Declarations (Must be unconditional)
+            // Shared Refs
+            const editorRef = useRef(null); // 에디터 직접 제어를 위한 Ref
+            const importInputRef = useRef(null); // Moved here (Must be unconditional)
+
+            // 프로젝트 관련 State
+            const [projects, setProjects] = useState([]);
+            
+            // --- Search & Replace State (Lifted for Highlighting) ---
+            const [searchText, setSearchText] = useState("");
+            const [replaceText, setReplaceText] = useState("");
+            const [matchCase, setMatchCase] = useState(false);
+            const [matchWord, setMatchWord] = useState(false);
+            const [useRegex, setUseRegex] = useState(false);
+
+            // --- Undo/Redo History State ---
+            const [history, setHistory] = useState([]);
+            const [redoStack, setRedoStack] = useState([]);
+            const historyLimit = 50;
+
+            const handleContentChange = (fileId, newContent) => {
+                 setProjects(prev => {
+                    const currentProj = prev.find(p => p.id === activeProjectId);
+                    const currentFile = currentProj?.files.find(f => f.id === fileId);
+                    
+                    if (currentFile && currentFile.content !== newContent) {
+                        // History Push (Simple Snapshot)
+                        setHistory(h => {
+                            const newH = [...h, { fileId, content: currentFile.content }];
+                            return newH.slice(-historyLimit);
+                        });
+                        setRedoStack([]); // Clear Redo on new input
+                    }
+                    return prev.map(p => {
+                        if (p.id !== activeProjectId) return p;
+                        return { ...p, files: p.files.map(f => f.id === fileId ? { ...f, content: newContent } : f) };
+                    });
+                });
+            };
+
+            const undo = () => {
+                setHistory(prev => {
+                    if (prev.length === 0) return prev;
+                    const last = prev[prev.length - 1];
+                    const remaining = prev.slice(0, -1);
+                    
+                    // Current Content to Redo
+                    const currentProj = projects.find(p => p.id === activeProjectId);
+                    const currentFile = currentProj?.files.find(f => f.id === last.fileId);
+                    if(currentFile) {
+                        setRedoStack(r => [...r, { fileId: last.fileId, content: currentFile.content }]);
+                        // Apply Undo
+                        setProjects(ps => ps.map(p => {
+                            if (p.id !== activeProjectId) return p;
+                            return { ...p, files: p.files.map(f => f.id === last.fileId ? { ...f, content: last.content } : f) };
+                        }));
+                    }
+                    return remaining;
+                });
+            };
+
+            const redo = () => {
+                setRedoStack(prev => {
+                    if (prev.length === 0) return prev;
+                    const next = prev[prev.length - 1];
+                    const remaining = prev.slice(0, -1);
+
+                    // Current Content to History
+                    const currentProj = projects.find(p => p.id === activeProjectId);
+                    const currentFile = currentProj?.files.find(f => f.id === next.fileId);
+
+                    if(currentFile) {
+                        setHistory(h => [...h, { fileId: next.fileId, content: currentFile.content }]);
+                        // Apply Redo
+                        setProjects(ps => ps.map(p => {
+                            if (p.id !== activeProjectId) return p;
+                            return { ...p, files: p.files.map(f => f.id === next.fileId ? { ...f, content: next.content } : f) };
+                        }));
+                    }
+                    return remaining;
+                });
+            };
+            const [activeProjectId, setActiveProjectId] = useState(null);
+            const [activeFileId, setActiveFileId] = useState(null);
+            const [selectedFolderId, setSelectedFolderId] = useState(null);
+            const [isLoaded, setIsLoaded] = useState(false);
+
+            // 채팅/설정 관련 State
+            const [chatHistory, setChatHistory] = useState([
+                { id: 1, role: 'ai', text: '프로젝트를 생성하고 파일을 추가하여 집필을 시작하세요. [[폴더/파일]]로 문맥을 참조할 수 있습니다.' }
+            ]);
+            
+            // Persistence Logic
+            const [model, setModel] = useState(() => localStorage.getItem('aris_model') || GEMINI_MODELS[1]);
+            const [temperature, setTemperature] = useState(() => parseFloat(localStorage.getItem('aris_temp')) || 0.7);
+            const [systemPrompt, setSystemPrompt] = useState(() => localStorage.getItem('aris_sys_prompt') || DEFAULT_SYSTEM_PROMPT);
+            const [apiKey, setApiKey] = useState(() => localStorage.getItem('aris_api_key') || "");
+
+            useEffect(() => { localStorage.setItem('aris_model', model); }, [model]);
+            useEffect(() => { localStorage.setItem('aris_temp', temperature); }, [temperature]);
+            useEffect(() => { localStorage.setItem('aris_sys_prompt', systemPrompt); }, [systemPrompt]);
+            useEffect(() => { localStorage.setItem('aris_api_key', apiKey); }, [apiKey]);
+
+
+        // Editor UI State
+        const [zenMode, setZenMode] = useState(false); // Feature: Zen Mode
+        const [previewMode, setPreviewMode] = useState(false); // Feature: Markdown Preview
+        const [fontSize, setFontSize] = useState(16); // Feature: Font Size
+        const [saveStatus, setSaveStatus] = useState("saved"); // Feature: Auto-save Indicator
+
+        // Feature: Prompt Builder Persistence
+        const [prompts, setPrompts] = useState(() => {
+            try {
+                const saved = localStorage.getItem('aris_prompts');
+                return saved ? JSON.parse(saved) : [
+                    { id: Date.now(), title: "설정 검토", template: "아래 설정을 기반으로 글의 모순을 점검해줘.\n\n설정: {{Setting}}\n\n본문: {{Story}}", mappings: {} }
+                ];
+            } catch { return []; }
+        });
+        useEffect(() => { localStorage.setItem('aris_prompts', JSON.stringify(prompts)); }, [prompts]);
+
+        // --- Toast State ---
+        const [toasts, setToasts] = useState([]);
+        const addToast = useCallback((message, type = 'info') => {
+            const id = Date.now();
+            setToasts(prev => [...prev, { id, message, type }]);
+            setTimeout(() => removeToast(id), 3000);
+        }, []);
+        const removeToast = useCallback((id) => {
+            setToasts(prev => prev.filter(t => t.id !== id));
+        }, []);
+
+            // 2. Effects
+            // Load Data using DataService
+            useEffect(() => {
+                const loadData = async () => {
+                    try {
+                        const loadedProjects = await DataService.loadAllProjects();
+                        
+                        if (loadedProjects.length > 0) {
+                            setProjects(loadedProjects);
+                            setActiveProjectId(loadedProjects[0].id);
+                        } else {
+                            // 초기 데이터 생성
+                            const initProj = { id: 'p_default', name: '새 프로젝트', files: [] };
+                            // DB 저장
+                            await DataService.saveProjectMeta(initProj);
+                            setProjects([initProj]);
+                            setActiveProjectId(initProj.id);
+                        }
+                    } catch (err) {
+                        console.error("DB Load Failed:", err);
+                        alert("데이터베이스 로드 중 오류가 발생했습니다. 개발자 도구를 확인하세요.");
+                    } finally {
+                        setIsLoaded(true);
+                    }
+                };
+                loadData();
+            }, []);
+
+            // Auto-Save Optimization (Split Saving)
+        useEffect(() => {
+            if (!isLoaded || projects.length === 0) return;
+            setSaveStatus("unsaved"); // Change status on dependency change
+
+            const timer = setTimeout(async () => {
+                    // 성능을 위해 현재 활성 프로젝트만 저장하거나, 
+                    // 변경된 파일만 추적하는 것이 좋으나, 현재 구조상 전체 루프를 돌며 정규화 저장
+                    // Dexie는 비동기이므로 UI 블로킹 없음.
+                    try {
+                        for (const proj of projects) {
+                            await DataService.saveProjectMeta(proj);
+                            // 파일별 개별 저장 (내용이 바뀐것만 저장하면 좋지만, 
+                            // React State에서 dirty checking이 없으므로 안전하게 덮어쓰기)
+                            for (const file of proj.files) {
+                                await DataService.saveFile(file, proj.id);
+                            }
+}
+setSaveStatus("saved"); // Update status after save
+} catch (e) {
+console.error("Save Failed", e);
+setSaveStatus("error");
+}
+}, 2000); // 저장 주기 2초로 완화
+
+                return () => clearTimeout(timer);
+            }, [projects, isLoaded]);
+
+            // 3. Early Return (Must be AFTER all Hooks)
+            // 데이터 로딩 전까지 렌더링 방지 (깜빡임 방지)
+            if (!isLoaded) return <div className="h-screen bg-[#1e1e1e] text-gray-500 flex items-center justify-center">Loading...</div>;
+            
+            // 4. Derived State
+            const activeProject = projects.find(p => p.id === activeProjectId) || projects[0];
+            const activeFile = activeProject?.files.find(f => f.id === activeFileId);
+
+            // --- Project Operations ---
+            const addProject = (name) => {
+                const newProj = { id: generateId(), name: name || `프로젝트 ${projects.length + 1}`, files: [] };
+                setProjects([...projects, newProj]);
+                setActiveProjectId(newProj.id);
+                setActiveFileId(null);
+            };
+
+            const renameProject = (projId, newName) => {
+                setProjects(prev => prev.map(p => p.id === projId ? { ...p, name: newName } : p));
+            };
+
+            const deleteProject = async (projId) => {
+                if (projects.length <= 1) return alert("최소 하나의 프로젝트는 존재해야 합니다.");
+                if (!confirm("프로젝트를 삭제하시겠습니까? 복구할 수 없습니다.")) return;
+                
+                // State 업데이트
+                const newProjects = projects.filter(p => p.id !== projId);
+                setProjects(newProjects);
+                
+                // DB에서 Cascade 삭제 (프로젝트 + 하위 파일)
+                await DataService.deleteProjectCascade(projId);
+
+                if (activeProjectId === projId) {
+                    setActiveProjectId(newProjects[0].id);
+                    setActiveFileId(null);
+                }
+            };
+
+            const exportProject = () => {
+                if (!activeProject) return;
+                
+                // 날짜 포맷 (YYYY-MM-DD) 생성
+                const date = new Date().toISOString().slice(0, 10);
+                const fileName = `${activeProject.name}_${date}.json`;
+
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(activeProject, null, 2));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", fileName);
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+            };
+
+            // Feature: Import Project
+            
+            const triggerImport = () => importInputRef.current?.click();
+
+            const handleImportFile = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                const reader = new FileReader();
+                reader.onload = async (event) => {
+                    try {
+                        const importedData = JSON.parse(event.target.result);
+                        if (!importedData.name || !Array.isArray(importedData.files)) throw new Error("Invalid Format");
+
+                        // ID Collision Avoidance: Generate New IDs
+                        const newProjectId = generateId();
+                        const idMap = new Map();
+                        importedData.files.forEach(f => idMap.set(f.id, generateId()));
+
+                        const newFiles = importedData.files.map(f => ({
+                            ...f,
+                            id: idMap.get(f.id),
+                            projectId: newProjectId,
+                            parentId: f.parentId ? idMap.get(f.parentId) : null
+                        }));
+
+                        const newProject = {
+                            ...importedData,
+                            id: newProjectId,
+                            name: `${importedData.name} (Import)`,
+                            files: newFiles
+                        };
+
+                        await DataService.saveProjectMeta(newProject);
+                        for (const f of newFiles) await DataService.saveFile(f, newProjectId);
+
+                        setProjects(prev => [...prev, newProject]);
+                        setActiveProjectId(newProjectId);
+                        addToast("프로젝트를 성공적으로 불러왔습니다.", "success");
+                    } catch (err) {
+                        console.error(err);
+                        addToast("불러오기 실패: 형식이 올바르지 않습니다.", "error");
+                    }
+                    e.target.value = ''; // Reset Input
+                };
+                reader.readAsText(file);
+            };
+
+            // --- File Operations ---
+            // updateFileContent Replaced by handleContentChange inside AppProvider Logic
+
+            const addFile = (parentId, name, type) => {
+                const newFile = { id: generateId(), parentId, name, type, content: '', isOpen: true };
+                setProjects(prev => prev.map(p => {
+                    if (p.id !== activeProjectId) return p;
+                    return { ...p, files: [...p.files, newFile] };
+                }));
+                if (type === 'file') setActiveFileId(newFile.id);
+            };
+
+            const renameFile = (fileId, newName) => {
+                setProjects(prev => prev.map(p => {
+                    if (p.id !== activeProjectId) return p;
+                    return { ...p, files: p.files.map(f => f.id === fileId ? { ...f, name: newName } : f) };
+                }));
+            };
+
+            const deleteFile = (fileId) => {
+                if (!confirm("정말 삭제하시겠습니까?")) return;
+                setProjects(prev => prev.map(p => {
+                    if (p.id !== activeProjectId) return p;
+                    // Find all children recursively
+                    const getAllChildren = (pid, list) => {
+                        let children = list.filter(f => f.parentId === pid);
+                        let result = [...children];
+                        children.forEach(c => {
+                             if(c.type === 'folder') result = [...result, ...getAllChildren(c.id, list)];
+                        });
+                        return result;
+                    };
+                    const itemsToDelete = [fileId, ...getAllChildren(fileId, p.files).map(f => f.id)];
+                    
+                    // DB에서 파일 삭제 (비동기 처리)
+                    itemsToDelete.forEach(id => DataService.deleteFile(id).catch(console.error));
+
+                    return { ...p, files: p.files.filter(f => !itemsToDelete.includes(f.id)) };
+                }));
+                if (activeFileId === fileId) setActiveFileId(null);
+            };
+
+            const moveFile = (fileId, targetParentId) => {
+            if (fileId === targetParentId) return;
+            setProjects(prev => prev.map(p => {
+                if (p.id !== activeProjectId) return p;
+                return { ...p, files: p.files.map(f => f.id === fileId ? { ...f, parentId: targetParentId } : f) };
+            }));
+        };
+
+        // Feature: Duplicate File
+        const duplicateFile = (fileId) => {
+            const target = activeProject.files.find(f => f.id === fileId);
+            if (!target) return;
+            
+            const newFile = { 
+                ...target, 
+                id: generateId(), 
+                name: `${target.name} (Copy)`,
+                content: target.content // Deep copy needed if object, but string is primitive
+            };
+
+            setProjects(prev => prev.map(p => {
+                if (p.id !== activeProjectId) return p;
+                return { ...p, files: [...p.files, newFile] };
+            }));
+        };
+
+        // Feature: Download as Markdown
+        const downloadFileAsMD = (fileId) => {
+            const target = activeProject.files.find(f => f.id === fileId);
+            if (!target) return;
+            
+            const element = document.createElement("a");
+            const file = new Blob([target.content], {type: 'text/markdown'});
+            element.href = URL.createObjectURL(file);
+            element.download = `${target.name}.md`;
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        };
+
+        // Feature: Clear Chat
+        const clearChat = () => {
+            if(confirm("대화 내역을 초기화하시겠습니까?")) {
+                setChatHistory([]);
+            }
+        };
+
+        return (
+                <AppContext.Provider value={{
+                    editorRef, // Ref 공유
+                    projects, activeProjectId, setActiveProjectId, activeProject,
+                    activeFileId, setActiveFileId, activeFile,
+                    selectedFolderId, setSelectedFolderId,
+                    addProject, deleteProject, renameProject, exportProject, triggerImport,
+                    addFile, updateFileContent: handleContentChange, renameFile, deleteFile, moveFile, // Changed to handleContentChange
+                    duplicateFile, downloadFileAsMD,
+                    chatHistory, setChatHistory, clearChat,
+                    prompts, setPrompts,
+                    model, setModel, temperature, setTemperature, systemPrompt, setSystemPrompt, apiKey, setApiKey,
+                    zenMode, setZenMode, previewMode, setPreviewMode, fontSize, setFontSize, saveStatus, setSaveStatus,
+                    toasts, addToast, removeToast,
+                    // Search & Undo Context
+                    searchText, setSearchText, replaceText, setReplaceText,
+                    matchCase, setMatchCase, matchWord, setMatchWord, useRegex, setUseRegex,
+                    undo, redo
+                }}>
+{children}
+<input type="file" ref={importInputRef} onChange={handleImportFile} accept=".json" className="hidden" />
+                </AppContext.Provider>
+            );
+        };
+
+        // --- Sidebar ---
+        const Sidebar = () => {
+            const { 
+                projects, activeProjectId, setActiveProjectId, activeProject,
+                activeFileId, setActiveFileId,
+                selectedFolderId, setSelectedFolderId, // Context 추가
+            addProject, deleteProject, renameProject, exportProject, triggerImport,
+            addFile, renameFile, deleteFile, moveFile, duplicateFile, downloadFileAsMD,
+            addToast
+        } = useContext(AppContext);
+
+        const [contextMenu, setContextMenu] = useState({ x: null, y: null, targetId: null });
+            const [draggingId, setDraggingId] = useState(null);
+            const [dragTargetId, setDragTargetId] = useState(null);
+
+            // Multi-select State
+            const [selectedIds, setSelectedIds] = useState(new Set());
+            const [lastSelectedId, setLastSelectedId] = useState(null);
+
+            // Flatten files for Range Selection (Shift)
+            const visibleFiles = useMemo(() => {
+                if (!activeProject) return [];
+                const getFlat = (pid) => {
+                     const children = activeProject.files
+                        .filter(f => f.parentId === pid)
+                        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+                     let res = [];
+                     children.forEach(c => {
+                         res.push(c);
+                         if (c.type === 'folder') res = [...res, ...getFlat(c.id)];
+                     });
+                     return res;
+                };
+                return getFlat(null);
+            }, [activeProject]);
+
+            const handleSelection = (e, fileId) => {
+                e.stopPropagation();
+                let newSet = new Set(selectedIds);
+                
+                if (e.ctrlKey || e.metaKey) {
+                    if (newSet.has(fileId)) newSet.delete(fileId);
+                    else newSet.add(fileId);
+                    setLastSelectedId(fileId);
+                } else if (e.shiftKey && lastSelectedId) {
+                    const idx1 = visibleFiles.findIndex(f => f.id === lastSelectedId);
+                    const idx2 = visibleFiles.findIndex(f => f.id === fileId);
+                    if (idx1 !== -1 && idx2 !== -1) {
+                        const start = Math.min(idx1, idx2);
+                        const end = Math.max(idx1, idx2);
+                        const range = visibleFiles.slice(start, end + 1).map(f => f.id);
+                        range.forEach(id => newSet.add(id));
+                    }
+                } else {
+                    newSet = new Set([fileId]);
+                    setLastSelectedId(fileId);
+                }
+                
+                setSelectedIds(newSet);
+
+                // Editor/Folder activation logic
+                const file = activeProject.files.find(f => f.id === fileId);
+                if (file && file.type === 'file') setActiveFileId(fileId);
+                if (file && file.type === 'folder') setSelectedFolderId(fileId);
+            };
+
+            // 배경 클릭 시 폴더 선택 해제
+            const handleBackgroundClick = (e) => {
+                if (e.target.id === 'sidebar-panel') {
+                    setSelectedFolderId(null);
+                }
+            };
+
+            // --- Action Handlers ---
+            const handleContextMenu = (e, fileId) => {
+                e.preventDefault();
+                // If the target is not in current selection, select it exclusively
+                if (!selectedIds.has(fileId)) {
+                    setSelectedIds(new Set([fileId]));
+                    setLastSelectedId(fileId);
+                    const file = activeProject.files.find(f => f.id === fileId);
+                    if (file?.type === 'file') setActiveFileId(fileId);
+                }
+                setContextMenu({ x: e.clientX, y: e.clientY, targetId: fileId });
+            };
+
+            const handleCopyAction = async () => {
+                const currentProject = projects.find(p => p.id === activeProjectId);
+                const targets = selectedIds.size > 0 ? [...selectedIds] : [contextMenu.targetId];
+                
+                let copyText = "";
+                
+                const getContent = (fid) => {
+                    const f = currentProject.files.find(x => x.id === fid);
+                    if (!f) return "";
+                    if (f.type === 'file') return `### ${f.name}\n\n${f.content}\n\n`;
+                    // Folder recursion
+                    const children = currentProject.files.filter(c => c.parentId === fid)
+                        .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+                    return children.map(c => getContent(c.id)).join("");
+                };
+
+                targets.forEach(id => { copyText += getContent(id); });
+
+                try {
+                    await navigator.clipboard.writeText(copyText);
+                    addToast("클립보드에 복사되었습니다.", "success");
+                } catch (err) {
+                    console.error('Failed to copy: ', err);
+                    addToast("복사에 실패했습니다.", "error");
+                }
+                setContextMenu({ x: null, y: null, targetId: null });
+            };
+
+            const handleRenameAction = () => {
+                // 안전한 참조를 위해 현재 상태에서 다시 검색
+                const currentProject = projects.find(p => p.id === activeProjectId);
+                const target = currentProject?.files.find(f => f.id === contextMenu.targetId);
+                if (!target) return;
+
+                const newName = prompt("새 이름 입력:", target.name);
+                if (newName && newName.trim()) renameFile(contextMenu.targetId, newName.trim());
+                setContextMenu({ x: null, y: null, targetId: null });
+            };
+
+            const handleDeleteAction = () => {
+            const targets = selectedIds.size > 0 ? [...selectedIds] : [contextMenu.targetId];
+            if (!confirm(`${targets.length}개 항목을 삭제하시겠습니까?`)) return;
+            targets.forEach(id => deleteFile(id));
+            setSelectedIds(new Set());
+            setContextMenu({ x: null, y: null, targetId: null });
+        };
+
+        const handleDuplicateAction = () => {
+            duplicateFile(contextMenu.targetId);
+            setContextMenu({ x: null, y: null, targetId: null });
+        };
+
+        const handleDownloadAction = () => {
+            downloadFileAsMD(contextMenu.targetId);
+            setContextMenu({ x: null, y: null, targetId: null });
+        };
+
+        // Project Actions
+            const handleProjectRename = () => {
+                const currentProject = projects.find(p => p.id === activeProjectId);
+                const newName = prompt("프로젝트 이름 변경:", currentProject?.name);
+                if (newName && newName.trim()) renameProject(activeProjectId, newName.trim());
+            };
+
+            const handleAddProject = () => {
+                const name = prompt("새 프로젝트 이름:", `프로젝트 ${projects.length + 1}`);
+                if (name && name.trim()) addProject(name.trim());
+            };
+
+            // File Actions
+            const handleCreateFile = (type) => {
+                const label = type === 'file' ? 'New File' : 'New Folder';
+                // Frictionless Creation: Prompt 제거, 즉시 생성
+                let baseName = label;
+                let count = 1;
+                // 중복 방지 로직 (선택적)
+                while (activeProject.files.some(f => f.parentId === selectedFolderId && f.name === (count === 1 ? baseName : `${baseName} ${count}`))) {
+                    count++;
+                }
+                const finalName = count === 1 ? baseName : `${baseName} ${count}`;
+                addFile(selectedFolderId, finalName, type);
+            };
+
+            // DnD
+            const onDragStart = (e, fileId) => {
+                setDraggingId(fileId);
+                e.dataTransfer.effectAllowed = "move";
+            };
+
+            const onDragOver = (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+            };
+
+            const onDrop = (e, targetId) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragTargetId(null); // 드롭 시 타겟 초기화
+                if (!draggingId || draggingId === targetId) return;
+                moveFile(draggingId, targetId);
+                setDraggingId(null);
+            };
+
+            const FileNode = ({ file, level }) => {
+                const paddingLeft = `${level * 16 + 12}px`;
+                const isFolder = file.type === 'folder';
+                const isMultiSelected = selectedIds.has(file.id);
+                const isActive = file.id === activeFileId; 
+                const isDragTarget = dragTargetId === file.id;
+                const children = activeProject.files
+                    .filter(f => f.parentId === file.id)
+                    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+                return (
+                    <div 
+                        onDragOver={(e) => {
+                            if (isFolder && draggingId !== file.id) {
+                                onDragOver(e);
+                                setDragTargetId(file.id);
+                            }
+                        }}
+                        onDragLeave={(e) => {
+                            if (dragTargetId === file.id && e.relatedTarget === null) setDragTargetId(null);
+                        }}
+                        onDrop={(e) => isFolder && onDrop(e, file.id)}
+                    >
+                        <div 
+                                draggable="true"
+                                onDragStart={(e) => onDragStart(e, file.id)}
+                                onContextMenu={(e) => handleContextMenu(e, file.id)}
+                                onClick={(e) => handleSelection(e, file.id)}
+                                onDoubleClick={() => {
+                                    setContextMenu({ x: null, y: null, targetId: file.id });
+                                    const newName = prompt("이름 변경:", file.name);
+                                    if (newName && newName.trim()) renameFile(file.id, newName.trim());
+                                }}
+                                className={`flex items-center py-1.5 cursor-pointer text-sm select-none transition-all group border-l-2
+                                ${isMultiSelected ? 'bg-white/10 border-blue-400' : 'border-transparent'}
+                                ${isActive && !isMultiSelected ? 'bg-aris-primary text-white border-white' : ''}
+                                ${isDragTarget ? 'bg-aris-primary/40 outline outline-1 outline-dashed outline-blue-400' : ''}
+                                ${!isActive && !isMultiSelected && !isDragTarget ? 'text-aris-text hover:bg-aris-hover' : ''}
+                                ${draggingId === file.id ? 'drag-source' : ''}
+                            `}
+                            style={{ paddingLeft }}
+                        >
+                            <span className="mr-2 opacity-80 flex items-center">
+                                <Icon name={isFolder ? "folder" : "file-text"} size={14} className={isFolder ? "text-yellow-500" : ""}/>
+                            </span>
+                            <span className="truncate flex-1">
+                                {file.name} 
+                            </span>
+                        </div>
+                        {isFolder && children.map(child => (
+                            <FileNode key={child.id} file={child} level={level + 1} />
+                        ))}
+                    </div>
+                );
+            };
+
+            const rootFiles = activeProject.files
+                .filter(f => f.parentId === null)
+                .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+
+            return (
+                <aside id="sidebar-panel" className="bg-aris-panel flex flex-col h-full overflow-hidden"
+                    onDragOver={(e) => onDragOver(e)}
+                    onDrop={(e) => onDrop(e, null)}
+                    onClick={handleBackgroundClick} // 배경 클릭 시 선택 해제
+                >
+                    {/* Project Selector */}
+                    <div className="p-3 border-b border-aris-border shrink-0 flex items-end gap-1">
+                        <div className="flex-1">
+                            <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Project</label>
+                            <select 
+                                className="w-full bg-aris-input border border-aris-border text-white text-sm rounded p-1 outline-none"
+                                value={activeProjectId}
+                                onChange={(e) => setActiveProjectId(e.target.value)}
+                            >
+                                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        </div>
+                        <button onClick={handleProjectRename} className="p-1.5 bg-aris-input hover:bg-gray-600 rounded text-gray-400 hover:text-white" title="이름 변경">
+                            <Icon name="pencil" size={14}/>
+                        </button>
+                        {/* Export & Import Buttons */}
+                        <button onClick={exportProject} className="p-1.5 bg-aris-input hover:bg-aris-primary rounded text-gray-400 hover:text-white" title="프로젝트 내보내기 (백업)">
+                            <Icon name="download" size={14}/>
+                        </button>
+                        <button onClick={triggerImport} className="p-1.5 bg-aris-input hover:bg-aris-primary rounded text-gray-400 hover:text-white" title="프로젝트 불러오기 (복원)">
+                            <Icon name="upload" size={14}/>
+                        </button>
+                        <button onClick={handleAddProject} className="p-1.5 bg-aris-primary hover:bg-blue-600 rounded text-white" title="새 프로젝트">
+                            <Icon name="plus" size={14}/>
+                        </button>
+                        <button onClick={() => deleteProject(activeProjectId)} className="p-1.5 bg-aris-input hover:bg-red-900 rounded text-gray-400 hover:text-white" title="삭제">
+                            <Icon name="trash" size={14}/>
+                        </button>
+                    </div>
+
+                    {/* File Actions */}
+                    <div className="p-2 flex justify-between items-center border-b border-aris-border bg-[#2d2d2d] shrink-0">
+                        <span className="text-[10px] text-gray-500 font-mono pl-1">EXPLORER</span>
+                        <div className="flex gap-1">
+                            <button onClick={() => handleCreateFile('file')} className="p-1 hover:bg-white/10 rounded" title="파일 추가"><Icon name="file-plus" size={14}/></button>
+                            <button onClick={() => handleCreateFile('folder')} className="p-1 hover:bg-white/10 rounded" title="폴더 추가"><Icon name="folder-plus" size={14}/></button>
+                        </div>
+                    </div>
+
+                    {/* File Tree */}
+                    <div className="flex-1 overflow-y-auto py-2">
+                        {rootFiles.length === 0 && (
+                            <div className="text-center text-xs text-gray-600 mt-4">파일이 없습니다.<br/>드래그로 이동 가능합니다.</div>
+                        )}
+                        {rootFiles.map(f => <FileNode key={f.id} file={f} level={0} />)}
+                    </div>
+
+                    <ContextMenu
+x={contextMenu.x}
+y={contextMenu.y}
+onClose={() => setContextMenu({ x: null, y: null, targetId: null })}
+onRename={handleRenameAction}
+onDelete={handleDeleteAction}
+onCopy={handleCopyAction}
+onDuplicate={handleDuplicateAction}
+onDownload={handleDownloadAction}
+/>
+</aside>
+);
+};
+
+        // --- Editor (Center) ---
+    const EditorPanel = () => {
+        const { 
+            activeFile, updateFileContent, editorRef, 
+            zenMode, setZenMode, previewMode, setPreviewMode, 
+            fontSize, setFontSize, saveStatus,
+            undo, redo, searchText, matchCase, matchWord, useRegex // Added
+        } = useContext(AppContext);
+        
+        const overlayRef = useRef(null);
+
+        // Regex Generator (Duplicated for rendering performance)
+        const getHighlightRegex = useMemo(() => {
+            if (!searchText) return null;
+            try {
+                let pattern = searchText;
+                if (!useRegex) pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                if (matchWord) pattern = `\\b${pattern}\\b`;
+                return new RegExp(pattern, matchCase ? 'g' : 'gi');
+            } catch { return null; }
+        }, [searchText, matchCase, matchWord, useRegex]);
+
+        // Render Highlights
+        const highlightedContent = useMemo(() => {
+            if (!activeFile || !getHighlightRegex) return activeFile?.content;
+            const text = activeFile.content;
+            const matches = [...text.matchAll(getHighlightRegex)];
+            if (matches.length === 0) return text;
+
+            let lastIndex = 0;
+            const nodes = [];
+            matches.forEach((match, i) => {
+                if (match.index > lastIndex) nodes.push(text.substring(lastIndex, match.index));
+                // Fix: text-transparent 제거 -> text-gray-100 적용 (하이라이트 텍스트 가시화)
+                nodes.push(<span key={i} className="bg-yellow-600/60 text-gray-100 font-medium rounded-sm">{match[0]}</span>);
+                lastIndex = match.index + match[0].length;
+            });
+            if (lastIndex < text.length) nodes.push(text.substring(lastIndex));
+            return nodes;
+        }, [activeFile, getHighlightRegex]);
+
+        // Sync Scroll
+        const handleScroll = (e) => {
+            if (overlayRef.current) overlayRef.current.scrollTop = e.target.scrollTop;
+        };
+
+        // Key Bindings
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    // Undo / Redo
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                        e.preventDefault();
+                        if (e.shiftKey) redo(); else undo();
+                        return;
+                    }
+                    // Redo (Standard Y)
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                        e.preventDefault();
+                        redo();
+                        return;
+                    }
+
+                    if (e.key === 'F11' || (e.ctrlKey && e.shiftKey && e.code === 'KeyF')) {
+                        e.preventDefault();
+                        setZenMode(prev => !prev);
+                    }
+                    // Save
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                        e.preventDefault();
+                    }
+                    // Tab Indentation Support
+                    if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                        const activeEl = document.activeElement;
+                        if (activeEl && activeEl.tagName === 'TEXTAREA' && editorRef.current === activeEl) {
+                            e.preventDefault();
+                            const start = activeEl.selectionStart;
+                            const end = activeEl.selectionEnd;
+                            const value = activeEl.value;
+                            const newValue = value.substring(0, start) + "    " + value.substring(end);
+                            
+                            updateFileContent(activeFile.id, newValue);
+                            
+                            // Restore Cursor
+                            setTimeout(() => {
+                                activeEl.selectionStart = activeEl.selectionEnd = start + 4;
+                            }, 0);
+                        }
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, [activeFile]); // activeFile 의존성 추가
+
+        // Markdown Render
+        const getMarkdownHtml = useMemo(() => {
+            if (!previewMode || !activeFile) return "";
+            return window.marked ? window.marked.parse(activeFile.content) : activeFile.content;
+        }, [activeFile?.content, previewMode]);
+
+        // Stats Calculation
+        const stats = useMemo(() => {
+            if (!activeFile) return { chars: 0, words: 0, time: 0 };
+            const chars = activeFile.content.length;
+            const words = activeFile.content.trim().split(/\s+/).filter(w => w.length > 0).length;
+            const time = Math.ceil(chars / 500); // approx 500 chars per min
+            return { chars, words, time };
+        }, [activeFile?.content]);
+
+        if (!activeFile) {
+            return (
+                <div id="editor-panel" className="bg-[#1e1e1e] flex flex-col items-center justify-center text-gray-500 h-full border-l border-r border-aris-border">
+                    <Icon name="feather" size={48} className="mb-4 opacity-30"/>
+                    <p className="text-sm">파일을 선택하거나 새로 만드세요.</p>
+                </div>
+            );
+        }
+
+        return (
+            <div id="editor-panel" className={`bg-[#1e1e1e] flex flex-col h-full overflow-hidden border-l border-r border-aris-border transition-all duration-300 ${zenMode ? 'fixed inset-0 z-[999] border-none' : ''}`}>
+                {/* Toolbar */}
+                <div className={`h-10 bg-[#2d2d2d] border-b border-aris-border flex items-center justify-between px-4 shrink-0 ${zenMode ? 'hidden group-hover:flex' : 'flex'}`}>
+                    <div className="flex items-center gap-2 text-sm text-gray-200 overflow-hidden">
+                        <Icon name="file-edit" size={14} className="text-blue-400"/>
+                        <span className="font-semibold truncate">{activeFile.name}</span>
+                        <span className={`text-[10px] ml-2 px-1.5 rounded-full ${saveStatus === 'saved' ? 'text-green-500 bg-green-500/10' : 'text-yellow-500 bg-yellow-500/10'}`}>
+                            {saveStatus === 'saved' ? 'Saved' : 'Unsaved...'}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                         {/* Font Size */}
+                        <button onClick={() => setFontSize(s => Math.max(12, s - 1))} className="p-1.5 hover:text-white text-gray-400"><Icon name="minus" size={12}/></button>
+                        <span className="text-xs w-6 text-center text-gray-400">{fontSize}</span>
+                        <button onClick={() => setFontSize(s => Math.min(24, s + 1))} className="p-1.5 hover:text-white text-gray-400"><Icon name="plus" size={12}/></button>
+                        <div className="w-[1px] h-3 bg-gray-600 mx-2"></div>
+                        
+                        {/* Toggle Preview */}
+                        <button 
+                            onClick={() => setPreviewMode(!previewMode)} 
+                            className={`p-1.5 rounded flex items-center gap-1 text-xs ${previewMode ? 'bg-aris-primary text-white' : 'text-gray-400 hover:text-white'}`}
+                            title="Markdown Preview"
+                        >
+                            <Icon name={previewMode ? "eye" : "eye-off"} size={14}/>
+                        </button>
+
+                        {/* Toggle Zen */}
+                        <button 
+                            onClick={() => setZenMode(!zenMode)} 
+                            className={`p-1.5 rounded flex items-center gap-1 text-xs ${zenMode ? 'bg-aris-primary text-white' : 'text-gray-400 hover:text-white'}`}
+                            title="Zen Mode (Focus)"
+                        >
+                            <Icon name={zenMode ? "minimize-2" : "maximize-2"} size={14}/>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Main Content Area */}
+                <div className="flex-1 relative overflow-hidden">
+                    {previewMode ? (
+                        <div 
+                            className="absolute inset-0 p-8 overflow-y-auto prose prose-invert prose-sm max-w-none"
+                            dangerouslySetInnerHTML={{ __html: getMarkdownHtml }}
+                        />
+                    ) : (
+                        <>
+                            {/* Highlight Overlay */}
+                            <div 
+                                ref={overlayRef}
+                                // Fix: pr-[42px] (기본 p-8(32px) + 스크롤바(10px))로 너비 오차 보정
+                                className="absolute inset-0 p-8 pr-[42px] pb-[50vh] outline-none font-sans whitespace-pre-wrap break-words pointer-events-none overflow-hidden text-[#cccccc]"
+                                style={{ fontSize: `${fontSize}px`, lineHeight: '1.6' }}
+                            >
+                                {/* 검색어가 없을 때는 렌더링하지 않음 (고스팅 원천 차단) */}
+                                {searchText ? highlightedContent : null}
+                            </div>
+                            {/* Editor Area */}
+                            <textarea 
+                                ref={editorRef}
+                                // Fix: whitespace-pre-wrap break-words 추가하여 오버레이와 줄바꿈 규칙 통일
+                                className={`w-full h-full bg-transparent p-8 pb-[50vh] outline-none resize-none font-sans whitespace-pre-wrap break-words relative z-10 ${searchText ? 'text-transparent caret-white selection:bg-blue-500/30 selection:text-transparent' : 'text-gray-300'}`}
+                                style={{ fontSize: `${fontSize}px`, lineHeight: '1.6' }}
+                                value={activeFile.content}
+                                onChange={(e) => updateFileContent(activeFile.id, e.target.value)}
+                                onScroll={handleScroll}
+                                placeholder="Start writing..."
+                                spellCheck="false"
+                            />
+                        </>
+                    )}
+                </div>
+
+                {/* Status Bar */}
+                <div className={`h-6 bg-aris-panel text-gray-500 text-[10px] flex items-center px-3 justify-between shrink-0 border-t border-aris-border ${zenMode ? 'hidden' : 'flex'}`}>
+                     <div className="flex gap-3">
+                        <span>Markdown: {previewMode ? 'On' : 'Off'}</span>
+                     </div>
+                     <div className="flex gap-3">
+                        <span>{stats.words} Words</span>
+                        <span>{stats.chars} Chars</span>
+                        <span>~{stats.time} Min Read</span>
+                     </div>
+                </div>
+            </div>
+        );
+    };
+
+        // --- Right Panel (Tabs: Chat / Search / Prompt) ---
+        const RightPanel = () => {
+            const { 
+                chatHistory, setChatHistory, model, setModel, temperature, setTemperature, clearChat,
+                prompts, setPrompts, // Prompt State
+                systemPrompt, setSystemPrompt, apiKey, setApiKey, activeProject, exportProject,
+                editorRef, activeFile, updateFileContent, addToast
+            } = useContext(AppContext);
+            
+            const [activeTab, setActiveTab] = useState('chat'); // 'chat' | 'search' | 'prompt'
+
+            // --- Shared Logic: File Content Fetching ---
+            const getDescendantFiles = (folderId, allFiles) => {
+                const children = allFiles.filter(f => f.parentId === folderId)
+                    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+                let results = [];
+                children.forEach(child => {
+                    if (child.type === 'file') results.push(child);
+                    else if (child.type === 'folder') results = [...results, ...getDescendantFiles(child.id, allFiles)];
+                });
+                return results;
+            };
+
+            const resolveFileContent = (name) => {
+                const target = activeProject.files.find(f => f.name === name);
+                if (!target) return `(File '${name}' not found)`;
+                
+                if (target.type === 'file') return target.content;
+                
+                // Folder: Join all descendants
+                const files = getDescendantFiles(target.id, activeProject.files);
+                return files.map(f => `--- [${f.name}] ---\n${f.content}`).join('\n\n');
+            };
+
+            // --- Prompt Builder Logic ---
+            const handleAddPrompt = () => {
+                setPrompts([...prompts, { 
+                    id: Date.now(), 
+                    title: "새 프롬프트", 
+                    template: "Context: {{Context}}\n\nTask: {{Task}}", 
+                    mappings: {} 
+                }]);
+            };
+
+            const handleDeletePrompt = (id) => {
+                if (confirm("이 프롬프트 템플릿을 삭제하시겠습니까?")) {
+                    setPrompts(prompts.filter(p => p.id !== id));
+                }
+            };
+
+            const handlePromptChange = (id, field, value) => {
+                setPrompts(prompts.map(p => p.id === id ? { ...p, [field]: value } : p));
+            };
+
+            const handleMappingChange = (promptId, variable, value) => {
+                setPrompts(prompts.map(p => {
+                    if (p.id !== promptId) return p;
+                    return { ...p, mappings: { ...p.mappings, [variable]: value } };
+                }));
+            };
+
+            const extractVariables = (template) => {
+                return [...template.matchAll(/\{\{(.*?)\}\}/g)].map(m => m[1]);
+            };
+
+            const compilePrompt = (prompt) => {
+                let finalPrompt = prompt.template;
+                const variables = extractVariables(prompt.template);
+                for (const v of variables) {
+                    const rawValue = prompt.mappings[v] || "";
+                    let content = rawValue;
+                    const fileMatch = rawValue.match(/\[\[(.*?)\]\]/);
+                    if (fileMatch) {
+                        // Fix: trim() 추가로 공백 포함된 태그도 정상 인식
+                        content = resolveFileContent(fileMatch[1].trim());
+                    }
+                    finalPrompt = finalPrompt.split(`{{${v}}}`).join(content);
+                }
+                return finalPrompt;
+            };
+
+            const handleCopyPrompt = async (prompt) => {
+                try {
+                    const text = compilePrompt(prompt);
+                    await navigator.clipboard.writeText(text);
+                    addToast("프롬프트가 조합되어 복사되었습니다.", "success");
+                } catch (err) {
+                    console.error(err);
+                    addToast("복사 실패", "error");
+                }
+            };
+
+            const handleApplyPrompt = (prompt) => {
+                try {
+                    const text = compilePrompt(prompt);
+                    setInput(text);
+                    setActiveTab('chat');
+                    // setTimeout ensures tab switch completes before focus
+                    setTimeout(() => inputRef.current?.focus(), 50);
+                } catch (err) {
+                    addToast("적용 실패", "error");
+                }
+            };
+
+            // --- Prompt Builder Autocomplete Logic ---
+            const [activeMappingField, setActiveMappingField] = useState(null); // { promptId, variable }
+
+            const handleMappingInput = (e, promptId, variable) => {
+                const val = e.target.value;
+                const selectionStart = e.target.selectionStart;
+                
+                // 1. 값 업데이트
+                handleMappingChange(promptId, variable, val);
+
+                // 2. 자동완성 트리거 체크
+                const textBeforeCursor = val.slice(0, selectionStart);
+                const match = textBeforeCursor.match(/\[\[([^\]]*)$/);
+                if (match) {
+                    setShowAutoComplete(true);
+                    setMatchString(match[1]);
+                    setActiveMappingField({ promptId, variable }); // 현재 입력 중인 필드 추적
+                } else {
+                    setShowAutoComplete(false);
+                    setActiveMappingField(null);
+                }
+            };
+
+            const insertMappingTag = (name) => {
+                if (!activeMappingField) return;
+                const { promptId, variable } = activeMappingField;
+                const targetPrompt = prompts.find(p => p.id === promptId);
+                if (!targetPrompt) return;
+
+                const currentVal = targetPrompt.mappings[variable] || "";
+                // 현재 커서 위치를 정확히 알기 어려우므로, 단순하게 정규식으로 마지막 [[... 패턴을 대체하거나 뒤에 추가
+                // (간소화를 위해 마지막 매칭되는 부분을 완성된 태그로 교체)
+                const newVal = currentVal.replace(/\[\[([^\]]*)$/, `[[${name}]] `);
+                
+                handleMappingChange(promptId, variable, newVal);
+                setShowAutoComplete(false);
+                setActiveMappingField(null);
+            };
+
+            // --- Chat Logic ---
+            const [input, setInput] = useState("");
+            const [showSettings, setShowSettings] = useState(false);
+            const [isGenerating, setIsGenerating] = useState(false);
+            const [showAutoComplete, setShowAutoComplete] = useState(false);
+            const [matchString, setMatchString] = useState("");
+            const [cursorPos, setCursorPos] = useState(0);
+            
+            const inputRef = useRef(null);
+            const messagesEndRef = useRef(null);
+
+            useEffect(() => { if (activeTab === 'chat') messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatHistory, activeTab]);
+
+            // --- Advanced Search Logic (VS Code Style) ---
+            const { 
+                searchText, setSearchText, replaceText, setReplaceText,
+                matchCase, setMatchCase, matchWord, setMatchWord, useRegex, setUseRegex 
+            } = useContext(AppContext);
+            
+            const [searchResultMsg, setSearchResultMsg] = useState("");
+
+            // Ctrl+F Event Listener
+            useEffect(() => {
+                const handleKeyDown = (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+                        e.preventDefault();
+                        setActiveTab('search');
+                        setTimeout(() => {
+                            const el = document.getElementById('search-input-field');
+                            if(el) { el.focus(); el.select(); }
+                        }, 50);
+                    }
+                };
+                window.addEventListener('keydown', handleKeyDown);
+                return () => window.removeEventListener('keydown', handleKeyDown);
+            }, []);
+
+            // Regex Generator (Robust)
+            const createSearchRegex = useCallback(() => {
+                if (!searchText) return null;
+                try {
+                    let pattern = searchText;
+                    if (!useRegex) {
+                        pattern = pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    }
+                    if (matchWord) {
+                        pattern = `\\b${pattern}\\b`;
+                    }
+                    return new RegExp(pattern, matchCase ? 'g' : 'gi');
+                } catch (e) {
+                    return null;
+                }
+            }, [searchText, matchCase, matchWord, useRegex]);
+
+            // Live Search Feedback (Immediate Count without jumping)
+            useEffect(() => {
+                if (!searchText || !activeFile) {
+                    setSearchResultMsg("");
+                    return;
+                }
+                const regex = createSearchRegex();
+                if (!regex) {
+                    setSearchResultMsg("Invalid Regex");
+                    return;
+                }
+                // Count matches passively
+                const matches = [...activeFile.content.matchAll(regex)];
+                setSearchResultMsg(matches.length > 0 ? `${matches.length} 결과` : "결과 없음");
+            }, [searchText, matchCase, matchWord, useRegex, activeFile?.content, createSearchRegex]);
+
+            const handleFind = (forward = true) => {
+                if (!searchText || !editorRef.current || !activeFile) return;
+                
+                const regex = createSearchRegex();
+                if (!regex) { setSearchResultMsg("Invalid Regex"); return; }
+
+                const text = editorRef.current.value;
+                const currentPos = editorRef.current.selectionStart;
+                const currentEnd = editorRef.current.selectionEnd;
+
+                const matches = [...text.matchAll(regex)];
+                if (matches.length === 0) return;
+
+                let targetMatch = null;
+                
+                if (forward) {
+                    // Find match AFTER current selection end (to allow finding next instance)
+                    const startFrom = currentEnd; 
+                    targetMatch = matches.find(m => m.index >= startFrom);
+                    if (!targetMatch) targetMatch = matches[0]; // Wrap
+                } else {
+                    // Find match BEFORE current selection start
+                    const startFrom = currentPos;
+                    targetMatch = [...matches].reverse().find(m => m.index < startFrom);
+                    if (!targetMatch) targetMatch = matches[matches.length - 1]; // Wrap
+                }
+
+                if (targetMatch) {
+                    const idx = matches.indexOf(targetMatch);
+                    setSearchResultMsg(`${idx + 1} / ${matches.length}`);
+                    
+                    editorRef.current.focus();
+                    editorRef.current.setSelectionRange(targetMatch.index, targetMatch.index + targetMatch[0].length);
+                    
+                    // Simple Scroll Logic
+                    const textarea = editorRef.current;
+                    const textBefore = text.substr(0, targetMatch.index);
+                    const lineNum = textBefore.split("\n").length;
+                    const totalLines = text.split("\n").length || 1;
+                    const scrollPos = (textarea.scrollHeight / totalLines) * (lineNum - 1);
+                    textarea.scrollTop = Math.max(0, scrollPos - (textarea.clientHeight / 2));
+                }
+            };
+
+            const handleReplace = () => {
+                if (!editorRef.current || !activeFile) return;
+                const regex = createSearchRegex();
+                if(!regex) return;
+                
+                const text = activeFile.content;
+                const start = editorRef.current.selectionStart;
+                const end = editorRef.current.selectionEnd;
+                
+                // Robust check: Check if current selection strictly matches a found occurrence
+                const matches = [...text.matchAll(regex)];
+                const currentMatch = matches.find(m => m.index === start && (m.index + m[0].length) === end);
+
+                if (currentMatch) {
+                    // Use capture group replacement if available
+                    const replacedFragment = currentMatch[0].replace(regex, replaceText);
+                    const newText = text.substring(0, start) + replacedFragment + text.substring(end);
+                    
+                    updateFileContent(activeFile.id, newText);
+                    
+                    setTimeout(() => {
+                        const newCursor = start + replacedFragment.length;
+                        editorRef.current.selectionStart = newCursor;
+                        editorRef.current.selectionEnd = newCursor;
+                        handleFind(true); // Auto find next
+                    }, 0);
+                } else {
+                    handleFind(true); // If not matched (or just cursor), just find next
+                }
+            };
+
+            const handleReplaceAll = () => {
+                if (!searchText || !activeFile) return;
+                if (!confirm(`"${searchText}"에 대한 모든 일치 항목을 변경하시겠습니까?`)) return;
+                
+                const regex = createSearchRegex();
+                if (!regex) return;
+
+                const newContent = activeFile.content.replace(regex, replaceText);
+                updateFileContent(activeFile.id, newContent);
+            };
+
+            // ... (기존 Chat Helper 함수들: handleInputChange, insertTag, filteredItems 등은 그대로 사용)
+            // 코드 중복을 줄이기 위해 Chat 관련 로직은 기존 코드를 그대로 유지하되, 렌더링 부분만 분기 처리합니다.
+            // ** 편의상 아래 handleInputChange 등은 기존 ChatInterface 로직을 복사했다고 가정합니다. **
+            const handleInputChange = (e) => {
+                const val = e.target.value;
+                const selectionStart = e.target.selectionStart;
+                setInput(val);
+                setCursorPos(selectionStart);
+                const textBeforeCursor = val.slice(0, selectionStart);
+                const match = textBeforeCursor.match(/\[\[([^\]]*)$/);
+                if (match) { setShowAutoComplete(true); setMatchString(match[1]); } else { setShowAutoComplete(false); }
+            };
+
+            const filteredItems = useMemo(() => {
+                if (!showAutoComplete) return [];
+                return matchString ? activeProject.files.filter(f => f.name.toLowerCase().includes(matchString.toLowerCase())) : activeProject.files;
+            }, [showAutoComplete, matchString, activeProject]);
+
+            const insertTag = (name) => {
+                const before = input.slice(0, cursorPos).replace(/\[\[([^\]]*)$/, `[[${name}]] `);
+                const after = input.slice(cursorPos);
+                setInput(before + after);
+                setShowAutoComplete(false);
+                inputRef.current.focus();
+            };
+
+            const handleSend = async () => {
+                if (!input.trim() || isGenerating) return;
+                if (!apiKey) { setShowSettings(true); return alert("API Key를 입력해주세요."); }
+
+                const userMsg = { id: Date.now(), role: 'user', text: input };
+                setChatHistory(prev => [...prev, userMsg]);
+                setInput("");
+                setIsGenerating(true);
+
+                // Context Construction (Same as before)
+                // Context Construction (Same as before)
+                const tags = [...userMsg.text.matchAll(/\[\[(.*?)\]\]/g)];
+                let contextXML = "";
+                if (tags.length > 0) {
+                    contextXML += "<context>\n";
+                    tags.forEach(match => {
+                        const name = match[1].trim(); // Fix: 공백 제거로 검색 정확도 향상
+                        const item = activeProject.files.find(f => f.name === name);
+
+                        if (item) {
+                             if (item.type === 'file') contextXML += `  <attachment name="${item.name}">\n${item.content || ""}\n  </attachment>\n`;
+                            else {
+                                const descendants = getDescendantFiles(item.id, activeProject.files);
+                                contextXML += `  <folder name="${item.name}">\n` + 
+                                    descendants.map(f => `    <attachment name="${f.name}">\n${f.content || ""}\n    </attachment>`).join('\n') + 
+                                    `\n  </folder>\n`;
+                            }
+                        }
+                    });
+                    contextXML += "</context>\n\n";
+                }
+
+                try {
+                    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            system_instruction: { parts: [{ text: systemPrompt }] },
+                            generationConfig: { temperature: temperature },
+contents: [{ parts: [{ text: contextXML + userMsg.text }] }]
+})
+});
+                    const data = await response.json();
+                    if (!response.ok) throw new Error(data.error?.message || "Error");
+                    setChatHistory(prev => [...prev, { id: Date.now()+1, role: 'ai', text: data.candidates?.[0]?.content?.parts?.[0]?.text || "No response" }]);
+                } catch (err) {
+                    setChatHistory(prev => [...prev, { id: Date.now()+1, role: 'ai', text: `Error: ${err.message}` }]);
+                } finally {
+                    setIsGenerating(false);
+                }
+            };
+
+            return (
+                <div id="right-panel" className="bg-[#1e1e1e] flex flex-col h-full overflow-hidden border-l border-aris-border">
+                    {/* Tab Header */}
+                    <div className="flex h-10 border-b border-aris-border bg-[#2d2d2d] shrink-0">
+                        <button 
+                            onClick={() => setActiveTab('chat')} 
+                            className={`flex-1 flex items-center justify-center gap-2 text-xs font-semibold transition-colors ${activeTab === 'chat' ? 'bg-[#1e1e1e] text-aris-primary border-t-2 border-aris-primary' : 'text-gray-500 hover:text-gray-300 hover:bg-[#333]'}`}
+                        >
+                            <Icon name="message-square" size={14}/> 채팅
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('search')} 
+                            className={`flex-1 flex items-center justify-center gap-2 text-xs font-semibold transition-colors ${activeTab === 'search' ? 'bg-[#1e1e1e] text-aris-primary border-t-2 border-aris-primary' : 'text-gray-500 hover:text-gray-300 hover:bg-[#333]'}`}
+                        >
+                            <Icon name="search" size={14}/> 찾기
+                        </button>
+                        <button 
+                            onClick={() => setActiveTab('prompt')} 
+                            className={`flex-1 flex items-center justify-center gap-2 text-xs font-semibold transition-colors ${activeTab === 'prompt' ? 'bg-[#1e1e1e] text-aris-primary border-t-2 border-aris-primary' : 'text-gray-500 hover:text-gray-300 hover:bg-[#333]'}`}
+                        >
+                            <Icon name="layers" size={14}/> 빌더
+                        </button>
+                    </div>
+
+                    {/* Prompt Builder Content */}
+                    <div className={`flex-1 flex flex-col bg-[#1e1e1e] overflow-hidden ${activeTab === 'prompt' ? 'flex' : 'hidden'}`}>
+                        <div className="p-3 border-b border-aris-border flex justify-between items-center bg-[#252526]">
+                            <span className="text-xs font-bold text-gray-400">PROMPT TEMPLATES</span>
+                            <button onClick={handleAddPrompt} className="p-1 hover:bg-aris-primary rounded text-gray-300" title="새 템플릿 추가">
+                                <Icon name="plus" size={14}/>
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                            {prompts.length === 0 && <div className="text-center text-xs text-gray-500 mt-10">템플릿을 추가하여<br/>자주 쓰는 프롬프트를 저장하세요.</div>}
+                            {prompts.map(prompt => {
+                                const variables = extractVariables(prompt.template);
+                                const isExpanded = prompt.expanded !== false; // Default to true
+                                return (
+                                    <div key={prompt.id} className="bg-[#2d2d2d] border border-aris-border rounded p-3 flex flex-col gap-2">
+                                        <div className="flex justify-between items-center mb-1 gap-2">
+                                            <button 
+                                                onClick={() => handlePromptChange(prompt.id, 'expanded', !isExpanded)}
+                                                className="text-gray-500 hover:text-white transition-colors p-1"
+                                            >
+                                                <Icon name={isExpanded ? "chevron-down" : "chevron-right"} size={14}/>
+                                            </button>
+                                            <input 
+                                                className="flex-1 bg-transparent text-sm font-bold text-white outline-none" 
+                                                value={prompt.title}
+                                                onChange={(e) => handlePromptChange(prompt.id, 'title', e.target.value)}
+                                                placeholder="템플릿 제목"
+                                            />
+                                            <button onClick={() => handleDeletePrompt(prompt.id)} className="text-gray-500 hover:text-red-400 p-1">
+                                                <Icon name="x" size={14}/>
+                                            </button>
+                                        </div>
+                                        
+                                        {isExpanded && (
+                                            <>
+                                                <div className="relative group">
+                                                    <textarea 
+                                                        className="w-full bg-[#1e1e1e] text-xs text-gray-300 p-2 rounded border border-aris-border outline-none resize-y min-h-[80px] font-mono leading-relaxed focus:border-aris-primary"
+                                                        value={prompt.template}
+                                                        onChange={(e) => handlePromptChange(prompt.id, 'template', e.target.value)}
+                                                        placeholder="예: {{설정}}을 참고하여 {{내용}}을 분석해줘."
+                                                    />
+                                                </div>
+
+                                                {variables.length > 0 && (
+                                                <div className="bg-[#1e1e1e]/50 rounded p-2 flex flex-col gap-2 border border-[#333]">
+                                                    {variables.map((v, idx) => (
+                                                        <div key={idx} className="flex flex-col gap-1 relative">
+                                                                        <span className="text-[10px] text-blue-400 font-mono truncate" title={v}>{v}</span>
+                                                                        {/* Autocomplete Dropdown for Mapping */}
+                                                                        {showAutoComplete && activeMappingField?.promptId === prompt.id && activeMappingField?.variable === v && (
+                                                                            <div className="absolute bottom-full left-0 mb-1 w-full bg-aris-panel border border-aris-border rounded shadow-xl max-h-32 overflow-y-auto z-50">
+                                                                                {filteredItems.map(f => (
+                                                                                    <div key={f.id} className="px-3 py-2 text-sm hover:bg-aris-primary cursor-pointer flex gap-2 text-gray-200" 
+                                                                                         onClick={() => insertMappingTag(f.name)}>
+                                                                                        <Icon name={f.type === 'folder' ? 'folder' : 'file-text'} size={12} className={f.type === 'folder' ? "text-yellow-500" : ""}/> {f.name}
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                        <textarea 
+                                                                            className="w-full bg-[#2d2d2d] text-xs text-white border border-aris-border rounded px-2 py-1 outline-none focus:border-aris-primary placeholder-gray-600 resize-y min-h-[30px]"
+                                                                            placeholder="[[파일]] 또는 텍스트"
+                                                                            rows={1}
+                                                                            value={prompt.mappings[v] || ''}
+                                                                            onChange={(e) => handleMappingInput(e, prompt.id, v)}
+                                                                            onKeyDown={(e) => {
+                                                                                if (e.key === 'Enter' && !e.shiftKey && showAutoComplete) {
+                                                                                    e.preventDefault();
+                                                                                    if (filteredItems.length > 0) insertMappingTag(filteredItems[0].name);
+                                                                                }
+                                                                                if (e.key === 'Escape') setShowAutoComplete(false);
+                                                                            }}
+                                                                        />
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                            )}
+
+                                                <div className="flex gap-1 mt-1">
+                                                    <button 
+                                                        onClick={() => handleApplyPrompt(prompt)}
+                                                        className="flex-1 py-1.5 bg-[#333] hover:bg-[#444] border border-aris-border text-gray-200 text-xs rounded flex items-center justify-center gap-2 font-medium transition-colors"
+                                                        title="채팅 입력창으로 전송"
+                                                    >
+                                                        <Icon name="arrow-up-right" size={12}/> 입력
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleCopyPrompt(prompt)}
+                                                        className="flex-1 py-1.5 bg-aris-primary hover:bg-blue-600 text-white text-xs rounded flex items-center justify-center gap-2 font-medium transition-colors"
+                                                        title="클립보드로 복사"
+                                                    >
+                                                        <Icon name="copy" size={12}/> 복사
+                                                    </button>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Chat Content */}
+                    <div className={`flex-1 flex flex-col overflow-hidden ${activeTab === 'chat' ? 'flex' : 'hidden'}`}>
+                         <div className="h-10 border-b border-aris-border flex items-center justify-between px-3 bg-[#1e1e1e] shrink-0">
+                            <select className="bg-transparent text-xs text-gray-400 hover:text-white outline-none w-32" value={model} onChange={e => setModel(e.target.value)}>
+                                {GEMINI_MODELS.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                            <div className="flex gap-2">
+                                <button onClick={exportProject} className="text-gray-400 hover:text-white" title="내보내기"><Icon name="download" size={16}/></button>
+                                <button onClick={() => setShowSettings(!showSettings)} className="text-gray-400 hover:text-white"><Icon name="settings" size={16}/></button>
+                            </div>
+                        </div>
+
+                        {showSettings && (
+                        <div className="p-3 bg-aris-panel border-b border-aris-border flex flex-col gap-2">
+                            <input type="password" className="w-full bg-aris-input border border-aris-border rounded p-1.5 text-xs text-white" placeholder="Google API Key" value={apiKey} onChange={e => setApiKey(e.target.value)}/>
+                            <div className="flex items-center gap-2">
+                                <label className="text-[10px] text-gray-500 w-16">Creativity</label>
+                                <input type="range" min="0" max="1" step="0.1" value={temperature} onChange={e => setTemperature(parseFloat(e.target.value))} className="flex-1 h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer"/>
+                                <span className="text-[10px] text-gray-400 w-6 text-right">{temperature}</span>
+                            </div>
+                            <textarea className="w-full bg-aris-input border border-aris-border rounded p-2 text-xs text-gray-300 h-16 resize-none" placeholder="System Prompt" value={systemPrompt} onChange={e => setSystemPrompt(e.target.value)}/>
+                            <button onClick={clearChat} className="w-full py-1 bg-red-900/30 hover:bg-red-900/50 text-red-200 text-xs rounded border border-red-900/50">Clear Chat History</button>
+                        </div>
+                    )}
+
+                    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                        {chatHistory.map(msg => (
+                                <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div 
+                                        className={`max-w-[90%] px-3 py-2 rounded-lg text-sm ${msg.role === 'user' ? 'bg-aris-primary text-white whitespace-pre-wrap' : 'bg-[#333] text-gray-300 border border-aris-border prose prose-invert prose-sm max-w-none'}`}
+                                    >
+                                        {msg.role === 'ai' ? (
+                                            <div dangerouslySetInnerHTML={{ __html: window.marked ? window.marked.parse(msg.text) : msg.text }} />
+                                        ) : (
+                                            msg.text
+                                        )}
+                                    </div>
+                                </div>
+                            ))}
+                            {isGenerating && <div className="text-xs text-gray-500 px-4">AI 작성 중...</div>}
+                            <div ref={messagesEndRef} />
+                        </div>
+
+                        <div className="p-3 bg-[#1e1e1e] border-t border-aris-border relative shrink-0">
+                            {showAutoComplete && (
+                                <div className="absolute bottom-full left-3 mb-2 w-64 bg-aris-panel border border-aris-border rounded shadow-xl max-h-32 overflow-y-auto z-overlay">
+                                    {filteredItems.map(f => (
+                                        <div key={f.id} className="px-3 py-2 text-sm hover:bg-aris-primary cursor-pointer flex gap-2" onClick={() => insertTag(f.name)}>
+                                            <Icon name={f.type === 'folder' ? 'folder' : 'file-text'} size={12} className={f.type === 'folder' ? "text-yellow-500" : ""}/> {f.name}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="relative border border-aris-border rounded bg-aris-input focus-within:border-aris-primary transition-all">
+                                <textarea ref={inputRef} className="w-full bg-transparent text-white text-sm p-2 pr-10 outline-none resize-none h-12" placeholder="메시지 입력 ([[문맥]])" value={input} onChange={handleInputChange} onKeyDown={e => {
+                                    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); showAutoComplete && filteredItems.length > 0 ? insertTag(filteredItems[0].name) : handleSend(); }
+                                    if (e.key === 'Escape') setShowAutoComplete(false);
+                                }}/>
+                                <button onClick={handleSend} disabled={!input.trim()} className="absolute bottom-1.5 right-1.5 p-1 bg-aris-primary text-white rounded"><Icon name="send" size={14}/></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Search Content (VS Code Style Widget) */}
+                    <div className={`flex-1 flex flex-col bg-[#1e1e1e] p-3 gap-2 overflow-y-auto ${activeTab === 'search' ? 'flex' : 'hidden'}`}>
+                        
+                        {/* Find Row */}
+                        <div className="flex flex-col gap-1">
+                            <div className="relative flex items-center bg-[#3c3c3c] border border-aris-border rounded focus-within:border-aris-primary focus-within:ring-1 focus-within:ring-aris-primary">
+                                <Icon name="chevron-right" size={14} className="ml-1 text-gray-400 cursor-pointer"/>
+                                <textarea 
+                                    id="search-input-field"
+                                    rows={searchText.split('\n').length > 1 ? Math.min(searchText.split('\n').length, 5) : 1}
+                                    className="flex-1 bg-transparent text-sm text-white px-2 py-1.5 outline-none w-0 min-w-[50px] resize-y leading-tight min-h-[30px]" 
+                                    placeholder="찾기 (Enter: 찾기, Cmd+Enter: 줄바꿈)"
+                                    value={searchText}
+                                    onChange={e => setSearchText(e.target.value)}
+                                    onKeyDown={e => { 
+                                        // 1. Allow Newline with Cmd/Ctrl + Enter
+                                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const start = e.target.selectionStart;
+                                            const end = e.target.selectionEnd;
+                                            const newVal = e.target.value.substring(0, start) + "\n" + e.target.value.substring(end);
+                                            setSearchText(newVal);
+                                            setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = start + 1; }, 0);
+                                            return;
+                                        }
+                                        // 2. Find triggers only on simple Enter
+                                        if(e.key === 'Enter') { 
+                                            e.preventDefault(); 
+                                            handleFind(!e.shiftKey); 
+                                        } 
+                                    }}
+                                />
+                                {/* Input Actions */}
+                                <div className="flex items-center gap-0.5 pr-1">
+                                    <button 
+                                        onClick={() => setMatchCase(!matchCase)} 
+                                        className={`p-0.5 rounded text-[10px] font-mono border border-transparent hover:bg-[#4a4a4a] ${matchCase ? 'bg-[#007acc]/30 text-[#007acc] border-[#007acc]/50' : 'text-gray-400'}`}
+                                        title="대소문자 구분 (Alt+C)"
+                                    >
+                                        Aa
+                                    </button>
+                                    <button 
+                                        onClick={() => setMatchWord(!matchWord)} 
+                                        className={`p-0.5 rounded text-[10px] font-mono border border-transparent hover:bg-[#4a4a4a] ${matchWord ? 'bg-[#007acc]/30 text-[#007acc] border-[#007acc]/50' : 'text-gray-400'}`}
+                                        title="단어 단위 (Alt+W)"
+                                    >
+                                        ab
+                                    </button>
+                                    <button 
+                                        onClick={() => setUseRegex(!useRegex)} 
+                                        className={`p-0.5 rounded text-[10px] font-mono border border-transparent hover:bg-[#4a4a4a] ${useRegex ? 'bg-[#007acc]/30 text-[#007acc] border-[#007acc]/50' : 'text-gray-400'}`}
+                                        title="정규식 사용 (Alt+R)"
+                                    >
+                                        .*
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            {/* Search Stats & Nav */}
+                            {searchText && (
+                                <div className="flex justify-between items-center px-1">
+                                    <span className="text-[10px] text-gray-500 truncate max-w-[100px]">{searchResultMsg}</span>
+                                    <div className="flex gap-1">
+                                         <button onClick={() => handleFind(false)} className="p-1 hover:bg-[#333] rounded text-gray-300" title="이전 찾기 (Shift+Enter)"><Icon name="arrow-up" size={14}/></button>
+                                         <button onClick={() => handleFind(true)} className="p-1 hover:bg-[#333] rounded text-gray-300" title="다음 찾기 (Enter)"><Icon name="arrow-down" size={14}/></button>
+                                         <button className="p-1 hover:bg-[#333] rounded text-gray-500" title="선택 영역에서 찾기 (구현 예정)"><Icon name="align-justify" size={14}/></button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Replace Row */}
+                        <div className="flex flex-col gap-1 mt-1">
+                            <div className="relative flex items-center bg-[#3c3c3c] border border-aris-border rounded focus-within:border-aris-primary focus-within:ring-1 focus-within:ring-aris-primary">
+                                <div className="pl-1"><Icon name="chevron-down" size={14} className="text-gray-400"/></div>
+                                <textarea 
+                                    rows={1}
+                                    className="flex-1 bg-transparent text-sm text-white px-2 py-1.5 outline-none w-0 min-w-[50px] resize-y leading-tight" 
+                                    placeholder="바꾸기 (Ctrl+Enter: 줄바꿈)"
+                                    value={replaceText}
+                                    onChange={e => setReplaceText(e.target.value)}
+                                    onKeyDown={e => { 
+                                        if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                                            e.preventDefault();
+                                            const start = e.target.selectionStart;
+                                            const end = e.target.selectionEnd;
+                                            const newVal = e.target.value.substring(0, start) + "\n" + e.target.value.substring(end);
+                                            setReplaceText(newVal);
+                                            setTimeout(() => { e.target.selectionStart = e.target.selectionEnd = start + 1; }, 0);
+                                            return;
+                                        }
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault();
+                                            handleReplace();
+                                        }
+                                    }}
+                                />
+                                <div className="flex items-center gap-0.5 pr-1">
+                                    <button className="p-0.5 rounded text-[10px] font-mono text-gray-500 cursor-not-allowed" title="대소문자 보존 (미지원)">AB</button>
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end gap-1 mt-1">
+                                <button onClick={handleReplace} className="p-1.5 bg-[#333] hover:bg-[#444] rounded text-gray-300 border border-aris-border flex items-center gap-1.5 text-xs px-3" title="바꾸기 (Enter)">
+                                    <Icon name="replace" size={12}/> 하나 바꾸기
+                                </button>
+                                <button onClick={handleReplaceAll} className="p-1.5 bg-[#333] hover:bg-[#444] rounded text-gray-300 border border-aris-border flex items-center gap-1.5 text-xs px-3" title="모두 바꾸기 (Ctrl+Alt+Enter)">
+                                    <Icon name="replace-all" size={12}/> 모두 바꾸기
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="mt-auto text-center p-4 opacity-50">
+                            <div className="text-gray-600 text-xs">
+                                <Icon name="search" size={32} className="mx-auto mb-2 opacity-20"/>
+                                <p>VS Code Style Search</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Toast Component ---
+        const ToastContainer = () => {
+            const { toasts, removeToast } = useContext(AppContext);
+            return createPortal(
+                <div className="fixed bottom-6 right-6 z-[1000] flex flex-col gap-2 pointer-events-none">
+                    {toasts.map(toast => (
+                        <div key={toast.id} onClick={() => removeToast(toast.id)} className={`
+                            px-4 py-3 rounded shadow-xl text-sm text-white font-medium pointer-events-auto flex items-center gap-3 min-w-[200px] cursor-pointer hover:brightness-90 transition-all
+                            ${toast.type === 'error' ? 'bg-red-600' : 'bg-aris-primary'}
+                        `}>
+                            <Icon name={toast.type === 'error' ? "alert-circle" : "check-circle"} size={18} className="shrink-0"/>
+                            <span>{toast.message}</span>
+                        </div>
+                    ))}
+                </div>,
+                document.getElementById('portal-root') || document.body
+            );
+        };
+
+        const AppLayout = () => {
+            const { zenMode } = useContext(AppContext);
+            const splitInstance = useRef(null);
+
+            useEffect(() => {
+                // Zen 모드가 켜지면 Split.js를 제거하여 전체화면 CSS 충돌 방지
+                if (zenMode) {
+                    if (splitInstance.current) {
+                        splitInstance.current.destroy();
+                        splitInstance.current = null;
+                    }
+                } else {
+                    // Zen 모드가 꺼지면 Split.js 다시 적용
+                    // DOM 렌더링 타이밍 보장을 위해 약간의 지연 후 초기화
+                    const timer = setTimeout(() => {
+                        if (!splitInstance.current) {
+                            splitInstance.current = Split(['#sidebar-panel', '#editor-panel', '#right-panel'], { 
+                                sizes: [20, 50, 30], 
+                                minSize: [150, 300, 250], 
+                                gutterSize: 5 
+                            });
+                        }
+                    }, 0);
+                    return () => clearTimeout(timer);
+                }
+
+                // Cleanup
+                return () => {
+                    if (splitInstance.current) {
+                        splitInstance.current.destroy();
+                        splitInstance.current = null;
+                    }
+                };
+            }, [zenMode]);
+
+            return (
+                <div className="flex flex-col h-screen text-aris-text bg-aris-bg overflow-hidden">
+                    <div className="flex-1 flex overflow-hidden split-container relative">
+                        <Sidebar />
+                        <EditorPanel />
+                        <RightPanel />
+                    </div>
+                    <ToastContainer />
+                </div>
+            );
+        };
+
+        const App = () => <AppProvider><AppLayout /></AppProvider>;
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
