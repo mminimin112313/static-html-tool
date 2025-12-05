@@ -3,712 +3,1006 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zenith Translator</title>
+    <title>Aris Translation Studio (Ultimate Edition)</title>
     
-    <!-- React & ReactDOM -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    
-    <!-- Babel -->
+    <!-- Core Libraries -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
-    <!-- JSZip -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
 
-    <!-- Google Fonts -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Translation Logic Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+
+    <!-- Tailwind Config for Dark Mode & Aris Theme -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        aris: {
+                            bg: '#1e1e1e',      // VS Code dark bg
+                            panel: '#252526',   // Side panel
+                            border: '#333333',  // Borders
+                            primary: '#007acc', // Brand blue
+                            text: '#cccccc',    // Default text
+                            active: '#ffffff',  // Active text
+                            hover: '#2a2d2e',   // List hover
+                            success: '#2da042', // Green
+                            warning: '#d29922', // Orange/Yellow
+                            error: '#f85149',   // Red
+                        }
+                    },
+                    zIndex: {
+                        'base': '0', 'fixed': '10', 'overlay': '50', 'fab': '100', 
+                        'toast': '200', 'modal': '300', 'tooltip': '500'
+                    },
+                    animation: {
+                        'spin-slow': 'spin 2s linear infinite',
+                    }
+                }
+            }
+        }
+    </script>
 
     <style>
-        /* Theme Variables - Classic Minimalist */
-        :root {
-            /* Dark Mode (Default) */
-            --bg-base: #09090b;      /* Zinc 950 */
-            --bg-surface: #18181b;   /* Zinc 900 */
-            --bg-hover: #27272a;     /* Zinc 800 */
-            --border-color: #27272a; /* Zinc 800 */
-            
-            --text-primary: #f4f4f5; /* Zinc 100 */
-            --text-secondary: #a1a1aa; /* Zinc 400 */
-            --text-tertiary: #52525b;  /* Zinc 600 */
-            
-            --accent-color: #fff;    /* White Accent in Dark Mode */
-            --accent-text: #000;
-            
-            --status-translating: #38bdf8; /* Sky 400 */
-            --status-completed: #4ade80;   /* Green 400 */
-            --status-error: #fb7185;       /* Rose 400 */
-        }
-
-        [data-theme="light"] {
-            /* Light Mode - Classic Swiss Style */
-            --bg-base: #ffffff;
-            --bg-surface: #f8fafc;   /* Slate 50 */
-            --bg-hover: #f1f5f9;     /* Slate 100 */
-            --border-color: #e2e8f0; /* Slate 200 */
-            
-            --text-primary: #0f172a; /* Slate 900 */
-            --text-secondary: #64748b; /* Slate 500 */
-            --text-tertiary: #94a3b8;  /* Slate 400 */
-            
-            --accent-color: #0f172a; /* Slate 900 */
-            --accent-text: #fff;
-            
-            --status-translating: #0ea5e9; /* Sky 500 */
-            --status-completed: #22c55e;   /* Green 500 */
-            --status-error: #f43f5e;       /* Rose 500 */
-        }
-
-        body {
-            background-color: var(--bg-base);
-            color: var(--text-primary);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-            overflow: hidden;
-            transition: background-color 0.2s ease, color 0.2s ease;
-        }
-
-        /* Utility Classes */
-        .bg-base { background-color: var(--bg-base); }
-        .bg-surface { background-color: var(--bg-surface); }
-        .bg-hover:hover { background-color: var(--bg-hover); }
-        .border-classic { border-color: var(--border-color); }
-        .text-primary { color: var(--text-primary); }
-        .text-secondary { color: var(--text-secondary); }
-        .text-tertiary { color: var(--text-tertiary); }
-
-        /* Solid UI Elements */
-        .panel {
-            background-color: var(--bg-base);
-            border: 1px solid var(--border-color);
-        }
+        /* Global Reset & Scrollbars */
+        html, body { margin: 0; padding: 0; height: 100%; overflow: hidden; background-color: #1e1e1e; color: #cccccc; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
         
-        .panel-surface {
-            background-color: var(--bg-surface);
-            border-right: 1px solid var(--border-color);
-        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: #1e1e1e; }
+        ::-webkit-scrollbar-thumb { background: #424242; border-radius: 5px; border: 2px solid #1e1e1e; }
+        ::-webkit-scrollbar-thumb:hover { background: #4f4f4f; }
 
-        .input-classic {
-            background-color: transparent;
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            transition: all 0.2s ease;
-        }
-        .input-classic:focus {
-            border-color: var(--text-secondary);
-            outline: none;
-        }
+        /* Editors */
+        textarea { font-family: 'JetBrains Mono', 'Consolas', monospace; line-height: 1.6; }
+        .no-resize { resize: none; }
 
-        .btn-classic {
-            background-color: var(--bg-surface);
-            border: 1px solid var(--border-color);
-            color: var(--text-primary);
-            font-weight: 500;
-            transition: all 0.15s ease;
-        }
-        .btn-classic:hover:not(:disabled) {
-            background-color: var(--bg-hover);
-            border-color: var(--text-secondary);
-        }
-        .btn-classic:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .btn-accent {
-            background-color: var(--accent-color);
-            color: var(--accent-text);
-            border: 1px solid var(--accent-color);
-            font-weight: 600;
-        }
-        .btn-accent:hover:not(:disabled) {
-            opacity: 0.9;
-            transform: translateY(-1px);
-        }
-        .btn-accent:disabled {
-            opacity: 0.5;
-            transform: none;
-            cursor: not-allowed;
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar {
-            width: 10px;
-            height: 10px;
-        }
-        ::-webkit-scrollbar-track {
-            background: transparent;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: var(--border-color);
-            border: 2px solid var(--bg-base); /* Creates padding effect */
-            border-radius: 5px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: var(--text-tertiary);
-        }
-
-        .editor-font {
-            font-family: 'JetBrains Mono', monospace;
-            line-height: 1.6;
-        }
-
-        /* Animations */
-        @keyframes fade-in-up {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-            animation: fade-in-up 0.3s ease-out forwards;
-        }
+        /* Utilities */
+        #aris-portal-root { position: relative; z-index: 9999; }
+        .fade-in { animation: fadeIn 0.2s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.99); } to { opacity: 1; transform: scale(1); } }
     </style>
 </head>
 <body>
     <div id="root"></div>
+    <div id="aris-portal-root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useReducer, useRef, useMemo, useContext, createContext } = React;
+        const { useState, useEffect, useRef, useContext, createContext, useMemo, useCallback } = React;
+        const { createPortal } = ReactDOM;
 
-        // --- ICONS ---
-        const Icon = ({ name, size = 16, className = "" }) => {
-            return <i className={`bi bi-${name} ${className}`} style={{ fontSize: size }}></i>;
+        // ==========================================
+        // [CORE LOGIC] Migrated from Translation Studio V10
+        // ==========================================
+
+        const Utils = {
+            generateId: (prefix) => `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            naturalSort: (a, b) => a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: 'base' }),
+            formatTitle: (name) => name.replace(/\.(zip|json|html?|txt)$/i, '').replace(/^Chapter_(\d+)_/, 'Chapter $1: ').replace(/_/g, ' '),
+            getParagraphsForSplitting: (text) => {
+                if (!text || !text.trim()) return { paragraphs: [], separator: '\n\n' };
+                const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+                let paragraphs = normalized.split(/\n{2,}/).map(p => p.trim()).filter(Boolean);
+                let separator = '\n\n';
+                if (paragraphs.length < 2) {
+                    paragraphs = normalized.split(/\n/).map(p => p.trim()).filter(Boolean);
+                    separator = '\n';
+                }
+                return { paragraphs, separator };
+            },
+            copyToClipboard: (text, onSuccess) => {
+                if (!text) return;
+                const doCopy = () => {
+                    const ta = document.createElement("textarea");
+                    ta.value = text; ta.style.position="fixed"; ta.style.left="-9999px";
+                    document.body.appendChild(ta); ta.focus(); ta.select();
+                    document.execCommand('copy'); document.body.removeChild(ta);
+                    if(onSuccess) onSuccess();
+                }
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(onSuccess).catch(doCopy);
+                } else { doCopy(); }
+            }
         };
 
-        // --- EXPORT/IMPORT LOGIC ---
-        const ProjectUtils = {
-            // Save Project State (Native JSON)
-            saveProject: (fileTree, name) => {
-                const projectData = {
-                    version: '1.0',
-                    timestamp: Date.now(),
-                    name: name,
-                    tree: fileTree
-                };
-                const blob = new Blob([JSON.stringify(projectData)], { type: "application/json" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${name.replace(/\.[^/.]+$/, "")}.zenith`;
-                a.click();
-                URL.revokeObjectURL(url);
-            },
+        // --- Database (IndexedDB Wrapper) ---
+        class LocalDB {
+            constructor() { this.dbName = 'ArisTranslationDB_V1'; this.version = 1; this.db = null; }
+            async connect() {
+                if (this.db) return this.db;
+                return new Promise((resolve, reject) => {
+                    const req = indexedDB.open(this.dbName, this.version);
+                    req.onupgradeneeded = (e) => {
+                        const db = e.target.result;
+                        if(!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
+                        if(!db.objectStoreNames.contains('chapters')) {
+                            const s = db.createObjectStore('chapters', { keyPath: 'id' });
+                            s.createIndex('projectId', 'projectId', { unique: false });
+                        }
+                    };
+                    req.onsuccess = (e) => { this.db = e.target.result; resolve(this.db); };
+                    req.onerror = (e) => reject(e.target.error);
+                });
+            }
+            async getAllProjects() { const db = await this.connect(); return new Promise(r => db.transaction('projects').objectStore('projects').getAll().onsuccess = e => r(e.target.result)); }
+            async saveProject(p) { const db = await this.connect(); return new Promise(r => { const tx=db.transaction('projects','readwrite'); tx.objectStore('projects').put(p); tx.oncomplete=()=>r(p); }); }
+            async deleteProject(id) { 
+                const db = await this.connect(); 
+                const tx = db.transaction(['projects','chapters'],'readwrite');
+                tx.objectStore('projects').delete(id);
+                const idx = tx.objectStore('chapters').index('projectId');
+                idx.getAllKeys(id).onsuccess = (e) => { e.target.result.forEach(k => tx.objectStore('chapters').delete(k)); };
+                return new Promise(r => tx.oncomplete = () => r());
+            }
+            async getChapters(pid) { const db = await this.connect(); return new Promise(r => db.transaction('chapters').objectStore('chapters').index('projectId').getAll(pid).onsuccess = e => r(e.target.result)); }
+            async saveChapter(c) { const db = await this.connect(); return new Promise(r => { const tx=db.transaction('chapters','readwrite'); tx.objectStore('chapters').put(c); tx.oncomplete=()=>r(c); }); }
+            async saveChapters(chapters) { const db = await this.connect(); return new Promise(r => { const tx = db.transaction('chapters', 'readwrite'); const store = tx.objectStore('chapters'); chapters.forEach(c => store.put(c)); tx.oncomplete = () => r(); }); }
+        }
+        const db = new LocalDB();
 
-            // Export Result (ZIP)
-            exportZip: async (rootNode) => {
-                const zip = new JSZip();
-                const addToZip = (folder, node) => {
-                    if (node.isFolder) {
-                        const newFolder = folder.folder(node.name);
-                        node.children.forEach(child => addToZip(newFolder, child));
-                    } else {
-                        const contentToSave = node.translation || node.content;
-                        if (contentToSave !== null) folder.file(node.name, contentToSave);
+        // --- Key Manager & API ---
+        const DEFAULT_SYSTEM_PROMPT = `당신은 '인지 번역 아키텍트'입니다. 원문의 뉘앙스, 스타일, 의도를 완벽하게 파악하여 한국어로 재창조하십시오.
+[제약사항]
+1. 오직 번역된 텍스트만 출력하십시오. (서두, 주석 금지)
+2. 마크다운 형식을 유지하십시오.
+3. 원문의 문단 구조를 존중하십시오.
+{{dictionary_instruction}}`;
+
+        class GeminiKeyManager {
+            constructor() {
+                this.STORAGE_KEY = 'aris_gemini_keys';
+                this.CONFIG_KEY = 'aris_gemini_config';
+                this.data = this.load();
+                this.config = this.loadConfig();
+            }
+            load() { const s = localStorage.getItem(this.STORAGE_KEY); return s ? JSON.parse(s) : { keys: [], failed: {} }; }
+            save() { localStorage.setItem(this.STORAGE_KEY, JSON.stringify(this.data)); }
+            // Updated default model to gemini-2.5-flash
+            loadConfig() { const s = localStorage.getItem(this.CONFIG_KEY); return s ? JSON.parse(s) : { model: 'gemini-2.5-flash', prompt: DEFAULT_SYSTEM_PROMPT }; }
+            saveConfig(cfg) { this.config = {...this.config, ...cfg}; localStorage.setItem(this.CONFIG_KEY, JSON.stringify(this.config)); }
+            getKeys() { return this.data.keys; }
+            addKeys(newKeys) { this.data.keys = [...new Set([...this.data.keys, ...newKeys.filter(k=>k.trim())])]; this.save(); }
+            removeKey(k) { this.data.keys = this.data.keys.filter(xk => xk !== k); this.save(); }
+            getAvailableKeys() { const now = Date.now(); return this.data.keys.filter(k => !this.data.failed[k] || this.data.failed[k] < now); }
+            fail(key) { this.data.failed[key] = Date.now() + 60000; this.save(); }
+        }
+        const keyManager = new GeminiKeyManager();
+
+        // --- Async Queue System ---
+        class ConcurrentQueue {
+            constructor() { this.queue = []; this.activeTasks = new Map(); this.listeners = []; }
+            subscribe(fn) { this.listeners.push(fn); return () => this.listeners = this.listeners.filter(l=>l!==fn); }
+            notify() { this.listeners.forEach(l => l([...this.queue], new Map(this.activeTasks))); }
+            add(task) { if (this.queue.find(t => t.id === task.id)) return; this.queue.push({ ...task, status: 'queued' }); this.notify(); this.process(); }
+            async process() {
+                const allKeys = keyManager.getAvailableKeys();
+                const busyKeys = Array.from(this.activeTasks.keys());
+                const idleKeys = allKeys.filter(k => !busyKeys.includes(k));
+                if (idleKeys.length === 0 || this.queue.length === 0) return;
+
+                idleKeys.forEach(key => {
+                    const taskIndex = this.queue.findIndex(t => t.status === 'queued');
+                    if (taskIndex === -1) return;
+                    const task = this.queue[taskIndex];
+                    this.queue[taskIndex].status = 'processing';
+                    this.activeTasks.set(key, task.id);
+                    this.notify();
+                    this.executeTask(key, task).then(() => { this.activeTasks.delete(key); this.process(); });
+                });
+            }
+            async executeTask(key, task) {
+                try {
+                    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${keyManager.config.model}:generateContent?key=${key}`, {
+                        method: 'POST', headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ contents: [{ parts: [{ text: task.prompt }] }] })
+                    });
+                    if (!res.ok) {
+                        if (res.status === 429) { keyManager.fail(key); const t = this.queue.find(q => q.id === task.id); if(t) t.status = 'queued'; throw new Error("Rate Limit"); }
+                        throw new Error(`HTTP ${res.status}`);
                     }
-                };
-                rootNode.children.forEach(child => addToZip(zip, child));
-                return await zip.generateAsync({ type: "blob" });
-            },
-            
-            // Export Result (EPUB) - Fixed XML Escaping
-            exportEpub: async (rootNode, title) => {
+                    const data = await res.json();
+                    const result = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                    const t = this.queue.find(q => q.id === task.id);
+                    if(t) { t.status = 'done'; t.result = result; }
+                    await task.onSuccess(result);
+                } catch (e) {
+                    const t = this.queue.find(q => q.id === task.id);
+                    if(t && t.status !== 'queued') { t.status = 'error'; t.error = e.message; }
+                } finally { this.notify(); }
+            }
+            getStatus(id) { const t = this.queue.find(x => x.id === id); return t ? t.status : null; }
+            retry(id) { const t = this.queue.find(x => x.id === id); if(t && t.status === 'error') { t.status = 'queued'; t.error = null; this.notify(); this.process(); } }
+        }
+        const translationQueue = new ConcurrentQueue();
+
+        // --- EPUB Generator ---
+        const EpubGenerator = {
+            generate: async (project, chapters, options = { includeSource: true }) => {
                 const zip = new JSZip();
-                const uuid = "urn:uuid:" + Math.random().toString(36).substring(2);
-                
-                // XML Escape Helper
-                const escapeXml = (unsafe) => {
-                    if (typeof unsafe !== 'string') return "";
-                    return unsafe.replace(/&/g, '&amp;')
-                                 .replace(/</g, '&lt;')
-                                 .replace(/>/g, '&gt;')
-                                 .replace(/"/g, '&quot;')
-                                 .replace(/'/g, '&apos;');
-                };
-
-                const textNodes = [];
-                const traverse = (node) => {
-                    if (node.isFolder) node.children.forEach(traverse);
-                    else if (node.isTranslatable && (node.translation || node.content)) textNodes.push(node);
-                };
-                traverse(rootNode);
-                if (textNodes.length === 0) throw new Error("No text content found.");
-
-                // Mimetype must be first and uncompressed
                 zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
-                zip.folder("META-INF").file("container.xml", `<?xml version="1.0" encoding="UTF-8" ?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
+                zip.folder("META-INF").file("container.xml", `<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>`);
                 
                 const oebps = zip.folder("OEBPS");
-                const textFolder = oebps.folder("Text");
-                let manifestItems = "", spineItems = "", navPoints = "";
-                const safeTitle = escapeXml(title);
+                const sortedChs = [...chapters].sort((a,b) => Utils.naturalSort({path: a.title}, {path: b.title}));
+                
+                // Build Manifest & Spine
+                let manifest = '', spine = '', toc = '';
+            
+                // Helper: Convert HTML void tags to XHTML (Self-closing)
+                const toXHTML = (html) => {
+                    if (!html) return '';
+                    return html
+                        .replace(/<br>/gi, '<br/>')
+                        .replace(/<hr>/gi, '<hr/>')
+                        .replace(/<img([^>]*)>/gi, '<img$1/>'); // 이미지 태그도 닫아줌
+                };
 
-                textNodes.forEach((node, index) => {
-                    const fileId = `file_${index}`;
-                    const fileName = `Text/${fileId}.xhtml`;
-                    const safeNodeName = escapeXml(node.name);
+                sortedChs.forEach((ch, i) => {
+                    const id = `ch_${i+1}`;
                     
-                    // Safe Content Generation
-                    const rawContent = node.translation || node.content || "";
-                    const contentLines = rawContent.split('\n');
-                    const safeContent = contentLines.map(line => `<p>${escapeXml(line)}</p>`).join('');
+                    // marked 파싱 후 XHTML 태그로 치환 (중요)
+                    const parsedContent = toXHTML(marked.parse(ch.content));
+                    const parsedTrans = toXHTML(marked.parse(ch.translation || ''));
 
-                    textFolder.file(`${fileId}.xhtml`, `<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${safeNodeName}</title></head><body><h1>${safeNodeName}</h1>${safeContent}</body></html>`);
+                    const sourceHtml = options.includeSource ? `<div class="content">${parsedContent}</div><hr/>` : '';
+                    const transHtml = `<div class="translation">${parsedTrans}</div>`;
                     
-                    manifestItems += `<item id="${fileId}" href="${fileName}" media-type="application/xhtml+xml"/>\n`;
-                    spineItems += `<itemref idref="${fileId}"/>\n`;
-                    navPoints += `<navPoint id="navPoint-${index}" playOrder="${index + 1}"><navLabel><text>${safeNodeName}</text></navLabel><content src="${fileName}"/></navPoint>\n`;
+                    const content = `<?xml version="1.0" encoding="utf-8"?><!DOCTYPE html><html xmlns="http://www.w3.org/1999/xhtml"><head><title>${ch.title}</title><style>body{font-family:sans-serif;line-height:1.6;padding:1em;} p{margin-bottom:1em;} hr{border:0;border-top:1px solid #ccc;margin:2em 0;} .translation{color:#444; background:#f9f9f9; padding:0.5em; border-radius:4px; margin-top:0.5em;}</style></head><body><h2>${ch.title}</h2>${sourceHtml}${transHtml}</body></html>`;
+                    
+                    oebps.file(`Text/${id}.xhtml`, content);
+                    manifest += `<item id="${id}" href="Text/${id}.xhtml" media-type="application/xhtml+xml"/>`;
+                    spine += `<itemref idref="${id}"/>`;
+                    toc += `<navPoint id="np${i}" playOrder="${i+1}"><navLabel><text>${ch.title}</text></navLabel><content src="Text/${id}.xhtml"/></navPoint>`;
                 });
 
-                oebps.file("content.opf", `<?xml version="1.0" encoding="UTF-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf"><dc:title>${safeTitle}</dc:title><dc:language>ko</dc:language><dc:identifier id="BookId" opf:scheme="UUID">${uuid}</dc:identifier><dc:creator>Zenith</dc:creator></metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>${manifestItems}</manifest><spine toc="ncx">${spineItems}</spine></package>`);
-                oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="${uuid}"/></head><docTitle><text>${safeTitle}</text></docTitle><navMap>${navPoints}</navMap></ncx>`);
-                
+                const opf = `<?xml version="1.0" encoding="utf-8"?><package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="3.0"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>${project.name}</dc:title><dc:language>ko</dc:language><dc:identifier id="BookId">urn:uuid:${project.id}</dc:identifier></metadata><manifest><item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>${manifest}</manifest><spine toc="ncx">${spine}</spine></package>`;
+                oebps.file("content.opf", opf);
+                oebps.file("toc.ncx", `<?xml version="1.0" encoding="UTF-8"?><ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1"><head><meta name="dtb:uid" content="urn:uuid:${project.id}"/></head><docTitle><text>${project.name}</text></docTitle><navMap>${toc}</navMap></ncx>`);
                 return await zip.generateAsync({ type: "blob" });
             }
         };
 
-        // --- SERVICE LAYER ---
-        class GeminiService {
-            constructor(apiKeys, config = {}) {
-                this.apiKeys = apiKeys.map(k => ({ key: typeof k === 'string' ? k : k.key, status: 'ready', lastUsed: 0 }));
-                this.config = { textModel: config.textModel || 'gemini-2.5-flash', maxRetries: 3, ...config };
-            }
-            _getRateLimit() { return this.config.textModel.includes('pro') ? 30000 : 4000; }
-            async _fetchWithBackoff(url, options, retries = 3, delay = 1000) {
-                try {
-                    const response = await fetch(url, options);
-                    if (response.status === 429) return response;
-                    if (response.status >= 500 && retries > 0) throw new Error(`Server error ${response.status}`);
-                    return response;
-                } catch (error) {
-                    if (retries > 0) { await new Promise(r => setTimeout(r, delay)); return this._fetchWithBackoff(url, options, retries - 1, delay * 2); }
-                    throw error;
-                }
-            }
-            async _callApiWithKey(prompt, systemPrompt, keyObj) {
-                const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.config.textModel}:generateContent?key=${keyObj.key}`;
-                try {
-                    const response = await this._fetchWithBackoff(endpoint, {
-                        method: 'POST', headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], systemInstruction: systemPrompt ? { parts: [{ text: systemPrompt }] } : undefined })
-                    }, this.config.maxRetries);
-                    if (response.status === 429) return { success: false, status: 429, error: "Rate limit exceeded" };
-                    if (!response.ok) return { success: false, status: response.status, error: await response.text() };
-                    const data = await response.json();
-                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-                    return text ? { success: true, text, usedKey: keyObj.key } : { success: false, error: 'No content' };
-                } catch (e) { return { success: false, error: e.message }; }
-            }
+        // ==========================================
+        // [ARIS UI COMPONENTS]
+        // ==========================================
+
+        // Portal Component
+        const Portal = ({ children }) => {
+            const mount = document.getElementById("aris-portal-root") || document.body;
+            return createPortal(children, mount);
+        };
+
+        // Icon Component (Lucide) - Fixed for React Stability
+        const Icon = ({ name, size = 16, className = "", onClick }) => {
+            const ref = useRef(null);
             
-            // Added back the missing callApi method
-            async callApi(prompt, systemPrompt) {
-                const rateLimit = this._getRateLimit();
-                // Pick the key used least recently
-                const keyObj = this.apiKeys.sort((a, b) => a.lastUsed - b.lastUsed)[0];
+            useEffect(() => {
+                if (!window.lucide || !ref.current) return;
                 
-                if (!keyObj) return { success: false, error: "No API keys configured" };
-
-                const now = Date.now();
-                const timeSinceLast = now - keyObj.lastUsed;
+                // Create detached elements to prevent React/Lucide DOM conflicts
+                const tempIcon = document.createElement('i');
+                tempIcon.setAttribute('data-lucide', name);
                 
-                // Enforce rate limit for single calls too
-                if (timeSinceLast < rateLimit) {
-                    await new Promise(r => setTimeout(r, rateLimit - timeSinceLast));
+                const tempRoot = document.createElement('div');
+                tempRoot.appendChild(tempIcon);
+                
+                window.lucide.createIcons({
+                    root: tempRoot,
+                    nameAttr: 'data-lucide',
+                    attrs: { width: size, height: size }
+                });
+                
+                const svg = tempRoot.querySelector('svg');
+                if (svg) {
+                    ref.current.innerHTML = '';
+                    ref.current.appendChild(svg);
                 }
-
-                keyObj.lastUsed = Date.now();
-                return await this._callApiWithKey(prompt, systemPrompt, keyObj);
-            }
-
-            async processBatch(items, systemPrompt, callbacks) {
-                const queue = [...items];
-                const rateLimit = this._getRateLimit();
-                const runWorker = async (keyObj) => {
-                    while (queue.length > 0) {
-                        const now = Date.now();
-                        if (now - keyObj.lastUsed < rateLimit) await new Promise(r => setTimeout(r, rateLimit - (now - keyObj.lastUsed)));
-                        if (queue.length === 0) break;
-                        const item = queue.shift();
-                        keyObj.lastUsed = Date.now();
-                        callbacks.onStart(item.id);
-                        const result = await this._callApiWithKey(item.content, systemPrompt, keyObj);
-                        if (result.status === 429) { queue.push(item); await new Promise(r => setTimeout(r, rateLimit * 2)); }
-                        else callbacks.onComplete(item.id, result);
-                        callbacks.onProgress();
-                    }
-                };
-                await Promise.all(this.apiKeys.map(key => runWorker(key)));
-            }
-        }
-
-        // --- COMPONENTS ---
-
-        const Dashboard = ({ onNewProject, onLoadProject }) => {
-            const fileInputRef = useRef(null);
-            
-            const handleFileChange = (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    try {
-                        const projectData = JSON.parse(event.target.result);
-                        if (!projectData.tree) throw new Error("Invalid project file");
-                        onLoadProject(projectData);
-                    } catch (err) {
-                        alert("프로젝트 파일 로드 실패: " + err.message);
-                    }
-                };
-                reader.readAsText(file);
-            };
+            }, [name, size]);
 
             return (
-                <div className="flex flex-col items-center justify-center h-screen w-full bg-base animate-fade-in p-8">
-                    <div className="max-w-2xl w-full text-center mb-12">
-                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-surface border-classic mb-6">
-                            <Icon name="translate" className="text-3xl text-primary" />
-                        </div>
-                        <h1 className="text-4xl font-bold tracking-tight mb-4 text-primary">Zenith Translator</h1>
-                        <p className="text-secondary text-lg">
-                            Professional localization tool. Simple, fast, and timeless.
-                        </p>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl">
-                        {/* Card 1: New Project */}
-                        <div className="panel p-8 rounded-xl hover:border-gray-400 transition-colors cursor-default">
-                            <Icon name="folder-plus" className="text-3xl mb-4 text-primary" />
-                            <h3 className="text-xl font-semibold mb-2 text-primary">New Project</h3>
-                            <p className="text-tertiary mb-6 text-sm">Start a new localization project from a ZIP file.</p>
-                            <label className="btn-accent w-full py-3 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95">
-                                <span>Select ZIP File</span>
-                                <input type="file" className="hidden" accept=".zip" onChange={onNewProject} />
-                            </label>
-                        </div>
-
-                        {/* Card 2: Load Project */}
-                        <div className="panel p-8 rounded-xl hover:border-gray-400 transition-colors cursor-default">
-                            <Icon name="upload" className="text-3xl mb-4 text-primary" />
-                            <h3 className="text-xl font-semibold mb-2 text-primary">Import Project</h3>
-                            <p className="text-tertiary mb-6 text-sm">Resume work from a saved .zenith file.</p>
-                            <label className="btn-classic w-full py-3 rounded-lg flex items-center justify-center gap-2 cursor-pointer transition-transform active:scale-95">
-                                <span>Load .zenith File</span>
-                                <input type="file" className="hidden" accept=".zenith,.json" onChange={handleFileChange} />
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div className="mt-12 text-tertiary text-xs">
-                        v2.0.0 Classic Edition • Secure Local Processing
-                    </div>
-                </div>
+                <span 
+                    ref={ref} 
+                    className={`inline-flex items-center justify-center ${className}`} 
+                    onClick={onClick}
+                    style={{ verticalAlign: 'middle' }}
+                ></span>
             );
         };
 
-        const SettingsModal = ({ isOpen, onClose, settings, onSave }) => {
-            const [localSettings, setLocalSettings] = useState(settings);
-            useEffect(() => { setLocalSettings(settings); }, [settings]);
+        // Standard Button
+        const Button = ({ children, variant = "primary", onClick, className = "", icon, disabled, title }) => {
+            const base = "px-3 py-1.5 rounded text-sm font-medium flex items-center gap-2 transition-all focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed select-none";
+            const variants = {
+                primary: "bg-aris-primary text-white hover:bg-blue-600 active:scale-95",
+                ghost: "bg-transparent text-aris-text hover:bg-aris-hover hover:text-white",
+                danger: "bg-red-600 text-white hover:bg-red-700",
+                secondary: "bg-[#3c3c3c] text-white hover:bg-[#4c4c4c] border border-gray-600"
+            };
+            return (
+                <button onClick={onClick} disabled={disabled} title={title} className={`${base} ${variants[variant]} ${className}`}>
+                    {icon && <Icon name={icon} size={14} />}
+                    {children}
+                </button>
+            );
+        };
+
+        // Modal
+        const Modal = ({ isOpen, onClose, title, children }) => {
             if (!isOpen) return null;
-
             return (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-                    <div className="panel p-6 rounded-xl w-[500px] shadow-2xl animate-fade-in">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-lg font-semibold flex items-center gap-2">
-                                <Icon name="sliders" /> Settings
-                            </h2>
-                            <button onClick={onClose} className="text-tertiary hover:text-primary"><Icon name="x-lg" /></button>
-                        </div>
-                        <div className="space-y-5">
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-tertiary">API Keys</label>
-                                <input type="text" className="input-classic w-full px-3 py-2 rounded-lg text-sm" value={localSettings.apiKeys.join(',')} onChange={e => setLocalSettings({...localSettings, apiKeys: e.target.value.split(',').map(k=>k.trim())})} placeholder="Paste Gemini API Keys..." />
+                <Portal>
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-modal flex items-center justify-center">
+                        <div className="bg-aris-bg border border-aris-border rounded-lg shadow-2xl w-full max-w-lg overflow-hidden fade-in">
+                            <div className="flex justify-between items-center px-4 py-3 border-b border-aris-border bg-aris-panel">
+                                <h3 className="font-semibold text-white flex items-center gap-2"><Icon name="layers" size={16} className="text-aris-primary"/> {title}</h3>
+                                <button onClick={onClose} className="text-gray-400 hover:text-white"><Icon name="x" size={18}/></button>
                             </div>
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-tertiary">Model</label>
-                                <div className="relative">
-                                    <select className="input-classic w-full px-3 py-2 rounded-lg text-sm appearance-none" value={localSettings.modelId} onChange={e => setLocalSettings({...localSettings, modelId: e.target.value})}>
-                                        <option value="gemini-2.5-flash-preview-09-2025">Gemini 2.5 Flash (Latest)</option>
-                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (Stable)</option>
-                                        <option value="gemini-2.5-pro">Gemini 2.5 Pro (High Quality)</option>
-                                    </select>
-                                    <Icon name="chevron-down" className="absolute right-3 top-1/2 -translate-y-1/2 text-tertiary pointer-events-none" size={12} />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold uppercase tracking-wider mb-2 text-tertiary">System Prompt</label>
-                                <textarea className="input-classic w-full px-3 py-2 rounded-lg h-24 editor-font text-sm resize-none" value={localSettings.systemPrompt} onChange={e => setLocalSettings({...localSettings, systemPrompt: e.target.value})} />
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-2 mt-8">
-                            <button onClick={onClose} className="btn-classic px-4 py-2 rounded-lg text-sm">Cancel</button>
-                            <button onClick={() => { onSave(localSettings); onClose(); }} className="btn-accent px-4 py-2 rounded-lg text-sm">Save Changes</button>
+                            <div className="p-4 text-aris-text max-h-[70vh] overflow-y-auto">{children}</div>
                         </div>
                     </div>
-                </div>
+                </Portal>
             );
         };
 
-        const FileTreeItem = ({ node, level, onSelect, selectedId }) => {
-            const [isOpen, setIsOpen] = useState(true);
-            const isSelected = selectedId === node.id;
+        // Toast Notification
+        const ToastContext = createContext();
+        const ToastProvider = ({ children }) => {
+            const [toasts, setToasts] = useState([]);
+            const addToast = useCallback((msg, type = 'info') => {
+                const id = Date.now();
+                setToasts(prev => [...prev, { id, msg, type }]);
+                setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 3000);
+            }, []);
+            return (
+                <ToastContext.Provider value={{ addToast }}>
+                    {children}
+                    <Portal>
+                        <div className="fixed bottom-6 right-6 flex flex-col gap-2 z-toast pointer-events-none">
+                            {toasts.map(t => (
+                                <div key={t.id} className={`pointer-events-auto px-4 py-2.5 rounded shadow-xl text-white text-sm flex items-center gap-3 fade-in border border-white/10 ${t.type === 'error' ? 'bg-red-600' : 'bg-aris-primary'}`}>
+                                    <Icon name={t.type === 'error' ? 'alert-triangle' : 'check-circle'} size={16}/> {t.msg}
+                                </div>
+                            ))}
+                        </div>
+                    </Portal>
+                </ToastContext.Provider>
+            );
+        };
+
+        // ==========================================
+        // [TRANSLATION CONTEXT & LOGIC]
+        // ==========================================
+
+        const TranslatorContext = createContext();
+        const TranslatorProvider = ({ children }) => {
+            const [projects, setProjects] = useState([]);
+            const [activeProject, setActiveProject] = useState(null);
+            const [chapters, setChapters] = useState([]);
+            const [activeChapterId, setActiveChapterId] = useState(null);
+            const { addToast } = useContext(ToastContext);
+
+            // Initial Load
+            useEffect(() => { loadProjects(); }, []);
+            const loadProjects = async () => setProjects((await db.getAllProjects()).sort((a,b)=>b.createdAt - a.createdAt));
             
-            let statusDot = null;
-            if (!node.isFolder && node.isTranslatable) {
-                const color = node.status === 'translating' ? 'var(--status-translating)' : 
-                              node.status === 'completed' ? 'var(--status-completed)' :
-                              node.status === 'error' ? 'var(--status-error)' : 'var(--text-tertiary)';
-                statusDot = <span className="w-1.5 h-1.5 rounded-full ml-auto" style={{ backgroundColor: color }}></span>;
+            // Load Chapters when Project Active
+            const loadChapters = useCallback(async (pid) => {
+                const list = await db.getChapters(pid);
+                list.sort((a,b) => Utils.naturalSort({path: a.title}, {path: b.title}));
+                setChapters(list);
+            }, []);
+
+            useEffect(() => {
+                if (activeProject) {
+                    loadChapters(activeProject.id);
+                    setActiveChapterId(null);
+                } else {
+                    setChapters([]);
+                }
+            }, [activeProject, loadChapters]);
+
+            // Actions
+            const createProject = async (name) => {
+                const p = { id: Utils.generateId('p'), name, createdAt: Date.now(), memo:'', dictionary:[] };
+                await db.saveProject(p);
+                setProjects(prev => [p, ...prev]);
+                addToast("새 프로젝트가 생성되었습니다.");
+            };
+
+            const deleteProject = async (id) => {
+                if(!confirm("정말 삭제하시겠습니까? 복구할 수 없습니다.")) return;
+                await db.deleteProject(id);
+                setProjects(prev => prev.filter(p => p.id !== id));
+                if (activeProject?.id === id) setActiveProject(null);
+                addToast("프로젝트가 삭제되었습니다.");
+            };
+
+            const importZip = async (file) => {
+                try {
+                    const zip = await JSZip.loadAsync(file);
+                    const td = new TurndownService();
+                    const entries = [];
+                    const regex = /\.(txt|md|markdown|html?|json|srt|vtt|js|py|c|cpp)$/i;
+                    
+                    zip.forEach((path, entry) => {
+                        if(!entry.dir && !path.startsWith('__MACOSX') && regex.test(path)) entries.push({path, entry});
+                    });
+
+                    if(entries.length === 0) throw new Error("가져올 수 있는 텍스트 파일이 없습니다.");
+
+                    const p = { id: Utils.generateId('p'), name: file.name.replace(/\.zip$/i, ''), createdAt: Date.now(), memo:'', dictionary:[] };
+                    const newChs = [];
+                    
+                    addToast(`${entries.length}개 파일 처리 중...`);
+                    
+                    for(const e of entries) {
+                        let txt = await e.entry.async('string');
+                        if(/\.html?$/i.test(e.path)) txt = td.turndown(txt);
+                        const title = e.path.replace(regex, ''); // Remove ext for clean title
+                        newChs.push({ 
+                            id: Utils.generateId('c'), 
+                            projectId: p.id, 
+                            title: title, 
+                            content: txt, 
+                            translation: '' 
+                        });
+                    }
+                    
+                    await db.saveProject(p);
+                    await db.saveChapters(newChs);
+                    setProjects(prev => [p, ...prev]);
+                    addToast(`가져오기 완료: ${newChs.length} 챕터`);
+                } catch(e) {
+                    addToast(e.message, 'error');
+                }
+            };
+
+            const updateProject = async (updatedP) => {
+                await db.saveProject(updatedP);
+                setProjects(prev => prev.map(p => p.id === updatedP.id ? updatedP : p));
+                if(activeProject?.id === updatedP.id) setActiveProject(updatedP);
+            };
+
+            return (
+                <TranslatorContext.Provider value={{ 
+                    projects, activeProject, setActiveProject, 
+                    chapters, setChapters, activeChapterId, setActiveChapterId, 
+                    createProject, deleteProject, importZip, updateProject, loadChapters 
+                }}>
+                    {children}
+                </TranslatorContext.Provider>
+            );
+        };
+
+        // ==========================================
+        // [UI PANELS & WIDGETS]
+        // ==========================================
+
+        // --- Left Sidebar: Explorer ---
+        const Explorer = () => {
+            const { projects, activeProject, setActiveProject, chapters, activeChapterId, setActiveChapterId, createProject, deleteProject, importZip } = useContext(TranslatorContext);
+            const [isModalOpen, setModalOpen] = useState(false);
+            const [newProjName, setNewProjName] = useState('');
+            const [searchTerm, setSearchTerm] = useState('');
+            const fileRef = useRef();
+
+            // Project List View
+            if (!activeProject) {
+                return (
+                    <div className="flex flex-col h-full select-none">
+                        <div className="p-3 font-bold text-xs tracking-wider text-gray-500 uppercase flex justify-between items-center bg-aris-panel border-b border-aris-border shrink-0">
+                            Explorer ({projects.length})
+                            <div className="flex gap-1">
+                                <button className="p-1 hover:text-white hover:bg-white/10 rounded" title="ZIP Import" onClick={()=>fileRef.current.click()}><Icon name="folder-up" size={14}/></button>
+                                <button className="p-1 hover:text-white hover:bg-white/10 rounded" title="New Project" onClick={()=>setModalOpen(true)}><Icon name="plus" size={14}/></button>
+                            </div>
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                            {projects.map(p => (
+                                <div key={p.id} onClick={()=>setActiveProject(p)} className="px-3 py-2 hover:bg-aris-hover cursor-pointer border-l-2 border-transparent hover:border-aris-primary group transition-all">
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2 overflow-hidden">
+                                            <Icon name="folder" size={14} className="text-yellow-500 shrink-0"/>
+                                            <span className="font-medium text-sm text-gray-300 truncate">{p.name}</span>
+                                        </div>
+                                        <button className="opacity-0 group-hover:opacity-100 hover:text-red-400 p-1" onClick={(e)=>{e.stopPropagation(); deleteProject(p.id)}}><Icon name="trash-2" size={12}/></button>
+                                    </div>
+                                </div>
+                            ))}
+                            {projects.length === 0 && <div className="text-center text-xs text-gray-600 mt-10">프로젝트가 없습니다.</div>}
+                        </div>
+                        <input type="file" ref={fileRef} className="hidden" accept=".zip" onChange={e=>{if(e.target.files[0]) importZip(e.target.files[0]); e.target.value=null;}}/>
+                        <Modal isOpen={isModalOpen} onClose={()=>setModalOpen(false)} title="New Project">
+                            <input className="w-full bg-black border border-aris-border rounded p-2 text-white mb-4 focus:border-aris-primary outline-none" placeholder="프로젝트 이름 입력..." value={newProjName} onChange={e=>setNewProjName(e.target.value)} autoFocus onKeyDown={e=>{if(e.key==='Enter'&&newProjName.trim()) {createProject(newProjName); setModalOpen(false); setNewProjName('');}}}/>
+                            <div className="flex justify-end gap-2">
+                                <Button variant="ghost" onClick={()=>setModalOpen(false)}>취소</Button>
+                                <Button onClick={()=>{if(newProjName.trim()){createProject(newProjName); setModalOpen(false); setNewProjName('');}}}>생성</Button>
+                            </div>
+                        </Modal>
+                    </div>
+                );
             }
 
+            // Chapter List View
+            const filteredChapters = chapters.filter(c => c.title.toLowerCase().includes(searchTerm.toLowerCase()));
             return (
-                <div className="select-none text-sm font-medium">
-                    <div 
-                        className={`flex items-center py-1.5 px-3 cursor-pointer transition-colors border-l-2
-                            ${isSelected 
-                                ? 'bg-hover border-primary text-primary' 
-                                : 'border-transparent text-secondary hover:text-primary hover:bg-hover'}`}
-                        style={{ paddingLeft: `${level * 16 + 12}px`, borderColor: isSelected ? 'var(--text-primary)' : 'transparent' }}
-                        onClick={() => { if (node.isFolder) setIsOpen(!isOpen); else onSelect(node); }}
-                    >
-                        <span className={`mr-2 ${isSelected ? 'text-primary' : 'text-tertiary'}`}>
-                            <Icon name={node.isFolder ? (isOpen ? "folder2-open" : "folder2") : "file-earmark-text"} size={14} />
-                        </span>
-                        <span className="truncate">{node.name}</span>
-                        {statusDot}
+                <div className="flex flex-col h-full select-none">
+                    <div className="bg-aris-panel border-b border-aris-border shrink-0">
+                        <div className="p-3 flex items-center gap-2">
+                            <button className="hover:text-white p-1 rounded hover:bg-white/10" onClick={()=>setActiveProject(null)}><Icon name="arrow-left" size={14}/></button>
+                            <span className="font-bold text-sm truncate flex-1 text-white" title={activeProject.name}>{activeProject.name}</span>
+                        </div>
+                        <div className="px-2 pb-2">
+                            <div className="relative">
+                                <input className="w-full bg-[#1e1e1e] border border-aris-border rounded pl-7 pr-2 py-1 text-xs text-white focus:border-aris-primary outline-none" placeholder="Search..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/>
+                                <Icon name="search" size={12} className="absolute left-2 top-1.5 text-gray-500"/>
+                            </div>
+                        </div>
                     </div>
-                    {node.isFolder && isOpen && (
-                        <div>{node.children.map(child => <FileTreeItem key={child.id} node={child} level={level + 1} onSelect={onSelect} selectedId={selectedId} />)}</div>
-                    )}
+                    <div className="flex-1 overflow-y-auto">
+                        {filteredChapters.map(ch => {
+                            const status = translationQueue.getStatus(ch.id);
+                            const hasTrans = !!ch.translation;
+                            
+                            // 툴팁 구성: 제목 + 원문 길이 + 번역 길이 + 상태
+                            const tooltip = `${ch.title}\n• 원문: ${ch.content.length.toLocaleString()}자\n• 번역: ${ch.translation ? ch.translation.length.toLocaleString() : 0}자\n• 상태: ${status ? status : (hasTrans ? '완료' : '대기')}`;
+
+                            return (
+                                <div 
+                                    key={ch.id} 
+                                    onClick={()=>setActiveChapterId(ch.id)} 
+                                    title={tooltip}
+                                    className={`px-3 py-1.5 text-sm cursor-pointer flex justify-between items-center group border-l-2 ${activeChapterId === ch.id ? 'border-aris-primary bg-[#37373d] text-white' : 'border-transparent text-gray-400 hover:bg-aris-hover'}`}
+                                >
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                        <Icon name={hasTrans ? "file-check" : "file-text"} size={13} className={hasTrans ? "text-green-500" : "text-blue-400"}/>
+                                        <span className="truncate">{ch.title}</span>
+                                    </div>
+                                    <div className="flex gap-1">
+                                        {status === 'processing' && <Icon name="loader-2" size={12} className="animate-spin text-blue-400"/>}
+                                        {status === 'queued' && <Icon name="clock" size={12} className="text-gray-500"/>}
+                                        {status === 'error' && <Icon name="alert-triangle" size={12} className="text-red-500"/>}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {filteredChapters.length === 0 && <div className="text-center text-xs text-gray-600 mt-10">챕터가 없습니다.</div>}
+                    </div>
                 </div>
             );
         };
 
-        const App = () => {
-            // View State: 'dashboard' | 'workspace'
-            const [view, setView] = useState('dashboard');
-            
-            // Project State
-            const [project, setProject] = useState(null); // { name, tree }
-            const [selectedNodeId, setSelectedNodeId] = useState(null);
-            
-            const [settings, setSettings] = useState({ apiKeys: [], modelId: 'gemini-2.5-flash', systemPrompt: "Translate programming comments and strings to Korean. Keep code logic intact." });
-            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-            const [isProcessing, setIsProcessing] = useState(false);
-            const [progress, setProgress] = useState({ current: 0, total: 0 });
-            const [theme, setTheme] = useState('dark');
+        // --- Center: Editor ---
+        const Editor = () => {
+            const { activeProject, activeChapterId, chapters, loadChapters } = useContext(TranslatorContext);
+            const { addToast } = useContext(ToastContext);
+            const [content, setContent] = useState('');
+            const [translation, setTranslation] = useState('');
+            const [isSplitting, setIsSplitting] = useState(false);
 
-            // Theme Effect
-            useEffect(() => { document.documentElement.setAttribute('data-theme', theme); }, [theme]);
+            const currentChapter = useMemo(() => chapters.find(c => c.id === activeChapterId), [chapters, activeChapterId]);
 
-            // Utils
-            const generateId = () => Math.random().toString(36).substr(2, 9);
-            const isTranslatableTarget = (name) => !['png','jpg','jpeg','gif','zip','exe','pdf','mp4'].includes(name.split('.').pop().toLowerCase());
+            useEffect(() => {
+                if (currentChapter) { 
+                    setContent(currentChapter.content || ''); 
+                    setTranslation(currentChapter.translation || ''); 
+                } else {
+                    setContent(''); setTranslation('');
+                }
+            }, [currentChapter]);
 
-            const geminiService = useMemo(() => new GeminiService(settings.apiKeys, { textModel: settings.modelId }), [settings.apiKeys, settings.modelId]);
-
-            // Tree Helpers
-            const updateNode = (root, id, updater) => {
-                if (root.id === id) return updater(root);
-                if (root.children) return { ...root, children: root.children.map(c => updateNode(c, id, updater)) };
-                return root;
+            const handleSave = async () => {
+                if(!currentChapter) return;
+                const updated = { ...currentChapter, content, translation };
+                await db.saveChapter(updated);
+                loadChapters(activeProject.id);
+                addToast("저장되었습니다.");
             };
-            const findNode = (root, id) => {
-                if (root.id === id) return root;
-                if (root.children) { for (let c of root.children) { const found = findNode(c, id); if (found) return found; } }
-                return null;
+
+            const handleTranslate = () => {
+                if(!currentChapter) return;
+                if(keyManager.getKeys().length === 0) return addToast("API 키가 없습니다. 설정에서 키를 등록하세요.", 'error');
+                
+                const config = keyManager.config;
+                let dictInstr = "";
+                if(activeProject.dictionary?.length) {
+                    dictInstr = `\n[필수 용어집 - 반드시 준수]\n${activeProject.dictionary.map(d => `- ${d.term}: ${d.def}`).join('\n')}`;
+                }
+
+                translationQueue.add({
+                    id: currentChapter.id,
+                    prompt: config.prompt.replace('{{text}}', content).replace('{{dictionary_instruction}}', dictInstr),
+                    onSuccess: async (res) => {
+                        const fresh = (await db.getChapters(activeProject.id)).find(c=>c.id===currentChapter.id);
+                        fresh.translation = res;
+                        await db.saveChapter(fresh);
+                        if(activeChapterId === currentChapter.id) setTranslation(res);
+                        loadChapters(activeProject.id);
+                        addToast("번역 완료");
+                    }
+                });
+                addToast("번역 작업이 큐에 추가되었습니다.");
             };
-            const getTranslatableNodes = (root) => {
-                let nodes = [];
-                const traverse = (n) => {
-                    if (!n.isFolder && n.isTranslatable && !n.translation) nodes.push(n);
-                    if (n.children) n.children.forEach(traverse);
+
+            const handleSplit = async () => {
+                if(!currentChapter) return;
+                setIsSplitting(true);
+                try {
+                    const { paragraphs, separator } = Utils.getParagraphsForSplitting(content);
+                    const chunks = [];
+                    let chunk = [], len = 0;
+                    paragraphs.forEach((p, i) => {
+                        chunk.push(p); len += p.length;
+                        if(len > 3000 || i === paragraphs.length - 1) { chunks.push(chunk.join(separator)); chunk = []; len = 0; }
+                    });
+                    
+                    if(chunks.length < 2) return addToast("분할할 내용이 부족합니다 (3000자 기준).", "warning");
+
+                    // Update current
+                    await db.saveChapter({ ...currentChapter, title: `${currentChapter.title} (1/${chunks.length})`, content: chunks[0] });
+                    // Create rest
+                    for(let i=1; i<chunks.length; i++) {
+                        await db.saveChapter({ 
+                            id: Utils.generateId('c'), 
+                            projectId: activeProject.id, 
+                            title: `${currentChapter.title.replace(/\s\(\d+\/\d+\)$/,'')} (${i+1}/${chunks.length})`, 
+                            content: chunks[i], 
+                            translation: '' 
+                        });
+                    }
+                    await loadChapters(activeProject.id);
+                    addToast(`${chunks.length}개 챕터로 분할되었습니다.`);
+                } catch(e) { console.error(e); addToast("분할 실패", 'error'); }
+                finally { setIsSplitting(false); }
+            };
+
+            // Keyboard Shortcuts
+            useEffect(() => {
+                const handler = (e) => {
+                    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); handleSave(); }
                 };
-                traverse(root);
-                return nodes;
-            };
+                window.addEventListener('keydown', handler);
+                return () => window.removeEventListener('keydown', handler);
+            }, [content, translation, currentChapter]);
+
+            if (!activeProject) return <div className="flex-1 flex flex-col items-center justify-center text-gray-600 bg-[#1e1e1e]"><Icon name="folder-open" size={64} className="mb-4 opacity-20"/><p>프로젝트를 선택하거나 생성하세요.</p></div>;
+            if (!currentChapter) return <div className="flex-1 flex flex-col items-center justify-center text-gray-600 bg-[#1e1e1e]"><Icon name="file-text" size={64} className="mb-4 opacity-20"/><p>챕터를 선택하여 편집을 시작하세요.</p></div>;
+
+            return (
+                <div className="flex flex-col h-full bg-[#1e1e1e]">
+                    {/* Editor Toolbar */}
+                    <div className="h-10 bg-[#2d2d2d] flex items-center px-4 justify-between border-b border-black shrink-0">
+                        <div className="flex items-center gap-4 text-xs text-gray-400 font-mono">
+                            <span className="flex items-center gap-1.5"><Icon name="align-left" size={12}/> Src: {content.length}</span>
+                            <span className="flex items-center gap-1.5"><Icon name="languages" size={12}/> Ko: {translation.length}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <Button variant="ghost" onClick={handleSplit} title="긴 챕터 분할" disabled={isSplitting}>
+                                <Icon name="scissors" size={14} className={isSplitting ? "animate-spin" : ""}/>
+                            </Button>
+                            <Button variant="ghost" onClick={handleSave} title="저장 (Ctrl+S)">
+                                <Icon name="save" size={14}/>
+                            </Button>
+                            <div className="w-px h-4 bg-gray-600 mx-1"></div>
+                            <Button variant="primary" onClick={handleTranslate} className="h-7 text-xs">
+                                <Icon name="zap" size={12}/> 번역 시작
+                            </Button>
+                        </div>
+                    </div>
+
+                    {/* Editor Split View */}
+                    <div className="flex-1 flex overflow-hidden">
+                        {/* Source */}
+                        <div className="flex-1 flex flex-col border-r border-black min-w-[200px]">
+                            <div className="bg-[#1e1e1e] px-4 py-1 text-[10px] text-gray-500 font-bold uppercase tracking-wider select-none">Source</div>
+                            <textarea 
+                                className="flex-1 bg-[#1e1e1e] text-gray-300 p-4 resize-none outline-none text-sm leading-7" 
+                                value={content} 
+                                onChange={e=>setContent(e.target.value)} 
+                                spellCheck="false"
+                            />
+                        </div>
+                        {/* Translation */}
+                        <div className="flex-1 flex flex-col bg-[#252526] min-w-[200px]">
+                            <div className="bg-[#252526] px-4 py-1 text-[10px] text-gray-500 font-bold uppercase tracking-wider select-none flex justify-between items-center">
+                                <span>Translation</span>
+                                <button className="hover:text-white" onClick={()=>Utils.copyToClipboard(translation, ()=>addToast('복사됨'))}><Icon name="copy" size={10}/></button>
+                            </div>
+                            <textarea 
+                                className="flex-1 bg-[#252526] text-gray-100 p-4 resize-none outline-none text-sm leading-7 placeholder-gray-600" 
+                                value={translation} 
+                                onChange={e=>setTranslation(e.target.value)} 
+                                placeholder="번역 결과가 여기에 표시됩니다..."
+                                spellCheck="false"
+                            />
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Right Sidebar: Tools ---
+        const Tools = () => {
+            const { activeProject, updateProject, chapters, loadChapters } = useContext(TranslatorContext);
+            const { addToast } = useContext(ToastContext);
+            const [activeTab, setActiveTab] = useState('project'); // project | settings | queue
+            const [queueState, setQueueState] = useState({queue:[], active:new Map()});
+            
+            // Settings State
+            const [keys, setKeys] = useState(keyManager.getKeys());
+            const [config, setConfig] = useState(keyManager.config);
+            const [keyInput, setKeyInput] = useState('');
+
+            // Dict State
+            const [term, setTerm] = useState('');
+            const [def, setDef] = useState('');
+            const [memo, setMemo] = useState('');
+
+            useEffect(() => translationQueue.subscribe((q, a) => setQueueState({queue:q, active:a})), []);
+            
+            useEffect(() => {
+                if(activeProject) setMemo(activeProject.memo || '');
+            }, [activeProject]);
 
             // Handlers
-            const handleNewProject = async (e) => {
-                const file = e.target.files[0];
-                if (!file) return;
-                try {
-                    const zip = new JSZip();
-                    const content = await zip.loadAsync(file);
-                    const root = { id: 'root', name: file.name, isFolder: true, children: [] };
-                    
-                    for (const [path, entry] of Object.entries(content.files)) {
-                        if (entry.dir) continue;
-                        const parts = path.split('/');
-                        const fileName = parts.pop();
-                        let current = root.children;
-                        parts.forEach(part => {
-                            let folder = current.find(n => n.name === part && n.isFolder);
-                            if (!folder) { folder = { id: generateId(), name: part, isFolder: true, children: [] }; current.push(folder); }
-                            current = folder.children;
-                        });
-                        const isTranslatable = isTranslatableTarget(fileName);
-                        let textContent = null;
-                        if (isTranslatable) textContent = await entry.async('string');
-                        current.push({ id: generateId(), name: fileName, isFolder: false, isTranslatable, content: textContent, translation: null, status: 'idle' });
-                    }
-                    setProject({ name: file.name, tree: root });
-                    setView('workspace');
-                } catch (e) { alert("Error: " + e.message); }
+            const saveSettings = () => { keyManager.saveConfig(config); addToast("시스템 설정 저장 완료"); };
+            const addKey = () => { if(keyInput.trim()){ keyManager.addKeys(keyInput.split('\n')); setKeys(keyManager.getKeys()); setKeyInput(''); } };
+            const removeKey = (k) => { keyManager.removeKey(k); setKeys(keyManager.getKeys()); };
+            
+            const addTerm = () => {
+                if(!term || !def || !activeProject) return;
+                const newDict = [...(activeProject.dictionary || []), {term, def}];
+                updateProject({...activeProject, dictionary: newDict});
+                setTerm(''); setDef('');
+            };
+            const removeTerm = (idx) => {
+                const newDict = activeProject.dictionary.filter((_, i) => i !== idx);
+                updateProject({...activeProject, dictionary: newDict});
+            };
+            const saveMemo = () => {
+                if(!activeProject) return;
+                updateProject({...activeProject, memo});
+                addToast("메모 저장 완료");
+            };
+            const exportEpub = async () => {
+                if(!activeProject) return;
+                addToast("EPUB 생성 중...");
+                const blob = await EpubGenerator.generate(activeProject, chapters);
+                saveAs(blob, `${activeProject.name}.epub`);
+                addToast("다운로드 완료");
             };
 
-            const handleLoadProject = (loadedData) => {
-                setProject({ name: loadedData.name, tree: loadedData.tree });
-                setView('workspace');
-            };
-
-            const handleSaveProject = () => {
-                if (!project) return;
-                ProjectUtils.saveProject(project.tree, project.name);
-            };
-
-            const handleExportFile = async (type) => {
-                if (!project) return;
-                const blob = type === 'zip' ? await ProjectUtils.exportZip(project.tree) : await ProjectUtils.exportEpub(project.tree, project.name);
-                const a = document.createElement('a');
-                a.href = URL.createObjectURL(blob);
-                a.download = `${project.name.replace('.zip','')}_translated.${type}`;
-                a.click();
-            };
-
-            const handleTranslateAll = async () => {
-                if (!settings.apiKeys.length || !settings.apiKeys[0]) { setIsSettingsOpen(true); return; }
-                const nodes = getTranslatableNodes(project.tree);
-                if (!nodes.length) return alert("Nothing to translate.");
+            // NEW: Batch Translate Logic
+            const batchTranslate = async () => {
+                if (!activeProject) return;
+                if (keyManager.getKeys().length === 0) return addToast("API 키가 없습니다.", "error");
                 
-                setIsProcessing(true);
-                setProgress({ current: 0, total: nodes.length });
-                let currentTree = project.tree;
-                
-                // Helper to batch update state to avoid too many re-renders
-                const safeUpdate = (id, updater) => {
-                    currentTree = updateNode(currentTree, id, updater);
-                    setProject(prev => ({ ...prev, tree: currentTree }));
-                };
+                // 번역이 없거나(빈 문자열) 아직 처리되지 않은 항목 필터링
+                const targets = chapters.filter(c => (!c.translation || c.translation.trim() === '') && !translationQueue.getStatus(c.id));
+                if (targets.length === 0) return addToast("번역할 대상이 없습니다 (모두 완료됨).");
 
-                await geminiService.processBatch(nodes, settings.systemPrompt, {
-                    onStart: (id) => safeUpdate(id, n => ({ ...n, status: 'translating' })),
-                    onComplete: (id, res) => {
-                        if (res.success) safeUpdate(id, n => ({ ...n, status: 'completed', translation: res.text }));
-                        else safeUpdate(id, n => ({ ...n, status: 'error' }));
-                        setProgress(p => ({ ...p, current: p.current + 1 }));
-                    },
-                    onProgress: () => {}
+                if (!confirm(`총 ${targets.length}개 챕터의 번역을 대기열에 추가하시겠습니까?`)) return;
+
+                const config = keyManager.config;
+                let dictInstr = "";
+                if(activeProject.dictionary?.length) {
+                    dictInstr = `\n[필수 용어집 - 반드시 준수]\n${activeProject.dictionary.map(d => `- ${d.term}: ${d.def}`).join('\n')}`;
+                }
+
+                let queuedCount = 0;
+                targets.forEach(ch => {
+                    translationQueue.add({
+                        id: ch.id,
+                        prompt: config.prompt.replace('{{text}}', ch.content).replace('{{dictionary_instruction}}', dictInstr),
+                        onSuccess: async (res) => {
+                            // 결과 저장 후 UI 갱신 (리스트 체크표시 등을 위해 loadChapters 호출)
+                            const fresh = (await db.getChapters(activeProject.id)).find(c=>c.id===ch.id);
+                            if(fresh) {
+                                fresh.translation = res;
+                                await db.saveChapter(fresh);
+                                loadChapters(activeProject.id); 
+                            }
+                        }
+                    });
+                    queuedCount++;
                 });
-                setIsProcessing(false);
+                addToast(`${queuedCount}개 작업이 대기열에 추가되었습니다.`);
             };
 
-            const handleSingleTranslate = async (id) => {
-                if (!settings.apiKeys.length) { setIsSettingsOpen(true); return; }
-                const node = findNode(project.tree, id);
-                setProject(p => ({ ...p, tree: updateNode(p.tree, id, n => ({ ...n, status: 'translating' })) }));
-                const res = await geminiService.callApi(node.content, settings.systemPrompt);
-                if (res.success) setProject(p => ({ ...p, tree: updateNode(p.tree, id, n => ({ ...n, status: 'completed', translation: res.text })) }));
-                else setProject(p => ({ ...p, tree: updateNode(p.tree, id, n => ({ ...n, status: 'error' })) }));
-            };
-
-            const selectedNode = useMemo(() => project ? findNode(project.tree, selectedNodeId) : null, [project, selectedNodeId]);
-
-            // --- VIEW RENDER ---
-            if (view === 'dashboard') {
-                return <Dashboard onNewProject={handleNewProject} onLoadProject={handleLoadProject} />;
-            }
+            const Tabs = () => (
+                <div className="flex border-b border-aris-border bg-[#252526] select-none">
+                    {[
+                        {id:'project', icon:'book-open', title:'Project'},
+                        {id:'queue', icon:'list-video', title:'Queue'},
+                        {id:'settings', icon:'settings', title:'System'}
+                    ].map(t => (
+                        <button 
+                            key={t.id} 
+                            onClick={()=>setActiveTab(t.id)} 
+                            className={`flex-1 py-2.5 flex justify-center items-center border-b-2 transition-colors ${activeTab === t.id ? 'border-aris-primary text-white bg-[#1e1e1e]' : 'border-transparent text-gray-500 hover:text-gray-300'}`}
+                            title={t.title}
+                        >
+                            <Icon name={t.icon} size={16}/>
+                        </button>
+                    ))}
+                </div>
+            );
 
             return (
-                <div className="flex h-screen w-screen bg-base text-primary">
-                    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings} onSave={setSettings} />
-                    
-                    {/* Sidebar */}
-                    <div className="w-[300px] flex-shrink-0 panel-surface flex flex-col z-20">
-                        {/* Header */}
-                        <div className="h-14 flex items-center justify-between px-4 border-b border-classic bg-base">
-                            <div className="flex items-center gap-2 font-bold text-lg cursor-pointer" onClick={() => setView('dashboard')}>
-                                <Icon name="arrow-left" className="text-secondary hover:text-primary" />
-                                <span>{project.name.length > 15 ? project.name.substr(0,15)+'...' : project.name}</span>
-                            </div>
-                            <div className="flex gap-1">
-                                <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className="p-2 rounded hover:bg-hover text-secondary hover:text-primary"><Icon name={theme === 'dark' ? 'sun' : 'moon'} /></button>
-                                <button onClick={() => setIsSettingsOpen(true)} className="p-2 rounded hover:bg-hover text-secondary hover:text-primary"><Icon name="sliders" /></button>
-                            </div>
-                        </div>
-
-                        {/* File Tree */}
-                        <div className="flex-1 overflow-y-auto py-2">
-                            <FileTreeItem node={project.tree} level={0} onSelect={n => setSelectedNodeId(n.id)} selectedId={selectedNodeId} />
-                        </div>
-
-                        {/* Actions */}
-                        <div className="p-4 border-t border-classic bg-base space-y-3">
-                            <button onClick={handleTranslateAll} disabled={isProcessing} className="btn-accent w-full py-2.5 rounded-lg flex items-center justify-center gap-2 text-sm shadow-sm">
-                                {isProcessing ? <><Icon name="arrow-repeat" className="animate-spin" /> {Math.round((progress.current/progress.total)*100)}%</> : <><Icon name="lightning-charge-fill" /> Translate All</>}
-                            </button>
-                            <div className="grid grid-cols-3 gap-2">
-                                <button onClick={handleSaveProject} className="btn-classic py-2 rounded-lg text-xs flex flex-col items-center justify-center gap-1" title="Save Project State">
-                                    <Icon name="save" /> Save
-                                </button>
-                                <button onClick={() => handleExportFile('zip')} className="btn-classic py-2 rounded-lg text-xs flex flex-col items-center justify-center gap-1" title="Export ZIP">
-                                    <Icon name="file-zip" /> ZIP
-                                </button>
-                                <button onClick={() => handleExportFile('epub')} className="btn-classic py-2 rounded-lg text-xs flex flex-col items-center justify-center gap-1" title="Export EPUB">
-                                    <Icon name="book" /> EPUB
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Workspace */}
-                    <div className="flex-1 flex flex-col bg-base relative">
-                        {selectedNode && selectedNode.isTranslatable ? (
-                            <>
-                                <div className="h-14 border-b border-classic flex items-center justify-between px-6 bg-base">
-                                    <span className="font-mono text-sm text-secondary flex items-center gap-2">
-                                        <Icon name="file-earmark-code" /> {selectedNode.name}
-                                    </span>
-                                    <span className={`text-xs px-2 py-1 rounded font-medium border ${
-                                        selectedNode.status === 'completed' ? 'border-green-900 text-green-500 bg-green-900/10' :
-                                        selectedNode.status === 'translating' ? 'border-sky-900 text-sky-500 bg-sky-900/10' :
-                                        'border-classic text-tertiary'
-                                    }`}>
-                                        {selectedNode.status.toUpperCase()}
-                                    </span>
+                <div className="flex flex-col h-full bg-aris-panel text-sm">
+                    <Tabs />
+                    <div className="flex-1 overflow-y-auto p-4 space-y-6">
+                        
+                        {/* 1. Project Tab */}
+                        {activeTab === 'project' && activeProject && (
+                            <div className="space-y-6 fade-in">
+                                <div className="space-y-2">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">Batch Actions</div>
+                                    <Button variant="primary" className="w-full justify-center bg-indigo-600 hover:bg-indigo-500" onClick={batchTranslate} icon="layers">Translate All Pending</Button>
+                                    <p className="text-[10px] text-gray-500 text-center">번역되지 않은 챕터를 일괄 번역합니다.</p>
                                 </div>
-                                <div className="flex-1 flex overflow-hidden">
-                                    <div className="flex-1 flex flex-col border-r border-classic">
-                                        <div className="px-4 py-2 text-xs font-bold text-tertiary bg-surface border-b border-classic uppercase">Original</div>
-                                        <textarea className="flex-1 w-full bg-base p-6 resize-none outline-none editor-font text-sm text-secondary" value={selectedNode.content || ""} readOnly />
+                                <div className="space-y-2 border-t border-white/5 pt-4">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">Export</div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <Button variant="secondary" className="justify-center" onClick={exportEpub} icon="book">EPUB</Button>
+                                        <Button variant="secondary" className="justify-center" onClick={()=>alert("ZIP Export is generic")} icon="file-archive">ZIP</Button>
                                     </div>
-                                    <div className="flex-1 flex flex-col">
-                                        <div className="px-4 py-2 text-xs font-bold text-primary bg-surface border-b border-classic uppercase flex justify-between items-center">
-                                            <span>Translation</span>
-                                            <button onClick={() => handleSingleTranslate(selectedNode.id)} className="text-primary hover:text-blue-400"><Icon name="arrow-clockwise" /></button>
+                                </div>
+                                <div className="space-y-2 border-t border-white/5 pt-4">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">Dictionary</div>
+                                    <div className="flex gap-1">
+                                        <input className="w-1/3 bg-black border border-aris-border rounded px-2 text-xs h-7 text-white focus:border-aris-primary outline-none" placeholder="원문" value={term} onChange={e=>setTerm(e.target.value)}/>
+                                        <input className="flex-1 bg-black border border-aris-border rounded px-2 text-xs h-7 text-white focus:border-aris-primary outline-none" placeholder="번역" value={def} onChange={e=>setDef(e.target.value)}/>
+                                        <Button className="h-7 px-2" onClick={addTerm}><Icon name="plus" size={12}/></Button>
+                                    </div>
+                                    <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                                        {(activeProject.dictionary || []).map((d, i) => (
+                                            <div key={i} className="flex justify-between items-center bg-black/30 px-2 py-1.5 rounded border border-white/5 text-xs group">
+                                                <span className="text-gray-300">{d.term} <span className="text-gray-600">→</span> {d.def}</span>
+                                                <Icon name="x" size={12} className="opacity-0 group-hover:opacity-100 cursor-pointer text-gray-500 hover:text-red-400" onClick={()=>removeTerm(i)}/>
+                                            </div>
+                                        ))}
+                                        {(!activeProject.dictionary || activeProject.dictionary.length===0) && <div className="text-center text-gray-600 italic text-xs py-2">사전 데이터 없음</div>}
+                                    </div>
+                                </div>
+                                <div className="space-y-2 border-t border-white/5 pt-4">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">Memo</div>
+                                    <textarea className="w-full bg-black border border-aris-border rounded p-2 text-xs text-gray-300 focus:border-aris-primary outline-none h-24 no-resize" value={memo} onChange={e=>setMemo(e.target.value)}></textarea>
+                                    <Button variant="secondary" className="w-full justify-center" onClick={saveMemo}>Save Memo</Button>
+                                </div>
+                            </div>
+                        )}
+                        {activeTab === 'project' && !activeProject && <div className="text-center text-gray-500 mt-10">프로젝트를 선택하세요.</div>}
+
+                        {/* 2. Queue Tab */}
+                        {activeTab === 'queue' && (
+                            <div className="fade-in h-full flex flex-col">
+                                <div className="flex justify-between items-center mb-3">
+                                    <span className="text-xs font-bold text-gray-500 uppercase">Active Tasks</span>
+                                    <span className="text-[10px] bg-aris-primary px-1.5 rounded text-white">{queueState.active.size} / {keys.length}</span>
+                                </div>
+                                <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                                    {queueState.queue.filter(t=>t.status!=='done').map(t => (
+                                        <div key={t.id} className="bg-black/30 p-2 rounded border border-white/5 text-xs flex justify-between items-center">
+                                            <div className="flex items-center gap-2">
+                                                {t.status==='processing' ? <Icon name="loader-2" size={12} className="animate-spin text-blue-400"/> : <Icon name="clock" size={12} className="text-gray-500"/>}
+                                                <span className="text-gray-300 truncate w-32 font-mono">{t.id.split('_').pop()}</span>
+                                            </div>
+                                            <span className={`text-[10px] uppercase ${t.status==='processing'?'text-blue-400':'text-gray-500'}`}>{t.status}</span>
                                         </div>
-                                        <textarea 
-                                            className="flex-1 w-full bg-base p-6 resize-none outline-none editor-font text-sm text-primary" 
-                                            value={selectedNode.translation || ""} 
-                                            onChange={e => setProject(p => ({...p, tree: updateNode(p.tree, selectedNode.id, n => ({...n, translation: e.target.value}))}))}
-                                            placeholder="Translation will appear here..."
-                                        />
+                                    ))}
+                                    {queueState.queue.filter(t=>t.status!=='done').length === 0 && <div className="text-center text-gray-600 italic mt-10">대기 중인 작업 없음</div>}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 3. Settings Tab */}
+                        {activeTab === 'settings' && (
+                            <div className="space-y-6 fade-in">
+                                <div className="space-y-2">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">API Keys</div>
+                                    <textarea className="w-full bg-black border border-aris-border rounded p-2 text-xs text-gray-300 h-20 no-resize focus:border-aris-primary outline-none font-mono" placeholder="API Key 입력 (줄바꿈 구분)" value={keyInput} onChange={e=>setKeyInput(e.target.value)}></textarea>
+                                    <Button className="w-full justify-center" onClick={addKey}>키 등록하기</Button>
+                                    <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                                        {keys.map(k => (
+                                            <div key={k} className="flex justify-between items-center bg-black/50 px-2 py-1 rounded text-xs border border-white/5 font-mono text-gray-400">
+                                                <span>{k.slice(0,8)}...{k.slice(-4)}</span>
+                                                <button className="text-gray-600 hover:text-red-400" onClick={()=>removeKey(k)}><Icon name="trash" size={10}/></button>
+                                            </div>
+                                        ))}
                                     </div>
                                 </div>
-                            </>
-                        ) : (
-                            <div className="flex-1 flex flex-col items-center justify-center text-tertiary">
-                                <Icon name="grid-1x2" className="text-6xl mb-4 opacity-20" />
-                                <p>Select a file to translate</p>
+                                <div className="space-y-2">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">Model</div>
+                                    <select className="w-full bg-black border border-aris-border rounded p-2 text-xs text-white outline-none" value={config.model} onChange={e=>setConfig({...config, model:e.target.value})}>
+                                        <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                        <option value="gemini-2.5-flash-preview-09-2025">Gemini 2.5 Flash (Preview)</option>
+                                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
+                                        <option value="gemini-2.5-flash-lite-preview-09-2025">Gemini 2.5 Flash Lite (Preview)</option>
+                                    </select>
+                                </div>
+                                <div className="space-y-2">
+                                    <div className="text-xs font-bold text-gray-500 uppercase">System Prompt</div>
+                                    <textarea className="w-full bg-black border border-aris-border rounded p-2 text-xs text-gray-300 h-40 no-resize focus:border-aris-primary outline-none leading-relaxed" value={config.prompt} onChange={e=>setConfig({...config, prompt:e.target.value})}></textarea>
+                                </div>
+                                <Button variant="success" className="w-full justify-center bg-green-700 hover:bg-green-600" onClick={saveSettings} icon="save">설정 저장</Button>
                             </div>
                         )}
                     </div>
                 </div>
             );
         };
+
+        // ==========================================
+        // [LAYOUT SHELL]
+        // ==========================================
+
+        const AppLayout = () => {
+            const [sidebarOpen, setSidebarOpen] = useState(true);
+            const [toolsOpen, setToolsOpen] = useState(true);
+
+            return (
+                <div className="flex flex-col h-screen text-aris-text bg-aris-bg overflow-hidden">
+                    {/* Header */}
+                    <header className="h-10 bg-[#3c3c3c] flex items-center px-4 justify-between select-none z-fixed shrink-0 border-b border-black">
+                        <div className="flex items-center gap-3">
+                            <div className="bg-aris-primary rounded p-0.5"><Icon name="languages" size={16} className="text-white"/></div>
+                            <span className="font-bold text-sm text-gray-200">Aris Translation Studio</span>
+                            <span className="text-[10px] bg-black/30 px-1.5 py-0.5 rounded text-gray-400 border border-white/5">Beta v10</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button className={`p-1 rounded hover:bg-white/10 ${sidebarOpen ? 'text-white' : 'text-gray-500'}`} onClick={()=>setSidebarOpen(!sidebarOpen)} title="Toggle Explorer"><Icon name="layout-list" size={14}/></button>
+                            <button className={`p-1 rounded hover:bg-white/10 ${toolsOpen ? 'text-white' : 'text-gray-500'}`} onClick={()=>setToolsOpen(!toolsOpen)} title="Toggle Tools"><Icon name="panel-right" size={14}/></button>
+                        </div>
+                    </header>
+
+                    {/* Main Layout */}
+                    <div className="flex-1 flex overflow-hidden relative">
+                        {/* Left Sidebar */}
+                        <aside className={`${sidebarOpen ? 'w-64' : 'w-0'} bg-aris-panel border-r border-aris-border transition-all duration-300 ease-in-out flex flex-col shrink-0 overflow-hidden`}>
+                            <Explorer />
+                        </aside>
+
+                        {/* Center Workspace */}
+                        <main className="flex-1 flex flex-col min-w-0 bg-[#1e1e1e] relative z-base">
+                            <Editor />
+                        </main>
+
+                        {/* Right Sidebar */}
+                        <aside className={`${toolsOpen ? 'w-80' : 'w-0'} bg-aris-panel border-l border-aris-border transition-all duration-300 ease-in-out flex flex-col shrink-0 overflow-hidden`}>
+                            <Tools />
+                        </aside>
+                    </div>
+
+                    {/* Footer Status Bar */}
+                    <div className="h-6 bg-aris-primary flex items-center px-3 text-[11px] text-white gap-4 shrink-0 select-none">
+                        <div className="flex gap-4">
+                            <span className="flex items-center gap-1"><Icon name="git-branch" size={10}/> main</span>
+                            <span className="flex items-center gap-1 opacity-80"><Icon name="wifi" size={10}/> Online</span>
+                        </div>
+                        <div className="flex-1 text-right opacity-70">
+                            Aris Framework 3.0
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const App = () => (
+            <ToastProvider>
+                <TranslatorProvider>
+                    <AppLayout />
+                </TranslatorProvider>
+            </ToastProvider>
+        );
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
