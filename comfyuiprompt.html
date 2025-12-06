@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Prompt Builder (Firebase Edition)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- React & ReactDOM & Firebase Imports -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.263.1",
+        "firebase/app": "https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js"
+      }
+    }
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 overflow-hidden">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useEffect, useRef } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+            Copy, RefreshCw, Trash2, Plus, GripVertical, Download, Upload,
+            X, Settings, Save, Edit2, ChevronUp, ChevronDown, RotateCcw, Database, Layers,
+            FolderOpen, Tag, MoreVertical, Cloud, CloudOff, Loader2, LogIn, LogOut, Shirt
+        } from 'lucide-react';
+        
+        // Firebase Imports
+        import { initializeApp } from 'firebase/app';
+        import { 
+            getAuth, onAuthStateChanged, signInWithCustomToken, 
+            GoogleAuthProvider, signInWithPopup, signOut 
+        } from 'firebase/auth';
+        import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection } from 'firebase/firestore';
+
+        // ==================================================================================
+        // [Firebase 설정 안내]
+        // Firebase Console > Project Settings > General > "Your apps"에서 Config를 복사하여 
+        // 아래 const firebaseConfig = { ... } 안에 내용을 채워 넣으세요.
+        // ==================================================================================
+        
+        const envConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        
+        const firebaseConfig = envConfig || {
+            apiKey: "AIzaSyCGqpvhj3Y4hDm8VM9YfXh6ouDtIB1GUEY",
+            authDomain: "my-project-12345-4cb96.firebaseapp.com",
+            projectId: "my-project-12345-4cb96",
+            storageBucket: "my-project-12345-4cb96.firebasestorage.app",
+            messagingSenderId: "576526385657",
+            appId: "1:576526385657:web:780c96408db170f0f87d28",
+            measurementId: "G-8233CRMPKM"
+            };
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // --- Default Data ---
+        const DEFAULT_PRESETS = {
+            style: {
+                id: 'style',
+                title: "화풍 (Style)",
+                items: [
+                    { id: 's1', label: "실사 (Photorealistic)", value: "photorealistic, hyperrealistic, 8k, raw photo" },
+                    { id: 's2', label: "유화 임파스토 (Thick Oil)", value: "Oil painting on canvas, thick impasto texture, paint spatula marks, raised paint texture" },
+                    { id: 's3', label: "수채화 (Watercolor)", value: "watercolor painting, soft edges, dreamy, wet on wet" },
+                    { id: 's4', label: "애니메이션 (Anime)", value: "anime style, cel shaded, studio ghibli style, vibrant colors" },
+                    { id: 's5', label: "인상파 (Impressionist)", value: "impressionist style brushstrokes, painterly, visible brushstrokes" },
+                    { id: 's6', label: "사이버펑크 (Cyberpunk)", value: "cyberpunk, neon lights, futuristic city, chromatic aberration" },
+                    { id: 's7', label: "픽셀 아트 (Pixel Art)", value: "pixel art, 16-bit, retro game style" },
+                ]
+            },
+            costume: {
+                id: 'costume',
+                title: "의상 (Costume)",
+                items: [
+                    { id: 'cos1', label: "교복 (School Uniform)", value: "school uniform, sailor fuku, pleated skirt, loafers" },
+                    { id: 'cos2', label: "정장 (Suit)", value: "formal suit, tie, blazer, business attire" },
+                    { id: 'cos3', label: "드레스 (Dress)", value: "elegant evening dress, silk, frills, lace details" },
+                    { id: 'cos4', label: "갑옷 (Armor)", value: "plate armor, knight, metallic texture, intricate engravings" },
+                    { id: 'cos5', label: "사이버펑크 의상", value: "techwear, futuristic jacket, glowing accessories" },
+                    { id: 'cos6', label: "캐주얼 (Casual)", value: "casual clothes, hoodie, jeans, sneakers, oversized t-shirt" },
+                    { id: 'cos7', label: "수영복 (Swimwear)", value: "swimsuit, bikini, poolside" },
+                    { id: 'cos8', label: "메이드복 (Maid)", value: "maid outfit, apron, headdress" },
+                ]
+            },
+            texture: {
+                id: 'texture',
+                title: "질감/효과 (Texture)",
+                items: [
+                    { id: 't1', label: "페인트 흘림 (Drip)", value: "dynamic paint drips, splattering, running paint, splotched paint" },
+                    { id: 't2', label: "폭발/비산 (Explosion)", value: "paint explosion, paint splatters, smudges, vibrant cloud of confetti" },
+                    { id: 't3', label: "질감 변형 (Melting)", value: "melting, cracking, peeling, crystallizing" },
+                    { id: 't4', label: "캔버스 질감 (Canvas)", value: "canvas texture, rough texture, textured paper" },
+                    { id: 't5', label: "빛나는 입자 (Glitter)", value: "glitter, sparkling particles, bioluminescence" },
+                ]
+            },
+            pose: {
+                id: 'pose',
+                title: "자세/행동 (Pose)",
+                items: [
+                    { id: 'p1', label: "역동적 포즈 (Dynamic)", value: "dynamic pose, action shot, motion blur" },
+                    { id: 'p2', label: "재채기/폭발 (Sneezing)", value: "a person sneezing, explosive motion, mouth open" },
+                    { id: 'p3', label: "앉은 자세 (Sitting)", value: "sitting, relaxed pose, crossed legs" },
+                    { id: 'p4', label: "공중 부양 (Floating)", value: "floating in air, zero gravity, weightless" },
+                    { id: 'p5', label: "뒤돌아보기 (Looking Back)", value: "looking back, over the shoulder" },
+                    { id: 'p6', label: "달리기 (Running)", value: "running, sprinting, fast motion" },
+                ]
+            },
+            subject: {
+                id: 'subject',
+                title: "피사체 (Subject)",
+                items: [
+                    { id: 'sub1', label: "소녀/여성 (Girl)", value: "1girl, solo, beautiful face" },
+                    { id: 'sub2', label: "소년/남성 (Boy)", value: "1boy, solo, handsome, sharp features" },
+                    { id: 'sub3', label: "풍경 (Landscape)", value: "scenery, landscape, outdoors, nature" },
+                    { id: 'sub4', label: "건축물 (Architecture)", value: "architecture, building, cityscape" },
+                ]
+            },
+            lighting: {
+                id: 'lighting',
+                title: "조명 (Lighting)",
+                items: [
+                    { id: 'l1', label: "자연광 (Natural)", value: "natural lighting, sun rays, soft shadows" },
+                    { id: 'l2', label: "시네마틱 (Cinematic)", value: "cinematic lighting, dramatic atmosphere" },
+                    { id: 'l3', label: "파스텔 그라데이션", value: "powder blue base, light peach gradient, soft pastel colors" },
+                    { id: 'l4', label: "황금 시간대 (Golden Hour)", value: "golden hour, warm tones, sunset" },
+                    { id: 'l5', label: "렘브란트", value: "rembrandt lighting, chiaroscuro, high contrast" },
+                ]
+            },
+            camera: {
+                id: 'camera',
+                title: "카메라 (Camera)",
+                items: [
+                    { id: 'c1', label: "광각 (Wide Angle)", value: "wide angle lens, panoramic view" },
+                    { id: 'c2', label: "매크로 (Macro)", value: "macro shot, extreme close-up, depth of field" },
+                    { id: 'c3', label: "항공 샷 (Aerial)", value: "aerial view, drone shot" },
+                    { id: 'c4', label: "정면 (Front)", value: "front view, symmetrical face" },
+                    { id: 'c5', label: "보케 (Bokeh)", value: "bokeh, blurred background" },
+                ]
+            },
+            quality: {
+                id: 'quality',
+                title: "품질 (Quality)",
+                items: [
+                    { id: 'q1', label: "최고 화질", value: "masterpiece, best quality, 8k resolution" },
+                    { id: 'q2', label: "디테일", value: "intricate details, sharp focus, highly detailed" },
+                    { id: 'q3', label: "HDR", value: "HDR, high contrast, vibrant colors" },
+                ]
+            }
+        };
+
+        const DEFAULT_NEGATIVE = "score_5, score_ 4, simple background, deformities, watermark, logo, source_pony, ugly, low quality, bad anatomy, bad hands, missing fingers, extra digit, fewer digits, cropped, worst quality, low res, signature, text, error, jpeg artifacts";
+
+        // --- Settings Modal Component ---
+        const SettingsModal = ({ isOpen, onClose, presets, setPresets, resetToDefault, user, initialCatId }) => {
+            const [activeMode, setActiveMode] = useState('manage'); // 'manage' | 'data'
+            const [selectedCatId, setSelectedCatId] = useState(initialCatId || Object.keys(presets)[0]);
+            const fileInputRef = useRef(null);
+            
+            // Inputs
+            const [newCatTitle, setNewCatTitle] = useState('');
+            const [newItemLabel, setNewItemLabel] = useState('');
+            const [newItemValue, setNewItemValue] = useState('');
+
+            useEffect(() => {
+                if (isOpen) {
+                     if(initialCatId && presets[initialCatId]) {
+                        setSelectedCatId(initialCatId);
+                     } else if (!presets[selectedCatId]) {
+                        const firstKey = Object.keys(presets)[0];
+                        if (firstKey) setSelectedCatId(firstKey);
+                     }
+                }
+            }, [isOpen, presets, selectedCatId, initialCatId]);
+
+            if (!isOpen) return null;
+
+            // Logic to update state AND Firebase
+            const updatePresets = async (newPresets) => {
+                setPresets(newPresets); // Optimistic UI update
+                if (user) {
+                    try {
+                        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'user_data', 'presets');
+                        await setDoc(docRef, { data: JSON.stringify(newPresets) });
+                    } catch (e) {
+                        console.error("Firebase Update Error:", e);
+                    }
+                }
+            };
+
+            const handleAddCategory = (e) => {
+                e.preventDefault();
+                if (!newCatTitle.trim()) return;
+                const newId = `cat_${Date.now()}`;
+                const newPresets = {
+                    ...presets,
+                    [newId]: { id: newId, title: newCatTitle, items: [] }
+                };
+                updatePresets(newPresets);
+                setSelectedCatId(newId);
+                setNewCatTitle('');
+            };
+
+            const handleDeleteCategory = (e, catId) => {
+                e.stopPropagation();
+                if (Object.keys(presets).length <= 1) {
+                    alert("최소 하나의 카테고리는 존재해야 합니다.");
+                    return;
+                }
+                if (window.confirm("이 카테고리를 삭제하시겠습니까? 포함된 태그도 모두 삭제됩니다.")) {
+                    const newPresets = { ...presets };
+                    delete newPresets[catId];
+                    updatePresets(newPresets);
+                    if (selectedCatId === catId) {
+                        setSelectedCatId(Object.keys(newPresets)[0]);
+                    }
+                }
+            };
+
+            const handleAddItem = (e) => {
+                e.preventDefault();
+                if (!newItemLabel.trim() || !newItemValue.trim()) return;
+                const newItem = {
+                    id: `item_${Date.now()}`,
+                    label: newItemLabel,
+                    value: newItemValue
+                };
+                
+                const newPresets = {
+                    ...presets,
+                    [selectedCatId]: {
+                        ...presets[selectedCatId],
+                        items: [newItem, ...presets[selectedCatId].items]
+                    }
+                };
+                updatePresets(newPresets);
+                setNewItemLabel('');
+                setNewItemValue('');
+            };
+
+            const handleDeleteItem = (catId, index) => {
+                const newItems = presets[catId].items.filter((_, i) => i !== index);
+                const newPresets = {
+                    ...presets,
+                    [catId]: { ...presets[catId], items: newItems }
+                };
+                updatePresets(newPresets);
+            };
+
+            const handleExport = () => {
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(presets));
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", "myprompts.json");
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+            };
+
+            const handleImportClick = () => fileInputRef.current.click();
+            
+            const handleFileChange = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const json = JSON.parse(e.target.result);
+                        if (window.confirm("현재 설정을 덮어쓰고 불러오시겠습니까?")) {
+                            updatePresets(json);
+                            alert("복원되었습니다.");
+                        }
+                    } catch (error) { alert("파일 형식이 올바르지 않습니다."); }
+                };
+                reader.readAsText(file);
+                event.target.value = '';
+            };
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                    <div className="bg-slate-900 w-full max-w-4xl h-[85vh] rounded-xl border border-slate-700 shadow-2xl flex flex-col overflow-hidden">
+                        
+                        {/* Header */}
+                        <div className="px-5 py-4 border-b border-slate-700 flex justify-between items-center bg-slate-900 shrink-0">
+                            <div className="flex gap-4 items-center">
+                                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                                    <Settings size={22} className="text-indigo-400"/> 라이브러리 관리
+                                </h2>
+                                <div className="flex bg-slate-800 rounded-lg p-1 border border-slate-700">
+                                    <button 
+                                        onClick={() => setActiveMode('manage')}
+                                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeMode === 'manage' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                                    >
+                                        편집 모드
+                                    </button>
+                                    <button 
+                                        onClick={() => setActiveMode('data')}
+                                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${activeMode === 'data' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'}`}
+                                    >
+                                        백업 / 복원
+                                    </button>
+                                </div>
+                            </div>
+                            <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors"><X size={24} /></button>
+                        </div>
+
+                        {/* Content Body */}
+                        <div className="flex-1 overflow-hidden">
+                            
+                            {activeMode === 'manage' && (
+                                <div className="flex h-full">
+                                    {/* Left: Categories */}
+                                    <div className="w-1/3 border-r border-slate-700 flex flex-col bg-slate-800/30">
+                                        <div className="p-3 bg-slate-900/50 border-b border-slate-700 font-bold text-slate-400 text-xs uppercase tracking-wider flex items-center gap-2">
+                                            <FolderOpen size={14} /> 카테고리 목록
+                                        </div>
+                                        
+                                        <div className="flex-1 overflow-y-auto p-2 space-y-1">
+                                            {Object.keys(presets).map(key => (
+                                                <div 
+                                                    key={key} 
+                                                    onClick={() => setSelectedCatId(key)}
+                                                    className={`group flex justify-between items-center p-3 rounded-lg cursor-pointer border transition-all ${
+                                                        selectedCatId === key 
+                                                        ? 'bg-indigo-600/10 border-indigo-500/50 text-white' 
+                                                        : 'bg-transparent border-transparent text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                                    }`}
+                                                >
+                                                    <span className="font-medium text-sm truncate">{presets[key].title}</span>
+                                                    <button 
+                                                        onClick={(e) => handleDeleteCategory(e, key)}
+                                                        className="opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-500/20 hover:text-red-400 rounded transition-all"
+                                                        title="카테고리 삭제"
+                                                    >
+                                                        <Trash2 size={14} />
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <form onSubmit={handleAddCategory} className="p-3 border-t border-slate-700 bg-slate-900">
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    value={newCatTitle} 
+                                                    onChange={(e) => setNewCatTitle(e.target.value)}
+                                                    placeholder="새 카테고리 이름" 
+                                                    className="flex-1 bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+                                                />
+                                                <button type="submit" className="bg-slate-700 hover:bg-slate-600 text-white px-3 py-2 rounded transition-colors">
+                                                    <Plus size={18} />
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+
+                                    {/* Right: Items */}
+                                    <div className="w-2/3 flex flex-col bg-slate-900">
+                                        <div className="p-3 bg-slate-900 border-b border-slate-700 font-bold text-indigo-400 text-xs uppercase tracking-wider flex items-center gap-2">
+                                            <Tag size={14} /> {presets[selectedCatId]?.title} — 태그 아이템 관리
+                                        </div>
+
+                                        <div className="p-4 bg-slate-800/30 border-b border-slate-800">
+                                            <form onSubmit={handleAddItem} className="flex flex-col gap-2">
+                                                <div className="flex gap-2">
+                                                    <input 
+                                                        value={newItemLabel} 
+                                                        onChange={(e) => setNewItemLabel(e.target.value)}
+                                                        placeholder="이름 (예: 교복)" 
+                                                        className="w-1/3 bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 placeholder-slate-500"
+                                                    />
+                                                    <input 
+                                                        value={newItemValue} 
+                                                        onChange={(e) => setNewItemValue(e.target.value)}
+                                                        placeholder="프롬프트 (예: school uniform)" 
+                                                        className="flex-1 bg-slate-800 border border-slate-600 rounded px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono placeholder-slate-500"
+                                                    />
+                                                    <button type="submit" className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded text-sm font-bold whitespace-nowrap transition-colors">
+                                                        등록
+                                                    </button>
+                                                </div>
+                                            </form>
+                                        </div>
+
+                                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                                            {presets[selectedCatId]?.items.length === 0 ? (
+                                                <div className="flex flex-col items-center justify-center h-40 text-slate-500 border-2 border-dashed border-slate-800 rounded-lg">
+                                                    <p>등록된 태그가 없습니다.</p>
+                                                    <p className="text-xs mt-1">위 입력창을 통해 추가해주세요.</p>
+                                                </div>
+                                            ) : (
+                                                presets[selectedCatId]?.items.map((item, idx) => (
+                                                    <div key={idx} className="group flex items-center bg-slate-800 border border-slate-700 rounded-lg p-2.5 hover:border-indigo-500/30 transition-all">
+                                                        <div className="flex-1 min-w-0 grid grid-cols-3 gap-4">
+                                                            <div className="font-bold text-sm text-slate-200 truncate col-span-1">{item.label}</div>
+                                                            <div className="text-xs text-slate-500 font-mono truncate col-span-2">{item.value}</div>
+                                                        </div>
+                                                        <button 
+                                                            onClick={() => handleDeleteItem(selectedCatId, idx)} 
+                                                            className="ml-3 p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-700 rounded transition-colors"
+                                                        >
+                                                            <Trash2 size={16} />
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {activeMode === 'data' && (
+                                <div className="p-8 flex flex-col items-center justify-center h-full space-y-8 bg-slate-900">
+                                    <div className="grid grid-cols-2 gap-8 w-full max-w-3xl">
+                                        <button 
+                                            onClick={handleExport}
+                                            className="flex flex-col items-center justify-center gap-4 bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-indigo-500 rounded-2xl p-10 transition-all group shadow-lg"
+                                        >
+                                            <div className="p-4 bg-indigo-500/10 rounded-full text-indigo-400 group-hover:bg-indigo-500 group-hover:text-white transition-colors">
+                                                <Download size={40} />
+                                            </div>
+                                            <div className="text-center">
+                                                <span className="block text-lg font-bold text-slate-200">데이터 내보내기</span>
+                                                <span className="text-sm text-slate-500 mt-1">현재 설정을 JSON 파일로 저장합니다.</span>
+                                            </div>
+                                        </button>
+
+                                        <button 
+                                            onClick={handleImportClick}
+                                            className="flex flex-col items-center justify-center gap-4 bg-slate-800 hover:bg-slate-700 border border-slate-600 hover:border-emerald-500 rounded-2xl p-10 transition-all group shadow-lg"
+                                        >
+                                            <div className="p-4 bg-emerald-500/10 rounded-full text-emerald-400 group-hover:bg-emerald-500 group-hover:text-white transition-colors">
+                                                <Upload size={40} />
+                                            </div>
+                                            <div className="text-center">
+                                                <span className="block text-lg font-bold text-slate-200">데이터 가져오기</span>
+                                                <span className="text-sm text-slate-500 mt-1">JSON 파일을 불러와 복원합니다.</span>
+                                            </div>
+                                            <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileChange} />
+                                        </button>
+                                    </div>
+                                    
+                                    <div className="w-full max-w-3xl p-4 bg-slate-800/50 rounded-lg border border-slate-700 text-sm text-slate-400 flex gap-3">
+                                        <Cloud size={20} className="shrink-0 text-slate-500"/>
+                                        <div>
+                                            <p className="font-bold text-slate-300 mb-1">클라우드 동기화 (Firebase)</p>
+                                            <p>데이터는 Firebase Firestore에 안전하게 저장됩니다. 로그인 상태에 따라 데이터가 저장되는 공간이 달라집니다.</p>
+                                        </div>
+                                    </div>
+
+                                    <button onClick={resetToDefault} className="text-xs text-red-400/70 hover:text-red-400 flex items-center gap-1 mt-auto hover:underline">
+                                        <RotateCcw size={12} /> 모든 데이터를 초기 상태로 리셋
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App Component ---
+        const App = () => {
+            const [user, setUser] = useState(null);
+            const [presets, setPresets] = useState(DEFAULT_PRESETS);
+            const [activeTab, setActiveTab] = useState('style');
+            const [selectedTags, setSelectedTags] = useState([]);
+            const [customInput, setCustomInput] = useState("");
+            const [finalPrompt, setFinalPrompt] = useState("");
+            const [negativePrompt, setNegativePrompt] = useState(DEFAULT_NEGATIVE);
+            const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+            const [settingInitialCat, setSettingInitialCat] = useState(null);
+            const [isLoading, setIsLoading] = useState(true);
+
+            // 1. Auth & Data Sync Logic
+            useEffect(() => {
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        try {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } catch (e) {
+                            console.error("Custom token login failed", e);
+                        }
+                    }
+                    // 익명 로그인 자동 실행 로직 제거됨
+                };
+                initAuth();
+
+                const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+                    // 익명 사용자일 경우(이전 세션 등) 로그아웃 처리하거나 무시할 수 있으나, 
+                    // 여기서는 단순히 로그인 상태만 반영합니다.
+                    setUser(currentUser);
+                    setIsLoading(false); // 로딩 완료 처리
+                });
+
+                return () => unsubscribeAuth();
+            }, []);
+
+            // 2. Data Fetching Listener (Only when user is logged in)
+            useEffect(() => {
+                if (!user) {
+                    setPresets(DEFAULT_PRESETS); // 로그아웃 시 기본값으로 복귀
+                    return;
+                }
+                setIsLoading(true);
+
+                // Listen to Presets
+                const presetsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'user_data', 'presets');
+                const unsubPresets = onSnapshot(presetsRef, (docSnapshot) => {
+                    if (docSnapshot.exists()) {
+                        try {
+                            const data = JSON.parse(docSnapshot.data().data);
+                            setPresets(data);
+                        } catch (e) { console.error("Parse Error", e); }
+                    } else {
+                        // Init default data if not exists
+                        setDoc(presetsRef, { data: JSON.stringify(DEFAULT_PRESETS) });
+                    }
+                    setIsLoading(false);
+                }, (error) => {
+                    console.error("Presets listener error:", error);
+                    setIsLoading(false);
+                });
+
+                // Listen to Settings (Negative Prompt)
+                const settingsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'user_data', 'settings');
+                const unsubSettings = onSnapshot(settingsRef, (docSnapshot) => {
+                    if (docSnapshot.exists()) {
+                        const data = docSnapshot.data();
+                        if (data.negativePrompt) setNegativePrompt(data.negativePrompt);
+                    } else {
+                        setDoc(settingsRef, { negativePrompt: DEFAULT_NEGATIVE });
+                    }
+                }, (error) => console.error("Settings listener error:", error));
+
+                return () => {
+                    unsubPresets();
+                    unsubSettings();
+                };
+            }, [user]);
+
+            // Save Negative Prompt with Debounce
+            useEffect(() => {
+                if (!user || isLoading) return;
+                const timer = setTimeout(() => {
+                    const settingsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'user_data', 'settings');
+                    setDoc(settingsRef, { negativePrompt }, { merge: true });
+                }, 1000); // Debounce 1s
+                return () => clearTimeout(timer);
+            }, [negativePrompt, user, isLoading]);
+
+            useEffect(() => {
+                setFinalPrompt(selectedTags.join(", "));
+            }, [selectedTags]);
+
+            // Ensure valid tab
+            useEffect(() => {
+                if (!presets[activeTab] && Object.keys(presets).length > 0) {
+                    setActiveTab(Object.keys(presets)[0]);
+                }
+            }, [presets, activeTab]);
+
+            const handleGoogleLogin = async () => {
+                const provider = new GoogleAuthProvider();
+                try {
+                    await signInWithPopup(auth, provider);
+                } catch (error) {
+                    console.error("Google Login Error:", error);
+                    alert("로그인에 실패했습니다. (팝업이 차단되었거나 설정이 올바르지 않을 수 있습니다)");
+                }
+            };
+
+            const handleLogout = async () => {
+                if(window.confirm("로그아웃 하시겠습니까?")) {
+                    await signOut(auth);
+                    setUser(null);
+                    // 익명 로그인 재실행 로직 제거됨
+                }
+            }
+
+            const resetToDefault = async () => {
+                if (window.confirm("모든 설정과 커스텀 데이터가 초기화됩니다. 계속하시겠습니까?")) {
+                    setPresets(DEFAULT_PRESETS);
+                    setNegativePrompt(DEFAULT_NEGATIVE);
+                    setSelectedTags([]);
+                    
+                    if (user) {
+                         const presetsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'user_data', 'presets');
+                         const settingsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'user_data', 'settings');
+                         await setDoc(presetsRef, { data: JSON.stringify(DEFAULT_PRESETS) });
+                         await setDoc(settingsRef, { negativePrompt: DEFAULT_NEGATIVE });
+                    }
+                }
+            };
+
+            // ... (addTag, removeTag 등 기존 함수들은 그대로 유지) ...
+            const addTag = (tagValue) => {
+                if (!selectedTags.includes(tagValue)) {
+                    setSelectedTags([...selectedTags, tagValue]);
+                }
+            };
+
+            const removeTag = (indexToRemove) => {
+                setSelectedTags(selectedTags.filter((_, index) => index !== indexToRemove));
+            };
+
+            const moveTag = (index, direction) => {
+                if ((direction === -1 && index === 0) || (direction === 1 && index === selectedTags.length - 1)) return;
+                const newTags = [...selectedTags];
+                [newTags[index + direction], newTags[index]] = [newTags[index], newTags[index + direction]];
+                setSelectedTags(newTags);
+            };
+
+            const handleCustomAdd = (e) => {
+                e.preventDefault();
+                if (customInput.trim()) {
+                    addTag(customInput.trim());
+                    setCustomInput("");
+                }
+            };
+
+            const openEditCategory = (catId) => {
+                setSettingInitialCat(catId);
+                setIsSettingsOpen(true);
+            }
+
+            const copyToClipboard = (text, type = "프롬프트") => {
+                const textArea = document.createElement("textarea");
+                textArea.value = text;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand("copy");
+                document.body.removeChild(textArea);
+                alert(`${type}가 복사되었습니다!`);
+            };
+
+            const copyAll = () => {
+                const fullText = `Positive:\n${finalPrompt}\n\nNegative:\n${negativePrompt}`;
+                copyToClipboard(fullText, "전체 설정");
+            }
+
+            if (isLoading) {
+                return (
+                    <div className="h-screen bg-slate-950 flex items-center justify-center text-slate-400 flex-col gap-4">
+                        <Loader2 className="animate-spin text-indigo-500" size={32} />
+                        <p>데이터를 불러오는 중입니다...</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden selection:bg-indigo-500/30">
+                    <SettingsModal 
+                        isOpen={isSettingsOpen} 
+                        onClose={() => {setIsSettingsOpen(false); setSettingInitialCat(null);}} 
+                        presets={presets}
+                        setPresets={setPresets}
+                        resetToDefault={resetToDefault}
+                        user={user}
+                        initialCatId={settingInitialCat}
+                    />
+
+                    {/* --- Left Panel: Library (Resource) --- */}
+                    <div className="w-full md:w-3/5 lg:w-2/3 h-full flex flex-col border-r border-slate-800 bg-slate-900">
+                        <header className="px-6 py-4 border-b border-slate-800 flex justify-between items-center bg-slate-900 z-10 shrink-0">
+                            <div>
+                                <h1 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent flex items-center gap-2">
+                                    <Database size={24} className="text-indigo-400" />
+                                    Prompt Library
+                                </h1>
+                                <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                                    <Cloud size={10} className={user ? "text-emerald-500" : "text-slate-600"}/> 
+                                    {user ? `Synced as ${user.displayName || user.email}` : "Offline Mode (로그인 시 저장 가능)"}
+                                </p>
+                            </div>
+                            <div className="flex gap-2">
+                                {user ? (
+                                    <button 
+                                        onClick={handleLogout}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-slate-800 hover:bg-red-900/30 hover:text-red-300 text-slate-300 rounded-lg transition-all border border-slate-700"
+                                        title="로그아웃"
+                                    >
+                                        <LogOut size={16} />
+                                    </button>
+                                ) : (
+                                    <button 
+                                        onClick={handleGoogleLogin}
+                                        className="flex items-center gap-2 px-3 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-300 rounded-lg transition-all border border-slate-700"
+                                        title="구글 로그인"
+                                    >
+                                        <LogIn size={16} /> 
+                                        <span className="hidden sm:inline">Login</span>
+                                    </button>
+                                )}
+                                <button 
+                                    onClick={() => setIsSettingsOpen(true)}
+                                    className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 hover:text-white text-slate-300 rounded-lg transition-all border border-slate-700"
+                                    title="설정 및 태그 관리"
+                                >
+                                    <Settings size={18} />
+                                    <span className="hidden sm:inline">관리</span>
+                                </button>
+                            </div>
+                        </header>
+
+                        {/* Tab Navigation */}
+                        <div className="flex overflow-x-auto border-b border-slate-800 bg-slate-900/50 scrollbar-hide px-2 shrink-0">
+                            {Object.keys(presets).map((key) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setActiveTab(key)}
+                                    className={`px-5 py-4 text-sm font-medium whitespace-nowrap transition-all border-b-2 ${
+                                        activeTab === key
+                                        ? "text-indigo-400 border-indigo-400 bg-indigo-500/5"
+                                        : "text-slate-400 border-transparent hover:text-slate-200 hover:bg-slate-800/50"
+                                    }`}
+                                >
+                                    {presets[key].title}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Tag Grid */}
+                        <div className="flex-1 overflow-y-auto p-6 bg-slate-900/50 scrollbar-thin">
+                            {presets[activeTab] ? (
+                                <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-10">
+                                    {presets[activeTab].items.map((item, idx) => (
+                                        <div
+                                            key={idx}
+                                            className="relative group text-left bg-slate-800 hover:bg-slate-700 border border-slate-700 hover:border-indigo-500/50 rounded-lg p-3 transition-all flex flex-col h-full"
+                                        >
+                                            <div onClick={() => addTag(item.value)} className="cursor-pointer flex-1">
+                                                <span className="block text-sm font-bold text-slate-200 mb-1">{item.label}</span>
+                                                <span className="block text-xs text-slate-500 line-clamp-3 group-hover:text-slate-400 transition-colors break-words leading-tight">
+                                                    {item.value}
+                                                </span>
+                                            </div>
+                                            
+                                            {/* Action Buttons */}
+                                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button 
+                                                    onClick={(e) => { e.stopPropagation(); openEditCategory(activeTab); }}
+                                                    className="bg-slate-900 text-slate-400 hover:text-indigo-400 rounded p-1 shadow-md border border-slate-700"
+                                                    title="이 태그 편집"
+                                                >
+                                                    <Edit2 size={12} />
+                                                </button>
+                                                <button 
+                                                    onClick={() => addTag(item.value)}
+                                                    className="bg-slate-900 text-indigo-400 hover:text-white hover:bg-indigo-500 rounded p-1 shadow-md border border-slate-700"
+                                                    title="추가"
+                                                >
+                                                    <Plus size={12} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {/* Add Custom Quick Button */}
+                                    <button 
+                                        onClick={() => setIsSettingsOpen(true)}
+                                        className="flex flex-col items-center justify-center gap-2 border border-dashed border-slate-700 rounded-lg p-3 text-slate-500 hover:text-indigo-400 hover:border-indigo-500/30 hover:bg-slate-800/50 transition-all min-h-[80px]"
+                                    >
+                                        <Plus size={20} />
+                                        <span className="text-xs">직접 등록하기</span>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-center h-full text-slate-500">
+                                    카테고리가 없습니다. 설정에서 추가해주세요.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* --- Right Panel: Workspace (Builder) --- */}
+                    <div className="hidden md:flex w-2/5 lg:w-1/3 flex-col bg-slate-950 border-l border-slate-800 shadow-xl z-20">
+                        
+                        {/* Workspace Header */}
+                        <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center shrink-0">
+                            <h2 className="font-bold text-slate-200 flex items-center gap-2">
+                                <Edit2 size={16} className="text-indigo-400" />
+                                작업 공간
+                            </h2>
+                            <div className="flex gap-2">
+                                <button 
+                                    onClick={() => setSelectedTags([])}
+                                    className="text-xs text-red-400 hover:bg-red-950/30 px-2 py-1 rounded transition-colors"
+                                >
+                                    Positive 비우기
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Selected Tags List (Positive) */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 scrollbar-thin bg-slate-950/50 min-h-0">
+                            {selectedTags.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-3 opacity-60">
+                                    <Layers size={40} strokeWidth={1} />
+                                    <p className="text-sm text-center">
+                                        왼쪽에서 태그를 클릭하여<br/>프롬프트를 조립하세요.
+                                    </p>
+                                </div>
+                            ) : (
+                                selectedTags.map((tag, idx) => (
+                                    <div key={idx} className="group flex items-center bg-slate-900 border border-slate-800 hover:border-indigo-500/50 rounded-lg p-2 pr-3 shadow-sm transition-all animate-in fade-in slide-in-from-left-2 duration-200">
+                                        <div className="flex flex-col gap-0.5 mr-3 text-slate-600 border-r border-slate-800 pr-2">
+                                            <button onClick={() => moveTag(idx, -1)} disabled={idx === 0} className="hover:text-indigo-400 disabled:opacity-20 transition-colors"><ChevronUp size={14} /></button>
+                                            <button onClick={() => moveTag(idx, 1)} disabled={idx === selectedTags.length-1} className="hover:text-indigo-400 disabled:opacity-20 transition-colors"><ChevronDown size={14} /></button>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm text-slate-300 break-words leading-tight">{tag}</p>
+                                        </div>
+                                        <button 
+                                            onClick={() => removeTag(idx)}
+                                            className="ml-2 text-slate-600 hover:text-red-400 p-1 rounded hover:bg-slate-800 transition-colors"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Prompt Output Areas */}
+                        <div className="p-4 bg-slate-900 border-t border-slate-800 space-y-3 shadow-[0_-10px_40px_rgba(0,0,0,0.5)] shrink-0 max-h-[50%] overflow-y-auto scrollbar-thin">
+                            
+                            {/* Direct Input */}
+                            <form onSubmit={handleCustomAdd} className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={customInput}
+                                    onChange={(e) => setCustomInput(e.target.value)}
+                                    placeholder="+ 직접 추가 (예: 1girl, smiling)"
+                                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all placeholder-slate-500"
+                                />
+                                <button type="submit" className="bg-slate-700 hover:bg-slate-600 text-slate-200 px-3 rounded-lg transition-colors">
+                                    <Plus size={18} />
+                                </button>
+                            </form>
+
+                            {/* Positive Prompt */}
+                            <div className="space-y-1">
+                                <div className="flex justify-between items-center text-xs text-indigo-300 font-bold px-1">
+                                    <span>Positive Prompt</span>
+                                    <button onClick={() => copyToClipboard(finalPrompt, "Positive Prompt")} className="hover:text-white flex items-center gap-1"><Copy size={10}/> 복사</button>
+                                </div>
+                                <textarea
+                                    value={finalPrompt}
+                                    onChange={(e) => setFinalPrompt(e.target.value)}
+                                    className="w-full h-20 bg-black/40 border border-slate-700 rounded-lg p-2 text-slate-300 text-xs font-mono focus:outline-none focus:border-indigo-500 resize-none scrollbar-thin"
+                                    placeholder="최종 결과물이 여기에 표시됩니다..."
+                                />
+                            </div>
+
+                            {/* Negative Prompt */}
+                            <div className="space-y-1">
+                                <div className="flex justify-between items-center text-xs text-red-300 font-bold px-1">
+                                    <span>Negative Prompt</span>
+                                    <button onClick={() => copyToClipboard(negativePrompt, "Negative Prompt")} className="hover:text-white flex items-center gap-1"><Copy size={10}/> 복사</button>
+                                </div>
+                                <textarea
+                                    value={negativePrompt}
+                                    onChange={(e) => setNegativePrompt(e.target.value)}
+                                    className="w-full h-16 bg-black/40 border border-slate-700 rounded-lg p-2 text-slate-300 text-xs font-mono focus:outline-none focus:border-red-500 resize-none scrollbar-thin"
+                                    placeholder="네거티브 프롬프트 입력..."
+                                />
+                            </div>
+                            
+                            <button
+                                onClick={copyAll}
+                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-sm font-bold shadow-lg shadow-indigo-500/20 active:scale-95 transition-all flex justify-center items-center gap-2"
+                            >
+                                <Copy size={16} /> Positive + Negative 전체 복사
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
