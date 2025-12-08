@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Modern Chat v4.5 (Persona Presets)</title>
+    
+    <!-- React & ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    
+    <!-- Babel -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#4F46E5', 
+                        'primary-dark': '#4338ca',
+                        secondary: '#F1F5F9',
+                        ai: '#8B5CF6',
+                        danger: '#EF4444',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'Apple SD Gothic Neo', 'sans-serif'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        .fade-in { animation: fadeIn 0.3s ease-in-out; }
+        .slide-up { animation: slideUp 0.3s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        
+        .bar { width: 3px; background: white; animation: sound 0s -0.8s linear infinite alternate; }
+        @keyframes sound { 0% { height: 3px; opacity: .35; } 100% { height: 16px; opacity: 1; } }
+        
+        textarea.no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="h-screen overflow-hidden text-slate-800 bg-slate-100">
+    <div id="root" class="h-full max-w-md mx-auto bg-white shadow-2xl relative overflow-hidden"></div>
+
+    <script type="text/babel" data-type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, where, serverTimestamp, doc, setDoc, getDocs, updateDoc, getDoc, deleteDoc, orderBy, limit, startAfter, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        const USER_CONFIG = {
+            apiKey: "AIzaSyAdFQ5tSuu88oO8XkNpcN5N1jOiroOuKro",
+            authDomain: "memov001.firebaseapp.com",
+            projectId: "memov001",
+            storageBucket: "memov001.firebasestorage.app",
+            messagingSenderId: "362838770345",
+            appId: "1:362838770345:web:e89116a146bd3138029fb8",
+            measurementId: "G-94LS7D229G"
+        };
+
+        const STATIC_APP_ID = "1:362838770345:web:e89116a146bd3138029fb8";
+
+        // --- Persona Database ---
+        const PERSONA_PRESETS = {
+            "비즈니스/전문": [
+                { label: "친절한 AI 비서", prompt: "매우 공손하고 친절하며 전문적인 AI 비서 말투로 변환해줘. 문장은 완벽한 경어체를 사용해." },
+                { label: "뉴스 앵커", prompt: "신뢰감 있고 명확한 뉴스 앵커 톤으로 사실 전달 위주로 변환해줘." },
+                { label: "논리적인 분석가", prompt: "감정을 배제하고 논리적이고 분석적인 톤으로 변환해줘." },
+                { label: "정중한 신입사원", prompt: "패기 넘치지만 매우 예의 바른 신입사원 말투로 변환해줘." },
+                { label: "열정적인 마케터", prompt: "사람들의 이목을 끄는 화려하고 열정적인 마케팅 문구처럼 변환해줘." }
+            ],
+            "일상/친근": [
+                { label: "유머러스한 친구", prompt: "친한 친구에게 농담하듯이 유머러스하고 가벼운 말투로 변환해줘." },
+                { label: "다정한 연인", prompt: "사랑하는 사람에게 속삭이듯 다정하고 로맨틱한 말투로 변환해줘." },
+                { label: "시크한 10대", prompt: "요즘 유행하는 줄임말을 쓰고 시크하고 무심한 10대 말투로 변환해줘." },
+                { label: "7세 여자아이", prompt: "혀 짧은 소리를 내며 귀여운 7세 여자아이 말투로 변환해줘." },
+                { label: "수다스러운 이웃", prompt: "정이 많고 말이 많은 동네 아주머니 말투로 변환해줘." }
+            ],
+            "사투리/방언": [
+                { label: "구수한 전라도", prompt: "구수한 전라도 사투리를 진하게 사용해서 변환해줘." },
+                { label: "무뚝뚝한 경상도", prompt: "무뚝뚝하지만 정이 느껴지는 경상도 사투리로 변환해줘." },
+                { label: "느긋한 충청도", prompt: "말끝을 길게 늘이며 여유로운 충청도 사투리로 변환해줘." },
+                { label: "제주도 방언", prompt: "제주도 방언을 섞어서 현지인 느낌이 나게 변환해줘." },
+                { label: "북한 사투리", prompt: "북한 문화어 느낌으로 강단 있게 변환해줘." }
+            ],
+            "판타지/컨셉": [
+                { label: "중세 기사", prompt: "중세 시대의 기사처럼 고풍스럽고 명예를 중시하는 말투로 변환해줘." },
+                { label: "조선시대 선비", prompt: "하오체나 하게체를 사용하며 점잖은 조선시대 선비 말투로 변환해줘." },
+                { label: "미래 AI 로봇", prompt: "감정이 없는 기계적이고 딱딱한 AI 로봇 말투로 변환해줘." },
+                { label: "해적 선장", prompt: "거칠고 호탕한 바다의 무법자 해적 선장 말투로 변환해줘." },
+                { label: "고대 예언자", prompt: "신비롭고 알쏭달쏭한 고대 예언자의 말투로 변환해줘." }
+            ],
+            "감정/성격": [
+                { label: "냉소적인 비평가", prompt: "세상 모든 것이 마음에 들지 않는 냉소적이고 비꼬는 말투로 변환해줘." },
+                { label: "우울한 시인", prompt: "모든 상황을 비극적이고 감성적인 시처럼 표현해서 변환해줘." },
+                { label: "흥분한 해설가", prompt: "스포츠 경기 결정적인 순간을 중계하듯 매우 흥분한 톤으로 변환해줘." },
+                { label: "겁 많은 탐험가", prompt: "작은 소리에도 깜짝 놀라는 겁 많은 말투로 변환해줘." },
+                { label: "허세 가득 래퍼", prompt: "라임을 맞추며 자기자랑이 가득한 힙합 래퍼 말투로 변환해줘." }
+            ],
+            "특수 캐릭터": [
+                { label: "셰익스피어 풍", prompt: "고전적이고 연극적인 셰익스피어 희곡 대사처럼 변환해줘." },
+                { label: "츤데레", prompt: "겉으로는 툴툴거지만 속으로는 챙겨주는 츤데레 말투로 변환해줘." },
+                { label: "군대 조교", prompt: "매우 엄격하고 딱딱한 군대 훈련소 조교 말투로 변환해줘." },
+                { label: "인자한 할머니", prompt: "손주를 대하듯 아이구 우리 강아지 하는 인자한 할머니 말투로 변환해줘." },
+                { label: "외계인", prompt: "지구의 언어가 서툰 외계인처럼 띄엄띄엄하거나 엉뚱한 단어를 섞어서 변환해줘." }
+            ]
+        };
+
+        function App() {
+            // Firebase Init
+            const [app] = useState(() => initializeApp(USER_CONFIG));
+            const [auth] = useState(() => getAuth(app));
+            const [db] = useState(() => getFirestore(app));
+            
+            // Global State
+            const [user, setUser] = useState(null);
+            const [userProfile, setUserProfile] = useState(null);
+            const [view, setView] = useState('loading');
+            const [tab, setTab] = useState('chats');
+            const [aiConfig, setAiConfig] = useState({ apiKey: '', prompt: '친절하고 공손한 비서 말투로 변역해줘', enabled: false, model: 'gemma-3-27b-it' });
+
+            // Data
+            const [friends, setFriends] = useState([]);
+            const [rooms, setRooms] = useState([]);
+            const [currentRoom, setCurrentRoom] = useState(null);
+            const [unreadCounts, setUnreadCounts] = useState({});
+
+            // UI
+            const [toast, setToast] = useState(null);
+            const [modal, setModal] = useState(null);
+            const [loading, setLoading] = useState(false);
+
+            // --- Auth & Profile ---
+            useEffect(() => {
+                const unsub = onAuthStateChanged(auth, async (u) => {
+                    if (u) {
+                        const ref = doc(db, 'artifacts', STATIC_APP_ID, 'public', 'data', 'users', u.uid);
+                        const snap = await getDoc(ref);
+                        if (snap.exists() && snap.data().customId) {
+                            setUserProfile(snap.data());
+                            setUser(u);
+                            setView('main');
+                            const savedAi = localStorage.getItem(`ai_config_${u.uid}`);
+                            if (savedAi) setAiConfig(JSON.parse(savedAi));
+                        } else {
+                            setUser(u);
+                            setView('setup_profile');
+                        }
+                    } else {
+                        setUser(null);
+                        setView('login');
+                    }
+                });
+                return () => unsub();
+            }, []);
+
+            // --- Data Sync ---
+            useEffect(() => {
+                if (!user || view === 'login' || view === 'setup_profile') return;
+
+                const qFriends = query(collection(db, 'artifacts', STATIC_APP_ID, 'users', user.uid, 'friends'));
+                const unsubFriends = onSnapshot(qFriends, (snap) => setFriends(snap.docs.map(d => d.data())));
+
+                const qRooms = query(collection(db, 'artifacts', STATIC_APP_ID, 'public', 'data', 'rooms'));
+                const unsubRooms = onSnapshot(qRooms, (snap) => {
+                    const myRooms = snap.docs
+                        .map(d => ({ id: d.id, ...d.data() }))
+                        .filter(r => r.participants && r.participants.includes(user.uid));
+                    
+                    myRooms.sort((a, b) => {
+                        const aPinned = a.pinnedBy?.includes(user.uid) ? 1 : 0;
+                        const bPinned = b.pinnedBy?.includes(user.uid) ? 1 : 0;
+                        if (aPinned !== bPinned) return bPinned - aPinned;
+                        return (b.lastMessageAt?.seconds || 0) - (a.lastMessageAt?.seconds || 0);
+                    });
+                    
+                    setRooms(myRooms);
+                    
+                    const newUnreads = {};
+                    myRooms.forEach(r => {
+                        const myRead = r.readStatus?.[user.uid]?.seconds || 0;
+                        const lastMsg = r.lastMessageAt?.seconds || 0;
+                        if (lastMsg > myRead && r.lastMessageSenderId !== user.uid) newUnreads[r.id] = true;
+                    });
+                    setUnreadCounts(newUnreads);
+                });
+
+                return () => { unsubFriends(); unsubRooms(); };
+            }, [user, view]);
+
+            useEffect(() => {
+                if (currentRoom && rooms.length > 0) {
+                    const fresh = rooms.find(r => r.id === currentRoom.id);
+                    if (fresh && JSON.stringify(fresh) !== JSON.stringify(currentRoom)) setCurrentRoom(fresh);
+                }
+            }, [rooms, currentRoom]);
+
+            // --- Handlers ---
+            const handleLogin = async () => {
+                setLoading(true);
+                try { await signInWithPopup(auth, new GoogleAuthProvider()); } 
+                catch (e) { try { await signInAnonymously(auth); showToast("익명 모드로 접속합니다."); } catch (err) { showToast("로그인 실패"); } } 
+                finally { setLoading(false); }
+            };
+
+            const handleProfileUpdate = async (e) => {
+                e.preventDefault();
+                const form = e.target;
+                const data = {
+                    uid: user.uid,
+                    customId: form.customId.value.trim(),
+                    displayName: form.displayName.value.trim(),
+                    statusMsg: form.statusMsg?.value.trim() || "",
+                    photoURL: user.photoURL || `https://api.dicebear.com/7.x/initials/svg?seed=${form.customId.value}`,
+                    createdAt: serverTimestamp()
+                };
+                
+                await setDoc(doc(db, 'artifacts', STATIC_APP_ID, 'public', 'data', 'users', user.uid), data, { merge: true });
+                setUserProfile(prev => ({ ...prev, ...data }));
+                setView('main');
+                setModal(null);
+            };
+
+            const togglePin = async (roomId, currentPins = []) => {
+                const newPins = currentPins.includes(user.uid) ? currentPins.filter(uid => uid !== user.uid) : [...currentPins, user.uid];
+                await updateDoc(doc(db, 'artifacts', STATIC_APP_ID, 'public', 'data', 'rooms', roomId), { pinnedBy: newPins });
+            };
+
+            const saveAiConfig = (e) => {
+                e.preventDefault();
+                const newConfig = {
+                    apiKey: e.target.apiKey.value.trim(),
+                    prompt: e.target.prompt.value.trim(),
+                    model: e.target.model.value,
+                    enabled: true
+                };
+                setAiConfig(newConfig);
+                localStorage.setItem(`ai_config_${user.uid}`, JSON.stringify(newConfig));
+                setModal(null);
+                showToast("AI 설정이 저장되었습니다.");
+            };
+
+            const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+
+            // --- Render Logic ---
+            if (view === 'loading') return <div className="h-full flex items-center justify-center"><i className="fa-solid fa-spinner fa-spin text-primary text-3xl"></i></div>;
+            if (view === 'login') return <LoginView loading={loading} onLogin={handleLogin} />;
+            if (view === 'setup_profile') return <ProfileSetupView onSubmit={handleProfileUpdate} />;
+
+            if (view === 'main') return (
+                <div className="h-full flex flex-col bg-white">
+                    <MainHeader tab={tab} setModal={setModal} />
+                    <MainContent 
+                        tab={tab} friends={friends} rooms={rooms} unreadCounts={unreadCounts} 
+                        user={user} userProfile={userProfile} 
+                        onRoomSelect={(r) => { setCurrentRoom(r); setView('chat'); }}
+                        onTogglePin={togglePin} setModal={setModal} signOut={() => signOut(auth)}
+                    />
+                    <BottomNav tab={tab} setTab={setTab} unread={Object.keys(unreadCounts).length} />
+                    
+                    {modal === 'add_friend' && <AddFriendModal onClose={() => setModal(null)} db={db} user={user} showToast={showToast} appId={STATIC_APP_ID} />}
+                    {modal === 'edit_profile' && <EditProfileModal onClose={() => setModal(null)} userProfile={userProfile} onSubmit={handleProfileUpdate} />}
+                    {modal === 'ai_settings' && <AiSettingsModal onClose={() => setModal(null)} config={aiConfig} onSubmit={saveAiConfig} />}
+                    {toast && <Toast msg={toast} />}
+                </div>
+            );
+
+            if (view === 'chat' && currentRoom) {
+                return <ChatRoom 
+                    room={currentRoom} 
+                    user={user} 
+                    userProfile={userProfile}
+                    db={db}
+                    friends={friends}
+                    aiConfig={aiConfig}
+                    setModal={setModal}
+                    onBack={() => { setCurrentRoom(null); setView('main'); }} 
+                    appId={STATIC_APP_ID}
+                    showToast={showToast}
+                />;
+            }
+            return null;
+        }
+
+        // --- Chat Room with Pagination & AI & Audio ---
+        function ChatRoom({ room, user, userProfile, db, friends, aiConfig, setModal, onBack, appId, showToast }) {
+            const [messages, setMessages] = useState([]);
+            const [text, setText] = useState("");
+            const [filesOpen, setFilesOpen] = useState(false);
+            const [settingsOpen, setSettingsOpen] = useState(false); // Room Settings
+            const [isRecording, setIsRecording] = useState(false);
+            const [recordTime, setRecordTime] = useState(0);
+            const [loadingMore, setLoadingMore] = useState(false);
+            const [lastDoc, setLastDoc] = useState(null);
+            const [hasMore, setHasMore] = useState(true);
+            const [pendingAi, setPendingAi] = useState(null); 
+            const [isAiMode, setIsAiMode] = useState(() => localStorage.getItem('chat_ai_mode') === 'true');
+
+            const mediaRecorderRef = useRef(null);
+            const audioChunksRef = useRef([]);
+            const topObserver = useRef(null);
+            const messagesEndRef = useRef(null);
+            const chatEndRef = useRef(null); 
+
+            const MESSAGES_PER_PAGE = 20;
+
+            // 1. Initial Load & Realtime Listener
+            useEffect(() => {
+                setMessages([]);
+                setLastDoc(null);
+                setHasMore(true);
+
+                const fetchInitial = async () => {
+                    const q = query(
+                        collection(db, 'artifacts', appId, 'public', 'data', `room_${room.id}_messages`),
+                        orderBy('createdAt', 'desc'),
+                        limit(MESSAGES_PER_PAGE)
+                    );
+                    const snap = await getDocs(q);
+                    const initialMsgs = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+                    setMessages(initialMsgs);
+                    setLastDoc(snap.docs[snap.docs.length - 1]);
+                    if (snap.docs.length < MESSAGES_PER_PAGE) setHasMore(false);
+                    setTimeout(() => chatEndRef.current?.scrollIntoView(), 100);
+                };
+
+                fetchInitial();
+
+                const loadTime = new Date();
+                const qRealtime = query(
+                    collection(db, 'artifacts', appId, 'public', 'data', `room_${room.id}_messages`),
+                    orderBy('createdAt', 'asc'),
+                    where('createdAt', '>', loadTime)
+                );
+                
+                const unsub = onSnapshot(qRealtime, (snap) => {
+                    snap.docChanges().forEach((change) => {
+                        if (change.type === "added") {
+                            const newMsg = { id: change.doc.id, ...change.doc.data() };
+                            setMessages(prev => [...prev, newMsg]);
+                            setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+                            
+                            updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), {
+                                [`readStatus.${user.uid}`]: serverTimestamp()
+                            }).catch(()=>{});
+                        }
+                    });
+                });
+
+                return () => unsub();
+            }, [room.id]);
+
+            // Auto-delete check on render/message update
+            useEffect(() => {
+                if (room.settings?.autoDelete && room.settings?.retentionHours) {
+                    const cutoff = Date.now() - (room.settings.retentionHours * 60 * 60 * 1000);
+                    const filtered = messages.filter(m => !m.createdAt || m.createdAt.seconds * 1000 >= cutoff);
+                    if (filtered.length !== messages.length) {
+                        setMessages(filtered);
+                        // Clean up backend (Best effort from client)
+                        messages.forEach(m => {
+                            if (m.createdAt && m.createdAt.seconds * 1000 < cutoff) {
+                                deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', `room_${room.id}_messages`, m.id)).catch(()=>{});
+                            }
+                        });
+                    }
+                }
+            }, [messages, room.settings]);
+
+            useEffect(() => {
+                if (pendingAi) setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }, [pendingAi]);
+
+            // 2. Load More
+            const loadMore = useCallback(async () => {
+                if (loadingMore || !hasMore || !lastDoc) return;
+                setLoadingMore(true);
+                const scrollContainer = document.getElementById('chat-scroll-area');
+                const scrollHeightBefore = scrollContainer.scrollHeight;
+
+                const q = query(
+                    collection(db, 'artifacts', appId, 'public', 'data', `room_${room.id}_messages`),
+                    orderBy('createdAt', 'desc'),
+                    startAfter(lastDoc),
+                    limit(MESSAGES_PER_PAGE)
+                );
+                
+                const snap = await getDocs(q);
+                if (!snap.empty) {
+                    const olderMsgs = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse();
+                    setMessages(prev => [...olderMsgs, ...prev]);
+                    setLastDoc(snap.docs[snap.docs.length - 1]);
+                    requestAnimationFrame(() => {
+                        scrollContainer.scrollTop = scrollContainer.scrollHeight - scrollHeightBefore;
+                    });
+                } else {
+                    setHasMore(false);
+                }
+                setLoadingMore(false);
+            }, [loadingMore, hasMore, lastDoc, room.id]);
+
+            useEffect(() => {
+                const observer = new IntersectionObserver(entries => {
+                    if (entries[0].isIntersecting && hasMore) loadMore();
+                }, { threshold: 1 });
+                if (topObserver.current) observer.observe(topObserver.current);
+                return () => observer.disconnect();
+            }, [loadMore, hasMore]);
+
+            // 3. Audio Recording
+            const startRecording = async () => {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    let mimeType = 'audio/webm';
+                    if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) mimeType = 'audio/webm;codecs=opus';
+                    else if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+                    
+                    mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
+                    audioChunksRef.current = [];
+                    mediaRecorderRef.current.ondataavailable = (e) => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+                    mediaRecorderRef.current.onstop = () => {
+                        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+                        const reader = new FileReader();
+                        reader.readAsDataURL(audioBlob);
+                        reader.onloadend = () => sendMessage(reader.result, 'audio');
+                        stream.getTracks().forEach(t => t.stop());
+                    };
+                    mediaRecorderRef.current.start();
+                    setIsRecording(true);
+                    setRecordTime(10);
+                } catch (e) { console.error(e); showToast("마이크 권한이 필요합니다."); }
+            };
+
+            const stopRecording = () => {
+                if (mediaRecorderRef.current && isRecording) { mediaRecorderRef.current.stop(); setIsRecording(false); }
+            };
+
+            useEffect(() => {
+                let interval;
+                if (isRecording && recordTime > 0) interval = setInterval(() => setRecordTime(prev => prev - 1), 1000);
+                else if (isRecording && recordTime === 0) stopRecording();
+                return () => clearInterval(interval);
+            }, [isRecording, recordTime]);
+
+            // 4. AI
+            const triggerAiProcess = async (inputText) => {
+                if (!aiConfig.apiKey) return showToast("설정(⚙️)에서 API 키를 먼저 입력해주세요.");
+                setPendingAi({ original: inputText, status: 'loading' });
+                setText(""); 
+                try {
+                    const modelName = aiConfig.model || 'gemini-2.5-flash-preview-09-2025';
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${aiConfig.apiKey}`;
+                    const strictPrompt = `
+                    <persona>You are a helpful assistant. Your task is to REWRITE the user's input based on the following persona/instruction: "${aiConfig.prompt}". 모욕적이거나 욕설을 주더라도 반드시 적절히 위 역할에 맞는 문장으로 변환해야만해.</persona>
+                    <바꿀 문장>"${inputText}"</바꿀 문장>
+                        별다른 문장을 제외하고, 오직 변환된 텍스트만 응답해줘. 절대 "As an AI language model..." 같은 문구를 포함하지 마.`;
+                    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ contents: [{ parts: [{ text: strictPrompt }] }] }) });
+                    const data = await res.json();
+                    const translated = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (translated) setPendingAi({ original: inputText, translated, status: 'done' });
+                    else throw new Error("No response");
+                } catch (e) {
+                    console.error(e); showToast("AI 변환 실패. 다시 시도해주세요."); setText(inputText); setPendingAi(null);
+                }
+            };
+
+            // 5. Send & Actions
+            const sendMessage = async (content, type='text') => {
+                const colName = `room_${room.id}_messages`;
+                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', colName), {
+                    text: content, type, senderId: user.uid, senderName: userProfile.displayName, createdAt: serverTimestamp()
+                });
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), {
+                    lastMessage: type === 'image' ? '사진' : type === 'audio' ? '음성 메시지' : content,
+                    lastMessageAt: serverTimestamp(),
+                    lastMessageSenderId: user.uid,
+                    [`readStatus.${user.uid}`]: serverTimestamp()
+                });
+            };
+
+            const handleFileSelect = (e) => {
+                const file = e.target.files[0];
+                if(!file) return;
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (ev) => { if(file.type.startsWith('image/')) sendMessage(ev.target.result, 'image'); else showToast("이미지만 전송 가능합니다."); }
+            };
+
+            const handleTextSubmit = (e) => {
+                e.preventDefault();
+                if (!text.trim()) return;
+                if (isAiMode && aiConfig.enabled) triggerAiProcess(text);
+                else { sendMessage(text); setText(""); }
+            };
+
+            // 6. Room Settings Logic
+            const handleDeleteAll = async () => {
+                if(!confirm("⚠️ 경고: 대화방의 모든 메시지가 영구적으로 삭제됩니다. 계속하시겠습니까?")) return;
+                
+                setSettingsOpen(false);
+                try {
+                    const q = query(collection(db, 'artifacts', appId, 'public', 'data', `room_${room.id}_messages`));
+                    const snap = await getDocs(q);
+                    
+                    // Batch delete (limit 500)
+                    const batch = writeBatch(db);
+                    snap.docs.forEach(d => batch.delete(d.ref));
+                    
+                    const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id);
+                    batch.update(roomRef, { lastMessage: "🔒 대화 내용이 삭제되었습니다.", lastMessageAt: serverTimestamp() });
+                    
+                    await batch.commit();
+                    showToast("대화 내용이 전체 삭제되었습니다.");
+                    setMessages([]); // Clear local
+                } catch(e) {
+                    console.error(e);
+                    showToast("삭제 중 오류가 발생했습니다.");
+                }
+            };
+
+            const updateRetention = async (hours) => {
+                const currentHours = room.settings?.retentionHours;
+                // Ratchet Rule: Cannot increase duration (e.g. 24h -> 168h is blocked). 0 (off) is essentially infinity, so blocked if currently set.
+                // Exception: If currentHours is undefined/null/0, we can set anything.
+                // If hours is 0 (off) and currentHours is set (>0), Block.
+                // If hours > currentHours and currentHours > 0, Block.
+                
+                if (currentHours && currentHours > 0) {
+                    if (hours === 0 || hours > currentHours) {
+                        return showToast("보안 정책상 설정된 기간을 늘리거나 해제할 수 없습니다.");
+                    }
+                }
+
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', room.id), {
+                    'settings.retentionHours': hours,
+                    'settings.autoDelete': hours > 0
+                });
+                showToast(hours > 0 ? `${hours}시간 후 자동 삭제가 적용되었습니다.` : "자동 삭제가 해제되었습니다.");
+            };
+
+            return (
+                <div className="flex flex-col h-full bg-slate-50 relative">
+                    {/* Header */}
+                    <div className="bg-white px-4 py-3 flex justify-between items-center shadow-sm z-10">
+                        <div className="flex items-center gap-3">
+                            <button onClick={onBack}><i className="fa-solid fa-chevron-left text-slate-500"></i></button>
+                            <div>
+                                <h2 className="font-bold text-slate-800 text-sm">{room.name}</h2>
+                                {room.settings?.autoDelete && <span className="text-[10px] text-red-500 flex items-center gap-1"><i className="fa-solid fa-clock"></i> {room.settings.retentionHours}h 삭제</span>}
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <button onClick={() => setFilesOpen(true)} className="text-slate-400 hover:text-primary"><i className="fa-solid fa-folder-open"></i></button>
+                            {aiConfig.enabled && (
+                                <button 
+                                    onClick={() => { const next = !isAiMode; setIsAiMode(next); localStorage.setItem('chat_ai_mode', next); }} 
+                                    className={`transition-all duration-300 ${isAiMode ? 'text-ai animate-pulse scale-110' : 'text-slate-300 hover:text-ai'}`}
+                                >
+                                    <i className="fa-solid fa-wand-magic-sparkles text-lg"></i>
+                                </button>
+                            )}
+                            <button onClick={() => setSettingsOpen(true)} className="text-slate-400 hover:text-slate-600">
+                                <i className="fa-solid fa-bars text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Chat Area */}
+                    <div id="chat-scroll-area" className="flex-1 overflow-y-auto p-4 flex flex-col gap-3 relative">
+                        <div ref={topObserver} className="h-4 w-full flex items-center justify-center">
+                            {loadingMore && <i className="fa-solid fa-spinner fa-spin text-slate-400"></i>}
+                        </div>
+                        
+                        {messages.map((msg, i) => {
+                            const isMe = msg.senderId === user.uid;
+                            return (
+                                <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} items-end`}>
+                                    {!isMe && <div className="w-8 h-8 rounded-full bg-slate-200 mr-2 flex items-center justify-center text-xs font-bold">{msg.senderName[0]}</div>}
+                                    <div className={`max-w-[75%] px-4 py-2 text-sm rounded-2xl ${isMe ? 'bg-primary text-white rounded-tr-none' : 'bg-white border rounded-tl-none'}`}>
+                                        {msg.type === 'text' && msg.text}
+                                        {msg.type === 'image' && <img src={msg.text} className="rounded-lg max-w-full" />}
+                                        {msg.type === 'audio' && (
+                                            <div className="flex items-center gap-2 min-w-[120px]">
+                                                <button onClick={() => new Audio(msg.text).play()} className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center hover:bg-white/30"><i className="fa-solid fa-play text-xs"></i></button>
+                                                <div className="flex gap-0.5 items-end h-4">
+                                                    {[...Array(5)].map((_,idx)=><div key={idx} className="bar bg-current" style={{animationDuration: `${0.5 + idx*0.1}s`}}></div>)}
+                                                </div>
+                                                <span className="text-[10px] opacity-70">Voice</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        
+                        {pendingAi && (
+                            <div className="flex justify-end items-end gap-2 animate-pulse">
+                                <div className="max-w-[85%] w-full flex flex-col items-end gap-1">
+                                    <div className="bg-slate-100 text-slate-500 px-3 py-1.5 rounded-xl rounded-br-none text-xs border border-slate-200">{pendingAi.original}</div>
+                                    {pendingAi.status === 'loading' ? (
+                                        <div className="bg-ai/10 border border-ai/20 text-ai px-4 py-2 rounded-2xl rounded-tr-none text-sm flex items-center gap-2"><i className="fa-solid fa-wand-magic-sparkles fa-spin"></i><span>변환 중...</span></div>
+                                    ) : (
+                                        <div className="flex flex-col items-end gap-2 fade-in w-full">
+                                            <div className="relative w-full bg-gradient-to-br from-indigo-500 to-purple-600 rounded-2xl rounded-tr-none p-1 shadow-lg">
+                                                <textarea value={pendingAi.translated} onChange={(e) => setPendingAi(prev => ({...prev, translated: e.target.value}))} className="w-full bg-transparent text-white text-sm px-3 py-2 outline-none resize-none no-scrollbar h-auto min-h-[40px] block" onInput={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }} />
+                                                <i className="fa-solid fa-pen absolute bottom-2 right-2 text-white/50 text-[10px] pointer-events-none"></i>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => {setText(pendingAi.original); setPendingAi(null);}} className="bg-white border border-slate-200 text-slate-400 w-8 h-8 rounded-full flex items-center justify-center hover:bg-slate-50"><i className="fa-solid fa-xmark"></i></button>
+                                                <button onClick={() => {sendMessage(pendingAi.translated); setPendingAi(null);}} className="bg-primary text-white w-8 h-8 rounded-full flex items-center justify-center hover:bg-primary-dark"><i className="fa-solid fa-check"></i></button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        <div ref={messagesEndRef} />
+                        <div ref={chatEndRef} />
+                    </div>
+
+                    {/* Input */}
+                    <div className="p-3 bg-white border-t">
+                        {isRecording ? (
+                            <div className="flex items-center justify-between bg-red-50 p-3 rounded-full animate-pulse">
+                                <span className="text-red-500 text-sm font-bold flex items-center gap-2"><div className="w-3 h-3 bg-red-500 rounded-full"></div> 녹음 중... {recordTime}s</span>
+                                <button onClick={stopRecording} className="w-8 h-8 bg-red-500 text-white rounded-full"><i className="fa-solid fa-stop"></i></button>
+                            </div>
+                        ) : (
+                            <div className="flex gap-2">
+                                <label className="p-2 text-slate-400 cursor-pointer"><input type="file" accept="image/*" className="hidden" onChange={handleFileSelect} /><i className="fa-solid fa-image text-xl"></i></label>
+                                <button onClick={startRecording} className="p-2 text-slate-400 hover:text-red-500"><i className="fa-solid fa-microphone text-xl"></i></button>
+                                <form onSubmit={handleTextSubmit} className="flex-1 flex gap-2 relative">
+                                    <input className={`flex-1 bg-slate-100 rounded-full px-4 text-sm focus:outline-none focus:ring-1 focus:ring-primary transition-all ${isAiMode ? 'ring-2 ring-ai bg-purple-50' : ''}`} value={text} onChange={e=>setText(e.target.value)} placeholder={isAiMode ? "AI가 변환해드립니다..." : "메시지 입력..."} disabled={!!pendingAi} />
+                                    <button type="submit" disabled={!!pendingAi} className={`w-10 h-10 rounded-full text-white transition-colors ${isAiMode ? 'bg-ai hover:bg-purple-600' : 'bg-primary hover:bg-indigo-700'} ${!!pendingAi ? 'opacity-50 cursor-not-allowed' : ''}`}><i className={`fa-solid ${isAiMode ? 'fa-wand-magic-sparkles' : 'fa-paper-plane'}`}></i></button>
+                                </form>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Settings Modal (Right Side Drawer) */}
+                    {settingsOpen && (
+                        <div className="absolute inset-0 z-50 flex justify-end">
+                            <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={() => setSettingsOpen(false)}></div>
+                            <div className="w-72 bg-white h-full shadow-2xl relative z-10 p-5 slide-in-right flex flex-col">
+                                <h3 className="font-bold text-lg mb-6 flex items-center gap-2"><i className="fa-solid fa-sliders"></i> 대화방 설정</h3>
+                                
+                                <div className="mb-8">
+                                    <label className="text-xs font-bold text-slate-400 uppercase mb-3 block">메시지 자동 삭제</label>
+                                    <div className="space-y-2">
+                                        {[
+                                            { label: '설정 안함', val: 0 },
+                                            { label: '1시간', val: 1 },
+                                            { label: '24시간', val: 24 },
+                                            { label: '1주일', val: 168 },
+                                            { label: '1달', val: 720 },
+                                        ].map(opt => {
+                                            // Check if disabled by ratchet
+                                            const current = room.settings?.retentionHours || 0;
+                                            const disabled = current > 0 && (opt.val === 0 || opt.val > current);
+                                            
+                                            return (
+                                                <button 
+                                                    key={opt.val} 
+                                                    onClick={() => updateRetention(opt.val)}
+                                                    disabled={disabled}
+                                                    className={`w-full text-left px-4 py-3 rounded-xl text-sm flex justify-between items-center transition
+                                                        ${current === opt.val ? 'bg-primary text-white shadow-md' : 'bg-slate-50 text-slate-600 hover:bg-slate-100'}
+                                                        ${disabled ? 'opacity-40 cursor-not-allowed' : ''}
+                                                    `}
+                                                >
+                                                    {opt.label}
+                                                    {current === opt.val && <i className="fa-solid fa-check"></i>}
+                                                    {disabled && <i className="fa-solid fa-lock text-xs"></i>}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 mt-2">* 보안을 위해 설정된 기간을 늘리거나 해제할 수 없습니다.</p>
+                                </div>
+
+                                <div className="mt-auto">
+                                    <button onClick={handleDeleteAll} className="w-full bg-red-50 text-red-500 py-4 rounded-xl font-bold hover:bg-red-100 transition flex items-center justify-center gap-2">
+                                        <i className="fa-solid fa-trash-can"></i> 대화 내용 전체 삭제
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Files Drawer */}
+                    {filesOpen && (
+                        <div className="absolute inset-0 z-50 flex justify-end">
+                            <div className="absolute inset-0 bg-black/20" onClick={() => setFilesOpen(false)}></div>
+                            <div className="w-64 bg-white h-full shadow-2xl relative z-10 p-4 slide-in-right overflow-y-auto">
+                                <h3 className="font-bold mb-4">공유된 파일</h3>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {messages.filter(m => m.type === 'image').map(m => (
+                                        <img key={m.id} src={m.text} className="w-full h-24 object-cover rounded-lg border" />
+                                    ))}
+                                </div>
+                                <h4 className="font-bold mt-6 mb-2 text-sm text-slate-500">음성 메시지</h4>
+                                <div className="flex flex-col gap-2">
+                                    {messages.filter(m => m.type === 'audio').map(m => (
+                                        <div key={m.id} className="bg-slate-100 p-2 rounded flex items-center gap-2">
+                                            <i className="fa-solid fa-music text-slate-400"></i>
+                                            <span className="text-xs text-slate-500">Audio Clip</span>
+                                            <button onClick={() => new Audio(m.text).play()} className="ml-auto text-primary"><i className="fa-solid fa-play"></i></button>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // --- Helper Components ---
+        const LoginView = ({ loading, onLogin }) => (
+            <div className="h-full flex flex-col items-center justify-center p-8 bg-gradient-to-br from-indigo-600 to-purple-700 text-white">
+                <div className="text-5xl mb-6"><i className="fa-solid fa-comments"></i></div>
+                <h1 className="text-3xl font-bold mb-2">Modern Chat v4.4</h1>
+                <p className="opacity-80 mb-10">Security & Retention Update</p>
+                <button onClick={onLogin} disabled={loading} className="w-full bg-white text-indigo-700 font-bold py-4 rounded-xl shadow-lg flex items-center justify-center gap-2">
+                    {loading ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-brands fa-google"></i>} 시작하기
+                </button>
+            </div>
+        );
+
+        const ProfileSetupView = ({ onSubmit }) => (
+            <div className="h-full p-6 flex flex-col justify-center bg-white">
+                <h2 className="text-2xl font-bold mb-2">프로필 생성</h2>
+                <form onSubmit={onSubmit}>
+                    <input name="customId" className="w-full bg-slate-50 border p-3 rounded-lg mb-4 outline-none" placeholder="ID (user_id)" required />
+                    <input name="displayName" className="w-full bg-slate-50 border p-3 rounded-lg mb-4 outline-none" placeholder="이름 (홍길동)" required />
+                    <input name="statusMsg" className="w-full bg-slate-50 border p-3 rounded-lg mb-8 outline-none" placeholder="상태 메시지" />
+                    <button className="w-full bg-primary text-white font-bold py-3 rounded-lg">완료</button>
+                </form>
+            </div>
+        );
+
+        const MainHeader = ({ tab, setModal }) => (
+            <div className="px-5 py-4 flex justify-between items-center bg-white border-b border-slate-100">
+                <h1 className="text-xl font-bold text-slate-800">{tab === 'friends' ? '친구' : tab === 'chats' ? '대화' : '설정'}</h1>
+                <div className="flex gap-4 text-slate-400">
+                    {tab === 'friends' && <button onClick={() => setModal('add_friend')}><i className="fa-solid fa-user-plus hover:text-primary"></i></button>}
+                    <button onClick={() => setModal('ai_settings')} className="hover:text-ai"><i className="fa-solid fa-wand-magic-sparkles"></i></button>
+                </div>
+            </div>
+        );
+
+        const MainContent = ({ tab, friends, rooms, unreadCounts, user, userProfile, onRoomSelect, onTogglePin, setModal, signOut }) => (
+            <div className="flex-1 overflow-y-auto">
+                {tab === 'friends' && (
+                    <div className="p-4 fade-in">
+                        <div className="flex items-center p-4 bg-gradient-to-r from-indigo-50 to-white rounded-2xl mb-6 border border-indigo-50">
+                            <img src={userProfile.photoURL} className="w-14 h-14 rounded-full bg-slate-200 object-cover mr-4" />
+                            <div className="flex-1">
+                                <h3 className="font-bold text-lg">{userProfile.displayName}</h3>
+                                <p className="text-xs text-slate-500">@{userProfile.customId}</p>
+                            </div>
+                            <button onClick={() => setModal('edit_profile')}><i className="fa-solid fa-pen-to-square text-slate-300"></i></button>
+                        </div>
+                        <h3 className="text-xs font-bold text-slate-400 mb-2">친구 ({friends.length})</h3>
+                        {friends.map(f => (
+                            <div key={f.uid} className="flex items-center p-3 hover:bg-slate-50 rounded-xl cursor-pointer">
+                                <img src={f.photoURL} className="w-10 h-10 rounded-full bg-slate-200 mr-3" />
+                                <div className="font-semibold text-sm">{f.displayName}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+                {tab === 'chats' && (
+                    <div className="fade-in">
+                        {rooms.map(room => {
+                            const isPinned = room.pinnedBy?.includes(user.uid);
+                            return (
+                                <div key={room.id} className="flex items-center px-5 py-4 hover:bg-slate-50 cursor-pointer border-b border-slate-50 group">
+                                    <div onClick={() => onRoomSelect(room)} className="flex-1 flex items-center min-w-0">
+                                        <div className="w-12 h-12 bg-indigo-50 rounded-full mr-4 flex items-center justify-center text-primary text-lg relative">
+                                            <i className="fa-solid fa-user-group"></i>
+                                            {isPinned && <div className="absolute -top-1 -right-1 bg-yellow-400 text-white w-5 h-5 rounded-full text-[10px] flex items-center justify-center border-2 border-white"><i className="fa-solid fa-thumbtack"></i></div>}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex justify-between items-baseline mb-1">
+                                                <h3 className="font-semibold text-slate-800 truncate">{room.name}</h3>
+                                                <span className="text-xs text-slate-400">{room.lastMessageAt ? new Date(room.lastMessageAt.seconds*1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : ''}</span>
+                                            </div>
+                                            <p className={`text-sm truncate w-[90%] ${unreadCounts[room.id] ? 'font-bold text-slate-800' : 'text-slate-500'}`}>{room.lastMessage}</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={(e) => { e.stopPropagation(); onTogglePin(room.id, room.pinnedBy); }} className={`ml-2 p-2 ${isPinned ? 'text-yellow-500' : 'text-slate-200 hover:text-slate-400'}`}><i className="fa-solid fa-thumbtack"></i></button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+                {tab === 'settings' && (
+                    <div className="p-4">
+                        <button onClick={() => setModal('ai_settings')} className="w-full bg-white border p-4 rounded-xl mb-3 flex items-center justify-between text-ai font-bold"><span>AI 설정</span><i className="fa-solid fa-wand-magic-sparkles"></i></button>
+                        <button onClick={() => setModal('edit_profile')} className="w-full bg-white border p-4 rounded-xl mb-3 flex items-center justify-between"><span>프로필 수정</span><i className="fa-solid fa-chevron-right text-slate-300"></i></button>
+                        <button onClick={signOut} className="w-full bg-red-50 text-red-500 p-4 rounded-xl font-medium">로그아웃</button>
+                    </div>
+                )}
+            </div>
+        );
+
+        const BottomNav = ({ tab, setTab, unread }) => (
+            <div className="flex bg-white border-t py-2 text-slate-400">
+                <button onClick={() => setTab('friends')} className={`flex-1 flex flex-col items-center ${tab==='friends'?'text-primary':''}`}><i className="fa-solid fa-user text-xl"></i><span className="text-[10px]">친구</span></button>
+                <button onClick={() => setTab('chats')} className={`flex-1 flex flex-col items-center relative ${tab==='chats'?'text-primary':''}`}><i className="fa-solid fa-comment text-xl"></i><span className="text-[10px]">대화</span>{unread > 0 && <span className="absolute top-0 ml-4 w-2 h-2 bg-red-500 rounded-full"></span>}</button>
+                <button onClick={() => setTab('settings')} className={`flex-1 flex flex-col items-center ${tab==='settings'?'text-primary':''}`}><i className="fa-solid fa-gear text-xl"></i><span className="text-[10px]">설정</span></button>
+            </div>
+        );
+
+        // --- Modals ---
+        const AddFriendModal = ({ onClose, db, user, showToast, appId }) => {
+            const handleAdd = async (e) => {
+                e.preventDefault();
+                const targetId = e.target.id.value.trim();
+                const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'users'), where('customId', '==', targetId));
+                const snap = await getDocs(q);
+                if (snap.empty) return showToast("사용자 없음");
+                const friend = snap.docs[0].data();
+                if (friend.uid === user.uid) return showToast("본인 추가 불가");
+                await setDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'friends', friend.uid), friend);
+                showToast("추가됨");
+                onClose();
+            };
+            return (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white p-6 rounded-2xl w-full max-w-sm">
+                        <h3 className="font-bold mb-4">친구 추가</h3>
+                        <form onSubmit={handleAdd}>
+                            <input name="id" placeholder="ID 입력" className="w-full border p-2 rounded mb-4" autoFocus />
+                            <div className="flex justify-end gap-2"><button type="button" onClick={onClose} className="px-4 py-2 text-slate-500">취소</button><button className="px-4 py-2 bg-primary text-white rounded">추가</button></div>
+                        </form>
+                    </div>
+                </div>
+            );
+        };
+
+        const EditProfileModal = ({ onClose, userProfile, onSubmit }) => (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                <div className="bg-white p-6 rounded-2xl w-full max-w-sm">
+                    <h3 className="font-bold mb-4">프로필 수정</h3>
+                    <form onSubmit={onSubmit}>
+                        <input name="customId" type="hidden" value={userProfile?.customId} />
+                        <label className="text-xs text-slate-400">이름</label><input name="displayName" defaultValue={userProfile?.displayName} className="w-full border p-2 rounded mb-3" />
+                        <label className="text-xs text-slate-400">상태</label><input name="statusMsg" defaultValue={userProfile?.statusMsg} className="w-full border p-2 rounded mb-6" />
+                        <div className="flex justify-end gap-2"><button type="button" onClick={onClose} className="px-4 py-2 text-slate-500">취소</button><button className="px-4 py-2 bg-primary text-white rounded">저장</button></div>
+                    </form>
+                </div>
+            </div>
+        );
+
+        const AiSettingsModal = ({ onClose, config, onSubmit }) => (
+            <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 fade-in">
+                <div className="bg-white p-6 rounded-2xl w-full max-w-sm shadow-2xl">
+                    <div className="flex items-center gap-2 mb-4 text-ai"><i className="fa-solid fa-robot text-xl"></i><h3 className="font-bold text-lg">AI 페르소나 설정</h3></div>
+                    <form onSubmit={onSubmit}>
+                        <label className="block text-xs font-bold text-slate-400 mb-1">Gemini API Key</label>
+                        <input name="apiKey" defaultValue={config.apiKey} placeholder="sk-..." className="w-full bg-slate-50 border p-3 rounded-lg mb-4 text-sm font-mono" required />
+                        
+                        <label className="block text-xs font-bold text-slate-400 mb-1">사용 모델</label>
+                        <select name="model" defaultValue={config.model || 'gemma-3-27b-it'} className="w-full bg-slate-50 border p-3 rounded-lg mb-4 text-sm outline-none">
+                            <option value="gemma-3-27b-it">gemma-3-27b-it</option>
+                        </select>
+
+                        <label className="block text-xs font-bold text-slate-400 mb-1">페르소나 프리셋</label>
+                        <select onChange={(e) => {
+                            if(e.target.value) {
+                                const textarea = document.querySelector('textarea[name="prompt"]');
+                                if(textarea) textarea.value = e.target.value;
+                            }
+                        }} className="w-full bg-slate-50 border p-3 rounded-lg mb-4 text-sm outline-none">
+                            <option value="">-- 프리셋 선택 (직접 입력) --</option>
+                            {Object.entries(PERSONA_PRESETS).map(([category, personas]) => (
+                                <optgroup key={category} label={category}>
+                                    {personas.map(p => (
+                                        <option key={p.label} value={p.prompt}>{p.label}</option>
+                                    ))}
+                                </optgroup>
+                            ))}
+                        </select>
+
+                        <label className="block text-xs font-bold text-slate-400 mb-1">시스템 프롬프트 (최대 300자)</label>
+                        <textarea name="prompt" defaultValue={config.prompt} maxLength={300} rows={3} className="w-full bg-slate-50 border p-3 rounded-lg mb-6 text-sm resize-none" placeholder="예: 7세 여자아이 말투로 번역해줘" required />
+                        
+                        <div className="flex justify-end gap-2">
+                            <button type="button" onClick={onClose} className="px-4 py-2 text-slate-500 font-medium">취소</button>
+                            <button className="px-4 py-2 bg-ai text-white rounded-lg font-bold shadow-lg shadow-indigo-200">저장 및 활성화</button>
+                        </div>
+                    </form>
+                    <p className="mt-4 text-[10px] text-slate-400 text-center">API Key는 브라우저 로컬 스토리지에만 저장됩니다.</p>
+                </div>
+            </div>
+        );
+
+        const Toast = ({ msg }) => <div className="fixed top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-6 py-2 rounded-full text-sm shadow-xl z-50 fade-in">{msg}</div>;
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
