@@ -1,245 +1,255 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>폴더 스캐너 및 TXT 내보내기</title>
-    <!-- Tailwind CSS CDN 로드 -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Inter 폰트 로드 */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
-        body {
-            font-family: 'Inter', sans-serif;
-        }
-        /* 드래그 오버 시 스타일 */
-        #drop-zone.drag-over {
-            border-color: #3b82f6; /* blue-500 */
-            background-color: #eff6ff; /* blue-50 */
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>폴더 스캐너 및 TXT 내보내기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Inter 폰트 로드 */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+    body {
+      font-family: 'Inter', sans-serif;
+    }
+    /* 드래그 오버 시 스타일 */
+    #drop-zone.drag-over {
+      border-color: #3b82f6; /* blue-500 */
+      background-color: #eff6ff; /* blue-50 */
+    }
+  </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen">
-    <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl mx-4">
-        <h1 class="text-2xl font-bold text-center text-gray-800 mb-4">폴더 스캔 및 TXT 생성기</h1>
-        <p class="text-center text-gray-600 mb-6">아래 영역에 폴더를 드래그 앤 드롭하세요. 폴더 구조와 모든 파일 내용이 포함된 <code>.txt</code> 파일을 생성합니다.</p>
+  <div class="bg-white p-8 rounded-lg shadow-xl w-full max-w-2xl mx-4">
+    <h1 class="text-2xl font-bold text-center text-gray-800 mb-4">폴더 스캔 및 TXT 생성기</h1>
+    <p class="text-center text-gray-600 mb-6">아래 영역에 폴더를 드래그 앤 드롭하세요. 폴더 구조와 모든 파일 내용이 포함된 <code>.txt</code> 파일을 생성합니다.</p>
 
-        <!-- 드롭 영역 -->
-        <div id="drop-zone" class="border-4 border-dashed border-gray-300 rounded-lg p-16 text-center transition-all duration-300">
-            <p id="drop-message" class="text-gray-500">이곳에 폴더를 드래그하세요</p>
-        </div>
-
-        <!-- 로딩 스피너 (초기 숨김) -->
-        <div id="spinner" class="hidden my-6 flex justify-center items-center">
-            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
-            <p class="ml-3 text-gray-700">폴더를 스캔하고 있습니다. 잠시 기다려주세요...</p>
-        </div>
-
-        <!-- 결과 로그 (파일 구조) -->
-        <div class="mt-6">
-            <h2 class="text-lg font-semibold text-gray-700 mb-2">스캔된 파일 구조:</h2>
-            <pre id="log-area" class="bg-gray-900 text-white font-mono text-sm p-4 rounded-lg overflow-auto max-h-72 w-full hidden"></pre>
-        </div>
-
-        <!-- 호환성 경고 -->
-        <p class="text-sm text-center text-red-600 mt-6">
-            <strong>참고:</strong> 이 기능은 Chrome, Edge 등 Chromium 기반 브라우저에서만 정상 작동합니다.
-        </p>
+    <div class="mb-6">
+      <label for="ignore-patterns" class="block text-sm font-medium text-gray-700 mb-2">무시할 파일/폴더 (쉼표로 구분)</label>
+      <input type="text" id="ignore-patterns" 
+             class="w-full p-2 border border-gray-300 rounded-md text-sm focus:ring-blue-500 focus:border-blue-500" 
+             value=".git, .venv, .vite, node_modules, .idea, .vscode, __pycache__, dist, build, .DS_Store, package-lock.json, yarn.lock"
+             placeholder="제외할 파일이나 폴더명을 쉼표(,)로 구분하여 입력하세요">
     </div>
 
-    <script>
-        const dropZone = document.getElementById('drop-zone');
-        const dropMessage = document.getElementById('drop-message');
-        const logArea = document.getElementById('log-area');
-        const spinner = document.getElementById('spinner');
+    <div id="drop-zone" class="border-4 border-dashed border-gray-300 rounded-lg p-16 text-center transition-all duration-300">
+      <p id="drop-message" class="text-gray-500">이곳에 폴더를 드래그하세요</p>
+    </div>
 
-        // 드래그 이벤트 처리
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault(); // 기본 동작 방지
-            dropZone.classList.add('drag-over');
-        });
+    <div id="spinner" class="hidden my-6 flex justify-center items-center">
+      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+      <p class="ml-3 text-gray-700">폴더를 스캔하고 있습니다. 잠시 기다려주세요...</p>
+    </div>
 
-        dropZone.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
-        });
+    <div class="mt-6">
+      <h2 class="text-lg font-semibold text-gray-700 mb-2">스캔된 파일 구조:</h2>
+      <pre id="log-area" class="bg-gray-900 text-white font-mono text-sm p-4 rounded-lg overflow-auto max-h-72 w-full hidden"></pre>
+    </div>
 
-        // 드롭 이벤트 처리 (핵심 로직)
-        dropZone.addEventListener('drop', async (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('drag-over');
-            logArea.classList.add('hidden');
-            logArea.textContent = '';
-            spinner.classList.remove('hidden');
-            dropMessage.textContent = "폴더를 드래그하세요";
+    <p class="text-sm text-center text-red-600 mt-6">
+      <strong>참고:</strong> 이 기능은 Chrome, Edge 등 Chromium 기반 브라우저에서만 정상 작동합니다.
+    </p>
+  </div>
 
-            try {
-                const items = e.dataTransfer.items;
-                if (!items || items.length === 0) {
-                    throw new Error('드롭된 아이템이 없습니다.');
-                }
+  <script>
+    const dropZone = document.getElementById('drop-zone');
+    const dropMessage = document.getElementById('drop-message');
+    const logArea = document.getElementById('log-area');
+    const spinner = document.getElementById('spinner');
+    const ignoreInput = document.getElementById('ignore-patterns');
 
-                const item = items[0].webkitGetAsEntry();
-                if (!item || !item.isDirectory) {
-                    throw new Error('폴더가 아닌 파일이 드롭되었습니다. 폴더를 드롭해주세요.');
-                }
+    // 드래그 이벤트 처리
+    dropZone.addEventListener('dragover', (e) => {
+      e.preventDefault(); // 기본 동작 방지
+      dropZone.classList.add('drag-over');
+    });
 
-                // 폴더 처리 시작
-                const rootEntry = item;
-                let rootPath = rootEntry.name + '/';
-                let rootTree = '📁 ' + rootEntry.name + '\n';
+    dropZone.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+    });
 
-                // 재귀적으로 폴더 스캔
-                // processFolder가 이제 {fileTree: string, fileContents: string[]} 를 반환합니다.
-                const { fileTree, fileContents } = await processFolder(rootEntry, rootPath, '  ');
-                
-                rootTree += fileTree;
-                
-                // 1. 파일 구조를 화면에 표시
-                logArea.textContent = rootTree;
-                logArea.classList.remove('hidden');
+    // 드롭 이벤트 처리 (핵심 로직)
+    dropZone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('drag-over');
+      logArea.classList.add('hidden');
+      logArea.textContent = '';
+      spinner.classList.remove('hidden');
+      dropMessage.textContent = "폴더를 드래그하세요";
 
-                // 2. 최종 TXT 파일 생성 (Blob 파트 배열 사용)
-                //    하나의 거대한 문자열 대신, 문자열 조각들의 '배열'을 만듭니다.
-                const blobParts = [
-                    `--- FILE STRUCTURE ---\n\n${rootTree}\n\n--- FILE CONTENTS ---\n\n`
-                ];
-
-                // fileContents는 이제 문자열 배열이므로 concat으로 병합합니다.
-                const combinedBlobParts = blobParts.concat(fileContents); // <-- 수정됨
-
-                // 3. 파일 다운로드 (Blob 파트 배열을 전달)
-                downloadAsText(combinedBlobParts, rootEntry.name + "_export.txt"); // <-- 수정됨
-
-            } catch (err) {
-                console.error(err);
-                logArea.textContent = `오류 발생: ${err.message}`;
-                logArea.classList.remove('hidden');
-            } finally {
-                spinner.classList.add('hidden'); // 스피너 숨기기
-            }
-        });
-
-        /**
-         * 디렉터리 엔트리를 재귀적으로 처리합니다.
-         * @param {FileSystemDirectoryEntry} directoryEntry - 스캔할 디렉터리 엔트리
-         * @param {string} pathPrefix - 현재 파일 경로 (예: "MyProject/src/")
-         * @param {string} indent - 들여쓰기 문자 (예: "  ")
-         * @returns {Promise<{fileTree: string, fileContents: string[]}>} // <-- 반환 타입 변경됨 (string[])
-         */
-        async function processFolder(directoryEntry, pathPrefix, indent) {
-            let fileTree = '';
-            let fileContents = []; // <-- 수정됨: 문자열이 아닌 '배열'로 시작
-
-            const entries = await readDirectoryEntries(directoryEntry);
-            
-            // 일관된 순서를 위해 정렬 (폴더 우선, 그 다음 이름순)
-            entries.sort((a, b) => {
-                if (a.isDirectory && !b.isDirectory) return -1;
-                if (!a.isDirectory && b.isDirectory) return 1;
-                return a.name.localeCompare(b.name);
-            });
-
-            for (const entry of entries) {
-                if (entry.isDirectory) {
-                    fileTree += `${indent}📁 ${entry.name}\n`;
-                    const { fileTree: subTree, fileContents: subContents } = await processFolder(
-                        entry,
-                        pathPrefix + entry.name + '/',
-                        indent + '  '
-                    );
-                    fileTree += subTree;
-                    fileContents = fileContents.concat(subContents); // <-- 수정됨: 배열 병합
-                } else if (entry.isFile) {
-                    fileTree += `${indent}📄 ${entry.name}\n`;
-                    fileContents.push(await processFile(entry, pathPrefix + entry.name)); // <-- 수정됨: 배열에 push
-                }
-            }
-
-            return { fileTree, fileContents };
+      try {
+        const items = e.dataTransfer.items;
+        if (!items || items.length === 0) {
+          throw new Error('드롭된 아이템이 없습니다.');
         }
 
-        /**
-         * 파일 엔트리를 처리하여 XML 태그로 감싼 문자열을 반환합니다.
-         * @param {FileSystemFileEntry} fileEntry - 읽을 파일 엔트리
-         * @param {string} path - 파일의 전체 경로
-         * @returns {Promise<string>}
-         */
-        async function processFile(fileEntry, path) {
-            const file = await new Promise((resolve, reject) => fileEntry.file(resolve, reject));
-            let content = '';
-
-            // 텍스트 기반 파일인지 간단히 확인
-            const isTextBased = file.type.startsWith('text/') || 
-                                /\.(txt|js|css|html|xml|json|md|py|java|c|cpp|cs|go|rs|sh)$/i.test(file.name) ||
-                                !file.type; // MIME 타입이 없는 경우 일단 텍스트로 시도
-
-            if (isTextBased && file.size < 5 * 1024 * 1024) { // 5MB 미만 텍스트 파일만 읽기
-                try {
-                    content = await file.text();
-                } catch (e) {
-                    content = `[Error reading file as text: ${e.message}]`;
-                }
-            } else if (file.size >= 5 * 1024 * 1024) {
-                 content = `[File too large (${(file.size / (1024*1024)).toFixed(2)} MB). Content not included.]`;
-            } else {
-                content = `[Binary file: ${file.type}, size: ${file.size} bytes. Content not included.]`;
-            }
-
-            // XML 태그로 감싸기. CDATA를 사용하여 특수 문자가 있어도 문제 없도록 함.
-            return `<file path="${path}">\n<![CDATA[\n${content}\n]]>\n</file>\n\n`;
+        const item = items[0].webkitGetAsEntry();
+        if (!item || !item.isDirectory) {
+          throw new Error('폴더가 아닌 파일이 드롭되었습니다. 폴더를 드롭해주세요.');
         }
 
-        /**
-         * 디렉터리의 모든 엔트리를 읽어오는 래퍼 함수 (readEntries가 비동기 콜백 방식이라)
-         * @param {FileSystemDirectoryEntry} directoryEntry
-         * @returns {Promise<FileSystemEntry[]>}
-         */
-        function readDirectoryEntries(directoryEntry) {
-            return new Promise((resolve, reject) => {
-                const reader = directoryEntry.createReader();
-                let allEntries = [];
+        // 폴더 처리 시작
+        const rootEntry = item;
+        let rootPath = rootEntry.name + '/';
+        let rootTree = '📁 ' + rootEntry.name + '\n';
 
-                function readBatch() {
-                    reader.readEntries(
-                        (entries) => {
-                            if (entries.length > 0) {
-                                allEntries = allEntries.concat(entries);
-                                readBatch(); // 다음 배치를 읽음
-                            } else {
-                                resolve(allEntries); // 모든 엔트리를 읽음
-                            }
-                        },
-                        (err) => reject(err)
-                    );
-                }
-                
-                readBatch();
-            });
+        // 설정된 제외 목록 파싱 (쉼표로 구분 -> 배열 변환 -> 공백 제거)
+        const ignoreList = ignoreInput.value.split(',').map(s => s.trim()).filter(s => s.length > 0);
+
+        // 재귀적으로 폴더 스캔
+        // processFolder가 이제 {fileTree: string, fileContents: string[]} 를 반환합니다.
+        const { fileTree, fileContents } = await processFolder(rootEntry, rootPath, ' ', ignoreList);
+       
+        rootTree += fileTree;
+       
+        // 1. 파일 구조를 화면에 표시
+        logArea.textContent = rootTree;
+        logArea.classList.remove('hidden');
+
+        // 2. 최종 TXT 파일 생성 (Blob 파트 배열 사용)
+        const blobParts = [
+          `--- FILE STRUCTURE ---\n\n${rootTree}\n\n--- FILE CONTENTS ---\n\n`
+        ];
+
+        const combinedBlobParts = blobParts.concat(fileContents);
+
+        // 3. 파일 다운로드
+        downloadAsText(combinedBlobParts, rootEntry.name + "_export.txt");
+
+      } catch (err) {
+        console.error(err);
+        logArea.textContent = `오류 발생: ${err.message}`;
+        logArea.classList.remove('hidden');
+      } finally {
+        spinner.classList.add('hidden'); // 스피너 숨기기
+      }
+    });
+
+    /**
+    * 디렉터리 엔트리를 재귀적으로 처리합니다.
+    * @param {FileSystemDirectoryEntry} directoryEntry - 스캔할 디렉터리 엔트리
+    * @param {string} pathPrefix - 현재 파일 경로
+    * @param {string} indent - 들여쓰기 문자
+    * @param {string[]} ignoreList - 제외할 파일/폴더 이름 목록
+    * @returns {Promise<{fileTree: string, fileContents: string[]}>}
+    */
+    async function processFolder(directoryEntry, pathPrefix, indent, ignoreList) {
+      let fileTree = '';
+      let fileContents = []; 
+
+      const entries = await readDirectoryEntries(directoryEntry);
+     
+      // 일관된 순서를 위해 정렬 (폴더 우선, 그 다음 이름순)
+      entries.sort((a, b) => {
+        if (a.isDirectory && !b.isDirectory) return -1;
+        if (!a.isDirectory && b.isDirectory) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      for (const entry of entries) {
+        // 제외 목록에 포함된 이름이면 건너뜀 (정확히 일치하는 경우)
+        if (ignoreList.includes(entry.name)) {
+            continue;
         }
 
-        /**
-         * 텍스트를 .txt 파일로 다운로드합니다.
-         * @param {string[]} blobParts - <-- 수정됨: 단일 텍스트가 아닌 Blob 파트 '배열'을 받음
-         * @param {string} filename - 파일 이름
-         */
-        function downloadAsText(blobParts, filename) { // <-- 수정됨: 매개변수 이름 변경 (text -> blobParts)
-            // Blob 생성자에 문자열 배열(blobParts)을 바로 전달합니다.
-            const blob = new Blob(blobParts, { type: 'text/plain;charset=utf-8' }); // <-- 수정됨
-            const url = URL.createObjectURL(blob);
-            
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            
-            document.body.appendChild(a);
-            a.click(); // 다운로드 트리거
-            
-            // 정리
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
+        if (entry.isDirectory) {
+          fileTree += `${indent}📁 ${entry.name}\n`;
+          const { fileTree: subTree, fileContents: subContents } = await processFolder(
+            entry,
+            pathPrefix + entry.name + '/',
+            indent + ' ',
+            ignoreList
+          );
+          fileTree += subTree;
+          fileContents = fileContents.concat(subContents); 
+        } else if (entry.isFile) {
+          fileTree += `${indent}📄 ${entry.name}\n`;
+          fileContents.push(await processFile(entry, pathPrefix + entry.name)); 
         }
+      }
 
-    </script>
+      return { fileTree, fileContents };
+    }
+
+    /**
+    * 파일 엔트리를 처리하여 XML 태그로 감싼 문자열을 반환합니다.
+    * @param {FileSystemFileEntry} fileEntry - 읽을 파일 엔트리
+    * @param {string} path - 파일의 전체 경로
+    * @returns {Promise<string>}
+    */
+    async function processFile(fileEntry, path) {
+      const file = await new Promise((resolve, reject) => fileEntry.file(resolve, reject));
+      let content = '';
+
+      // 텍스트 기반 파일인지 간단히 확인
+      const isTextBased = file.type.startsWith('text/') ||
+                /\.(txt|js|css|html|xml|json|md|py|java|c|cpp|cs|go|rs|sh)$/i.test(file.name) ||
+                !file.type; // MIME 타입이 없는 경우 일단 텍스트로 시도
+
+      if (isTextBased && file.size < 5 * 1024 * 1024) { // 5MB 미만 텍스트 파일만 읽기
+        try {
+          content = await file.text();
+        } catch (e) {
+          content = `[Error reading file as text: ${e.message}]`;
+        }
+      } else if (file.size >= 5 * 1024 * 1024) {
+        content = `[File too large (${(file.size / (1024*1024)).toFixed(2)} MB). Content not included.]`;
+      } else {
+        content = `[Binary file: ${file.type}, size: ${file.size} bytes. Content not included.]`;
+      }
+
+      // XML 태그로 감싸기. CDATA를 사용하여 특수 문자가 있어도 문제 없도록 함.
+      return `<file path="${path}">\n<![CDATA[\n${content}\n]]>\n</file>\n\n`;
+    }
+
+    /**
+    * 디렉터리의 모든 엔트리를 읽어오는 래퍼 함수
+    * @param {FileSystemDirectoryEntry} directoryEntry
+    * @returns {Promise<FileSystemEntry[]>}
+    */
+    function readDirectoryEntries(directoryEntry) {
+      return new Promise((resolve, reject) => {
+        const reader = directoryEntry.createReader();
+        let allEntries = [];
+
+        function readBatch() {
+          reader.readEntries(
+            (entries) => {
+              if (entries.length > 0) {
+                allEntries = allEntries.concat(entries);
+                readBatch(); 
+              } else {
+                resolve(allEntries); 
+              }
+            },
+            (err) => reject(err)
+          );
+        }
+       
+        readBatch();
+      });
+    }
+
+    /**
+    * 텍스트를 .txt 파일로 다운로드합니다.
+    * @param {string[]} blobParts
+    * @param {string} filename
+    */
+    function downloadAsText(blobParts, filename) {
+      const blob = new Blob(blobParts, { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+     
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+     
+      document.body.appendChild(a);
+      a.click(); 
+     
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+  </script>
 </body>
 </html>
